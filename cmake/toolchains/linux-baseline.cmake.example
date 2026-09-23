@@ -1,0 +1,17 @@
+# Copy/edit this template for a REAL target toolchain + sysroot. Merely setting
+# CMAKE_SYSTEM_VERSION or a GLIBC symbol version does not lower dependencies.
+# Configure with BUILD_TESTING=OFF; execute tests on the target separately.
+set(CMAKE_SYSTEM_NAME Linux)
+foreach(_v LOGGER_BASELINE_CC LOGGER_BASELINE_SYSROOT LOGGER_BASELINE_ARCH)
+  if("$ENV{${_v}}" STREQUAL "")
+    message(FATAL_ERROR "Set environment ${_v} to an actual baseline toolchain setting")
+  endif()
+endforeach()
+set(CMAKE_SYSTEM_PROCESSOR "$ENV{LOGGER_BASELINE_ARCH}")
+set(CMAKE_C_COMPILER "$ENV{LOGGER_BASELINE_CC}")
+set(CMAKE_SYSROOT "$ENV{LOGGER_BASELINE_SYSROOT}")
+set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

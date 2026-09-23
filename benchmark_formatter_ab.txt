@@ -1,0 +1,8 @@
+CORRECTION: historical timeouts were not proven to be CPU throttling; a real lost-wakeup defect was subsequently reproduced. A/B remains INCONCLUSIVE.
+
+formatter isolation A/B: INCONCLUSIVE
+The execution environment became heavily throttled during repeated A/B runs,
+and the fast candidate reconstruction also hit -Werror before a valid paired
+sample set completed. Production source was deliberately restored to the
+known-good snprintf metadata formatter with timestamp cache. BATCH_MAX remains
+256. No speculative formatter optimization is retained.

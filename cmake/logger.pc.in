@@ -1,0 +1,11 @@
+prefix=${pcfiledir}/@LOGGER_PC_PREFIX_REL@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@/logger
+
+Name: prod-c-logger
+Description: Host-owned Logger and Audit (builtin SHA-256), development candidate
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -llogger
+Libs.private: -pthread
+Cflags: -I${includedir}@LOGGER_PC_DEFINITIONS@

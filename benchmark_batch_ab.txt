@@ -1,0 +1,27 @@
+fixed batch A/B (median of 3 runs)
+
+BATCH=64 score_vs_64=1.000
+  threads=1 bytes=64 e2e=857780 hwm=325 batches=241
+  threads=8 bytes=256 e2e=1595484 hwm=7725 batches=257
+  threads=32 bytes=1024 e2e=1112490 hwm=15939 batches=400
+  threads=64 bytes=4000 e2e=502219 hwm=15711 batches=300
+
+BATCH=128 score_vs_64=1.018
+  threads=1 bytes=64 e2e=796075 hwm=346 batches=342
+  threads=8 bytes=256 e2e=1429029 hwm=9600 batches=125
+  threads=32 bytes=1024 e2e=1288535 hwm=16163 batches=200
+  threads=64 bytes=4000 e2e=560922 hwm=14966 batches=150
+
+BATCH=256 score_vs_64=1.053
+  threads=1 bytes=64 e2e=1004012 hwm=569 batches=190
+  threads=8 bytes=256 e2e=1518358 hwm=8623 batches=63
+  threads=32 bytes=1024 e2e=1088038 hwm=15486 batches=100
+  threads=64 bytes=4000 e2e=565861 hwm=12624 batches=75
+
+BATCH=512 score_vs_64=0.938
+  threads=1 bytes=64 e2e=691746 hwm=1488 batches=4
+  threads=8 bytes=256 e2e=1380340 hwm=12084 batches=32
+  threads=32 bytes=1024 e2e=1096926 hwm=16331 batches=50
+  threads=64 bytes=4000 e2e=564963 hwm=15229 batches=38
+
+selected fixed BATCH_MAX=256

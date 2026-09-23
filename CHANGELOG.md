@@ -1,0 +1,23 @@
+# Changelog
+
+## 0.9.0 — release-engineering candidate
+
+Not a final Production v1. Same complete Logger/Console/Audit functionality and
+builtin SHA-256 only; no external crypto dependency or runtime implementation
+changes in this revision.
+
+- Linux ELF public symbol allowlist, hidden internals, LOGGER_0.9 symbol version
+  and liblogger.so.0 SONAME; optional old fork helper remains opt-in.
+- Relocatable install, CMake Logger::logger package, pkg-config, CPack TGZ and
+  separate static/shared build profiles. Test support is not installed.
+- Strict C++11-compatible default configuration/source macros, unchanged C
+  definitions and data layout. Installed C and C++ consumers tested separately.
+- A frozen prior-header consumer, layout/default checks, real dynamic symbol
+  lookup and private-symbol rejection checks; PIC static embedding in SDK DSO.
+- ELF/GLIBC baseline inspection gate; old target platform execution and durable
+  media verification remain separate release requirements.
+
+Compatibility: callers of undocumented internal symbols must migrate. Pre-1.0
+package matching is exact; .so.0 is a candidate ABI, not a promise that all future
+0.x snapshots are mutually compatible. Install static/shared variants into
+separate clean prefixes. Do not exchange pointers across independent copies.

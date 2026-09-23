@@ -1,0 +1,5 @@
+timestamp cache benchmark (median of 3 runs; same host/build)
+threads=1 bytes=64 producer 918989->919454 (+0.1%) e2e 916520->917062 (+0.1%)
+threads=8 bytes=256 producer 2429047->2614360 (+7.6%) e2e 1243517->1513851 (+21.7%)
+threads=32 bytes=1024 producer 1845538->2372874 (+28.6%) e2e 1009865->1308761 (+29.6%)
+threads=64 bytes=4000 producer 1759524->2199711 (+25.0%) e2e 926851->1152618 (+24.4%)

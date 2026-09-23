@@ -1,0 +1,5 @@
+metadata formatter benchmark (median of 3; baseline includes timestamp cache)
+threads=1 bytes=64 producer 734000->831670 (+13.3%) e2e 587018->827946 (+41.0%)
+threads=8 bytes=256 producer 2112768->2220802 (+5.1%) e2e 1269301->1390399 (+9.5%)
+threads=32 bytes=1024 producer 2542032->2712940 (+6.7%) e2e 1205454->944678 (-21.6%)
+threads=64 bytes=4000 producer 1583626->2108903 (+33.2%) e2e 1110617->548661 (-50.6%)
