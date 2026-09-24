@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — compact queue storage
+
+- 将 MPSC queue slot 从完整 `logger_message_t` 改为 compact record：
+  保留 metadata/source/context snapshot，正文使用 256B inline storage。
+- 长消息使用最多 1024 个预分配 4KiB spill block；short-message hot path
+  不获取 spill mutex，也不执行 per-record malloc/free。
+- spill pool 用尽时不截断正文，`logger_queue_push()` 返回不可入队，
+  继续走现有 per-level DROP / SYNC overflow policy。
+- benchmark 新增 slot/spill/total storage 与 spill exhaustion 指标；
+  regression 覆盖 inline/long roundtrip、spill block 归还以及真实 Logger
+  drop/sync-fallback 行为。
+
 ## Unreleased — locking audit
 
 - 新增完整 Lock Matrix，明确 global、instance、Console、Audit 的保护对象、

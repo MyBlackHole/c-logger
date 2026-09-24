@@ -46,7 +46,8 @@ struct logger {
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
 	_Atomic int first_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
-	/* 异步 queue：q 拥有 q.slots；producer/consumer 顺序由 atomic 协议保证。
+	/* 异步 queue：q 拥有 compact slots 与预分配 spill pool。
+	 * producer/consumer 顺序由 slot.seq atomic publication 协议保证；
 	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
 	logger_queue_t q;
 	/* create 成功后由 logger_t 拥有；必须在 worker join 后才能释放。 */

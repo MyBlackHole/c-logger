@@ -99,6 +99,42 @@ static void check_terminal(uint64_t queued, uint64_t sync, uint64_t good,
 	CHECK(io.async_completed + io.sync_completed ==
 	      io.emitted_records + io.failed_records);
 }
+static void spill_policy(void)
+{
+	char long_message[701];
+	memset(long_message, 'L', sizeof(long_message) - 1u);
+	long_message[sizeof(long_message) - 1u] = '\0';
+
+	atomic_store(&block_first, 1);
+	LOGGER_INFO(instance, "io", "worker-held");
+	wait_flag(&format_entered);
+
+	for (size_t i = 0; i < LOGGER_QUEUE_SPILL_LIMIT; ++i)
+		LOGGER_INFO(instance, "io", "%s", long_message);
+
+	CHECK(logger_queue_depth(&instance->q) == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(logger_queue_depth(&instance->q) < instance->q.cap);
+
+	LOGGER_INFO(instance, "io", "spill-drop-%s", long_message);
+	LOGGER_ERROR(instance, "io", "spill-fallback-%s", long_message);
+
+	logger_metrics_t metrics;
+	logger_get_metrics(instance, &metrics);
+	CHECK(metrics.enqueued == 1u + LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(metrics.sync_fallbacks == 1);
+	CHECK(dropped(&metrics) == 1);
+	CHECK(metrics.queue_high_watermark == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(logger_queue_spill_exhaustions(&instance->q) == 2);
+	check_terminal(0, 1, 1, 0);
+
+	atomic_store(&release_format, 1);
+	CHECK(logger_flush_instance_status(instance) == 0);
+	check_terminal(1u + LOGGER_QUEUE_SPILL_LIMIT, 1,
+		       2u + LOGGER_QUEUE_SPILL_LIMIT, 0);
+	CHECK(file_contains("out.log", "spill-fallback-"));
+	CHECK(!file_contains("out.log", "spill-drop-"));
+}
+
 static void full_queue(const char *mode)
 {
 	int fallback = strcmp(mode, "drop") != 0;
@@ -142,6 +178,8 @@ int main(int argc, char **argv)
 	c.flush_level = LOGGER_OFF;
 	if (!strcmp(argv[1], "sync"))
 		c.async_mode = 0;
+	if (!strcmp(argv[1], "spill-policy"))
+		c.queue_capacity = LOGGER_QUEUE_SPILL_LIMIT * 2u;
 	if (!strcmp(argv[1], "rotation-fsync")) {
 		c.rotation.mode = LOGGER_ROTATE_SIZE;
 		c.rotation.max_file_size = 1;
@@ -149,8 +187,10 @@ int main(int argc, char **argv)
 	instance = logger_create(&c);
 	CHECK(instance);
 	output_fd = instance->file_backend.fd;
-	if (!strcmp(argv[1], "drop") || !strcmp(argv[1], "fallback") ||
-	    !strcmp(argv[1], "fallback-error")) {
+	if (!strcmp(argv[1], "spill-policy")) {
+		spill_policy();
+	} else if (!strcmp(argv[1], "drop") || !strcmp(argv[1], "fallback") ||
+		   !strcmp(argv[1], "fallback-error")) {
 		full_queue(argv[1]);
 	} else if (!strcmp(argv[1], "async-error")) {
 		atomic_store(&fault, WRITEV_ERROR);

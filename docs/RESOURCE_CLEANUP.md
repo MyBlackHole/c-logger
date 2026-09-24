@@ -232,10 +232,10 @@ The first migrated production paths are intentionally simple:
   transfer = `no_free_ptr()/return_ptr()`; persistent owner =
   `logger_worker_workspace_t` / `logger_t`; final releaser =
   `logger_worker_workspace_destroy()`.
-- MPSC queue slot allocation rollback:
-  creator = `calloc`; current owner = local `slots __free(free)`;
-  transfer = `q->slots = no_free_ptr(slots)`; persistent owner =
-  `logger_queue_t`; final releaser = `logger_queue_destroy()`.
+- MPSC queue storage allocation rollback:
+  creator = 两次 `calloc`；current owner = local `slots/spills __free(free)`；
+  transfer = `no_free_ptr()` 交给 `logger_queue_t`；persistent owner =
+  `logger_queue_t`；final releaser = `logger_queue_destroy()`。
 
 They have single-threaded construction ownership and no error-bearing close
 semantics. More complex file, Audit, and global-lock paths should be converted

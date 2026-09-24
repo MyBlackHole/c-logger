@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "logger_internal.h" /* private completion-only wait: /dev/null has no fsync contract */
+#include "logger_internal.h" /* private completion-only wait：/dev/null 无 fsync contract */
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
@@ -85,8 +85,8 @@ int main(int argc, char **argv)
 	for (uint64_t i = 0; i < started; ++i)
 		pthread_join(threads[i], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &producer_end);
-	/* No polling of dequeue counters, no double-counted fallback, no fsync on
-     * /dev/null. This waits for actual backend attempts to finish. */
+	/* 不轮询 dequeue counter，也不重复统计 fallback；/dev/null 不执行 fsync。
+	 * 这里等待实际 backend attempt 全部完成。 */
 	int rc = logger_wait_for_output(l);
 	clock_gettime(CLOCK_MONOTONIC, &output_end);
 	logger_metrics_t m;
@@ -115,7 +115,12 @@ int main(int argc, char **argv)
 	       ",\"consumer_records\":%" PRIu64 ",\"consumer_batches\":%" PRIu64
 	       ",\"async_completed\":%" PRIu64 ",\"emitted_records\":%" PRIu64
 	       ",\"failed_records\":%" PRIu64
-	       ",\"queue_slot_bytes\":%zu,\"queue_storage_bytes\":%zu"
+	       ",\"queue_slot_bytes\":%zu"
+	       ",\"queue_slot_storage_bytes\":%zu"
+	       ",\"queue_spill_capacity\":%zu"
+	       ",\"queue_spill_storage_bytes\":%zu"
+	       ",\"queue_spill_exhaustions\":%" PRIu64
+	       ",\"queue_storage_bytes\":%zu"
 	       ",\"measurement\":\"output_completion_not_durability\",\"valid\":%s}\n",
 	       nt, sz, attempted, ps, es, ps > 0 ? attempted / ps : 0,
 	       es > 0 ? io.emitted_records / es : 0, m.enqueued, drops,
@@ -123,6 +128,10 @@ int main(int argc, char **argv)
 	       m.consumer_batches, io.async_completed, io.emitted_records,
 	       io.failed_records, sizeof(logger_queue_slot_t),
 	       l->q.cap * sizeof(logger_queue_slot_t),
+	       logger_queue_spill_capacity(&l->q),
+	       logger_queue_spill_storage_bytes(&l->q),
+	       logger_queue_spill_exhaustions(&l->q),
+	       logger_queue_storage_bytes(&l->q),
 	       valid ? "true" : "false");
 	logger_destroy(l);
 	free(threads);

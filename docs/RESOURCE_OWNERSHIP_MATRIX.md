@@ -23,7 +23,8 @@ Status meanings:
 | process live-object token | `logger_process_object_acquire` | process-wide object census/gate | paired with logger construction/destruction | `logger_process_object_release` | SHARED (not REFCOUNTED) |
 | `emit_mu` | `pthread_mutex_init` | `logger_t` | none | destroy after backend/worker teardown | EXPLICIT |
 | `progress_mu/progress_cv` | pthread init | `logger_t` | none | destroy after worker join | EXPLICIT |
-| queue storage `q.slots` | `calloc` in `logger_queue_init` | lexical owner, then `logger_queue_t` | `q->slots = no_free_ptr(slots)` | `logger_queue_destroy` | AUTO -> EXPLICIT |
+| compact queue storage `q.slots` | `calloc` in `logger_queue_init` | lexical owner, then `logger_queue_t` | `q->slots = no_free_ptr(slots)` | `logger_queue_destroy` | AUTO -> EXPLICIT |
+| long-message spill pool `q.spills` | `calloc` in `logger_queue_init` | lexical owner, then `logger_queue_t` | `q->spills = no_free_ptr(spills)` | `logger_queue_destroy` after producer/worker quiescence | AUTO -> SHARED/EXPLICIT |
 | worker workspace | workspace constructor allocations | workspace object, then `logger_t` | `no_free_ptr/return_ptr` | after worker join via `logger_worker_workspace_destroy` | AUTO -> EXPLICIT |
 | worker thread | `pthread_create` | `logger_t` | none | cooperative stop + `pthread_join` | SHARED/EXPLICIT |
 | explicit API `logger_t *` arguments | host | host remains owner | none | host only | BORROWED |
@@ -102,8 +103,8 @@ function result.
 
 ## Worker/queue shared lifetime
 
-Queue slots and worker workspace have a single structural owner, but they are
-used concurrently. Destruction order is therefore fixed:
+Queue slots、spill pool 和 worker workspace 都只有一个 structural owner，
+但会被 producer/consumer 并发使用，因此 destruction order 固定：
 
 ```text
 stop publication/running
@@ -116,7 +117,7 @@ pthread_join
     ->
 destroy workspace
     ->
-destroy queue storage
+destroy compact slots + spill pool
 ```
 
 Lexical cleanup cannot replace this join-before-free requirement.
