@@ -41,7 +41,8 @@ struct logger {
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
 	_Atomic int first_error; /* positive errno, sticky for this instance */
-	logger_queue_t q;
+	logger_queue_t q; /* owns q.slots; logger_queue_destroy() releases */
+	/* Owned by logger_t after create; released after worker join. */
 	logger_worker_workspace_t *worker_workspace;
 	pthread_t worker;
 	_Atomic int running;

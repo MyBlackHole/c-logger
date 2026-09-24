@@ -8,6 +8,9 @@
 - Define project rules for single ownership, declaration-at-acquisition, LIFO
   teardown, explicit ownership transfer, and no mixing of goto-unwind with
   scope-unwind in one resource graph.
+- Require every managed resource to answer four ownership questions: creator,
+  current owner, exact transfer point, and final releaser; distinguish OWNED,
+  BORROWED, MOVED and SHARED lifetimes before choosing automatic cleanup.
 - Convert async worker workspace construction and queue-slot initialization to
   automatic rollback while keeping concurrency/lifetime ownership explicit.
 - Add regression coverage for free/return/retain/take ownership, class

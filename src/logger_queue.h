@@ -8,6 +8,7 @@ typedef struct {
 	logger_message_t msg;
 } logger_queue_slot_t;
 typedef struct {
+	/* OWNED after logger_queue_init(); released by logger_queue_destroy(). */
 	logger_queue_slot_t *slots;
 	size_t cap, mask;
 	_Atomic size_t enqueue_pos;

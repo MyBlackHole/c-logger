@@ -55,6 +55,8 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
+	/* Ownership transfer: lexical allocator -> logger_queue_t.
+	 * logger_queue_destroy() is the final releaser. */
 	q->slots = no_free_ptr(slots);
 	return 0;
 }
