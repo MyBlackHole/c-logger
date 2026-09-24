@@ -91,6 +91,17 @@ static int regular_single_link(const struct stat *st)
 	return 0;
 }
 
+static int reserved_basename(const char *name, size_t length)
+{
+	static const char *const suffixes[] = { ".logger.lock", ".audit.lock" };
+	for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i) {
+		size_t n = strlen(suffixes[i]);
+		if (length >= n && !memcmp(name + length - n, suffixes[i], n))
+			return 1;
+	}
+	return 0;
+}
+
 static int check_named_fd(int dirfd, const char *name, int fd, struct stat *st)
 {
 	struct stat named;
@@ -125,6 +136,8 @@ static int bind_path(logger_file_t *f, const char *path)
 		return -EINVAL;
 	if (n > LOGGER_FILENAME_MAX)
 		return -ENAMETOOLONG;
+	if (reserved_basename(base, n))
+		return -EINVAL;
 	memcpy(f->name, base, n + 1);
 	char dir[LOGGER_PATH_MAX];
 	if (slash) {

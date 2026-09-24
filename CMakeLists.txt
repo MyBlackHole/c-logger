@@ -96,6 +96,13 @@ if(BUILD_TESTING)
 if(BUILD_SHARED_LIBS)
   add_library(logger_regression_support STATIC EXCLUDE_FROM_ALL ${LOGGER_SOURCES})
   configure_logger(logger_regression_support)
+  # White-box regressions use --wrap against libc entry points. Release/FORTIFY
+  # may rewrite calls such as vsnprintf/vfprintf/dprintf to __*_chk symbols,
+  # bypassing those synchronization hooks. Keep the production shared library
+  # fortified; only the private same-source regression archive uses stable
+  # unfortified libc symbol names.
+  target_compile_options(logger_regression_support PRIVATE
+    -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
   target_compile_definitions(logger_regression_support PRIVATE LOGGER_ENABLE_FAULT_INJECTION=0)
   set_property(TARGET logger_regression_support PROPERTY INTERFACE_LOGGER_VARIANT production)
   set_property(TARGET logger_regression_support APPEND PROPERTY COMPATIBLE_INTERFACE_STRING LOGGER_VARIANT)
@@ -341,6 +348,7 @@ logger_regression(flush_watermark_regression test_flush_watermark.c)
 target_link_options(flush_watermark_regression PRIVATE -Wl,--wrap=logger_format_line -Wl,--wrap=pthread_cond_wait)
 logger_regression(io_accounting_regression test_io_accounting.c)
 target_link_options(io_accounting_regression PRIVATE -Wl,--wrap=logger_format_line -Wl,--wrap=write -Wl,--wrap=writev -Wl,--wrap=fsync)
+logger_regression(stderr_sigpipe_regression test_stderr_sigpipe.c)
 logger_regression(queue_mpsc_regression test_queue_mpsc.c)
 logger_regression(global_flush_regression test_global_flush.c)
 foreach(t queue_notify_regression flush_pending_regression flush_watermark_regression queue_mpsc_regression global_flush_regression)
@@ -350,6 +358,10 @@ endforeach()
 foreach(s drop fallback fallback-error async-error short-ok short-error file-fsync dir-fsync rotation-fsync sync)
   add_test(NAME io_${s}_regression COMMAND io_accounting_regression ${s})
   set_tests_properties(io_${s}_regression PROPERTIES LABELS "regression;reliability;queue-flush" TIMEOUT 15)
+endforeach()
+foreach(s sync async preblocked)
+  add_test(NAME stderr_sigpipe_${s} COMMAND stderr_sigpipe_regression ${s})
+  set_tests_properties(stderr_sigpipe_${s} PROPERTIES LABELS "regression;reliability;host-owned" TIMEOUT 15)
 endforeach()
 target_include_directories(bench_matrix PRIVATE src)
 target_compile_options(bench_matrix PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -546,6 +558,7 @@ target_link_options(file_backend_regression PRIVATE
   -Wl,--wrap=logger_file_rename_noreplace -Wl,--wrap=unlinkat -Wl,--wrap=flock -Wl,--wrap=writev)
 foreach(s owner-same owner-process owner-race owner-exit owner-alias owner-close-other
           path-empty path-long name-long path-directory path-fifo path-symlink path-dangling path-hardlink
+          path-reserved-logger-lock path-reserved-audit-lock
           lock-symlink lock-hardlink lock-fifo device-rotate device-shared init-cleanup
           reopen-ok reopen-permission reopen-space reopen-emfile reopen-directory reopen-symlink reopen-sync reopen-dir-sync reopen-close
           collision clock-backwards collision-limit rotation-unsupported rotation-rename-error
@@ -671,7 +684,7 @@ target_link_options(global_cancel_regression PRIVATE
   -Wl,--wrap=logger_queue_push -Wl,--wrap=logger_format_line
   -Wl,--wrap=pthread_cond_wait -Wl,--wrap=pthread_mutex_lock
   -Wl,--wrap=pthread_rwlock_rdlock -Wl,--wrap=dprintf)
-foreach(s write async-cancel-write queue flush flush-void reopen reader create create-fail shutdown bootstrap control-wait restore-policy)
+foreach(s write queue flush flush-void reopen reader create create-fail shutdown bootstrap control-wait restore-policy)
   add_test(NAME global_cancel_${s} COMMAND global_cancel_regression ${s})
   set_tests_properties(global_cancel_${s} PROPERTIES LABELS "regression;concurrency;global-lifecycle;global-cancel" TIMEOUT 20)
 endforeach()
@@ -700,10 +713,6 @@ target_link_options(explicit_scope_regression PRIVATE
 foreach(s write source sync format queue fallback flush flush-void reopen syslog-metrics create create-fail destroy)
   add_test(NAME explicit_cancel_${s} COMMAND explicit_scope_regression cancel ${s})
   set_tests_properties(explicit_cancel_${s} PROPERTIES LABELS "regression;explicit-scope;concurrency" TIMEOUT 15)
-endforeach()
-foreach(s write source sync queue flush reopen syslog-metrics destroy)
-  add_test(NAME explicit_async_cancel_${s} COMMAND explicit_scope_regression async-cancel ${s})
-  set_tests_properties(explicit_async_cancel_${s} PROPERTIES LABELS "regression;explicit-scope;concurrency" TIMEOUT 15)
 endforeach()
 foreach(s print info warn error verbose debug source)
   add_test(NAME console_cancel_${s} COMMAND explicit_scope_regression console-cancel ${s})

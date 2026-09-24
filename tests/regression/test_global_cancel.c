@@ -143,10 +143,6 @@ static void cleanup(void *unused)
 static void *caller(void *unused)
 {
 	(void)unused;
-	int old_type;
-	if (!strcmp(scenario, "async-cancel-write"))
-		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					     &old_type));
 	pthread_cleanup_push(cleanup, NULL);
 	if (!strcmp(scenario, "create") || !strcmp(scenario, "create-fail")) {
 		logger_config_t cfg = config_for("old.log", 0);
@@ -174,7 +170,6 @@ static void *caller(void *unused)
 		LOG_INFO("cancelled-operation-record");
 	}
 	atomic_store(&operation_returned, 1);
-	/* POSIX need not deliver deferred cancellation on re-enable itself. */
 	pthread_testcancel();
 	pthread_cleanup_pop(0);
 	return NULL;
@@ -243,8 +238,7 @@ int main(int argc, char **argv)
 		LOG_INFO("worker-must-complete-before-cancel");
 		wait_flag(&format_entered);
 	} else {
-		CHECK(!strcmp(scenario, "write") ||
-		      !strcmp(scenario, "async-cancel-write"));
+		CHECK(!strcmp(scenario, "write"));
 		atomic_store(&stage, P_WRITE);
 	}
 	pthread_t thread;
@@ -273,8 +267,7 @@ int main(int argc, char **argv)
 					   "old.log";
 		CHECK(file_contains(path, "cancel-cleanup-can-log"));
 		CHECK(file_contains(path, "main-after-cancel"));
-		if (!strcmp(scenario, "write") || !strcmp(scenario, "queue") ||
-		    !strcmp(scenario, "async-cancel-write"))
+		if (!strcmp(scenario, "write") || !strcmp(scenario, "queue"))
 			CHECK(file_contains(path,
 					    "cancelled-operation-record"));
 	} else

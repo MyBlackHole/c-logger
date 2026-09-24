@@ -15,7 +15,10 @@ Constructor、日志格式化/提交、同步回退、flush、reopen、Syslog me
 Logger worker 由 running/notify/join 协作关闭；宿主不得取消私有 worker。
 
 所有普通 API 都不是信号安全接口，也不承诺异步取消从任意指令发生时的通用安全。
-专项测试在已进入受保护位置发送异步取消请求，只证明该窗口内延期与清理，不能扩大为 AC-Safe。
+调用者不得在 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 状态下把 Logger/Console
+API 当作 AC-Safe 函数使用；POSIX 并不要求这些普通库函数具备该性质。若宿主必须保留
+ASYNCHRONOUS type，应先把 cancellation state 设为 DISABLE，再调用 Logger，并由宿主在自己的
+安全边界决定何时恢复 ENABLE。库必须保持这种 caller-disabled 状态和原 type，不得擅自启用。
 不得从 printf 扩展、FILE 回调/拦截函数中重新启用取消、pthread_exit、longjmp 或抛出穿越 C 边界的异常。
 
 ## 所有权交接必须区别于普通写入

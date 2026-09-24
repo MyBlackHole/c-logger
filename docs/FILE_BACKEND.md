@@ -17,6 +17,9 @@
 - active 和协调文件最终路径不允许符号链接或硬链接（`ELOOP` / `EMLINK`）；目录
   祖先可在初始化时经过 symlink 解析，之后绑定到实际目录 fd。同一个目录的不同
   spelling 不会创建不同 owner。
+- 普通 active basename 不得以 `.logger.lock` 或 `.audit.lock` 结尾。这两个后缀属于
+  库内部协调命名空间，拒绝它们可防止另一个合法 Logger 把正在持有 flock/fcntl 锁的
+  协调 inode 当成日志 active 并在轮换时替换路径。
 - 内部轮换仅支持普通文件。FIFO、socket、目录等拒绝；字符设备仅 NONE 模式接受，
   用于如 `/dev/null`、`/dev/full` 管线测试，不是持久化保证，fsync 仍可能返回 EINVAL。
 - 空路径、末尾 slash / `.` / `..`、过长路径/文件名返回错误，绝不截断再打开。

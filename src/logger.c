@@ -210,6 +210,23 @@ static int normalize_logger_config(const logger_config_t *in,
 	out->version = LOGGER_CONFIG_VERSION;
 	return 0;
 }
+static int validate_logger_config(const logger_config_t *cfg)
+{
+	const unsigned output_mask =
+		LOGGER_OUT_STDERR | LOGGER_OUT_FILE | LOGGER_OUT_SYSLOG;
+	if ((unsigned)cfg->level > LOGGER_OFF ||
+	    (unsigned)cfg->detail > LOGGER_DETAIL_DEBUG || !cfg->outputs ||
+	    (cfg->outputs & ~output_mask) ||
+	    (unsigned)cfg->rotation.mode > LOGGER_ROTATE_EXTERNAL ||
+	    (cfg->file_mode & ~0777u) ||
+	    (unsigned)cfg->flush_level > LOGGER_OFF)
+		return -EINVAL;
+	for (unsigned i = 0; i < 6; ++i)
+		if ((unsigned)cfg->overflow[i] > LOGGER_OVERFLOW_SYNC)
+			return -EINVAL;
+	return 0;
+}
+
 static logger_t *create_logger(const logger_config_t *input,
 			       logger_file_t *reserved)
 {
@@ -217,8 +234,9 @@ static logger_t *create_logger(const logger_config_t *input,
 	int rc, queue_ready = 0;
 	if (normalize_logger_config(input, &cfg) != 0)
 		return NULL;
-	if ((unsigned)cfg.level > LOGGER_OFF || cfg.outputs == 0) {
-		errno = EINVAL;
+	rc = validate_logger_config(&cfg);
+	if (rc) {
+		errno = -rc;
 		return NULL;
 	}
 	rc = logger_process_object_acquire();

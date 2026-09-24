@@ -31,7 +31,7 @@ static logger_t *log_instance;
 static const char *scenario, *nested;
 static char socket_dir[] = "/tmp/logger-scope-XXXXXX";
 static char socket_path[108];
-static int reentry_mode, cleanup_new, use_console, use_async_cancel;
+static int reentry_mode, cleanup_new, use_console;
 static int count_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
@@ -298,9 +298,6 @@ static void *caller(void *unused)
 {
 	(void)unused;
 	actor = 1;
-	if (use_async_cancel)
-		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					     NULL));
 	pthread_cleanup_push(application_cleanup, NULL);
 	if (use_console)
 		CHECK(!console_call(scenario));
@@ -600,8 +597,7 @@ int main(int argc, char **argv)
 	cc.verbosity = CONSOLE_DEBUG;
 	cc.color = CONSOLE_COLOR_NEVER;
 	console_init(&cc);
-	if (!strcmp(argv[1], "cancel") || !strcmp(argv[1], "async-cancel")) {
-		use_async_cancel = !strcmp(argv[1], "async-cancel");
+	if (!strcmp(argv[1], "cancel")) {
 		cancel_case();
 	} else if (!strcmp(argv[1], "console-cancel")) {
 		use_console = 1;

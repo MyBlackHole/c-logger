@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure shared release build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test release/shared profile
+        run: ctest --test-dir build --output-on-failure -j2
+      - name: Inspect shared ABI
+        run: python3 scripts/check_release_abi.py build/liblogger.so
+
+  native-debug:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure complete native build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=OFF
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test complete native suite
+        run: ctest --test-dir build --output-on-failure -j2
+
+  sanitizer:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address-undefined, thread]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure sanitizer build
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_SHARED_LIBS=OFF
+          -DLOGGER_SANITIZE=${{ matrix.sanitizer }}
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j2

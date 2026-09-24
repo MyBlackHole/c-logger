@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — production blocker hardening
+
+- Prevent stderr EPIPE from delivering a new SIGPIPE to the host thread/process;
+  preserve the caller's signal mask and process-global SIGPIPE disposition.
+- Reject active file basenames in the internal `.logger.lock` / `.audit.lock`
+  coordination namespaces so rotation cannot replace another owner's lock path.
+- Reject unknown output bits and invalid Logger detail/rotation/file-mode/
+  flush-level/overflow configuration values instead of silently accepting them.
+- Add dedicated SIGPIPE, reserved-lock-namespace and invalid-config regressions.
+- Remove release tests that required unsupported `ASYNC+ENABLE` entry into
+  ordinary Logger/Console APIs. POSIX only guarantees three pthread cancellation
+  control functions as async-cancel-safe; supported deferred and caller-disabled
+  cancellation policies remain covered by contract tests.
+- Add GitHub CI with a fortified shared Release profile, a complete
+  unsanitized native Debug suite, and ASan/UBSan + TSan profiles. Private
+  --wrap-based regression support disables FORTIFY only to keep libc hook symbol
+  names stable; the production shared library remains fortified.
+
+
 ## 0.9.0 — release-engineering candidate
 
 Not a final Production v1. Same complete Logger/Console/Audit functionality and

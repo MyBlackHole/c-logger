@@ -73,10 +73,27 @@ build property, not a CTest runtime profile.
 
 ## Release gate
 
-A production release should pass the complete normal suite, both builtin
-digest known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
-virtual-address environment supports those runtimes. No external crypto
-package is used to build or run the current test suite.
+A production release should pass the complete normal suite in an unsanitized
+native Debug build, the shared Release profile, both builtin digest
+known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
+virtual-address environment supports those runtimes.
+
+Calls made while the caller has `PTHREAD_CANCEL_ASYNCHRONOUS` and
+`PTHREAD_CANCEL_ENABLE` are outside the Logger/Console contract: POSIX only
+requires `pthread_cancel`, `pthread_setcancelstate` and
+`pthread_setcanceltype` to be async-cancel-safe. The supported boundary is a
+caller using deferred cancellation, or a caller that has disabled cancellation
+before entering Logger. Existing restore-policy tests verify that an already
+disabled caller remains disabled and that its cancellation type is preserved;
+the constructor contract separately rejects enabled asynchronous cancellation
+with `ENOTSUP`.
+
+For shared Release white-box tests, the private same-source
+`logger_regression_support` archive is compiled with FORTIFY disabled so linker
+`--wrap` hooks continue to intercept stable libc symbols such as
+`vsnprintf/vfprintf/dprintf`. The actual production shared library remains
+fortified and is exercised by the real shared-integration/packaging tests. No
+external crypto package is used to build or run the current test suite.
 
 ## Round 2 Audit state regressions
 
@@ -114,8 +131,10 @@ frozen, independently generated data, never regenerated from the code under
 test. See tests/fixtures/CRYPTO_PROVENANCE.md.
 
 ASan/UBSan: `-DLOGGER_SANITIZE=address-undefined`; TSan: `thread`, in separate
-builds. Keep leak detection enabled. Run complete suites as well as focused
-labels; report failures instead of hiding them behind a passing subset.
+builds. Keep leak detection enabled. CI runs the complete registered suite in
+shared Release, unsanitized native Debug, ASan/UBSan and TSan profiles. Tests for
+unsupported `ASYNC+ENABLE` entry are not registered as release requirements;
+supported cancellation-state preservation remains covered by the contract tests.
 
 ## Round 4 audit-parser label
 
