@@ -143,11 +143,24 @@ static void cleanup(void *unused)
 static void *caller(void *unused)
 {
 	(void)unused;
-	int old_type;
-	if (!strcmp(scenario, "async-cancel-write"))
+	int async_case = !strcmp(scenario, "async-cancel-write");
+	int saved_state = PTHREAD_CANCEL_ENABLE;
+	int saved_type = PTHREAD_CANCEL_DEFERRED;
+	/*
+	 * POSIX only permits cancellation cleanup scopes to be manipulated while
+	 * cancellation is deferred or disabled. Install the handler while disabled,
+	 * then restore the caller's enabled state before entering Logger. The test
+	 * sends pthread_cancel() only after Logger's own scope is observed disabled.
+	 */
+	if (async_case) {
+		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+					      &saved_state));
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					     &old_type));
+					     &saved_type));
+	}
 	pthread_cleanup_push(cleanup, NULL);
+	if (async_case)
+		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	if (!strcmp(scenario, "create") || !strcmp(scenario, "create-fail")) {
 		logger_config_t cfg = config_for("old.log", 0);
 		int rc = logger_init(&cfg);
@@ -174,9 +187,18 @@ static void *caller(void *unused)
 		LOG_INFO("cancelled-operation-record");
 	}
 	atomic_store(&operation_returned, 1);
-	/* POSIX need not deliver deferred cancellation on re-enable itself. */
+	/* Deferred cancellation needs an explicit point; an async pending request
+	 * may already have been acted on when Logger restored the saved state. */
 	pthread_testcancel();
+	if (async_case) {
+		int current_state;
+		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+					      &current_state));
+		CHECK(!pthread_setcanceltype(saved_type, NULL));
+	}
 	pthread_cleanup_pop(0);
+	if (async_case)
+		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	return NULL;
 }
 static void restore_policy(void)

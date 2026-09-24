@@ -47,7 +47,7 @@ right reliability level without maintaining separate test lists.
 | `reliability` | fault + crash verification |
 | `security` | audit integrity, recovery, single writer, redaction |
 | `crypto` | SHA-256 chain, known-answer tests, and retired-algorithm rejection |
-| `async-cancel` | deliberate `PTHREAD_CANCEL_ASYNCHRONOUS` stress cases; mandatory in native runs, excluded under sanitizer runtimes |
+| `async-cancel` | pending `PTHREAD_CANCEL_ASYNCHRONOUS` boundary cases; cleanup scopes are installed while cancellation is disabled, then the request is issued only after Logger has disabled cancellation |
 
 ## Local commands
 
@@ -80,7 +80,10 @@ known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
 virtual-address environment supports those runtimes. The sanitizer and shared
 Release profiles exclude tests labeled `async-cancel`: those cases deliberately
 enable `PTHREAD_CANCEL_ASYNCHRONOUS`, whose delivery is validated by the complete
-unsanitized native Debug suite instead.
+unsanitized native Debug suite instead. These tests do not claim that arbitrary
+Logger calls are async-cancel-safe: the application cleanup handler is installed
+while cancellation is disabled, and the request is deliberately issued only
+after the test observes Logger's internal cancellation-disabled scope.
 
 For shared Release white-box tests, the private same-source
 `logger_regression_support` archive is compiled with FORTIFY disabled so linker

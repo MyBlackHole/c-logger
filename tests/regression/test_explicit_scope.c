@@ -298,10 +298,23 @@ static void *caller(void *unused)
 {
 	(void)unused;
 	actor = 1;
-	if (use_async_cancel)
+	int saved_state = PTHREAD_CANCEL_ENABLE;
+	int saved_type = PTHREAD_CANCEL_DEFERRED;
+	/*
+	 * Manipulating pthread cleanup scopes while asynchronous cancellation is
+	 * enabled is undefined. Build the cleanup scope with cancellation disabled,
+	 * then restore the original enabled state. cancel_case() does not issue the
+	 * request until a Logger wrapper has observed cancellation disabled.
+	 */
+	if (use_async_cancel) {
+		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+					      &saved_state));
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					     NULL));
+					     &saved_type));
+	}
 	pthread_cleanup_push(application_cleanup, NULL);
+	if (use_async_cancel)
+		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	if (use_console)
 		CHECK(!console_call(scenario));
 	else if (!strcmp(scenario, "create") ||
@@ -339,7 +352,15 @@ static void *caller(void *unused)
 		LOGGER_INFO(log_instance, "test", "operation-record");
 	atomic_store(&returned, 1);
 	pthread_testcancel();
+	if (use_async_cancel) {
+		int current_state;
+		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+					      &current_state));
+		CHECK(!pthread_setcanceltype(saved_type, NULL));
+	}
 	pthread_cleanup_pop(0);
+	if (use_async_cancel)
+		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	return NULL;
 }
 static void cleanup_fixtures(void)
