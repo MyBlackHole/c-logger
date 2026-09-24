@@ -75,9 +75,8 @@ void logger_queue_notify(logger_queue_t *q)
 	 * 检查 predicate 并进入 pthread_cond_wait()；在这段窗口内 publisher
 	 * 无法完成 signal，直到 cond_wait 原子地释放 wait_mu，因此不会丢 wakeup。
 	 * 正确性优先：不能改成无锁 signal，也不要引入未经证明的 "sleeping" flag 优化。 */
-	pthread_mutex_lock(&q->wait_mu);
+	guard(pthread_mutex)(&q->wait_mu);
 	pthread_cond_signal(&q->wait_cv);
-	pthread_mutex_unlock(&q->wait_mu);
 }
 
 int logger_queue_push(logger_queue_t *q, const logger_message_t *m)

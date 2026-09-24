@@ -116,6 +116,32 @@ static int fake_trylock(int *state)
 DEFINE_GUARD(test_lock, int *, fake_lock(_T), fake_unlock(_T))
 DEFINE_GUARD_COND(test_lock, _try, fake_trylock(_T))
 
+static void pthread_guard_scope(void)
+{
+	pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+
+	{
+		guard(pthread_mutex)(&mu);
+		CHECK(pthread_mutex_trylock(&mu) == EBUSY);
+	}
+	CHECK(pthread_mutex_trylock(&mu) == 0);
+	CHECK(pthread_mutex_unlock(&mu) == 0);
+
+	{
+		ACQUIRE(pthread_mutex_checked, lock)(&mu);
+		CHECK(ACQUIRE_ERR(pthread_mutex_checked, &lock) == 0);
+		CHECK(pthread_mutex_trylock(&mu) == EBUSY);
+	}
+	CHECK(pthread_mutex_trylock(&mu) == 0);
+
+	{
+		ACQUIRE(pthread_mutex_try, busy)(&mu);
+		CHECK(ACQUIRE_ERR(pthread_mutex_try, &busy) == -EBUSY);
+	}
+	CHECK(pthread_mutex_unlock(&mu) == 0);
+	CHECK(pthread_mutex_destroy(&mu) == 0);
+}
+
 static void class_and_guard_scope(void)
 {
 	{
@@ -216,6 +242,7 @@ int main(void)
 	CHECK(fcntl(fd, F_GETFD) == -1 && errno == EBADF);
 
 	class_and_guard_scope();
+	pthread_guard_scope();
 
 	puts("linux-style cleanup ownership/class/guard semantics passed");
 	return 0;

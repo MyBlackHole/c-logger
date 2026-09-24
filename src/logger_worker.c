@@ -162,7 +162,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	char line[LOGGER_LINE_MAX];
 	size_t n = logger_format_line(l, m, line, sizeof(line));
 	int rc = 0;
-	pthread_mutex_lock(&l->emit_mu);
+	guard(pthread_mutex)(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };
 		rc = stderr_writev_all(&v, 1);
@@ -189,7 +189,6 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 					  memory_order_relaxed);
 	}
 	atomic_fetch_add_explicit(&l->sync_completed, 1, memory_order_release);
-	pthread_mutex_unlock(&l->emit_mu);
 	return rc;
 }
 
@@ -206,14 +205,14 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		workspace->vec[i].iov_len = workspace->lens[i];
 	}
 
-	pthread_mutex_lock(&l->emit_mu);
+	guard(pthread_mutex)(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		memcpy(workspace->copy, workspace->vec,
 		       count * sizeof(*workspace->vec));
 		int rc = stderr_writev_all(workspace->copy, (int)count);
 		if (rc < 0) {
-			/* A partial batch does not have a per-record acknowledgement.
-             * Conservatively classify all its records as unconfirmed. */
+			/* partial batch 没有逐条 acknowledgement。
+			 * 因此保守地把整批 record 标记为未确认。 */
 			memset(workspace->failed, 1, count);
 			logger_note_io_error(l, -rc);
 		}
@@ -254,7 +253,6 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 				  memory_order_relaxed);
 	atomic_fetch_add_explicit(&l->emitted_records, count - bad,
 				  memory_order_relaxed);
-	pthread_mutex_unlock(&l->emit_mu);
 }
 
 void *logger_worker_main(void *p)
@@ -266,31 +264,34 @@ void *logger_worker_main(void *p)
 		size_t n = logger_queue_drain(&l->q, workspace->batch,
 					      workspace->capacity);
 		if (n != 0) {
-			/* Retain legacy metrics as dequeue statistics. Completion below
-             * is a DIFFERENT event and is also advanced on output failure. */
+			/* 保留 legacy metrics 作为 dequeue 统计。下面的 completion 是另一个事件，
+			 * backend 输出失败也会推进 completion。 */
 			atomic_fetch_add_explicit(&l->consumer_batches, 1,
 						  memory_order_relaxed);
 			atomic_fetch_add_explicit(&l->consumer_records, n,
 						  memory_order_relaxed);
 			emit_batch(l, workspace, n);
 
-			pthread_mutex_lock(&l->progress_mu);
-			atomic_fetch_add_explicit(&l->async_completed, n,
-						  memory_order_release);
-			l->completed_pos = atomic_load_explicit(
-				&l->q.dequeue_pos, memory_order_acquire);
-			pthread_cond_broadcast(&l->progress_cv);
-			pthread_mutex_unlock(&l->progress_mu);
+			{
+				guard(pthread_mutex)(&l->progress_mu);
+				atomic_fetch_add_explicit(&l->async_completed, n,
+							  memory_order_release);
+				l->completed_pos = atomic_load_explicit(
+					&l->q.dequeue_pos, memory_order_acquire);
+				pthread_cond_broadcast(&l->progress_cv);
+			}
 			continue;
 		}
-		pthread_mutex_lock(&l->q.wait_mu);
-		while (logger_queue_empty(&l->q) &&
-		       atomic_load_explicit(&l->running, memory_order_acquire))
-			pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
-		int stop = !atomic_load_explicit(&l->running,
-						 memory_order_acquire) &&
-			   logger_queue_empty(&l->q);
-		pthread_mutex_unlock(&l->q.wait_mu);
+		int stop;
+		{
+			guard(pthread_mutex)(&l->q.wait_mu);
+			while (logger_queue_empty(&l->q) &&
+			       atomic_load_explicit(&l->running, memory_order_acquire))
+				pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
+			stop = !atomic_load_explicit(&l->running,
+						     memory_order_acquire) &&
+			       logger_queue_empty(&l->q);
+		}
 		if (stop)
 			break;
 	}

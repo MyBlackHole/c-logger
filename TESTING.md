@@ -39,7 +39,7 @@ API、标识符、标准术语、协议名和错误码保留英文，避免技�
 - resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
 - counted lifetime admission: `docs/REFCOUNTING.md`;
 - lexical cleanup: `docs/RESOURCE_CLEANUP.md`;
-- locking/order: `docs/LOCKING.md`;
+- locking/order: `docs/LOCKING.md` + `docs/LOCK_MATRIX.md`;
 - concurrency/publication: `docs/CONCURRENCY.md`;
 - error propagation: `docs/ERROR_HANDLING.md`;
 - lifecycle/publication/destruction: `docs/LIFECYCLE.md`.

@@ -3,6 +3,7 @@
 #include "logger_internal.h"
 #include "logger_queue.h"
 #include "logger_file.h"
+#include "logger_cleanup.h"
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -575,14 +576,14 @@ int logger_reopen_instance(logger_t *l)
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
-		rc = -pthread_mutex_lock(&l->emit_mu);
+		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
 		if (!rc) {
 			rc = logger_file_reopen(&l->file_backend) ?
 				     -(errno ? errno : EIO) :
 				     0;
 			if (rc)
 				logger_note_io_error(l, -rc);
-			pthread_mutex_unlock(&l->emit_mu);
 		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
@@ -592,12 +593,14 @@ int logger_file_offset(logger_t *l, uint64_t *out)
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return -1;
-	int rc = !l || !out ? -EINVAL : -pthread_mutex_lock(&l->emit_mu);
+	int rc = !l || !out ? -EINVAL : 0;
 	if (!rc) {
-		rc = logger_file_offset_get(&l->file_backend, out) ?
-			     -(errno ? errno : EIO) :
-			     0;
-		pthread_mutex_unlock(&l->emit_mu);
+		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+		if (!rc)
+			rc = logger_file_offset_get(&l->file_backend, out) ?
+				     -(errno ? errno : EIO) :
+				     0;
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
 }
@@ -619,23 +622,21 @@ int logger_wait_for_output(logger_t *l)
 	if (!l)
 		return -EINVAL;
 	if (l->async_mode) {
-		/* The reservation counter, not enqueued metrics, defines order.
-         * A slot reserved before the snapshot but not yet published is included.
-         * A slow producer cannot be bypassed by completion of later records. */
+		/* 顺序由 reservation counter 定义，而不是 enqueued metrics。
+		 * snapshot 前已经 reserve、但尚未 publish 的 slot 也必须计入；
+		 * 慢 producer 不能被后续 record 的 completion 越过。 */
 		size_t target = atomic_load_explicit(&l->q.enqueue_pos,
 						     memory_order_acquire);
-		int rc = pthread_mutex_lock(&l->progress_mu);
-		if (rc != 0)
-			return -rc;
+		ACQUIRE(pthread_mutex_checked, progress_guard)(&l->progress_mu);
+		int rc = ACQUIRE_ERR(pthread_mutex_checked, &progress_guard);
+		if (rc)
+			return rc;
 		while (l->completed_pos - target > SIZE_MAX / 2) {
 			rc = pthread_cond_wait(&l->progress_cv,
 					       &l->progress_mu);
-			if (rc != 0) {
-				pthread_mutex_unlock(&l->progress_mu);
+			if (rc != 0)
 				return -rc;
-			}
 		}
-		pthread_mutex_unlock(&l->progress_mu);
 	}
 	int error = atomic_load_explicit(&l->first_error, memory_order_acquire);
 	return error ? -error : 0;
@@ -662,13 +663,15 @@ int logger_flush_instance_status(logger_t *l)
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
-		/* Reservation->notification and wait->sync are uninterruptible by
-         * cancellation. No emit lock held while waiting for worker progress. */
+		/* reservation->notification 与 wait->sync 整段都处于 cancellation
+		 * disabled scope；等待 worker progress 时不能持有 emit_mu。 */
 		rc = logger_wait_for_output(l);
-		int sync_rc = -pthread_mutex_lock(&l->emit_mu);
-		if (!sync_rc) {
-			sync_rc = logger_sync_outputs_locked(l);
-			pthread_mutex_unlock(&l->emit_mu);
+		int sync_rc;
+		{
+			ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
+			sync_rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+			if (!sync_rc)
+				sync_rc = logger_sync_outputs_locked(l);
 		}
 		if (!rc)
 			rc = sync_rc;
@@ -759,11 +762,10 @@ int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 	if (!rc && !(l->outputs & LOGGER_OUT_SYSLOG))
 		rc = -ENOTSUP;
 	if (!rc) {
-		rc = -pthread_mutex_lock(&l->emit_mu);
-		if (!rc) {
+		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+		if (!rc)
 			*out = l->syslog_backend.metrics;
-			pthread_mutex_unlock(&l->emit_mu);
-		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
 }

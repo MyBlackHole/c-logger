@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -252,5 +253,19 @@ DEFINE_FREE(fclose, FILE *, if (_T) __cleanup_release_file(_T))
 DEFINE_CLASS(fd, int, if (_T >= 0) __cleanup_release_fd(_T), _fd, int _fd)
 DEFINE_CLASS(file, FILE *, if (_T) __cleanup_release_file(_T), _file,
 	     FILE *_file)
+
+/*
+ * pthread mutex guard：
+ * - pthread_mutex：用于原代码本来就把 lock/unlock 视为不失败的内部路径；
+ * - pthread_mutex_checked：保留 pthread_mutex_lock() 错误并通过 ACQUIRE_ERR() 返回；
+ * - pthread_mutex_try：用于 trylock，失败时不会执行 unlock。
+ *
+ * global/Audit 多锁路径有额外 lock order 与 cancellation 语义，不应机械替换成这些 guard。
+ */
+DEFINE_GUARD(pthread_mutex, pthread_mutex_t *,
+	     (void)pthread_mutex_lock(_T),
+	     (void)pthread_mutex_unlock(_T))
+DEFINE_GUARD_COND(pthread_mutex, _checked, pthread_mutex_lock(_T))
+DEFINE_GUARD_COND(pthread_mutex, _try, pthread_mutex_trylock(_T))
 
 #endif
