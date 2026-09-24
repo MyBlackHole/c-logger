@@ -69,16 +69,24 @@ def main():
     memory_slot = int(memory_layout["queue_slot_bytes"])
     tuning_slot = int(tuning_layout["queue_slot_bytes"])
     candidate_slot = int(candidate_layout["queue_slot_bytes"])
+    tuning_spill_cap = int(tuning_layout.get("queue_spill_capacity", 0))
+    tuning_spill_storage = int(
+        tuning_layout.get("queue_spill_storage_bytes", 0)
+    )
+    tuning_spill_block = (
+        tuning_spill_storage // tuning_spill_cap if tuning_spill_cap else 0
+    )
+    tuning_default_spill_cap = min(args.default_queue, tuning_spill_cap)
+
     spill_cap = int(candidate_layout.get("queue_spill_capacity", 0))
     spill_storage = int(candidate_layout.get("queue_spill_storage_bytes", 0))
     spill_block = spill_storage // spill_cap if spill_cap else 0
     default_spill_cap = min(args.default_queue, spill_cap)
 
     memory_default = memory_slot * args.default_queue
-    tuning_default = int(
-        tuning_layout.get(
-            "queue_storage_bytes", tuning_slot * args.default_queue
-        )
+    tuning_default = (
+        tuning_slot * args.default_queue
+        + tuning_spill_block * tuning_default_spill_cap
     )
     candidate_default = (
         candidate_slot * args.default_queue + spill_block * default_spill_cap
