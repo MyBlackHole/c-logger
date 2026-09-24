@@ -44,7 +44,8 @@ def mib(value):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--baseline-bin", required=True)
+    parser.add_argument("--memory-baseline-bin", required=True)
+    parser.add_argument("--throughput-baseline-bin", required=True)
     parser.add_argument("--candidate-bin", required=True)
     parser.add_argument("--out-dir", default="benchmark-comparison")
     parser.add_argument("--threads", default="1,4,16")
@@ -53,45 +54,60 @@ def main():
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--default-queue", type=int, default=8192)
     parser.add_argument("--min-memory-reduction", type=float, default=50.0)
-    parser.add_argument(
-        "--baseline-ref",
-        default="23504f104e900419e891b57d7187ca0bcabffdf3",
-    )
+    parser.add_argument("--memory-baseline-ref", required=True)
+    parser.add_argument("--throughput-baseline-ref", required=True)
     args = parser.parse_args()
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # 用一次极小运行读取真实编译器布局；不拿这次吞吐数据参与性能比较。
-    baseline_layout = run_one(args.baseline_bin, 1, 1, 64)
+    # layout 读取只用于确定性内存门禁，不参与吞吐 median。
+    memory_layout = run_one(args.memory_baseline_bin, 1, 1, 64)
+    tuning_layout = run_one(args.throughput_baseline_bin, 1, 1, 64)
     candidate_layout = run_one(args.candidate_bin, 1, 1, 64)
 
-    baseline_slot = int(baseline_layout["queue_slot_bytes"])
+    memory_slot = int(memory_layout["queue_slot_bytes"])
+    tuning_slot = int(tuning_layout["queue_slot_bytes"])
     candidate_slot = int(candidate_layout["queue_slot_bytes"])
     spill_cap = int(candidate_layout.get("queue_spill_capacity", 0))
     spill_storage = int(candidate_layout.get("queue_spill_storage_bytes", 0))
     spill_block = spill_storage // spill_cap if spill_cap else 0
     default_spill_cap = min(args.default_queue, spill_cap)
-    baseline_default = baseline_slot * args.default_queue
+
+    memory_default = memory_slot * args.default_queue
+    tuning_default = int(
+        tuning_layout.get(
+            "queue_storage_bytes", tuning_slot * args.default_queue
+        )
+    )
     candidate_default = (
         candidate_slot * args.default_queue + spill_block * default_spill_cap
     )
     reduction = (
-        100.0 * (baseline_default - candidate_default) / baseline_default
-        if baseline_default
+        100.0 * (memory_default - candidate_default) / memory_default
+        if memory_default
+        else 0.0
+    )
+    vs_tuning = (
+        100.0 * (candidate_default - tuning_default) / tuning_default
+        if tuning_default
         else 0.0
     )
 
     memory = {
-        "baseline_ref": args.baseline_ref,
+        "memory_baseline_ref": args.memory_baseline_ref,
+        "throughput_baseline_ref": args.throughput_baseline_ref,
         "default_queue_capacity": args.default_queue,
-        "baseline_slot_bytes": baseline_slot,
+        "precompact_slot_bytes": memory_slot,
+        "tuning_baseline_slot_bytes": tuning_slot,
         "candidate_slot_bytes": candidate_slot,
         "candidate_spill_block_bytes": spill_block,
         "candidate_spill_capacity_at_default": default_spill_cap,
-        "baseline_default_queue_bytes": baseline_default,
+        "precompact_default_queue_bytes": memory_default,
+        "tuning_baseline_default_queue_bytes": tuning_default,
         "candidate_default_queue_bytes": candidate_default,
-        "memory_reduction_percent": reduction,
+        "memory_reduction_vs_precompact_percent": reduction,
+        "memory_change_vs_tuning_percent": vs_tuning,
         "minimum_required_reduction_percent": args.min_memory_reduction,
         "gate_passed": reduction >= args.min_memory_reduction,
     }
@@ -103,10 +119,15 @@ def main():
             base_samples = []
             cand_samples = []
             for repeat in range(args.repeats):
-                # 交替运行顺序，降低 runner 温度/频率漂移的单向偏差。
+                # 交替执行，降低共享 runner 温度/频率漂移的单向偏差。
                 if repeat % 2 == 0:
                     base_samples.append(
-                        run_one(args.baseline_bin, threads, args.records, size)
+                        run_one(
+                            args.throughput_baseline_bin,
+                            threads,
+                            args.records,
+                            size,
+                        )
                     )
                     cand_samples.append(
                         run_one(args.candidate_bin, threads, args.records, size)
@@ -116,7 +137,12 @@ def main():
                         run_one(args.candidate_bin, threads, args.records, size)
                     )
                     base_samples.append(
-                        run_one(args.baseline_bin, threads, args.records, size)
+                        run_one(
+                            args.throughput_baseline_bin,
+                            threads,
+                            args.records,
+                            size,
+                        )
                     )
 
             base_prod = median(base_samples, "producer_logs_per_sec")
@@ -127,6 +153,7 @@ def main():
             overloaded = (
                 any_nonzero(base_samples, "dropped")
                 or any_nonzero(base_samples, "sync_fallbacks")
+                or any_nonzero(base_samples, "queue_spill_exhaustions")
                 or any_nonzero(cand_samples, "dropped")
                 or any_nonzero(cand_samples, "sync_fallbacks")
                 or any_nonzero(cand_samples, "queue_spill_exhaustions")
@@ -138,13 +165,22 @@ def main():
                     "message_bytes": size,
                     "baseline_producer_logs_per_sec": base_prod,
                     "candidate_producer_logs_per_sec": cand_prod,
-                    "producer_ratio": cand_prod / base_prod if comparable and base_prod else None,
+                    "producer_ratio": (
+                        cand_prod / base_prod
+                        if comparable and base_prod
+                        else None
+                    ),
                     "baseline_end_to_end_logs_per_sec": base_e2e,
                     "candidate_end_to_end_logs_per_sec": cand_e2e,
-                    "end_to_end_ratio": cand_e2e / base_e2e if comparable and base_e2e else None,
+                    "end_to_end_ratio": (
+                        cand_e2e / base_e2e
+                        if comparable and base_e2e
+                        else None
+                    ),
+                    "baseline_median_dropped": median(base_samples, "dropped"),
                     "candidate_median_dropped": median(cand_samples, "dropped"),
-                    "candidate_median_sync_fallbacks": median(
-                        cand_samples, "sync_fallbacks"
+                    "baseline_median_spill_exhaustions": median(
+                        base_samples, "queue_spill_exhaustions"
                     ),
                     "candidate_median_spill_exhaustions": median(
                         cand_samples, "queue_spill_exhaustions"
@@ -177,48 +213,54 @@ def main():
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    md = []
-    md.append("# Queue benchmark before/after")
+    md = ["# Queue hotspot benchmark"]
     md.append("")
     md.append(
-        f"基线 commit: `{args.baseline_ref}`；每个组合 {args.repeats} 次，"
-        f"每线程 {args.records} 条。吞吐结果只用于观察，不作为 CI 性能门禁。"
+        f"内存基线: `{args.memory_baseline_ref}`；吞吐调优基线: "
+        f"`{args.throughput_baseline_ref}`；每组合 {args.repeats} 次，"
+        f"每线程 {args.records} 条。吞吐只用于观察，不作为 CI 性能门禁。"
     )
     md.append("")
     md.append("## 默认 queue 内存门禁")
     md.append("")
-    md.append("| 指标 | baseline | candidate |")
-    md.append("|---|---:|---:|")
+    md.append("| 指标 | pre-compact | tuning baseline | candidate |")
+    md.append("|---|---:|---:|---:|")
     md.append(
-        f"| slot bytes | {baseline_slot} | {candidate_slot} |"
+        f"| slot bytes | {memory_slot} | {tuning_slot} | {candidate_slot} |"
     )
     md.append(
         f"| queue capacity={args.default_queue} 预分配 | "
-        f"{baseline_default} B ({mib(baseline_default):.2f} MiB) | "
+        f"{memory_default} B ({mib(memory_default):.2f} MiB) | "
+        f"{tuning_default} B ({mib(tuning_default):.2f} MiB) | "
         f"{candidate_default} B ({mib(candidate_default):.2f} MiB) |"
     )
     md.append(
-        f"| candidate spill | - | {default_spill_cap} blocks × {spill_block} B |"
+        f"| candidate spill | - | - | {default_spill_cap} blocks × "
+        f"{spill_block} B |"
     )
     md.append("")
     md.append(
-        f"内存下降 **{reduction:.2f}%**；门禁要求 >= "
-        f"**{args.min_memory_reduction:.2f}%**："
+        f"candidate 相对 pre-compact 内存下降 **{reduction:.2f}%**；"
+        f"门禁 >= **{args.min_memory_reduction:.2f}%**："
         f"{'PASS' if memory['gate_passed'] else 'FAIL'}。"
     )
+    md.append(
+        f"candidate 相对上一版 compact 固定内存变化：**{vs_tuning:+.2f}%**。"
+    )
     md.append("")
-    md.append("## 吞吐对比")
+    md.append("## 相对上一版 compact 的吞吐")
     md.append("")
     md.append(
-        "只有 baseline/candidate 都没有 drop、sync fallback、spill exhaustion 的组合"
-        "才计算 ratio；否则标记 overload，避免把丢日志误当成性能提升。"
+        "只有 tuning baseline/candidate 都没有 drop、sync fallback、spill "
+        "exhaustion 才计算 ratio；否则标记 overload。"
     )
     md.append("")
     md.append(
         "| threads | bytes | base prod/s | new prod/s | prod ratio | "
-        "base e2e/s | new e2e/s | e2e ratio | drop | fallback | spill exhaust |"
+        "base e2e/s | new e2e/s | e2e ratio | base spill | new spill | "
+        "base drop | new drop |"
     )
-    md.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    md.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for row in rows:
         prod_ratio = (
             f"{row['producer_ratio']:.3f}x"
@@ -236,9 +278,10 @@ def main():
             f"{row['candidate_producer_logs_per_sec']:.0f} | {prod_ratio} | "
             f"{row['baseline_end_to_end_logs_per_sec']:.0f} | "
             f"{row['candidate_end_to_end_logs_per_sec']:.0f} | {e2e_ratio} | "
-            f"{row['candidate_median_dropped']:.0f} | "
-            f"{row['candidate_median_sync_fallbacks']:.0f} | "
-            f"{row['candidate_median_spill_exhaustions']:.0f} |"
+            f"{row['baseline_median_spill_exhaustions']:.0f} | "
+            f"{row['candidate_median_spill_exhaustions']:.0f} | "
+            f"{row['baseline_median_dropped']:.0f} | "
+            f"{row['candidate_median_dropped']:.0f} |"
         )
 
     summary = "\n".join(md) + "\n"

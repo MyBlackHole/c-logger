@@ -57,15 +57,13 @@ generation ticket 只是 admission/version 机制，不能替代 lifetime lock�
 atomic completion counter 可按自己的 memory order 独立读取，但不能把
 `completed_pos` 当作 atomic predicate 的替代品。
 
-### q.spill_mu
+### spill bitmap
 
-`q.spill_mu` 只保护 long-message spill freelist。
+long-message spill block 不再由 mutex freelist 管理。`spill_used[]` 是 lock-free atomic
+ownership bitmap，不属于 mutex lock hierarchy。
 
-producer 取得 block 后立即释放 `spill_mu`，正文 memcpy 在锁外完成；consumer 把正文复制到
-worker batch 后，再短暂获取 `spill_mu` 归还 block。
-
-它不保护 queue slot、payload publication 或 worker completion，也不能与
-`q.wait_mu/emit_mu/progress_mu` 嵌套。
+它只表示 block 是否被独占，不保护 queue payload publication；正文可见性仍由
+`slot.seq` release/acquire 建立。
 
 ### q.wait_mu
 
@@ -76,7 +74,7 @@ worker batch 后，再短暂获取 `spill_mu` 归还 block。
 
 ### instance lock 之间的关系
 
-当前 `emit_mu`、`progress_mu`、`q.spill_mu`、`q.wait_mu` **不允许相互嵌套**。
+当前 `emit_mu`、`progress_mu`、`q.wait_mu` **不允许相互嵌套**。
 
 例如 flush 必须：
 

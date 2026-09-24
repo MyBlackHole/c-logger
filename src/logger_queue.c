@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static _Thread_local unsigned spill_probe_cursor;
+
 static int queue_capacity(size_t requested, size_t *capacity)
 {
 	size_t n = 2;
@@ -46,6 +48,18 @@ static int queue_storage_size(size_t queue_cap, size_t spill_cap,
 	return 0;
 }
 
+static uint8_t queue_source_copy(char *dst, size_t cap, const char *src)
+{
+	size_t n = 0;
+	while (n + 1 < cap && src[n])
+		++n;
+	memcpy(dst, src, n);
+	dst[n] = '\0';
+	if (src[n] && n)
+		dst[n - 1] = '~';
+	return (uint8_t)n;
+}
+
 static void queue_copy_source(logger_queue_record_t *dst,
 			      const logger_message_t *src)
 {
@@ -53,17 +67,19 @@ static void queue_copy_source(logger_queue_record_t *dst,
 	file = file ? file + 1 : (src->file ? src->file : "?");
 
 	/*
-	 * slot 会反复复用。先清零固定 source storage，避免短字符串把上一条
-	 * record 的尾部字节带进后续 worker batch。
+	 * 保存每个 source snapshot 的实际长度。slot 复用时只覆盖当前字符串，
+	 * consumer 也只复制 len+1，避免每条日志固定 memset/memcpy 512B 尾部。
 	 */
-	memset(dst->module_storage, 0, sizeof(dst->module_storage));
-	memset(dst->file_storage, 0, sizeof(dst->file_storage));
-	memset(dst->function_storage, 0, sizeof(dst->function_storage));
-	logger_source_copy(dst->module_storage, sizeof(dst->module_storage),
-			   src->module ? src->module : "app");
-	logger_source_copy(dst->file_storage, sizeof(dst->file_storage), file);
-	logger_source_copy(dst->function_storage, sizeof(dst->function_storage),
-			   src->func ? src->func : "?");
+	dst->module_len =
+		queue_source_copy(dst->module_storage,
+				  sizeof(dst->module_storage),
+				  src->module ? src->module : "app");
+	dst->file_len = queue_source_copy(dst->file_storage,
+					 sizeof(dst->file_storage), file);
+	dst->function_len =
+		queue_source_copy(dst->function_storage,
+				  sizeof(dst->function_storage),
+				  src->func ? src->func : "?");
 }
 
 static void queue_record_pack(logger_queue_record_t *dst,
@@ -82,7 +98,7 @@ static void queue_record_pack(logger_queue_record_t *dst,
 	dst->text_len = (uint16_t)text_len;
 	dst->spill_index = spill_index;
 	if (spill_index == LOGGER_QUEUE_SPILL_NONE)
-		memcpy(dst->inline_text, src->text, text_len + 1);
+		memcpy(dst->inline_text, src->text, text_len + 1u);
 }
 
 static void queue_record_unpack(logger_queue_t *q,
@@ -98,50 +114,90 @@ static void queue_record_unpack(logger_queue_t *q,
 	memcpy(dst->session_id, src->session_id, sizeof(dst->session_id));
 	memcpy(dst->trace_id, src->trace_id, sizeof(dst->trace_id));
 	memcpy(dst->module_storage, src->module_storage,
-	       sizeof(dst->module_storage));
-	memcpy(dst->file_storage, src->file_storage, sizeof(dst->file_storage));
+	       (size_t)src->module_len + 1u);
+	memcpy(dst->file_storage, src->file_storage,
+	       (size_t)src->file_len + 1u);
 	memcpy(dst->function_storage, src->function_storage,
-	       sizeof(dst->function_storage));
+	       (size_t)src->function_len + 1u);
 	logger_record_rebase(dst);
 
 	const char *text = src->spill_index == LOGGER_QUEUE_SPILL_NONE ?
 				   src->inline_text :
 				   q->spills[src->spill_index].text;
-	memcpy(dst->text, text, (size_t)src->text_len + 1);
+	memcpy(dst->text, text, (size_t)src->text_len + 1u);
+	dst->text_len = src->text_len;
+}
+
+static unsigned spill_valid_mask(size_t spill_cap, size_t word)
+{
+	size_t first = word * LOGGER_QUEUE_SPILL_WORD_BITS;
+	size_t remaining = spill_cap - first;
+	if (remaining >= LOGGER_QUEUE_SPILL_WORD_BITS)
+		return UINT_MAX;
+	return (1u << remaining) - 1u;
 }
 
 static int queue_spill_take(logger_queue_t *q, const char *text,
 			    size_t text_len, uint32_t *index)
 {
-	uint32_t found;
-	{
-		guard(pthread_mutex)(&q->spill_mu);
-		found = q->spill_free_head;
-		if (found == LOGGER_QUEUE_SPILL_NONE) {
-			atomic_fetch_add_explicit(&q->spill_exhaustions, 1,
-						  memory_order_relaxed);
-			return 0;
+	size_t words =
+		(q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
+		LOGGER_QUEUE_SPILL_WORD_BITS;
+	uintptr_t seed = (uintptr_t)&spill_probe_cursor;
+	seed ^= seed >> 17;
+	seed ^= seed >> 9;
+	size_t start = (seed + spill_probe_cursor++) % words;
+
+	for (size_t n = 0; n < words; ++n) {
+		size_t word = (start + n) % words;
+		unsigned valid = spill_valid_mask(q->spill_cap, word);
+		unsigned used = atomic_load_explicit(&q->spill_used[word],
+						    memory_order_relaxed);
+		for (;;) {
+			unsigned available = ~used & valid;
+			if (!available)
+				break;
+			unsigned bit = (unsigned)__builtin_ctz(available);
+			unsigned bit_mask = 1u << bit;
+			unsigned desired = used | bit_mask;
+			if (atomic_compare_exchange_weak_explicit(
+				    &q->spill_used[word], &used, desired,
+				    memory_order_acq_rel,
+				    memory_order_relaxed)) {
+				uint32_t found =
+					(uint32_t)(word *
+							   LOGGER_QUEUE_SPILL_WORD_BITS +
+						   bit);
+				/*
+				 * 0->1 CAS 后当前 producer 独占 block。
+				 * 正文 memcpy 不需要共享锁；slot.seq 的 release
+				 * publication 再把 block 内容交给 consumer。
+				 */
+				memcpy(q->spills[found].text, text,
+				       text_len + 1u);
+				*index = found;
+				return 1;
+			}
 		}
-		q->spill_free_head = q->spills[found].next;
-		q->spills[found].next = LOGGER_QUEUE_SPILL_NONE;
 	}
 
-	/*
-	 * block 已从 freelist 移除，当前 producer 独占它；
-	 * memcpy 不需要持有 spill_mu，也不会阻塞其他长消息 producer。
-	 */
-	memcpy(q->spills[found].text, text, text_len + 1);
-	*index = found;
-	return 1;
+	atomic_fetch_add_explicit(&q->spill_exhaustions, 1,
+				  memory_order_relaxed);
+	return 0;
 }
 
 static void queue_spill_put(logger_queue_t *q, uint32_t index)
 {
 	if (index == LOGGER_QUEUE_SPILL_NONE)
 		return;
-	guard(pthread_mutex)(&q->spill_mu);
-	q->spills[index].next = q->spill_free_head;
-	q->spill_free_head = index;
+	size_t word = index / LOGGER_QUEUE_SPILL_WORD_BITS;
+	unsigned bit = index % LOGGER_QUEUE_SPILL_WORD_BITS;
+	/*
+	 * consumer 已经完成 spill text 读取后才 clear bit。
+	 * 下一位 producer 通过 acquire CAS 重新取得该 bit 后才允许覆盖 block。
+	 */
+	(void)atomic_fetch_and_explicit(&q->spill_used[word], ~(1u << bit),
+					memory_order_release);
 }
 
 int logger_queue_init(logger_queue_t *q, size_t requested)
@@ -165,30 +221,20 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 
 	for (size_t i = 0; i < q->cap; ++i)
 		atomic_init(&slots[i].seq, i);
-	for (size_t i = 0; i < q->spill_cap; ++i)
-		spills[i].next = i + 1 < q->spill_cap ?
-					 (uint32_t)(i + 1) :
-					 LOGGER_QUEUE_SPILL_NONE;
-	q->spill_free_head = 0;
+	for (size_t i = 0; i < LOGGER_QUEUE_SPILL_WORDS; ++i)
+		atomic_init(&q->spill_used[i], 0);
 	atomic_init(&q->spill_exhaustions, 0);
 	atomic_init(&q->enqueue_pos, 0);
 	atomic_init(&q->dequeue_pos, 0);
 
-	int rc = pthread_mutex_init(&q->spill_mu, NULL);
+	int rc = pthread_mutex_init(&q->wait_mu, NULL);
 	if (rc != 0) {
-		errno = rc;
-		return -1;
-	}
-	rc = pthread_mutex_init(&q->wait_mu, NULL);
-	if (rc != 0) {
-		pthread_mutex_destroy(&q->spill_mu);
 		errno = rc;
 		return -1;
 	}
 	rc = pthread_cond_init(&q->wait_cv, NULL);
 	if (rc != 0) {
 		pthread_mutex_destroy(&q->wait_mu);
-		pthread_mutex_destroy(&q->spill_mu);
 		errno = rc;
 		return -1;
 	}
@@ -203,7 +249,6 @@ void logger_queue_destroy(logger_queue_t *q)
 {
 	pthread_cond_destroy(&q->wait_cv);
 	pthread_mutex_destroy(&q->wait_mu);
-	pthread_mutex_destroy(&q->spill_mu);
 	free(q->spills);
 	q->spills = NULL;
 	free(q->slots);
@@ -222,16 +267,14 @@ void logger_queue_notify(logger_queue_t *q)
 
 int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 {
-	size_t text_len = 0;
-	while (text_len < LOGGER_MESSAGE_MAX && m->text[text_len])
-		++text_len;
+	size_t text_len = logger_record_text_length(m);
 	if (text_len == LOGGER_MESSAGE_MAX) {
 		errno = EOVERFLOW;
 		return 0;
 	}
 
 	uint32_t spill_index = LOGGER_QUEUE_SPILL_NONE;
-	if (text_len >= LOGGER_QUEUE_INLINE_TEXT &&
+	if (text_len > LOGGER_QUEUE_INLINE_TEXT &&
 	    !queue_spill_take(q, m->text, text_len, &spill_index))
 		return 0;
 
