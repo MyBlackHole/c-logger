@@ -19,6 +19,8 @@ int logger_internal_include_pid(const logger_t *);
 int logger_internal_include_tid(const logger_t *);
 int logger_internal_include_source(const logger_t *);
 
+typedef struct logger_worker_workspace logger_worker_workspace_t;
+
 struct logger {
 	_Atomic logger_level_t level;
 	_Atomic logger_state_t state;
@@ -40,6 +42,7 @@ struct logger {
 	_Atomic uint64_t emitted_records, failed_records;
 	_Atomic int first_error; /* positive errno, sticky for this instance */
 	logger_queue_t q;
+	logger_worker_workspace_t *worker_workspace;
 	pthread_t worker;
 	_Atomic int running;
 	logger_overflow_policy_t overflow[6];
@@ -61,6 +64,8 @@ int logger_emit_status(logger_t *, const logger_message_t *, int);
 void logger_vlog_internal(logger_t *, logger_level_t, const char *,
 			  const char *, int, const char *, const char *,
 			  va_list);
+logger_worker_workspace_t *logger_worker_workspace_create(size_t);
+void logger_worker_workspace_destroy(logger_worker_workspace_t *);
 void *logger_worker_main(void *);
 void logger_note_io_error(logger_t *, int);
 /* Private: wait for queued backend output, without fsync. 0 / -errno. */

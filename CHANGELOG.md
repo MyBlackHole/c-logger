@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — resource footprint
+
+- Move the async worker's batch records, formatted-line buffers and iovec
+  scratch arrays from the worker stack into instance-owned heap workspace.
+  Workspace capacity is capped at 256 records and shrinks with smaller queues.
+- Extend benchmark JSON with queue slot/storage byte counts so the next queue
+  payload redesign has an explicit memory baseline.
+
+
 ## Unreleased — production blocker hardening
 
 - Prevent stderr EPIPE from delivering a new SIGPIPE to the host thread/process;

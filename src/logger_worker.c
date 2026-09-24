@@ -2,11 +2,65 @@
 #include "logger_internal.h"
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
 #define BATCH_MAX 256
+
+struct logger_worker_workspace {
+	size_t capacity;
+	logger_message_t *batch;
+	struct iovec *vec;
+	struct iovec *copy;
+	char *lines;
+	size_t *lens;
+	unsigned char *failed;
+};
+
+static char *workspace_line(logger_worker_workspace_t *workspace, size_t index)
+{
+	return workspace->lines + index * LOGGER_LINE_MAX;
+}
+
+logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
+{
+	size_t capacity = queue_capacity < BATCH_MAX ? queue_capacity : BATCH_MAX;
+	if (!capacity)
+		capacity = 1;
+	logger_worker_workspace_t *workspace = calloc(1, sizeof(*workspace));
+	if (!workspace)
+		return NULL;
+	workspace->capacity = capacity;
+	workspace->batch = calloc(capacity, sizeof(*workspace->batch));
+	workspace->vec = calloc(capacity, sizeof(*workspace->vec));
+	workspace->copy = calloc(capacity, sizeof(*workspace->copy));
+	workspace->lines = malloc(capacity * LOGGER_LINE_MAX);
+	workspace->lens = calloc(capacity, sizeof(*workspace->lens));
+	workspace->failed = calloc(capacity, sizeof(*workspace->failed));
+	if (!workspace->batch || !workspace->vec || !workspace->copy ||
+	    !workspace->lines || !workspace->lens || !workspace->failed) {
+		logger_worker_workspace_destroy(workspace);
+		errno = ENOMEM;
+		return NULL;
+	}
+	return workspace;
+}
+
+void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
+{
+	if (!workspace)
+		return;
+	free(workspace->failed);
+	free(workspace->lens);
+	free(workspace->lines);
+	free(workspace->copy);
+	free(workspace->vec);
+	free(workspace->batch);
+	free(workspace);
+}
+
 
 static int stderr_sigpipe_guard_begin(sigset_t *old_mask, int *was_pending)
 {
@@ -126,28 +180,28 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	return rc;
 }
 
-static void emit_batch(logger_t *l, const logger_message_t *msgs, size_t count)
+static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
+		       size_t count)
 {
-	struct iovec vec[BATCH_MAX];
-	char lines[BATCH_MAX][LOGGER_LINE_MAX];
-	size_t lens[BATCH_MAX];
-	unsigned char failed[BATCH_MAX] = { 0 };
+	memset(workspace->failed, 0, count);
 	for (size_t i = 0; i < count; ++i) {
-		lens[i] = logger_format_line(l, &msgs[i], lines[i],
-					     sizeof(lines[i]));
-		vec[i].iov_base = lines[i];
-		vec[i].iov_len = lens[i];
+		char *line = workspace_line(workspace, i);
+		workspace->lens[i] =
+			logger_format_line(l, &workspace->batch[i], line,
+					   LOGGER_LINE_MAX);
+		workspace->vec[i].iov_base = line;
+		workspace->vec[i].iov_len = workspace->lens[i];
 	}
 
 	pthread_mutex_lock(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
-		struct iovec copy[BATCH_MAX];
-		memcpy(copy, vec, count * sizeof(*vec));
-		int rc = stderr_writev_all(copy, (int)count);
+		memcpy(workspace->copy, workspace->vec,
+		       count * sizeof(*workspace->vec));
+		int rc = stderr_writev_all(workspace->copy, (int)count);
 		if (rc < 0) {
 			/* A partial batch does not have a per-record acknowledgement.
              * Conservatively classify all its records as unconfirmed. */
-			memset(failed, 1, count);
+			memset(workspace->failed, 1, count);
 			logger_note_io_error(l, -rc);
 		}
 	}
@@ -155,33 +209,34 @@ static void emit_batch(logger_t *l, const logger_message_t *msgs, size_t count)
 		size_t total = 0;
 		int need_sync = 0;
 		for (size_t i = 0; i < count; ++i) {
-			total += lens[i];
-			if (msgs[i].level >= l->flush_level)
+			total += workspace->lens[i];
+			if (workspace->batch[i].level >= l->flush_level)
 				need_sync = 1;
 		}
-		struct iovec copy[BATCH_MAX];
-		memcpy(copy, vec, count * sizeof(*vec));
-		int rc = logger_file_writev(&l->file_backend, copy, (int)count,
-					    total, &msgs[count - 1].ts,
-					    need_sync);
+		memcpy(workspace->copy, workspace->vec,
+		       count * sizeof(*workspace->vec));
+		int rc = logger_file_writev(
+			&l->file_backend, workspace->copy, (int)count, total,
+			&workspace->batch[count - 1].ts, need_sync);
 		if (rc < 0) {
-			memset(failed, 1, count);
+			memset(workspace->failed, 1, count);
 			logger_note_io_error(l, -rc);
 		}
 	}
 	if (l->outputs & LOGGER_OUT_SYSLOG) {
 		for (size_t i = 0; i < count; ++i) {
-			if (logger_syslog_write(&l->syslog_backend,
-						msgs[i].level, lines[i],
-						lens[i]) != 0) {
-				failed[i] = 1;
+			if (logger_syslog_write(
+				    &l->syslog_backend, workspace->batch[i].level,
+				    workspace_line(workspace, i),
+				    workspace->lens[i]) != 0) {
+				workspace->failed[i] = 1;
 				logger_note_io_error(l, errno ? errno : EIO);
 			}
 		}
 	}
 	uint64_t bad = 0;
 	for (size_t i = 0; i < count; ++i)
-		bad += failed[i];
+		bad += workspace->failed[i];
 	atomic_fetch_add_explicit(&l->failed_records, bad,
 				  memory_order_relaxed);
 	atomic_fetch_add_explicit(&l->emitted_records, count - bad,
@@ -192,10 +247,11 @@ static void emit_batch(logger_t *l, const logger_message_t *msgs, size_t count)
 void *logger_worker_main(void *p)
 {
 	logger_t *l = p;
+	logger_worker_workspace_t *workspace = l->worker_workspace;
 	logger_scope_worker_enter();
-	logger_message_t batch[BATCH_MAX];
 	for (;;) {
-		size_t n = logger_queue_drain(&l->q, batch, BATCH_MAX);
+		size_t n = logger_queue_drain(&l->q, workspace->batch,
+					      workspace->capacity);
 		if (n != 0) {
 			/* Retain legacy metrics as dequeue statistics. Completion below
              * is a DIFFERENT event and is also advanced on output failure. */
@@ -203,7 +259,7 @@ void *logger_worker_main(void *p)
 						  memory_order_relaxed);
 			atomic_fetch_add_explicit(&l->consumer_records, n,
 						  memory_order_relaxed);
-			emit_batch(l, batch, n);
+			emit_batch(l, workspace, n);
 
 			pthread_mutex_lock(&l->progress_mu);
 			atomic_fetch_add_explicit(&l->async_completed, n,
