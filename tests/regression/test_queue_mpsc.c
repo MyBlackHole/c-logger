@@ -3,6 +3,7 @@
 #include "support.h"
 #include <stdint.h>
 #include <sched.h>
+#include <string.h>
 
 #define PRODUCERS 8
 #define RECORDS 3000
@@ -54,6 +55,65 @@ static void *consume(void *arg)
 			return NULL;
 	}
 }
+static void check_compact_storage(void)
+{
+	CHECK(sizeof(logger_queue_slot_t) < sizeof(logger_message_t));
+
+	logger_queue_t q;
+	CHECK(logger_queue_init(&q, LOGGER_QUEUE_SPILL_LIMIT * 2u) == 0);
+	CHECK(q.spill_cap == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(logger_queue_storage_bytes(&q) ==
+	      q.cap * sizeof(logger_queue_slot_t) +
+		      q.spill_cap * sizeof(logger_queue_spill_t));
+	CHECK(logger_queue_storage_bytes(&q) <
+	      q.cap * sizeof(logger_message_t));
+
+	logger_message_t in = { .level = LOGGER_INFO,
+				.module = "compact",
+				.file = "dir/compact.c",
+				.func = "push" },
+			 out;
+	memset(in.text, 'L', 700);
+	in.text[700] = '\0';
+
+	for (size_t i = 0; i < q.spill_cap; ++i) {
+		in.line = (int)i;
+		CHECK(logger_queue_push(&q, &in) == 1);
+	}
+	CHECK(logger_queue_depth(&q) == q.spill_cap);
+	CHECK(logger_queue_depth(&q) < q.cap);
+
+	in.line = 9999;
+	CHECK(logger_queue_push(&q, &in) == 0);
+	CHECK(logger_queue_spill_exhaustions(&q) == 1);
+
+	CHECK(logger_queue_try_pop(&q, &out) == 1);
+	CHECK(out.line == 0);
+	CHECK(strlen(out.text) == 700);
+	CHECK(!strcmp(out.module, "compact"));
+	CHECK(!strcmp(out.file, "compact.c"));
+	CHECK(!strcmp(out.func, "push"));
+
+	CHECK(logger_queue_push(&q, &in) == 1);
+	size_t drained = 0;
+	while (logger_queue_try_pop(&q, &out)) {
+		CHECK(strlen(out.text) == 700);
+		++drained;
+	}
+	CHECK(drained == q.spill_cap);
+	logger_queue_destroy(&q);
+
+	CHECK(logger_queue_init(&q, 2) == 0);
+	memset(&in, 0, sizeof(in));
+	memset(in.text, 'S', LOGGER_QUEUE_INLINE_TEXT - 1u);
+	in.text[LOGGER_QUEUE_INLINE_TEXT - 1u] = '\0';
+	CHECK(logger_queue_push(&q, &in) == 1);
+	CHECK(logger_queue_try_pop(&q, &out) == 1);
+	CHECK(strlen(out.text) == LOGGER_QUEUE_INLINE_TEXT - 1u);
+	CHECK(!memcmp(out.text, in.text, LOGGER_QUEUE_INLINE_TEXT));
+	logger_queue_destroy(&q);
+}
+
 static void check_wrap(void)
 {
 	logger_queue_t q;
@@ -80,6 +140,7 @@ static void check_wrap(void)
 }
 int main(void)
 {
+	check_compact_storage();
 	check_wrap();
 	CHECK(logger_queue_init(&queue, 64) == 0);
 	pthread_t producers[PRODUCERS], consumer, observer;
@@ -105,6 +166,6 @@ int main(void)
 		CHECK(last[i] == RECORDS - 1);
 	logger_queue_destroy(&queue);
 	CHECK(logger_queue_init(&queue, SIZE_MAX) == -1 && errno == EOVERFLOW);
-	puts("8 producers: 24000 exact records; concurrent depth reads; counter rollover checked");
+	puts("compact queue storage + spill pool; 8 producers exact; depth + rollover checked");
 	return 0;
 }

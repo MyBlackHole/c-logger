@@ -49,15 +49,15 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	}
 
 	workspace->capacity = capacity;
-	/* Ownership transfer: lexical allocation owners -> workspace object.
-	 * logger_worker_workspace_destroy() is the final releaser. */
+	/* ownership transfer：词法 allocation owner -> workspace object。
+	 * 最终由 logger_worker_workspace_destroy() 释放。 */
 	workspace->batch = no_free_ptr(batch);
 	workspace->vec = no_free_ptr(vec);
 	workspace->copy = no_free_ptr(copy);
 	workspace->lines = no_free_ptr(lines);
 	workspace->lens = no_free_ptr(lens);
 	workspace->failed = no_free_ptr(failed);
-	/* Ownership transfer: workspace constructor -> caller/logger instance. */
+	/* ownership transfer：workspace constructor -> caller/logger instance。 */
 	return_ptr(workspace);
 }
 
