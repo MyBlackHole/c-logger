@@ -9,7 +9,10 @@
 - Reject unknown output bits and invalid Logger detail/rotation/file-mode/
   flush-level/overflow configuration values instead of silently accepting them.
 - Add dedicated SIGPIPE, reserved-lock-namespace and invalid-config regressions.
-- Add GitHub CI for complete native tests plus ASan/UBSan and TSan profiles.
+- Add GitHub CI with a fortified shared Release profile, a complete
+  unsanitized native Debug suite, and ASan/UBSan + TSan profiles. Private
+  --wrap-based regression support disables FORTIFY only to keep libc hook symbol
+  names stable; the production shared library remains fortified.
 
 
 ## 0.9.0 — release-engineering candidate

@@ -96,6 +96,13 @@ if(BUILD_TESTING)
 if(BUILD_SHARED_LIBS)
   add_library(logger_regression_support STATIC EXCLUDE_FROM_ALL ${LOGGER_SOURCES})
   configure_logger(logger_regression_support)
+  # White-box regressions use --wrap against libc entry points. Release/FORTIFY
+  # may rewrite calls such as vsnprintf/vfprintf/dprintf to __*_chk symbols,
+  # bypassing those synchronization hooks. Keep the production shared library
+  # fortified; only the private same-source regression archive uses stable
+  # unfortified libc symbol names.
+  target_compile_options(logger_regression_support PRIVATE
+    -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
   target_compile_definitions(logger_regression_support PRIVATE LOGGER_ENABLE_FAULT_INJECTION=0)
   set_property(TARGET logger_regression_support PROPERTY INTERFACE_LOGGER_VARIANT production)
   set_property(TARGET logger_regression_support APPEND PROPERTY COMPATIBLE_INTERFACE_STRING LOGGER_VARIANT)

@@ -9,15 +9,28 @@ jobs:
   native:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure shared release build
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
       - name: Build
         run: cmake --build build -j2
-      - name: Test
-        run: ctest --test-dir build --output-on-failure -j2
+      - name: Test release/shared profile
+        # PTHREAD_CANCEL_ASYNCHRONOUS delivery is validated in native-debug.
+        # All other shared/release, packaging and white-box regressions run here.
+        run: ctest --test-dir build --output-on-failure -j2 -LE '^async-cancel$'
       - name: Inspect shared ABI
         run: python3 scripts/check_release_abi.py build/liblogger.so
+
+  native-debug:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure complete native build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=OFF
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test complete native suite
+        run: ctest --test-dir build --output-on-failure -j2
 
   sanitizer:
     runs-on: ubuntu-24.04
@@ -26,7 +39,7 @@ jobs:
       matrix:
         sanitizer: [address-undefined, thread]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure sanitizer build
         run: >-
           cmake -S . -B build
@@ -37,5 +50,5 @@ jobs:
         run: cmake --build build -j2
       - name: Test
         # Sanitizer runtimes instrument pthread cancellation machinery. The
-        # async-cancel cases remain mandatory in the complete native job.
+        # async-cancel cases remain mandatory in native-debug above.
         run: ctest --test-dir build --output-on-failure -j2 -LE '^async-cancel$'

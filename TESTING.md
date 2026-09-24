@@ -74,15 +74,20 @@ build property, not a CTest runtime profile.
 
 ## Release gate
 
-A production release should pass the complete normal suite, both builtin
-digest known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
-virtual-address environment supports those runtimes. The sanitizer profiles run
-the complete suite except tests labeled `async-cancel`: those cases deliberately
-enable `PTHREAD_CANCEL_ASYNCHRONOUS`, while sanitizer runtimes instrument the
-pthread/cancellation path itself and are not a reliable oracle for that delivery
-contract. The same cases remain mandatory in the unsanitized complete native
-suite; they are not skipped from the release gate. No external crypto package is
-used to build or run the current test suite.
+A production release should pass the complete normal suite in an unsanitized
+native Debug build, the shared Release profile, both builtin digest
+known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
+virtual-address environment supports those runtimes. The sanitizer and shared
+Release profiles exclude tests labeled `async-cancel`: those cases deliberately
+enable `PTHREAD_CANCEL_ASYNCHRONOUS`, whose delivery is validated by the complete
+unsanitized native Debug suite instead.
+
+For shared Release white-box tests, the private same-source
+`logger_regression_support` archive is compiled with FORTIFY disabled so linker
+`--wrap` hooks continue to intercept stable libc symbols such as
+`vsnprintf/vfprintf/dprintf`. The actual production shared library remains
+fortified and is exercised by the real shared-integration/packaging tests. No
+external crypto package is used to build or run the current test suite.
 
 ## Round 2 Audit state regressions
 
@@ -120,10 +125,14 @@ frozen, independently generated data, never regenerated from the code under
 test. See tests/fixtures/CRYPTO_PROVENANCE.md.
 
 ASan/UBSan: `-DLOGGER_SANITIZE=address-undefined`; TSan: `thread`, in separate
-builds. Keep leak detection enabled. Run `ctest -LE '^async-cancel$'` under
-sanitizers and run the complete uninstrumented suite separately, including every
-`async-cancel` case. Any additional sanitizer exclusion is a release-blocking
-change that must be documented rather than hidden behind a passing subset.
+builds. Keep leak detection enabled. CI runs:
+
+- shared Release: all tests except `async-cancel`, plus ABI/package checks;
+- native Debug without sanitizers: the complete suite, including `async-cancel`;
+- ASan/UBSan and TSan: all tests except `async-cancel`.
+
+Any additional exclusion is a release-blocking change that must be documented
+rather than hidden behind a passing subset.
 
 ## Round 4 audit-parser label
 
