@@ -7,6 +7,7 @@
 
 static _Atomic unsigned free_calls;
 static int class_release_total;
+static char *consumed_ptr;
 
 void __real_free(void *);
 void __wrap_free(void *p)
@@ -43,7 +44,8 @@ static char *return_ptr_scope(void)
 
 static int consume_ptr(char *buffer)
 {
-	CHECK(buffer);
+	CHECK(buffer && !consumed_ptr);
+	consumed_ptr = buffer;
 	return 0;
 }
 
@@ -191,8 +193,11 @@ int main(void)
 	before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	retain_scope();
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) == before);
-	/* consume_ptr models ownership transfer; release it explicitly here. */
-	/* A real consuming API would own the resource after success. */
+	CHECK(consumed_ptr);
+	free(consumed_ptr);
+	consumed_ptr = NULL;
+	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
+	      before + 1);
 
 	errno = 0;
 	int fd = auto_fd_scope();
