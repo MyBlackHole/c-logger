@@ -9,8 +9,10 @@
 #include <unistd.h>
 
 /* Only control operations take control_mu. Ordinary calls retain concurrent
- * read-side lifetime pins. Lock order: control -> lifetime -> instance locks.
- * No code obtains control while holding a lifetime read lock.
+ * read-side lifetime pins. The rwlock pin is NOT a refcount: readers borrow
+ * g_logger only while the read lock remains held. Lock order:
+ * control -> lifetime -> instance locks. No code obtains control while holding
+ * a lifetime read lock.
  */
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;

@@ -14,7 +14,9 @@ int logger_process_is_child(void);
 void logger_process_invalidate_child(void);
 
 /* Count every created/in-construction logger, including Audit's private logger.
- * Only create/destroy pay this cost; ordinary record submission is unchanged. */
+ * Process census only: NOT a per-object refcount and never a lifetime get/put.
+ * Zero does not trigger destruction. Only create/destroy pay this cost;
+ * ordinary record submission is unchanged. */
 int logger_process_object_acquire(void);
 void logger_process_object_release(void);
 unsigned logger_process_object_count(void);

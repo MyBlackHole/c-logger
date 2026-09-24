@@ -14,6 +14,9 @@
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "fork guard requires lock-free int");
 static _Atomic int owner_pid;
 static _Atomic int forked_child;
+/* Process-wide object census for fork/lifecycle gating. This is NOT a
+ * per-logger reference count: it does not keep any logger_t alive and a
+ * transition to zero performs no object release. */
 static _Atomic unsigned live_objects;
 /* Nonzero only inside logger_fork_reinit after all objects have been destroyed.
  * The copied token is consumed independently in the two processes. */

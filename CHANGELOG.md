@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — refcount policy
+
+- Add REFCOUNTED as an explicit lifetime state while documenting that current
+  production objects use owner/borrow, lifetime pin, join or lifecycle
+  protocols instead of generic per-object reference counting.
+- Add admission rules for future get/put lifetime: live-object proof on get,
+  zero-is-terminal release, and checked overflow/underflow semantics.
+- Mark the process `live_objects` census and global lifetime rwlock pin
+  explicitly as non-refcount mechanisms.
+
 ## Unreleased — resource ownership audit
 
 - Make the build dialect explicit as C11 plus GNU C extensions, matching the

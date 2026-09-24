@@ -15,7 +15,9 @@ If any answer is ambiguous, the design is incomplete.
 
 ## Ownership states
 
-c-logger uses four ownership states.
+c-logger uses five ownership states. REFCOUNTED is reserved for objects whose
+independent lifetime owners genuinely require counted references; there are
+currently no production objects in that state.
 
 ### OWNED
 
@@ -72,6 +74,22 @@ Examples in c-logger include:
 
 SHARED does not mean "nobody owns it". There must still be a designated final
 owner/releaser and a protocol that prevents release while users remain.
+
+### REFCOUNTED
+
+Several independent owners each hold a counted lifetime reference. Each
+`get` creates one owned reference, each `put` consumes one, and the transition
+to zero performs the final release.
+
+REFCOUNTED is not a synonym for SHARED. A worker joined by its owner, a global
+object protected by a lifetime rwlock, or a host-owned object with bounded
+borrowers is SHARED without being REFCOUNTED.
+
+Do not introduce a refcount merely because ownership is difficult to reason
+about. First make the owner/borrow/join/pin protocol explicit.
+
+There are currently **no production REFCOUNTED objects** in c-logger. See
+`REFCOUNTING.md` for admission criteria and required semantics.
 
 ## Ownership transfer rules
 
@@ -144,6 +162,8 @@ For every resource-affecting change, verify:
 | release failure | whether failure is semantically observable |
 | teardown dependency | correct LIFO or explicit order |
 | cross-thread use | explicit lifetime protocol |
+| multiple independent owners | justify SHARED vs REFCOUNTED; do not default to refcount |
+| new reference acquisition | if REFCOUNTED, prove the object is live during get/try_get |
 
 See `RESOURCE_CLEANUP.md` for lexical cleanup after ownership is already
-defined.
+defined, and `REFCOUNTING.md` before introducing counted lifetime.

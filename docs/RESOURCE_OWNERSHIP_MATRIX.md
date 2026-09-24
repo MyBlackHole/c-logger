@@ -12,13 +12,15 @@ Status meanings:
   are semantically meaningful.
 - **SHARED**: lifetime is governed by a concurrency protocol, not lexical scope.
 - **BORROWED**: this code may use the resource but never releases it.
+- **REFCOUNTED**: independent lifetime owners hold counted references; currently
+  no production resource uses this mode.
 
 ## Logger instance
 
 | Resource | Acquire/create | Current/persistent owner | Transfer point | Final release | Mode |
 |---|---|---|---|---|---|
 | `logger_t` heap object | `calloc` in `create_logger` | constructor, then host/caller | successful constructor return | `logger_destroy_status/logger_dispose_internal` | EXPLICIT |
-| process live-object token | `logger_process_object_acquire` | one live logger instance | paired with successful allocation lifecycle | `logger_process_object_release` | EXPLICIT |
+| process live-object token | `logger_process_object_acquire` | process-wide object census/gate | paired with logger construction/destruction | `logger_process_object_release` | SHARED (not REFCOUNTED) |
 | `emit_mu` | `pthread_mutex_init` | `logger_t` | none | destroy after backend/worker teardown | EXPLICIT |
 | `progress_mu/progress_cv` | pthread init | `logger_t` | none | destroy after worker join | EXPLICIT |
 | queue storage `q.slots` | `calloc` in `logger_queue_init` | lexical owner, then `logger_queue_t` | `q->slots = no_free_ptr(slots)` | `logger_queue_destroy` | AUTO -> EXPLICIT |
@@ -41,7 +43,9 @@ resource unwinding.
 | generation/phase ticket | static atomic | global state machine | atomic generation transitions | process lifetime | SHARED |
 
 The atomic ticket gates admission/versioning. It does not replace the lifetime
-rwlock and does not itself keep `g_logger` alive.
+rwlock and does not itself keep `g_logger` alive. The lifetime read lock is a
+pin: it prevents final release while borrowed, but it is not a counted
+reference.
 
 ## File backend
 
@@ -116,6 +120,22 @@ destroy queue storage
 ```
 
 Lexical cleanup cannot replace this join-before-free requirement.
+
+## Reference-count audit
+
+No current production resource requires REFCOUNTED lifetime:
+
+- explicit logger instances have one host owner plus bounded borrowers;
+- global logger readers hold an rwlock lifetime pin;
+- worker lifetime terminates through cooperative stop and join;
+- queue/workspace storage has one structural owner and join-before-free;
+- Audit runtime is governed by its lifecycle/operation protocol;
+- `live_objects` counts process objects for fork/lifecycle gating and does not
+  control any individual object's final release.
+
+If a future resource has independent owners that can escape these lifetime
+boundaries, update this matrix and `REFCOUNTING.md` in the same change that
+introduces its get/put protocol.
 
 ## Migration decisions from this audit
 
