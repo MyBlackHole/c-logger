@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "audit_record.h"
 #include "logger_fault.h"
+#include "logger_cleanup.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -234,23 +235,24 @@ static int add_segment(segment_t *files, size_t *count, const char *dir,
 static int open_regular(const char *path, int writable, FILE **out,
 			struct stat *st)
 {
-	int fd = open(path, (writable ? O_RDWR : O_RDONLY) | O_CLOEXEC |
-				    O_NOFOLLOW | O_NONBLOCK);
+	int fd __free(close_fd) =
+		open(path, (writable ? O_RDWR : O_RDONLY) | O_CLOEXEC |
+				   O_NOFOLLOW | O_NONBLOCK);
 	if (fd < 0)
 		return -errno;
 	int rc = fstat(fd, st) ? -errno : 0;
 	if (!rc && (!S_ISREG(st->st_mode) || st->st_size < 0))
 		rc = -EINVAL;
-	if (rc) {
-		(void)close(fd);
+	if (rc)
 		return rc;
-	}
+
 	FILE *f = fdopen(fd, writable ? "r+" : "r");
-	if (!f) {
-		rc = -errno;
-		(void)close(fd);
-		return rc;
-	}
+	if (!f)
+		return -errno;
+
+	/* fdopen() consumed descriptor ownership; callers own FILE * and must
+	 * explicitly fclose() because close errors participate in recovery. */
+	(void)take_fd(fd);
 	*out = f;
 	return 0;
 }

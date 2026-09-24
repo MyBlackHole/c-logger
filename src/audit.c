@@ -4,6 +4,7 @@
 #include "audit_record.h"
 #include "logger_internal.h"
 #include "logger_fault.h"
+#include "logger_cleanup.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -154,7 +155,8 @@ static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
 	int n = snprintf(path, sizeof(path), "%s/%s.audit.lock", dir, name);
 	if (n < 0 || (size_t)n >= sizeof(path))
 		return -ENAMETOOLONG;
-	int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+	int fd __free(close_fd) =
+		open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
 	if (fd < 0)
 		return -errno;
 	struct stat st;
@@ -169,11 +171,12 @@ static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
 			error = (errno == EACCES || errno == EAGAIN) ? EBUSY :
 								       errno;
 	}
-	if (error) {
-		(void)close(fd);
+	if (error)
 		return -error;
-	}
-	s->writer_lock_fd = fd;
+
+	/* Ownership transfer: lexical candidate -> audit_runtime_t.
+	 * dispose_runtime() performs the final close after logger teardown. */
+	s->writer_lock_fd = take_fd(fd);
 	return 0;
 }
 

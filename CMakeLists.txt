@@ -43,6 +43,10 @@ elseif(NOT LOGGER_SANITIZE STREQUAL "")
 endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# Internal Linux-style cleanup/ownership helpers intentionally use GNU C
+# extensions (__attribute__((cleanup)), typeof and statement expressions).
+# The language baseline is C11; the source dialect is GNU C11-compatible.
+set(CMAKE_C_EXTENSIONS ON)
 # Production never links the environment-driven test fault injector.
 set(LOGGER_SOURCES
   src/logger.c
