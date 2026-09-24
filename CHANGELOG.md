@@ -2,13 +2,17 @@
 
 ## Unreleased — internal resource ownership
 
-- Add internal GCC/Clang lexical cleanup helpers for heap pointers, file
-  descriptors and FILE streams, with explicit TAKE operations for ownership
-  transfer. They are private implementation helpers, not public ABI.
+- Adopt a Linux-style internal resource-management model: DEFINE_FREE/__free,
+  no_free_ptr/return_ptr/retain_and_null_ptr, CLASS, guard/scoped_guard and
+  ACQUIRE/ACQUIRE_ERR, independently implemented for user space.
+- Define project rules for single ownership, declaration-at-acquisition, LIFO
+  teardown, explicit ownership transfer, and no mixing of goto-unwind with
+  scope-unwind in one resource graph.
 - Convert async worker workspace construction and queue-slot initialization to
   automatic rollback while keeping concurrency/lifetime ownership explicit.
-- Add regression coverage for automatic cleanup, ownership transfer and errno
-  preservation.
+- Add regression coverage for free/return/retain/take ownership, class
+  destructors, unconditional and conditional guards, errno preservation and
+  acquisition-error reporting.
 
 
 ## Unreleased — resource footprint

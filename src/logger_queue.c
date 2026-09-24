@@ -34,7 +34,7 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	q->mask = q->cap - 1;
 
-	logger_queue_slot_t *slots LOGGER_AUTO_FREE =
+	logger_queue_slot_t *slots __free(free) =
 		calloc(q->cap, sizeof(*slots));
 	if (!slots)
 		return -1;
@@ -55,7 +55,7 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
-	q->slots = LOGGER_TAKE_PTR(slots);
+	q->slots = no_free_ptr(slots);
 	return 0;
 }
 
