@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — engineering invariants
+
+- Add project-wide ownership, locking, concurrency, error-handling and lifecycle
+  contracts around the Linux-style cleanup layer.
+- Document logger field protection, worker/queue ownership, MPSC publication,
+  global lock ordering and construct-before-publish/destruction rules.
+- Make ownership and lifecycle design a review requirement rather than treating
+  automatic cleanup as the primary resource model.
+
+
 ## Unreleased — internal resource ownership
 
 - Adopt a Linux-style internal resource-management model: DEFINE_FREE/__free,
@@ -8,6 +18,9 @@
 - Define project rules for single ownership, declaration-at-acquisition, LIFO
   teardown, explicit ownership transfer, and no mixing of goto-unwind with
   scope-unwind in one resource graph.
+- Require every managed resource to answer four ownership questions: creator,
+  current owner, exact transfer point, and final releaser; distinguish OWNED,
+  BORROWED, MOVED and SHARED lifetimes before choosing automatic cleanup.
 - Convert async worker workspace construction and queue-slot initialization to
   automatic rollback while keeping concurrency/lifetime ownership explicit.
 - Add regression coverage for free/return/retain/take ownership, class

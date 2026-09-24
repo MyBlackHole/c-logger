@@ -22,6 +22,12 @@ target_link_libraries(host PRIVATE Logger::logger)
 
 - [发布工程、版本与兼容边界](docs/RELEASE_ENGINEERING.md)
 - [实际平台构建基线与门禁](docs/PLATFORM_BASELINE.md)
+- [资源所有权规范](docs/RESOURCE_OWNERSHIP.md)
+- [Linux-style 自动清理规范](docs/RESOURCE_CLEANUP.md)
+- [锁与锁顺序](docs/LOCKING.md)
+- [并发 / atomic / publication](docs/CONCURRENCY.md)
+- [错误处理规范](docs/ERROR_HANDLING.md)
+- [生命周期与 publish/destroy](docs/LIFECYCLE.md)
 - [本轮验证报告](validation/PACKAGING_RESULTS.md)
 - [变更清单](CHANGELOG.md)
 

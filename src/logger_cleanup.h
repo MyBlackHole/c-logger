@@ -11,6 +11,10 @@
  * Scope cleanup covers ordinary C scope exit. It is not a replacement for
  * pthread cancellation cleanup, longjmp handling, signal safety, refcounting,
  * worker lifetime, or cross-thread ownership protocols.
+ *
+ * Ownership rule: decide creator -> current owner -> transfer point -> final
+ * releaser before adding cleanup annotations. __free()/CLASS/guard only
+ * implement an already-defined ownership graph.
  */
 #include <errno.h>
 #include <stdbool.h>

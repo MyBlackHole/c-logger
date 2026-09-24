@@ -22,16 +22,21 @@ int logger_internal_include_source(const logger_t *);
 typedef struct logger_worker_workspace logger_worker_workspace_t;
 
 struct logger {
+	/* Atomic control/state readable without emit_mu. */
 	_Atomic logger_level_t level;
 	_Atomic logger_state_t state;
+
+	/* Immutable after successful construction/publication. */
 	logger_detail_t detail;
 	unsigned outputs;
-	logger_file_t file_backend;
-	logger_syslog_t syslog_backend;
 	mode_t file_mode;
 	int async_mode, include_pid, include_tid, include_source;
 	logger_level_t flush_level;
 	char ident[128];
+
+	/* Backend mutable state is serialized by emit_mu. */
+	logger_file_t file_backend;
+	logger_syslog_t syslog_backend;
 	pthread_mutex_t emit_mu;
 	/* Completion is independent of queue consumption and of the emit lock.
      * No thread waits on progress_cv while holding emit_mu. */
@@ -41,8 +46,12 @@ struct logger {
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
 	_Atomic int first_error; /* positive errno, sticky for this instance */
+	/* Async queue: q owns q.slots; producer/consumer ordering is atomic.
+	 * q.wait_mu is wakeup-only, not the payload publication lock. */
 	logger_queue_t q;
+	/* Owned by logger_t after create; released only after worker join. */
 	logger_worker_workspace_t *worker_workspace;
+	/* Worker lifetime is owned by logger_t; cooperative stop + join required. */
 	pthread_t worker;
 	_Atomic int running;
 	logger_overflow_policy_t overflow[6];
