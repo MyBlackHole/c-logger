@@ -2,19 +2,16 @@
 #define LOGGER_CLEANUP_H
 
 /*
- * Internal Linux-style lexical resource management for c-logger.
+ * c-logger 内部的 Linux-style 词法资源管理。
  *
- * This is an independent user-space implementation of the same ownership
- * model used by Linux cleanup helpers. It is private to this project: no
- * installed header, public symbol, struct layout, or ABI depends on it.
+ * 这里独立实现与 Linux cleanup helpers 相同的 ownership 模型，仅供项目内部使用：
+ * 安装头文件、公开符号、公开结构体布局和 ABI 都不依赖本文件。
  *
- * Scope cleanup covers ordinary C scope exit. It is not a replacement for
- * pthread cancellation cleanup, longjmp handling, signal safety, refcounting,
- * worker lifetime, or cross-thread ownership protocols.
+ * scope cleanup 只负责普通 C 作用域退出，不替代 pthread cancellation cleanup、
+ * longjmp 处理、signal safety、refcount、worker 生命周期或跨线程 ownership 协议。
  *
- * Ownership rule: decide creator -> current owner -> transfer point -> final
- * releaser before adding cleanup annotations. __free()/CLASS/guard only
- * implement an already-defined ownership graph.
+ * 使用 cleanup 前必须先回答：谁创建 -> 当前谁拥有 -> 何时转移 -> 最终谁释放。
+ * __free()/CLASS/guard 只是执行已经定义清楚的 ownership 图。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -69,9 +66,9 @@ __cleanup_must_check_ptr(const volatile void *value)
 #define retain_and_null_ptr(_ptr) ((void)__get_and_null((_ptr), NULL))
 
 /*
- * User-space fd ownership uses -1 as the released/invalid sentinel. Linux
- * uses -EBADF for its get_unused_fd class because that class carries errno
- * values in-band; ordinary POSIX descriptors in c-logger use -1.
+ * 用户态 fd ownership 使用 -1 表示“已释放/无效”。
+ * Linux 的 get_unused_fd class 使用 -EBADF，是因为其内部会携带 errno；
+ * c-logger 的普通 POSIX fd 不采用这种内核内联错误表示。
  */
 #define take_fd(_fd) __get_and_null((_fd), -1)
 
@@ -123,9 +120,8 @@ __cleanup_must_check_ptr(const volatile void *value)
 		       __VA_ARGS__)
 
 /*
- * Guard classes are independent wrappers rather than encoded error pointers.
- * This preserves Linux's source-level ownership model without importing
- * kernel ERR_PTR conventions into user space.
+ * guard class 使用独立结构保存资源和错误，而不是编码成 error pointer。
+ * 这样保留 Linux 的源码级 ownership 语义，同时避免把内核 ERR_PTR 约定带入用户态。
  */
 #define DEFINE_GUARD(_name, _type, _lock, _unlock)                          \
 	typedef _type lock_##_name##_t;                                        \
@@ -227,7 +223,7 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 			    __cleanup_unique(__cleanup_guard_once_),            \
 			    __VA_ARGS__)
 
-/* Common user-space resource definitions. */
+/* 常用用户态资源的 cleanup 定义。 */
 static CLEANUP_ALWAYS_INLINE void __cleanup_release_free(void *ptr)
 {
 	int saved = errno;

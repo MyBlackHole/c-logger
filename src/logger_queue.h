@@ -8,13 +8,13 @@ typedef struct {
 	logger_message_t msg;
 } logger_queue_slot_t;
 typedef struct {
-	/* OWNED after logger_queue_init(); released by logger_queue_destroy(). */
+	/* logger_queue_init() 成功后为 OWNED；由 logger_queue_destroy() 最终释放。 */
 	logger_queue_slot_t *slots;
 	size_t cap, mask;
-	/* Reservation/consumption counters; slot seq publishes payload lifetime. */
+	/* reservation/consumption 计数；slot.seq 负责 publish payload 可见性与复用代次。 */
 	_Atomic size_t enqueue_pos;
 	_Atomic size_t dequeue_pos;
-	/* Sleep/wakeup protocol only; does not serialize slot payload access. */
+	/* 仅用于 sleep/wakeup 协议，不负责串行化 slot payload 访问。 */
 	pthread_mutex_t wait_mu;
 	pthread_cond_t wait_cv;
 } logger_queue_t;

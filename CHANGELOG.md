@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 中文代码说明规范
+
+- 规定源码注释、ownership/locking/lifecycle 等工程说明以中文为主；API、标识符、
+  标准术语、协议名和错误码保留英文，避免翻译造成技术歧义。
+- 首批将 cleanup、queue、file ownership、process guard 等核心内部注释改为中文主述。
+- 新增 `docs/CODING_STYLE.md`，要求后续修改到的历史英文解释性注释同步中文化。
+
 ## Unreleased — refcount policy
 
 - Add REFCOUNTED as an explicit lifetime state while documenting that current

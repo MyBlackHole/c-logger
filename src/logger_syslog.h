@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <sys/un.h>
 
-/* One owner, all write/metrics access serialized by logger_t.emit_mu.
- * Configuration is immutable after init. There is no background reconnect job.
+/* 单一 owner；所有 write/metrics 访问由 logger_t.emit_mu 串行化。
+ * init 成功后 configuration 不再变化，也不存在后台 reconnect 线程。
  */
 typedef struct {
 	int fd;

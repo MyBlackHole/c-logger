@@ -22,6 +22,7 @@ target_link_libraries(host PRIVATE Logger::logger)
 
 - [发布工程、版本与兼容边界](docs/RELEASE_ENGINEERING.md)
 - [实际平台构建基线与门禁](docs/PLATFORM_BASELINE.md)
+- [代码与注释规范](docs/CODING_STYLE.md)
 - [资源所有权规范](docs/RESOURCE_OWNERSHIP.md)
 - [资源 ownership 审计矩阵](docs/RESOURCE_OWNERSHIP_MATRIX.md)
 - [引用计数使用规范](docs/REFCOUNTING.md)
