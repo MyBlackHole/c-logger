@@ -22,11 +22,11 @@ int logger_internal_include_source(const logger_t *);
 typedef struct logger_worker_workspace logger_worker_workspace_t;
 
 struct logger {
-	/* Atomic control/state readable without emit_mu. */
+	/* 原子控制/状态字段，可在不持有 emit_mu 时读取。 */
 	_Atomic logger_level_t level;
 	_Atomic logger_state_t state;
 
-	/* Immutable after successful construction/publication. */
+	/* 构造并 publish 成功后保持不变。 */
 	logger_detail_t detail;
 	unsigned outputs;
 	mode_t file_mode;
@@ -34,24 +34,24 @@ struct logger {
 	logger_level_t flush_level;
 	char ident[128];
 
-	/* Backend mutable state is serialized by emit_mu. */
+	/* backend 可变状态统一由 emit_mu 串行化。 */
 	logger_file_t file_backend;
 	logger_syslog_t syslog_backend;
 	pthread_mutex_t emit_mu;
-	/* Completion is independent of queue consumption and of the emit lock.
-     * No thread waits on progress_cv while holding emit_mu. */
+	/* completion 与 queue 消费、emit_mu 相互独立。
+	 * 任何线程都不能在持有 emit_mu 时等待 progress_cv。 */
 	pthread_mutex_t progress_mu;
 	pthread_cond_t progress_cv;
-	size_t completed_pos; /* exclusive queue watermark, under progress_mu */
+	size_t completed_pos; /* queue 的 exclusive watermark，由 progress_mu 保护 */
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
-	_Atomic int first_error; /* positive errno, sticky for this instance */
-	/* Async queue: q owns q.slots; producer/consumer ordering is atomic.
-	 * q.wait_mu is wakeup-only, not the payload publication lock. */
+	_Atomic int first_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
+	/* 异步 queue：q 拥有 q.slots；producer/consumer 顺序由 atomic 协议保证。
+	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
 	logger_queue_t q;
-	/* Owned by logger_t after create; released only after worker join. */
+	/* create 成功后由 logger_t 拥有；必须在 worker join 后才能释放。 */
 	logger_worker_workspace_t *worker_workspace;
-	/* Worker lifetime is owned by logger_t; cooperative stop + join required. */
+	/* worker 生命周期由 logger_t 拥有；必须 cooperative stop + join。 */
 	pthread_t worker;
 	_Atomic int running;
 	logger_overflow_policy_t overflow[6];
@@ -59,10 +59,10 @@ struct logger {
 	_Atomic uint64_t enqueued, sync_fallbacks, queue_high_watermark;
 	_Atomic uint64_t consumer_batches, consumer_records;
 };
-/* Private complete teardown: requires exclusive ownership. 0 / -errno.
- * Like logger_destroy, frees the object; failure is not a retryable pointer. */
-/* Audit reserves file ownership before it is allowed to inspect/repair the
- * destination, then moves the reservation into its synchronous logger. */
+/* 内部完整 teardown：调用者必须拥有独占 ownership，返回 0 / -errno。
+ * 与 logger_destroy 一样会释放对象；失败也不能把旧指针当作可重试对象。 */
+/* Audit 在检查/修复目标前先取得 file ownership，随后把该 reservation
+ * move 给同步 logger。 */
 logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);
 int logger_dispose_internal(logger_t *);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
@@ -77,9 +77,9 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t);
 void logger_worker_workspace_destroy(logger_worker_workspace_t *);
 void *logger_worker_main(void *);
 void logger_note_io_error(logger_t *, int);
-/* Private: wait for queued backend output, without fsync. 0 / -errno. */
+/* 内部：等待已排队的 backend 输出完成，但不执行 fsync。返回 0 / -errno。 */
 int logger_wait_for_output(logger_t *);
-/* Called with emit_mu held. */
+/* 调用时必须已经持有 emit_mu。 */
 int logger_sync_outputs_locked(logger_t *);
 
 #endif

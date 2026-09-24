@@ -32,8 +32,9 @@ No sanitizer suppression is added to make an external-library report disappear.
 
 # Engineering invariant gate
 
-Code review and regression design should preserve the six internal engineering
-contracts:
+Code review 和 regression design 必须遵守内部工程约束。源码注释和内部说明以中文为主；
+API、标识符、标准术语、协议名和错误码保留英文，避免技术歧义。详见
+`docs/CODING_STYLE.md`。
 
 - resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
 - counted lifetime admission: `docs/REFCOUNTING.md`;

@@ -10,8 +10,8 @@ static int queue_capacity(size_t requested, size_t *capacity)
 	size_t n = 2;
 	if (requested < 2)
 		requested = 2;
-	/* Position differences use unsigned modular arithmetic. A queue may not
-     * occupy half the position space, nor overflow its allocation size. */
+	/* position 差值使用 unsigned 模运算。queue 不能占用一半及以上的 position
+	 * 空间，同时必须避免 allocation size 溢出。 */
 	while (n < requested) {
 		if (n > SIZE_MAX / 2) {
 			errno = EOVERFLOW;
@@ -55,8 +55,8 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
-	/* Ownership transfer: lexical allocator -> logger_queue_t.
-	 * logger_queue_destroy() is the final releaser. */
+	/* ownership transfer：词法临时 owner -> logger_queue_t。
+	 * 最终由 logger_queue_destroy() 释放。 */
 	q->slots = no_free_ptr(slots);
 	return 0;
 }
@@ -71,11 +71,10 @@ void logger_queue_destroy(logger_queue_t *q)
 
 void logger_queue_notify(logger_queue_t *q)
 {
-	/* Publication precedes this lock. The consumer tests the predicate and
-     * starts cond_wait while holding this SAME mutex. A publisher in that
-     * interval cannot signal until cond_wait atomically releases the mutex.
-     * Correctness first: do not replace this with an unlocked signal or an
-     * unproven "sleeping" flag optimization. */
+	/* payload publication 发生在这里加锁之前。consumer 在持有同一把 wait_mu 时
+	 * 检查 predicate 并进入 pthread_cond_wait()；在这段窗口内 publisher
+	 * 无法完成 signal，直到 cond_wait 原子地释放 wait_mu，因此不会丢 wakeup。
+	 * 正确性优先：不能改成无锁 signal，也不要引入未经证明的 "sleeping" flag 优化。 */
 	pthread_mutex_lock(&q->wait_mu);
 	pthread_cond_signal(&q->wait_cv);
 	pthread_mutex_unlock(&q->wait_mu);
@@ -121,7 +120,7 @@ int logger_queue_try_pop(logger_queue_t *q, logger_message_t *m)
 	*m = slot->msg;
 	logger_record_rebase(m);
 	atomic_store_explicit(&slot->seq, pos + q->cap, memory_order_release);
-	/* This position measures slots taken, NOT backend completion. */
+	/* 这里只表示 slot 已被 consumer 取走，不代表 backend 已完成输出。 */
 	atomic_store_explicit(&q->dequeue_pos, pos + 1, memory_order_release);
 	return 1;
 }
@@ -145,8 +144,8 @@ int logger_queue_empty(logger_queue_t *q)
 
 size_t logger_queue_depth(const logger_queue_t *q)
 {
-	/* An approximate, race-free snapshot; reservations may be unpublished.
-     * Read dequeue first and clamp because two counters are not a transaction. */
+	/* 这是 race-free 的近似快照；reservation 可能尚未 publish。
+	 * 先读取 dequeue，再对深度做 clamp，因为两个 counter 不是一个原子事务。 */
 	size_t deq =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_acquire);
 	size_t enq =

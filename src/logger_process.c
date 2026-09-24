@@ -9,17 +9,17 @@
 #include <stdatomic.h>
 #include <unistd.h>
 
-/* Linux pid_t fits in int. Both handler state and identity must be lock-free;
- * no libatomic lock acquisition is permitted in the child rejection path. */
+/* Linux 的 pid_t 可放入 int。handler state 与 process identity 必须 lock-free；
+ * child rejection 路径禁止经过 libatomic 内部锁。 */
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "fork guard requires lock-free int");
 static _Atomic int owner_pid;
 static _Atomic int forked_child;
-/* Process-wide object census for fork/lifecycle gating. This is NOT a
- * per-logger reference count: it does not keep any logger_t alive and a
- * transition to zero performs no object release. */
+/* 进程级对象 census，只用于 fork/lifecycle gate。
+ * 这不是 per-logger refcount：它不会延长任何 logger_t 的生命周期，
+ * 计数归零也不会触发对象 release。 */
 static _Atomic unsigned live_objects;
-/* Nonzero only inside logger_fork_reinit after all objects have been destroyed.
- * The copied token is consumed independently in the two processes. */
+/* 只有 logger_fork_reinit 在确认全部对象已销毁后才会置为非 0。
+ * fork 后复制出的 token 在父子进程中分别独立消费。 */
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 static _Atomic int clean_fork_owner;
 #endif
@@ -28,8 +28,8 @@ static int registration_error; /* published by pthread_once */
 
 void logger_process_invalidate_child(void)
 {
-	/* Never overwrite/destroy pthread objects or abandon/free descriptors here.
-     * The inherited runtime is left untouched until exec or _exit. */
+	/* 这里绝不能覆盖/销毁 pthread 对象，也不能释放继承来的 fd。
+	 * inherited runtime 保持原样，直到 exec 或 _exit。 */
 	atomic_store_explicit(&forked_child, 1, memory_order_relaxed);
 }
 
@@ -38,8 +38,8 @@ int logger_process_is_child(void)
 	if (atomic_load_explicit(&forked_child, memory_order_relaxed))
 		return 1;
 	int owner = atomic_load_explicit(&owner_pid, memory_order_acquire);
-	/* Also covers an application child handler registered before ours and the
-     * registration window. This does not promise support for vfork/clone. */
+	/* 同时覆盖应用 child handler 早于本库注册、以及注册窗口内 fork 的情况。
+	 * 这里不承诺支持 vfork/clone。 */
 	return owner != 0 && owner != (int)getpid();
 }
 
@@ -66,10 +66,10 @@ int logger_process_ensure(void)
 		return -ECHILD;
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 	if (atomic_load_explicit(&clean_fork_owner, memory_order_acquire))
-		return -EBUSY; /* legacy wrapper only */
+		return -EBUSY; /* 仅 legacy wrapper 使用 */
 #endif
-	/* Publish identity before registration: never enter an inherited once lock
-     * in a child that forked while another thread was installing the handler. */
+	/* 先 publish process identity，再进入 pthread_once 注册。
+	 * 如果 fork 发生在其他线程安装 handler 期间，child 不能进入继承来的 once lock。 */
 	int rc = pthread_once(&register_once, register_guard);
 	return rc ? -rc : -registration_error;
 }
@@ -157,10 +157,10 @@ int logger_process_finish_clean_fork(void)
 	int owner = atomic_load_explicit(&owner_pid, memory_order_acquire);
 	if (!prepared || prepared != owner || logger_process_object_count())
 		return -ECHILD;
-	/* The wrapper established a single-threaded, zero-object boundary. The
-     * once object is already completed; every library mutex is unlocked. Do
-     * not assign pthread initializers, destroy inherited locks, or reuse fds.
-     * Do not call this from an application handler or outside the wrapper. */
+	/* wrapper 已建立“单线程 + 0 个对象”的边界。pthread_once 已完成，
+	 * 库内 mutex 均未被持有。不要重新赋 pthread initializer，
+	 * 不要销毁继承来的锁，也不要复用旧 fd。
+	 * 该函数只能由受控 wrapper 调用，不能从应用 handler 直接调用。 */
 	atomic_store_explicit(&owner_pid, (int)getpid(), memory_order_release);
 	atomic_store_explicit(&forked_child, 0, memory_order_relaxed);
 	atomic_store_explicit(&clean_fork_owner, 0, memory_order_release);
