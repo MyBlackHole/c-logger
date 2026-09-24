@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — engineering invariants
+
+- Add project-wide ownership, locking, concurrency, error-handling and lifecycle
+  contracts around the Linux-style cleanup layer.
+- Document logger field protection, worker/queue ownership, MPSC publication,
+  global lock ordering and construct-before-publish/destruction rules.
+- Make ownership and lifecycle design a review requirement rather than treating
+  automatic cleanup as the primary resource model.
+
+
 ## Unreleased — internal resource ownership
 
 - Adopt a Linux-style internal resource-management model: DEFINE_FREE/__free,

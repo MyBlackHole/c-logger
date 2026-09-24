@@ -30,6 +30,22 @@ No sanitizer suppression is added to make an external-library report disappear.
 `check` 从空 build 目录会先构建测试程序；labels 追加而不覆盖；各测试独立工作目录。
 专项 sanitizer 结果见 `validation/RESULTS.md`。该段记录 Round 1 的历史状态；当前剩余阻断项以 docs/KNOWN_ISSUES.md 为准。
 
+# Engineering invariant gate
+
+Code review and regression design should preserve the six internal engineering
+contracts:
+
+- resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
+- lexical cleanup: `docs/RESOURCE_CLEANUP.md`;
+- locking/order: `docs/LOCKING.md`;
+- concurrency/publication: `docs/CONCURRENCY.md`;
+- error propagation: `docs/ERROR_HANDLING.md`;
+- lifecycle/publication/destruction: `docs/LIFECYCLE.md`.
+
+A passing test is not sufficient if a change makes ownership, lock ordering or
+final release ambiguous. New resource-acquisition paths should include failure
+coverage around their acquisition/transfer boundaries.
+
 # Test strategy
 
 Tests are classified with CTest labels so local development and CI can run the
