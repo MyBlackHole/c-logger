@@ -36,6 +36,7 @@ Code review and regression design should preserve the six internal engineering
 contracts:
 
 - resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
+- counted lifetime admission: `docs/REFCOUNTING.md`;
 - lexical cleanup: `docs/RESOURCE_CLEANUP.md`;
 - locking/order: `docs/LOCKING.md`;
 - concurrency/publication: `docs/CONCURRENCY.md`;

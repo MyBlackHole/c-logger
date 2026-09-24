@@ -1,12 +1,15 @@
 # Concurrency model
 
-c-logger separates four concepts that must not be treated as interchangeable:
+c-logger separates lifetime and synchronization mechanisms that must not be
+treated as interchangeable:
 
 ```text
-atomic ordering   -> publication/individual atomic state
-lock              -> multi-field invariant serialization
-lifetime protocol -> object remains alive
-state machine     -> legal lifecycle transitions
+atomic ordering -> publication/individual atomic state
+lock            -> multi-field invariant serialization
+lifetime pin    -> object cannot be released while borrowed
+join            -> thread/user lifetime has ended
+refcount        -> independent owners count lifetime references
+state machine   -> legal lifecycle transitions
 ```
 
 ## MPSC queue publication protocol
@@ -128,6 +131,23 @@ Do not use `memory_order_seq_cst` as a substitute for defining the protocol.
 
 An atomic pointer/counter does not automatically protect the lifetime of the
 object it names or counts.
+
+## Reference counting
+
+There is currently no generic per-object refcount in production code.
+
+In particular:
+
+- `live_objects` is a process-wide census used for lifecycle/fork gating; it
+  does not keep a particular `logger_t` alive and reaching zero does not
+  release one;
+- `g_lifetime_lock` is a read-side lifetime pin for the global logger, not a
+  counted reference;
+- worker and queue lifetime is owned by `logger_t` and ends through join.
+
+If independent owners later need to retain an object beyond a lock/pin/owner
+scope, follow `REFCOUNTING.md`; do not build a lifetime protocol directly from
+raw atomic increment/decrement operations.
 
 ## Cancellation and concurrency
 
