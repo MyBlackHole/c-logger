@@ -31,15 +31,15 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	if (!capacity)
 		capacity = 1;
 
-	logger_worker_workspace_t *workspace LOGGER_AUTO_FREE =
+	logger_worker_workspace_t *workspace __free(free) =
 		calloc(1, sizeof(*workspace));
-	logger_message_t *batch LOGGER_AUTO_FREE =
+	logger_message_t *batch __free(free) =
 		calloc(capacity, sizeof(*batch));
-	struct iovec *vec LOGGER_AUTO_FREE = calloc(capacity, sizeof(*vec));
-	struct iovec *copy LOGGER_AUTO_FREE = calloc(capacity, sizeof(*copy));
-	char *lines LOGGER_AUTO_FREE = malloc(capacity * LOGGER_LINE_MAX);
-	size_t *lens LOGGER_AUTO_FREE = calloc(capacity, sizeof(*lens));
-	unsigned char *failed LOGGER_AUTO_FREE =
+	struct iovec *vec __free(free) = calloc(capacity, sizeof(*vec));
+	struct iovec *copy __free(free) = calloc(capacity, sizeof(*copy));
+	char *lines __free(free) = malloc(capacity * LOGGER_LINE_MAX);
+	size_t *lens __free(free) = calloc(capacity, sizeof(*lens));
+	unsigned char *failed __free(free) =
 		calloc(capacity, sizeof(*failed));
 
 	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
@@ -49,13 +49,13 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	}
 
 	workspace->capacity = capacity;
-	workspace->batch = LOGGER_TAKE_PTR(batch);
-	workspace->vec = LOGGER_TAKE_PTR(vec);
-	workspace->copy = LOGGER_TAKE_PTR(copy);
-	workspace->lines = LOGGER_TAKE_PTR(lines);
-	workspace->lens = LOGGER_TAKE_PTR(lens);
-	workspace->failed = LOGGER_TAKE_PTR(failed);
-	return LOGGER_TAKE_PTR(workspace);
+	workspace->batch = no_free_ptr(batch);
+	workspace->vec = no_free_ptr(vec);
+	workspace->copy = no_free_ptr(copy);
+	workspace->lines = no_free_ptr(lines);
+	workspace->lens = no_free_ptr(lens);
+	workspace->failed = no_free_ptr(failed);
+	return_ptr(workspace);
 }
 
 void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
