@@ -320,6 +320,11 @@ static logger_t *create_logger(const logger_config_t *input,
 			goto fail_backends;
 		}
 		queue_ready = 1;
+		l->worker_workspace = logger_worker_workspace_create(l->q.cap);
+		if (!l->worker_workspace) {
+			rc = errno ? errno : ENOMEM;
+			goto fail_backends;
+		}
 		atomic_store_explicit(&l->running, 1, memory_order_release);
 		rc = pthread_create(&l->worker, NULL, logger_worker_main, l);
 		if (rc != 0) {
@@ -333,6 +338,8 @@ static logger_t *create_logger(const logger_config_t *input,
 	return l;
 
 fail_backends:
+	logger_worker_workspace_destroy(l->worker_workspace);
+	l->worker_workspace = NULL;
 	if (queue_ready)
 		logger_queue_destroy(&l->q);
 	logger_syslog_close(&l->syslog_backend);
@@ -426,8 +433,11 @@ static int dispose_body(logger_t *l)
 	pthread_mutex_lock(&l->emit_mu);
 	int rc = logger_sync_outputs_locked(l);
 	pthread_mutex_unlock(&l->emit_mu);
-	if (l->async_mode)
+	if (l->async_mode) {
+		logger_worker_workspace_destroy(l->worker_workspace);
+		l->worker_workspace = NULL;
 		logger_queue_destroy(&l->q);
+	}
 	int close_rc = logger_file_close_status(&l->file_backend);
 	if (!rc)
 		rc = close_rc;

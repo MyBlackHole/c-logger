@@ -115,12 +115,15 @@ int main(int argc, char **argv)
 	       ",\"consumer_records\":%" PRIu64 ",\"consumer_batches\":%" PRIu64
 	       ",\"async_completed\":%" PRIu64 ",\"emitted_records\":%" PRIu64
 	       ",\"failed_records\":%" PRIu64
+	       ",\"queue_slot_bytes\":%zu,\"queue_storage_bytes\":%zu"
 	       ",\"measurement\":\"output_completion_not_durability\",\"valid\":%s}\n",
 	       nt, sz, attempted, ps, es, ps > 0 ? attempted / ps : 0,
 	       es > 0 ? io.emitted_records / es : 0, m.enqueued, drops,
 	       m.sync_fallbacks, m.queue_high_watermark, m.consumer_records,
 	       m.consumer_batches, io.async_completed, io.emitted_records,
-	       io.failed_records, valid ? "true" : "false");
+	       io.failed_records, sizeof(logger_queue_slot_t),
+	       l->q.cap * sizeof(logger_queue_slot_t),
+	       valid ? "true" : "false");
 	logger_destroy(l);
 	free(threads);
 	free(msg);
