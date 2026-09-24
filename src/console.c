@@ -1,5 +1,6 @@
 #include "console.h"
 #include "logger_scope.h"
+#include "logger_cleanup.h"
 #undef CONSOLE_DEBUG
 #include <errno.h>
 #include <pthread.h>
@@ -9,8 +10,8 @@
 #include <string.h>
 #include <unistd.h>
 
-/* One snapshot per operation: concurrent init never combines a new verbosity
- * with an old color. Independent setters CAS only their own bits. */
+/* 每次操作只读取一个 config snapshot：并发 init 不会把新 verbosity 与旧 color 混用。
+ * 独立 setter 只对自己负责的 bit 做 CAS。 */
 #define COLOR_BITS 2u
 #define COLOR_MASK 3u
 static _Atomic unsigned g_config = (CONSOLE_NORMAL << COLOR_BITS) |
@@ -104,19 +105,20 @@ static int color_enabled(unsigned config, FILE *out)
 		return color == CONSOLE_COLOR_ALWAYS;
 	int saved = errno;
 	int enabled = isatty(fileno(out));
-	errno = saved; /* TTY probing must not change a user's printf %m input. */
+	errno = saved; /* TTY 探测不能改变用户 printf %m 依赖的 errno。 */
 	return enabled;
 }
 
-/* Scope covers all libc calls, our mutex and the FILE's internal locks. On
- * cancellation the output is not rolled back: a complete/partial write may
- * already have happened. No external host flockfile ordering is promised. */
+/* scope 覆盖全部 libc 调用、本库 mutex 和 FILE 内部锁。
+ * cancellation 发生时不会回滚已经完成或部分完成的输出；
+ * 也不承诺与 host 外部 flockfile() 建立额外 lock order。 */
 static int write_v(FILE *out, const char *label, const char *ansi,
 		   unsigned config, const char *fmt, va_list ap)
 {
 	if (!fmt)
 		return -EINVAL;
-	int rc = -pthread_mutex_lock(&g_console_mu);
+	ACQUIRE(pthread_mutex_checked, console_guard)(&g_console_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_checked, &console_guard);
 	if (rc)
 		return rc;
 	if (label) {
@@ -133,7 +135,6 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 	int flush = fflush(out);
 	if (!rc && flush)
 		rc = -(errno ? errno : EIO);
-	pthread_mutex_unlock(&g_console_mu);
 	return rc;
 }
 
@@ -203,14 +204,14 @@ int console_debug_source(const char *file, int line, const char *func,
 				rc = -EOVERFLOW;
 		}
 		if (!rc) {
-			rc = -pthread_mutex_lock(&g_console_mu);
+			ACQUIRE(pthread_mutex_checked, console_guard)(&g_console_mu);
+			rc = ACQUIRE_ERR(pthread_mutex_checked, &console_guard);
 			if (!rc) {
 				if (fprintf(stderr, "DEBUG: %s\n", merged) < 0)
 					rc = -(errno ? errno : EIO);
 				int flush = fflush(stderr);
 				if (!rc && flush)
 					rc = -(errno ? errno : EIO);
-				pthread_mutex_unlock(&g_console_mu);
 			}
 		}
 	}

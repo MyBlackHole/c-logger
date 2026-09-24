@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — locking audit
+
+- 新增完整 Lock Matrix，明确 global、instance、Console、Audit 的保护对象、
+  固定 lock order、禁止嵌套关系和 guard 适用边界。
+- 为 pthread mutex 提供 Linux-style lexical guard、checked acquire 和 try-acquire；
+  checked 路径继续通过 ACQUIRE_ERR() 传播 pthread 错误。
+- 首批迁移 worker/queue/Console/explicit-instance 的简单单锁临界区；
+  global/Audit 多锁与 teardown 生命周期路径保持显式。
+- 扩展 resource cleanup regression，验证 pthread guard 自动 unlock、
+  checked acquire 与 trylock -EBUSY 语义。
+
 ## Unreleased — 中文代码说明规范
 
 - 规定源码注释、ownership/locking/lifecycle 等工程说明以中文为主；API、标识符、

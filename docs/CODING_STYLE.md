@@ -68,6 +68,11 @@ logger_worker_workspace_t *worker_workspace;
 涉及 atomic 时，说明它承担的是 reservation、publication、completion 还是
 lifetime；禁止用“原子所以线程安全”这种模糊表述。
 
+使用 `guard()/ACQUIRE()` 前必须先确认 lock hierarchy。单锁、lexical scope、
+unlock error 无业务语义的路径优先 guard；多锁、cancellation-aware、跨 scope
+ownership 或错误承载型 unlock 保持显式。完整规则见 `LOCKING.md` 与
+`LOCK_MATRIX.md`。
+
 ## 错误与 cleanup 注释
 
 如果 destructor/close 的错误被故意忽略，要解释原因。
