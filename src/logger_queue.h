@@ -1,21 +1,28 @@
 #ifndef LOGGER_QUEUE_H
 #define LOGGER_QUEUE_H
 #include "logger_record.h"
+#include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
 
-#define LOGGER_QUEUE_INLINE_TEXT 256u
+#define LOGGER_QUEUE_INLINE_TEXT 512u
 #define LOGGER_QUEUE_SPILL_LIMIT 1024u
 #define LOGGER_QUEUE_SPILL_NONE UINT32_MAX
+#define LOGGER_QUEUE_SPILL_WORD_BITS 32u
+#define LOGGER_QUEUE_SPILL_WORDS 	((LOGGER_QUEUE_SPILL_LIMIT + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) / 	 LOGGER_QUEUE_SPILL_WORD_BITS)
 
 _Static_assert(LOGGER_MESSAGE_MAX - 1u <= UINT16_MAX,
 	       "queue text_len must fit uint16_t");
+_Static_assert(sizeof(unsigned) * CHAR_BIT == LOGGER_QUEUE_SPILL_WORD_BITS,
+	       "spill bitmap requires 32-bit unsigned");
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2,
+	       "spill bitmap requires lock-free unsigned atomics");
 
 /*
- * queue slot 不再内嵌完整 logger_message_t。
- * source/context 仍固定 snapshot，短消息直接放 inline_text；
- * 长消息只保存 spill index，由预分配 spill pool 持有正文。
+ * queue slot 不内嵌完整 logger_message_t。
+ * source/context 使用固定 snapshot；正文 <= 512B 直接 inline，
+ * 更长正文保存 spill index，由预分配 spill pool 持有。
  */
 typedef struct {
 	logger_level_t level;
@@ -24,9 +31,10 @@ typedef struct {
 	int line;
 	char request_id[64], session_id[64], trace_id[64];
 	char module_storage[128], file_storage[256], function_storage[128];
-	uint16_t text_len;
 	uint32_t spill_index;
-	char inline_text[LOGGER_QUEUE_INLINE_TEXT];
+	uint16_t text_len;
+	uint8_t module_len, file_len, function_len;
+	char inline_text[LOGGER_QUEUE_INLINE_TEXT + 1u];
 } logger_queue_record_t;
 
 typedef struct {
@@ -35,7 +43,6 @@ typedef struct {
 } logger_queue_slot_t;
 
 typedef struct {
-	uint32_t next;
 	char text[LOGGER_MESSAGE_MAX];
 } logger_queue_spill_t;
 
@@ -45,13 +52,13 @@ typedef struct {
 	size_t cap, mask;
 
 	/*
-	 * 长消息 spill pool：queue 结构性拥有全部 block。
-	 * spill_mu 只保护 freelist，不与 wait_mu/emit_mu/progress_mu 嵌套。
+	 * long-message spill pool：queue 结构性拥有全部 block。
+	 * spill_used 是 lock-free bitmap；producer 通过 0->1 CAS 独占 block，
+	 * consumer 完成复制后通过 atomic clear 归还。
 	 */
 	logger_queue_spill_t *spills;
 	size_t spill_cap;
-	uint32_t spill_free_head;
-	pthread_mutex_t spill_mu;
+	_Atomic unsigned spill_used[LOGGER_QUEUE_SPILL_WORDS];
 	_Atomic uint64_t spill_exhaustions;
 	size_t storage_bytes;
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — queue hot-path tuning
+
+- 根据首次 compact benchmark 拆分热点，而不是简单扩大 spill pool。
+- inline 正文上限提升到 512B，使 256B 常见日志完全绕过 spill path。
+- 去除共享 `spill_mu` freelist，改为 1024-bit lock-free atomic bitmap；
+  producer CAS claim，consumer atomic clear release。
+- production message 直接携带 `vsnprintf()` 已知的 `text_len`，消除 async enqueue
+  对长正文的第二次 O(n) 扫描。
+- source snapshot 记录实际长度，只复制有效字节，减少 slot 复用时固定 512B 尾部流量。
+- benchmark 改为三版本同 runner：pre-compact 做内存门禁，上一版 compact 做吞吐调优基线。
+
 ## Unreleased — queue benchmark validation
 
 - 新增同 runner before/after benchmark workflow，固定 compact 前 commit

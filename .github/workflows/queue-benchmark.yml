@@ -9,6 +9,7 @@ on:
       - "src/logger_queue.h"
       - "src/logger_record.h"
       - "src/logger_worker.c"
+      - "src/logger.c"
       - "tests/bench_matrix.c"
       - "scripts/benchmark.sh"
       - "scripts/compare_queue_benchmark.py"
@@ -20,6 +21,7 @@ on:
       - "src/logger_queue.h"
       - "src/logger_record.h"
       - "src/logger_worker.c"
+      - "src/logger.c"
       - "tests/bench_matrix.c"
       - "scripts/compare_queue_benchmark.py"
 
@@ -27,14 +29,22 @@ jobs:
   compare:
     runs-on: ubuntu-24.04
     env:
-      QUEUE_BASELINE_REF: 23504f104e900419e891b57d7187ca0bcabffdf3
+      QUEUE_MEMORY_BASELINE_REF: 23504f104e900419e891b57d7187ca0bcabffdf3
+      QUEUE_TUNING_BASELINE_REF: 62dbe16393141899b8026c5c7f81e2415d87f634
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Prepare pre-compact baseline
-        run: git worktree add ../queue-baseline "$QUEUE_BASELINE_REF"
+      - name: Prepare memory baseline
+        run: >-
+          git worktree add ../queue-memory-baseline
+          "$QUEUE_MEMORY_BASELINE_REF"
+
+      - name: Prepare tuning baseline
+        run: >-
+          git worktree add ../queue-tuning-baseline
+          "$QUEUE_TUNING_BASELINE_REF"
 
       - name: Configure candidate
         run: >-
@@ -45,21 +55,36 @@ jobs:
       - name: Build candidate benchmark
         run: cmake --build build-queue-candidate --target bench_matrix -j2
 
-      - name: Configure baseline
+      - name: Configure memory baseline
         run: >-
-          cmake -S ../queue-baseline -B build-queue-baseline
+          cmake -S ../queue-memory-baseline -B build-queue-memory-baseline
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_SHARED_LIBS=OFF
 
-      - name: Build baseline benchmark
-        run: cmake --build build-queue-baseline --target bench_matrix -j2
+      - name: Build memory baseline benchmark
+        run: >-
+          cmake --build build-queue-memory-baseline
+          --target bench_matrix -j2
+
+      - name: Configure tuning baseline
+        run: >-
+          cmake -S ../queue-tuning-baseline -B build-queue-tuning-baseline
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build tuning baseline benchmark
+        run: >-
+          cmake --build build-queue-tuning-baseline
+          --target bench_matrix -j2
 
       - name: Compare memory and throughput
         run: >-
           python3 scripts/compare_queue_benchmark.py
-          --baseline-bin build-queue-baseline/bench_matrix
+          --memory-baseline-bin build-queue-memory-baseline/bench_matrix
+          --throughput-baseline-bin build-queue-tuning-baseline/bench_matrix
           --candidate-bin build-queue-candidate/bench_matrix
-          --baseline-ref "$QUEUE_BASELINE_REF"
+          --memory-baseline-ref "$QUEUE_MEMORY_BASELINE_REF"
+          --throughput-baseline-ref "$QUEUE_TUNING_BASELINE_REF"
           --threads 1,4,16
           --sizes 64,256,1024,4000
           --records 1000

@@ -139,8 +139,13 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
 		return;
 	capture_context(&m);
-	if (vsnprintf(m.text, sizeof(m.text), fmt, ap) < 0)
+	int formatted = vsnprintf(m.text, sizeof(m.text), fmt, ap);
+	if (formatted < 0)
 		return;
+	size_t stored = (size_t)formatted < sizeof(m.text) ?
+				(size_t)formatted :
+				sizeof(m.text) - 1u;
+	m.text_len = (uint16_t)stored;
 
 	if (!l->async_mode) {
 		(void)logger_emit_status(l, &m, 0);
@@ -149,8 +154,7 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 					  memory_order_relaxed);
 		update_high_watermark(l);
 	} else if (l->overflow[lv] == LOGGER_OVERFLOW_SYNC) {
-		/* A fallback attempt is NOT a queue drop. Its actual backend result
-         * is recorded in the separate I/O metrics. */
+		/* sync fallback 不是 queue drop；实际 backend 结果由独立 I/O metrics 记录。 */
 		atomic_fetch_add_explicit(&l->sync_fallbacks, 1,
 					  memory_order_relaxed);
 		(void)logger_emit_status(l, &m, 0);

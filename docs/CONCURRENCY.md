@@ -44,7 +44,7 @@ upgraded/downgraded casually without reviewing the whole protocol.
 
 ## Queue long-message spill protocol
 
-queue slot 只内嵌 256B 文本。长度达到 inline 上限的消息先从预分配 spill pool
+queue slot 可内嵌最多 512B 正文。更长消息先从预分配 spill pool
 取得一个独占 block，再 reserve/publish queue slot。
 
 publication 顺序为：
@@ -64,8 +64,8 @@ release-store slot.seq
 consumer 通过 acquire-load `slot.seq` 后读取 compact record 与 spill text，
 复制到 worker batch，然后在把 slot 标记为 reusable **之前**归还 spill block。
 
-spill block 的 freelist 由 `spill_mu` 保护；该锁只用于 block acquire/release，
-不保护 queue payload，也不与 `wait_mu/emit_mu/progress_mu` 嵌套。
+spill block ownership 由固定 atomic bitmap 管理：producer 通过 0->1 CAS claim，
+consumer 完成复制后通过 1->0 atomic clear release。这里不再存在共享 spill mutex。
 
 spill pool 暂时耗尽不允许截断 long message。queue push 返回 unavailable，
 上层继续使用原有 DROP / SYNC overflow policy。

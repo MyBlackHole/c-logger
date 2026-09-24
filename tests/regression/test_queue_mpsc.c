@@ -16,6 +16,10 @@ static void *produce(void *arg)
 	int id = *(int *)arg;
 	logger_message_t m = { 0 };
 	m.pid = id;
+	/* 让并发 MPSC 回归真实覆盖 long-message bitmap allocator。 */
+	memset(m.text, 'P', 700);
+	m.text[700] = '\0';
+	m.text_len = 700;
 	for (int i = 0; i < RECORDS; ++i) {
 		m.line = i;
 		while (!logger_queue_push(&queue, &m))
@@ -105,12 +109,15 @@ static void check_compact_storage(void)
 
 	CHECK(logger_queue_init(&q, 2) == 0);
 	memset(&in, 0, sizeof(in));
-	memset(in.text, 'S', LOGGER_QUEUE_INLINE_TEXT - 1u);
-	in.text[LOGGER_QUEUE_INLINE_TEXT - 1u] = '\0';
+	memset(in.text, 'S', LOGGER_QUEUE_INLINE_TEXT);
+	in.text[LOGGER_QUEUE_INLINE_TEXT] = '\0';
+	in.text_len = LOGGER_QUEUE_INLINE_TEXT;
 	CHECK(logger_queue_push(&q, &in) == 1);
+	CHECK(logger_queue_spill_exhaustions(&q) == 0);
 	CHECK(logger_queue_try_pop(&q, &out) == 1);
-	CHECK(strlen(out.text) == LOGGER_QUEUE_INLINE_TEXT - 1u);
-	CHECK(!memcmp(out.text, in.text, LOGGER_QUEUE_INLINE_TEXT));
+	CHECK(out.text_len == LOGGER_QUEUE_INLINE_TEXT);
+	CHECK(strlen(out.text) == LOGGER_QUEUE_INLINE_TEXT);
+	CHECK(!memcmp(out.text, in.text, LOGGER_QUEUE_INLINE_TEXT + 1u));
 	logger_queue_destroy(&q);
 }
 
@@ -166,6 +173,6 @@ int main(void)
 		CHECK(last[i] == RECORDS - 1);
 	logger_queue_destroy(&queue);
 	CHECK(logger_queue_init(&queue, SIZE_MAX) == -1 && errno == EOVERFLOW);
-	puts("compact queue storage + spill pool; 8 producers exact; depth + rollover checked");
+	puts("512B inline + lock-free spill bitmap; 8 long-message producers exact; depth + rollover checked");
 	return 0;
 }
