@@ -47,7 +47,6 @@ right reliability level without maintaining separate test lists.
 | `reliability` | fault + crash verification |
 | `security` | audit integrity, recovery, single writer, redaction |
 | `crypto` | SHA-256 chain, known-answer tests, and retired-algorithm rejection |
-| `async-cancel` | pending `PTHREAD_CANCEL_ASYNCHRONOUS` boundary cases; cleanup scopes are installed while cancellation is disabled, then the request is issued only after Logger has disabled cancellation |
 
 ## Local commands
 
@@ -77,13 +76,17 @@ build property, not a CTest runtime profile.
 A production release should pass the complete normal suite in an unsanitized
 native Debug build, the shared Release profile, both builtin digest
 known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
-virtual-address environment supports those runtimes. The sanitizer and shared
-Release profiles exclude tests labeled `async-cancel`: those cases deliberately
-enable `PTHREAD_CANCEL_ASYNCHRONOUS`, whose delivery is validated by the complete
-unsanitized native Debug suite instead. These tests do not claim that arbitrary
-Logger calls are async-cancel-safe: the application cleanup handler is installed
-while cancellation is disabled, and the request is deliberately issued only
-after the test observes Logger's internal cancellation-disabled scope.
+virtual-address environment supports those runtimes.
+
+Calls made while the caller has `PTHREAD_CANCEL_ASYNCHRONOUS` and
+`PTHREAD_CANCEL_ENABLE` are outside the Logger/Console contract: POSIX only
+requires `pthread_cancel`, `pthread_setcancelstate` and
+`pthread_setcanceltype` to be async-cancel-safe. The supported boundary is a
+caller using deferred cancellation, or a caller that has disabled cancellation
+before entering Logger. Existing restore-policy tests verify that an already
+disabled caller remains disabled and that its cancellation type is preserved;
+the constructor contract separately rejects enabled asynchronous cancellation
+with `ENOTSUP`.
 
 For shared Release white-box tests, the private same-source
 `logger_regression_support` archive is compiled with FORTIFY disabled so linker
@@ -128,14 +131,10 @@ frozen, independently generated data, never regenerated from the code under
 test. See tests/fixtures/CRYPTO_PROVENANCE.md.
 
 ASan/UBSan: `-DLOGGER_SANITIZE=address-undefined`; TSan: `thread`, in separate
-builds. Keep leak detection enabled. CI runs:
-
-- shared Release: all tests except `async-cancel`, plus ABI/package checks;
-- native Debug without sanitizers: the complete suite, including `async-cancel`;
-- ASan/UBSan and TSan: all tests except `async-cancel`.
-
-Any additional exclusion is a release-blocking change that must be documented
-rather than hidden behind a passing subset.
+builds. Keep leak detection enabled. CI runs the complete registered suite in
+shared Release, unsanitized native Debug, ASan/UBSan and TSan profiles. Tests for
+unsupported `ASYNC+ENABLE` entry are not registered as release requirements;
+supported cancellation-state preservation remains covered by the contract tests.
 
 ## Round 4 audit-parser label
 

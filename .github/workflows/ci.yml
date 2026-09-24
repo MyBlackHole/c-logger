@@ -15,9 +15,7 @@ jobs:
       - name: Build
         run: cmake --build build -j2
       - name: Test release/shared profile
-        # PTHREAD_CANCEL_ASYNCHRONOUS delivery is validated in native-debug.
-        # All other shared/release, packaging and white-box regressions run here.
-        run: ctest --test-dir build --output-on-failure -j2 -LE '^async-cancel$'
+        run: ctest --test-dir build --output-on-failure -j2
       - name: Inspect shared ABI
         run: python3 scripts/check_release_abi.py build/liblogger.so
 
@@ -49,6 +47,4 @@ jobs:
       - name: Build
         run: cmake --build build -j2
       - name: Test
-        # Sanitizer runtimes instrument pthread cancellation machinery. The
-        # async-cancel cases remain mandatory in native-debug above.
-        run: ctest --test-dir build --output-on-failure -j2 -LE '^async-cancel$'
+        run: ctest --test-dir build --output-on-failure -j2

@@ -9,9 +9,10 @@
 - Reject unknown output bits and invalid Logger detail/rotation/file-mode/
   flush-level/overflow configuration values instead of silently accepting them.
 - Add dedicated SIGPIPE, reserved-lock-namespace and invalid-config regressions.
-- Correct async-cancel regression setup so pthread cleanup scopes are installed
-  while cancellation is disabled; requests are issued only after Logger's scope
-  has disabled cancellation, avoiding undefined test behavior.
+- Remove release tests that required unsupported `ASYNC+ENABLE` entry into
+  ordinary Logger/Console APIs. POSIX only guarantees three pthread cancellation
+  control functions as async-cancel-safe; supported deferred and caller-disabled
+  cancellation policies remain covered by contract tests.
 - Add GitHub CI with a fortified shared Release profile, a complete
   unsanitized native Debug suite, and ASan/UBSan + TSan profiles. Private
   --wrap-based regression support disables FORTIFY only to keep libc hook symbol

@@ -31,7 +31,7 @@ static logger_t *log_instance;
 static const char *scenario, *nested;
 static char socket_dir[] = "/tmp/logger-scope-XXXXXX";
 static char socket_path[108];
-static int reentry_mode, cleanup_new, use_console, use_async_cancel;
+static int reentry_mode, cleanup_new, use_console;
 static int count_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
@@ -298,23 +298,7 @@ static void *caller(void *unused)
 {
 	(void)unused;
 	actor = 1;
-	int saved_state = PTHREAD_CANCEL_ENABLE;
-	int saved_type = PTHREAD_CANCEL_DEFERRED;
-	/*
-	 * Manipulating pthread cleanup scopes while asynchronous cancellation is
-	 * enabled is undefined. Build the cleanup scope with cancellation disabled,
-	 * then restore the original enabled state. cancel_case() does not issue the
-	 * request until a Logger wrapper has observed cancellation disabled.
-	 */
-	if (use_async_cancel) {
-		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
-					      &saved_state));
-		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					     &saved_type));
-	}
 	pthread_cleanup_push(application_cleanup, NULL);
-	if (use_async_cancel)
-		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	if (use_console)
 		CHECK(!console_call(scenario));
 	else if (!strcmp(scenario, "create") ||
@@ -352,15 +336,7 @@ static void *caller(void *unused)
 		LOGGER_INFO(log_instance, "test", "operation-record");
 	atomic_store(&returned, 1);
 	pthread_testcancel();
-	if (use_async_cancel) {
-		int current_state;
-		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
-					      &current_state));
-		CHECK(!pthread_setcanceltype(saved_type, NULL));
-	}
 	pthread_cleanup_pop(0);
-	if (use_async_cancel)
-		CHECK(!pthread_setcancelstate(saved_state, NULL));
 	return NULL;
 }
 static void cleanup_fixtures(void)
@@ -621,8 +597,7 @@ int main(int argc, char **argv)
 	cc.verbosity = CONSOLE_DEBUG;
 	cc.color = CONSOLE_COLOR_NEVER;
 	console_init(&cc);
-	if (!strcmp(argv[1], "cancel") || !strcmp(argv[1], "async-cancel")) {
-		use_async_cancel = !strcmp(argv[1], "async-cancel");
+	if (!strcmp(argv[1], "cancel")) {
 		cancel_case();
 	} else if (!strcmp(argv[1], "console-cancel")) {
 		use_console = 1;

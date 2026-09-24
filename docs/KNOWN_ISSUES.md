@@ -34,7 +34,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | 持久化验证 | 本轮环境 OverlayFS `fsync=volatile`，仅验收过程逻辑和进程退出，不等于系统掉电。需非 volatile ext4/XFS 与实际存储/VM 故障矩阵；输出错误后的业务重试仍可能重复 |
 | API/ABI | 公共签名和布局本轮未改。本轮 Logger config 的旧 v1 前缀/完整新尾部已有 guard-page 和独立旧头 consumer 验证；不表示所有结构、架构或前向兼容已冻结，时区变更等仍需验证；已完成 0.9.0 候选的显式导出/安装/SONAME 与本机旧头验证；v1 ABI 和跨平台矩阵尚未正式冻结 |
 | 老平台 | Linux3.x、老 glibc、32bit 未完整验收。外部密码库后端现已移除；不再承诺外部密码模块集成。fork guard 依赖 lock-free int；syscall 兼容写法不代表所有旧文件系统支持内部轮换 |
-| 显式 / Console 取消与重入 | 本轮补齐资源入口的取消延期和同线程重入拒绝，但不是 signal-safe / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。启用 ASYNCHRONOUS 的直接 constructor 返回 ENOTSUP；宿主仍需管理返回后的指针 cleanup，先停止/join 所有借用者；不得并发 destroy 或取消私有 worker。禁用取消期间 I/O 仍可能阻塞 |
+| 显式 / Console 取消与重入 | 本轮补齐 deferred cancellation 下资源入口的取消延期和同线程重入拒绝，但不是 signal-safe / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 constructor 明确返回 ENOTSUP。若 caller 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 cleanup，先停止/join 所有借用者；不得并发 destroy 或取消私有 worker。禁用取消期间 I/O 仍可能阻塞 |
 | Audit 事务 | ATTEMPT/RESULT 不是跨业务操作原子事务，也不能跨 shutdown 用旧事务结束新生命周期。API 不是信号处理接口 |
 | Audit 恢复规模 | 完整扫描保留集合、段连接 O(N²)、4096 归档上限；暂无持久 segment ID/可信恢复索引/checkpoint v1 自动迁移/公开恢复告警字段 |
 | 完整性信任 | 无外部可信签名、锚点或 WORM 认证；本地无密钥链不能排除整体重算、截尾或回滚。旧全零或非规范历史不自动改写 |
