@@ -1,0 +1,83 @@
+name: queue-benchmark
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/queue-benchmark.yml"
+      - "src/logger_queue.c"
+      - "src/logger_queue.h"
+      - "src/logger_record.h"
+      - "src/logger_worker.c"
+      - "tests/bench_matrix.c"
+      - "scripts/benchmark.sh"
+      - "scripts/compare_queue_benchmark.py"
+      - "docs/QUEUE_STORAGE.md"
+  push:
+    branches: [main]
+    paths:
+      - "src/logger_queue.c"
+      - "src/logger_queue.h"
+      - "src/logger_record.h"
+      - "src/logger_worker.c"
+      - "tests/bench_matrix.c"
+      - "scripts/compare_queue_benchmark.py"
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    env:
+      QUEUE_BASELINE_REF: 23504f104e900419e891b57d7187ca0bcabffdf3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Prepare pre-compact baseline
+        run: git worktree add ../queue-baseline "$QUEUE_BASELINE_REF"
+
+      - name: Configure candidate
+        run: >-
+          cmake -S . -B build-queue-candidate
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build candidate benchmark
+        run: cmake --build build-queue-candidate --target bench_matrix -j2
+
+      - name: Configure baseline
+        run: >-
+          cmake -S ../queue-baseline -B build-queue-baseline
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build baseline benchmark
+        run: cmake --build build-queue-baseline --target bench_matrix -j2
+
+      - name: Compare memory and throughput
+        run: >-
+          python3 scripts/compare_queue_benchmark.py
+          --baseline-bin build-queue-baseline/bench_matrix
+          --candidate-bin build-queue-candidate/bench_matrix
+          --baseline-ref "$QUEUE_BASELINE_REF"
+          --threads 1,4,16
+          --sizes 64,256,1024,4000
+          --records 1000
+          --repeats 3
+          --default-queue 8192
+          --min-memory-reduction 50
+          --out-dir benchmark-comparison
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f benchmark-comparison/summary.md ]; then
+            cat benchmark-comparison/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: queue-benchmark-comparison
+          path: benchmark-comparison/
+          if-no-files-found: ignore
