@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — resource ownership audit
+
+- Make the build dialect explicit as C11 plus GNU C extensions, matching the
+  private Linux-style cleanup implementation.
+- Add a repository ownership matrix covering heap objects, descriptors,
+  FILE/DIR handles, workers, global lifetime pins and synchronization objects.
+- Convert four single-owner rollback descriptors to `__free(close_fd)` with
+  explicit `take_fd()` ownership transfer; keep error-bearing and shared
+  finalization explicit.
+
 ## Unreleased — engineering invariants
 
 - Add project-wide ownership, locking, concurrency, error-handling and lifecycle

@@ -1,5 +1,24 @@
 # 目标平台构建基线
 
+## C 语言与编译器方言
+
+项目的语言基线是 **C11**，但不是 strict ISO C11。构建系统显式设置：
+
+```cmake
+CMAKE_C_STANDARD 11
+CMAKE_C_STANDARD_REQUIRED ON
+CMAKE_C_EXTENSIONS ON
+```
+
+内部 Linux-style 资源管理依赖 GCC/Clang 兼容 GNU C 扩展，包括
+`__attribute__((cleanup))`、`typeof`/statement expression 和唯一标识宏。
+因此生产源码按 **C11 + GNU C extensions**（通常即 `-std=gnu11`）维护。
+这些扩展只存在于私有实现，不进入已安装 public ABI/header 契约。
+
+当前 CI 验证的是 Linux/ELF 上的 GNU-compatible toolchain；更换编译器或 sysroot 时，
+除了 C11 支持，还必须验证这些 cleanup 扩展、原子语义和 pthread 行为。不得仅通过修改
+`CMAKE_C_STANDARD` 或关闭 extensions 来宣称 strict-C11 兼容。
+
 ## 不把工具链元数据当平台验收
 
 一个在新 glibc 上构建的 `.so` 会产生其实际使用的符号版本依赖。设置 CMake 的

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "logger_file.h"
 #include "logger_fault.h"
+#include "logger_cleanup.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -253,18 +254,20 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
-	int fd = openat(f->dir_fd, f->name, flags, f->mode);
+	int fd __free(close_fd) =
+		openat(f->dir_fd, f->name, flags, f->mode);
 	if (fd < 0)
 		return -errno;
 	rc = check_named_fd(f->dir_fd, f->name, fd, st);
 	if (!rc)
 		rc = f->managed ? regular_single_link(st) :
 				  (S_ISCHR(st->st_mode) ? 0 : -EINVAL);
-	if (rc) {
-		(void)close(fd);
+	if (rc)
 		return rc;
-	}
-	*out = fd;
+
+	/* Ownership transfer: lexical candidate -> caller. The caller either
+	 * installs it into logger_file_t or explicitly closes it on failure. */
+	*out = take_fd(fd);
 	/* A previously absent active may have been created. Conservatively sync
      * the bound directory even if it existed; this never depends on cwd. */
 	if (f->managed)
@@ -436,15 +439,16 @@ static int retention(logger_file_t *f, time_t now)
 		return 0;
 	/* A separate directory description avoids sharing readdir's offset with
      * the bound directory or an Audit scanner. */
-	int fd = openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	int fd __free(close_fd) =
+		openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0)
 		return -errno;
 	DIR *d = fdopendir(fd);
-	if (!d) {
-		int rc = -errno;
-		(void)close(fd);
-		return rc;
-	}
+	if (!d)
+		return -errno;
+	/* fdopendir() consumed descriptor ownership; closedir() below remains
+	 * explicit because its failure contributes to the retention result. */
+	(void)take_fd(fd);
 	int rc = 0, changed = 0;
 	uintmax_t seconds = (uintmax_t)f->rotation.retention_days * 86400u;
 	for (;;) {
