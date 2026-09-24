@@ -93,7 +93,9 @@ int main(int argc, char **argv)
 		/* No malloc, stdio, logger reset/init or thread creation before exec. */
 		execve(exe, args, environ);
 		static const char message[] = "execve failed\n";
-		(void)write(STDERR_FILENO, message, sizeof(message) - 1);
+		ssize_t ignored =
+			write(STDERR_FILENO, message, sizeof(message) - 1);
+		(void)ignored;
 		_exit(127);
 	}
 	logger_after_fork_parent();

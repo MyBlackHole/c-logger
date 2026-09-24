@@ -47,6 +47,7 @@ right reliability level without maintaining separate test lists.
 | `reliability` | fault + crash verification |
 | `security` | audit integrity, recovery, single writer, redaction |
 | `crypto` | SHA-256 chain, known-answer tests, and retired-algorithm rejection |
+| `async-cancel` | deliberate `PTHREAD_CANCEL_ASYNCHRONOUS` stress cases; mandatory in native runs, excluded under sanitizer runtimes |
 
 ## Local commands
 
@@ -75,8 +76,13 @@ build property, not a CTest runtime profile.
 
 A production release should pass the complete normal suite, both builtin
 digest known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
-virtual-address environment supports those runtimes. No external crypto
-package is used to build or run the current test suite.
+virtual-address environment supports those runtimes. The sanitizer profiles run
+the complete suite except tests labeled `async-cancel`: those cases deliberately
+enable `PTHREAD_CANCEL_ASYNCHRONOUS`, while sanitizer runtimes instrument the
+pthread/cancellation path itself and are not a reliable oracle for that delivery
+contract. The same cases remain mandatory in the unsanitized complete native
+suite; they are not skipped from the release gate. No external crypto package is
+used to build or run the current test suite.
 
 ## Round 2 Audit state regressions
 
@@ -114,8 +120,10 @@ frozen, independently generated data, never regenerated from the code under
 test. See tests/fixtures/CRYPTO_PROVENANCE.md.
 
 ASan/UBSan: `-DLOGGER_SANITIZE=address-undefined`; TSan: `thread`, in separate
-builds. Keep leak detection enabled. Run complete suites as well as focused
-labels; report failures instead of hiding them behind a passing subset.
+builds. Keep leak detection enabled. Run `ctest -LE '^async-cancel$'` under
+sanitizers and run the complete uninstrumented suite separately, including every
+`async-cancel` case. Any additional sanitizer exclusion is a release-blocking
+change that must be documented rather than hidden behind a passing subset.
 
 ## Round 4 audit-parser label
 

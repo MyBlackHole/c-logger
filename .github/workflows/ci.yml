@@ -36,4 +36,6 @@ jobs:
       - name: Build
         run: cmake --build build -j2
       - name: Test
-        run: ctest --test-dir build --output-on-failure -j2
+        # Sanitizer runtimes instrument pthread cancellation machinery. The
+        # async-cancel cases remain mandatory in the complete native job.
+        run: ctest --test-dir build --output-on-failure -j2 -LE '^async-cancel$'

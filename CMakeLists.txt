@@ -681,6 +681,7 @@ foreach(s write async-cancel-write queue flush flush-void reopen reader create c
   add_test(NAME global_cancel_${s} COMMAND global_cancel_regression ${s})
   set_tests_properties(global_cancel_${s} PROPERTIES LABELS "regression;concurrency;global-lifecycle;global-cancel" TIMEOUT 20)
 endforeach()
+set_property(TEST global_cancel_async-cancel-write APPEND PROPERTY LABELS "async-cancel")
 logger_regression(global_stress_regression test_global_stress.c)
 foreach(s init-race sync async)
   add_test(NAME global_stress_${s} COMMAND global_stress_regression ${s})
@@ -711,6 +712,13 @@ foreach(s write source sync queue flush reopen syslog-metrics destroy)
   add_test(NAME explicit_async_cancel_${s} COMMAND explicit_scope_regression async-cancel ${s})
   set_tests_properties(explicit_async_cancel_${s} PROPERTIES LABELS "regression;explicit-scope;concurrency" TIMEOUT 15)
 endforeach()
+set_property(TEST
+  explicit_async_cancel_write explicit_async_cancel_source
+  explicit_async_cancel_sync explicit_async_cancel_queue
+  explicit_async_cancel_flush explicit_async_cancel_reopen
+  explicit_async_cancel_syslog-metrics explicit_async_cancel_destroy
+  APPEND PROPERTY LABELS "async-cancel"
+)
 foreach(s print info warn error verbose debug source)
   add_test(NAME console_cancel_${s} COMMAND explicit_scope_regression console-cancel ${s})
   set_tests_properties(console_cancel_${s} PROPERTIES LABELS "regression;explicit-scope;concurrency" TIMEOUT 15)
