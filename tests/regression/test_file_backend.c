@@ -291,6 +291,12 @@ static void invalid_path(const char *scenario)
 		put("real.log", "sentinel");
 		CHECK(link("real.log", "out.log") == 0);
 		expected = EMLINK;
+	} else if (!strcmp(scenario, "path-reserved-logger-lock")) {
+		c.file_path = "victim.log.logger.lock";
+		expected = EINVAL;
+	} else if (!strcmp(scenario, "path-reserved-audit-lock")) {
+		c.file_path = "victim.audit.lock";
+		expected = EINVAL;
 	} else if (!strcmp(scenario, "lock-symlink")) {
 		put("real.lock", "sentinel");
 		CHECK(symlink("real.lock", "out.log.logger.lock") == 0);

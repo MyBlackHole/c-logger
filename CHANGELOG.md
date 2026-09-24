@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — production blocker hardening
+
+- Prevent stderr EPIPE from delivering a new SIGPIPE to the host thread/process;
+  preserve the caller's signal mask and process-global SIGPIPE disposition.
+- Reject active file basenames in the internal `.logger.lock` / `.audit.lock`
+  coordination namespaces so rotation cannot replace another owner's lock path.
+- Reject unknown output bits and invalid Logger detail/rotation/file-mode/
+  flush-level/overflow configuration values instead of silently accepting them.
+- Add dedicated SIGPIPE, reserved-lock-namespace and invalid-config regressions.
+- Add GitHub CI for complete native tests plus ASan/UBSan and TSan profiles.
+
+
 ## 0.9.0 — release-engineering candidate
 
 Not a final Production v1. Same complete Logger/Console/Audit functionality and

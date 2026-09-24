@@ -341,6 +341,7 @@ logger_regression(flush_watermark_regression test_flush_watermark.c)
 target_link_options(flush_watermark_regression PRIVATE -Wl,--wrap=logger_format_line -Wl,--wrap=pthread_cond_wait)
 logger_regression(io_accounting_regression test_io_accounting.c)
 target_link_options(io_accounting_regression PRIVATE -Wl,--wrap=logger_format_line -Wl,--wrap=write -Wl,--wrap=writev -Wl,--wrap=fsync)
+logger_regression(stderr_sigpipe_regression test_stderr_sigpipe.c)
 logger_regression(queue_mpsc_regression test_queue_mpsc.c)
 logger_regression(global_flush_regression test_global_flush.c)
 foreach(t queue_notify_regression flush_pending_regression flush_watermark_regression queue_mpsc_regression global_flush_regression)
@@ -350,6 +351,10 @@ endforeach()
 foreach(s drop fallback fallback-error async-error short-ok short-error file-fsync dir-fsync rotation-fsync sync)
   add_test(NAME io_${s}_regression COMMAND io_accounting_regression ${s})
   set_tests_properties(io_${s}_regression PROPERTIES LABELS "regression;reliability;queue-flush" TIMEOUT 15)
+endforeach()
+foreach(s sync async preblocked)
+  add_test(NAME stderr_sigpipe_${s} COMMAND stderr_sigpipe_regression ${s})
+  set_tests_properties(stderr_sigpipe_${s} PROPERTIES LABELS "regression;reliability;host-owned" TIMEOUT 15)
 endforeach()
 target_include_directories(bench_matrix PRIVATE src)
 target_compile_options(bench_matrix PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -546,6 +551,7 @@ target_link_options(file_backend_regression PRIVATE
   -Wl,--wrap=logger_file_rename_noreplace -Wl,--wrap=unlinkat -Wl,--wrap=flock -Wl,--wrap=writev)
 foreach(s owner-same owner-process owner-race owner-exit owner-alias owner-close-other
           path-empty path-long name-long path-directory path-fifo path-symlink path-dangling path-hardlink
+          path-reserved-logger-lock path-reserved-audit-lock
           lock-symlink lock-hardlink lock-fifo device-rotate device-shared init-cleanup
           reopen-ok reopen-permission reopen-space reopen-emfile reopen-directory reopen-symlink reopen-sync reopen-dir-sync reopen-close
           collision clock-backwards collision-limit rotation-unsupported rotation-rename-error
