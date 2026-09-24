@@ -1,4 +1,5 @@
 #include "logger_queue.h"
+#include "logger_cleanup.h"
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -28,32 +29,34 @@ static int queue_capacity(size_t requested, size_t *capacity)
 
 int logger_queue_init(logger_queue_t *q, size_t requested)
 {
-	int rc;
 	memset(q, 0, sizeof(*q));
 	if (queue_capacity(requested, &q->cap) != 0)
 		return -1;
 	q->mask = q->cap - 1;
-	q->slots = calloc(q->cap, sizeof(*q->slots));
-	if (!q->slots)
+
+	logger_queue_slot_t *slots LOGGER_AUTO_FREE =
+		calloc(q->cap, sizeof(*slots));
+	if (!slots)
 		return -1;
 	for (size_t i = 0; i < q->cap; ++i)
-		atomic_init(&q->slots[i].seq, i);
+		atomic_init(&slots[i].seq, i);
 	atomic_init(&q->enqueue_pos, 0);
 	atomic_init(&q->dequeue_pos, 0);
-	rc = pthread_mutex_init(&q->wait_mu, NULL);
-	if (rc != 0)
-		goto fail_slots;
+
+	int rc = pthread_mutex_init(&q->wait_mu, NULL);
+	if (rc != 0) {
+		errno = rc;
+		return -1;
+	}
 	rc = pthread_cond_init(&q->wait_cv, NULL);
 	if (rc != 0) {
 		pthread_mutex_destroy(&q->wait_mu);
-		goto fail_slots;
+		errno = rc;
+		return -1;
 	}
+
+	q->slots = LOGGER_TAKE_PTR(slots);
 	return 0;
-fail_slots:
-	free(q->slots);
-	q->slots = NULL;
-	errno = rc;
-	return -1;
 }
 
 void logger_queue_destroy(logger_queue_t *q)

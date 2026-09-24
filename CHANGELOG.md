@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — internal resource ownership
+
+- Add internal GCC/Clang lexical cleanup helpers for heap pointers, file
+  descriptors and FILE streams, with explicit TAKE operations for ownership
+  transfer. They are private implementation helpers, not public ABI.
+- Convert async worker workspace construction and queue-slot initialization to
+  automatic rollback while keeping concurrency/lifetime ownership explicit.
+- Add regression coverage for automatic cleanup, ownership transfer and errno
+  preservation.
+
+
 ## Unreleased — resource footprint
 
 - Move the async worker's batch records, formatted-line buffers and iovec

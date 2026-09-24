@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "logger_internal.h"
+#include "logger_cleanup.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -29,23 +30,32 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	size_t capacity = queue_capacity < BATCH_MAX ? queue_capacity : BATCH_MAX;
 	if (!capacity)
 		capacity = 1;
-	logger_worker_workspace_t *workspace = calloc(1, sizeof(*workspace));
-	if (!workspace)
-		return NULL;
-	workspace->capacity = capacity;
-	workspace->batch = calloc(capacity, sizeof(*workspace->batch));
-	workspace->vec = calloc(capacity, sizeof(*workspace->vec));
-	workspace->copy = calloc(capacity, sizeof(*workspace->copy));
-	workspace->lines = malloc(capacity * LOGGER_LINE_MAX);
-	workspace->lens = calloc(capacity, sizeof(*workspace->lens));
-	workspace->failed = calloc(capacity, sizeof(*workspace->failed));
-	if (!workspace->batch || !workspace->vec || !workspace->copy ||
-	    !workspace->lines || !workspace->lens || !workspace->failed) {
-		logger_worker_workspace_destroy(workspace);
+
+	logger_worker_workspace_t *workspace LOGGER_AUTO_FREE =
+		calloc(1, sizeof(*workspace));
+	logger_message_t *batch LOGGER_AUTO_FREE =
+		calloc(capacity, sizeof(*batch));
+	struct iovec *vec LOGGER_AUTO_FREE = calloc(capacity, sizeof(*vec));
+	struct iovec *copy LOGGER_AUTO_FREE = calloc(capacity, sizeof(*copy));
+	char *lines LOGGER_AUTO_FREE = malloc(capacity * LOGGER_LINE_MAX);
+	size_t *lens LOGGER_AUTO_FREE = calloc(capacity, sizeof(*lens));
+	unsigned char *failed LOGGER_AUTO_FREE =
+		calloc(capacity, sizeof(*failed));
+
+	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
+	    !failed) {
 		errno = ENOMEM;
 		return NULL;
 	}
-	return workspace;
+
+	workspace->capacity = capacity;
+	workspace->batch = LOGGER_TAKE_PTR(batch);
+	workspace->vec = LOGGER_TAKE_PTR(vec);
+	workspace->copy = LOGGER_TAKE_PTR(copy);
+	workspace->lines = LOGGER_TAKE_PTR(lines);
+	workspace->lens = LOGGER_TAKE_PTR(lens);
+	workspace->failed = LOGGER_TAKE_PTR(failed);
+	return LOGGER_TAKE_PTR(workspace);
 }
 
 void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
