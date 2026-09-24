@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — queue benchmark validation
+
+- 新增同 runner before/after benchmark workflow，固定 compact 前 commit
+  `23504f104e900419e891b57d7187ca0bcabffdf3` 作为结构与吞吐基线。
+- 默认 8192 queue 的预分配内存下降至少 50% 作为确定性 CI 门禁。
+- 64/256/1024/4000B × 1/4/16 threads 各重复 3 次取 median；吞吐 ratio 只在
+  baseline/candidate 都没有 drop/fallback/spill exhaustion 时计算。
+- benchmark 原始样本和 Markdown 汇总作为 Actions artifact 保存，避免只保留单个
+  logs/sec 数字。
+
 ## Unreleased — compact queue storage
 
 - 将 MPSC queue slot 从完整 `logger_message_t` 改为 compact record：

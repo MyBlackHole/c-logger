@@ -166,3 +166,74 @@ worker batch 仍使用完整 `logger_message_t`，但 capacity 最大为 256。
 
 benchmark matrix 继续覆盖 64 / 256 / 1024 / 4000B 消息，长消息压力下必须同时观察
 throughput、drop/sync fallback 与 spill exhaustion，不能只比较 logs/sec。
+
+
+## before/after benchmark 验证
+
+为了避免不同机器、不同编译器和不同 runner 之间的吞吐数字被直接比较，项目使用同一
+GitHub Actions runner 同时构建两个版本：
+
+```text
+baseline:
+23504f104e900419e891b57d7187ca0bcabffdf3
+    = compact queue 合并前
+
+candidate:
+当前 commit
+```
+
+workflow：`.github/workflows/queue-benchmark.yml`。
+
+对比矩阵：
+
+```text
+threads = 1 / 4 / 16
+message = 64 / 256 / 1024 / 4000 B
+每线程 1000 records
+每个组合重复 3 次，取 median
+```
+
+### 确定性门禁
+
+吞吐受共享 runner 调度、CPU frequency、虚拟化噪声影响，因此 **不把 logs/sec ratio
+作为 CI pass/fail 条件**。
+
+CI 的硬门禁只检查结构性内存收益：
+
+```text
+default queue capacity = 8192
+
+baseline bytes
+    = baseline sizeof(queue_slot) * 8192
+
+candidate bytes
+    = candidate sizeof(compact_slot) * 8192
+    + candidate default spill storage
+
+要求 memory reduction >= 50%
+```
+
+slot 大小来自两个版本在同一 compiler 下实际运行的 `bench_matrix` 输出，而不是手工推算
+padding/alignment。
+
+### 吞吐可比条件
+
+只有以下条件全部满足时才计算 candidate/baseline throughput ratio：
+
+- baseline 无 drop；
+- baseline 无 sync fallback；
+- candidate 无 drop；
+- candidate 无 sync fallback；
+- candidate 无 spill exhaustion。
+
+任何一项不满足都标记为 `overload`，只报告原始吞吐、drop/fallback/spill 数据，
+不把“少处理日志”解释成性能提升。
+
+workflow 生成：
+
+- `benchmark-comparison/results.json`：完整 raw samples；
+- `benchmark-comparison/summary.md`：内存门禁和 median 对比表；
+- GitHub Actions artifact：`queue-benchmark-comparison`。
+
+实际验证结果单独记录在 `validation/QUEUE_BENCHMARK.md`，不把某次共享 runner 的吞吐值
+写成永久性能承诺。
