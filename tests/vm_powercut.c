@@ -1,10 +1,24 @@
 #include "audit.h"
-#include <errno.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
-static int write_record(const char *name)
+static const char *cut_point;
+static int armed;
+void __real_logger_fault_crash_if_requested(const char *point);
+void __wrap_logger_fault_crash_if_requested(const char *point)
+{
+	if (armed && !strcmp(point, cut_point)) {
+		printf("POWERCUT_POINT_%s\n", point);
+		fflush(stdout);
+		for (;;)
+			pause();
+	}
+	__real_logger_fault_crash_if_requested(point);
+}
+
+static int record(const char *name)
 {
 	audit_event_t event = { .event = name, .actor = "vm-test", .source = "local",
 		.resource = "powercut", .operation = "write" };
@@ -13,55 +27,77 @@ static int write_record(const char *name)
 
 static int count_baseline(void)
 {
-	FILE *file = fopen("powercut.audit.log", "r");
-	if (!file)
+	DIR *dir = opendir(".");
+	if (!dir)
 		return -1;
-	char line[8192];
 	int count = 0;
-	while (fgets(line, sizeof(line), file)) {
-		if (strstr(line, "event=\"BASELINE\""))
-			++count;
+	struct dirent *entry;
+	while ((entry = readdir(dir))) {
+		if (!strstr(entry->d_name, ".log"))
+			continue;
+		FILE *file = fopen(entry->d_name, "r");
+		if (!file) {
+			closedir(dir);
+			return -1;
+		}
+		char line[8192];
+		while (fgets(line, sizeof(line), file))
+			if (strstr(line, "event=\"BASELINE\""))
+				++count;
+		if (ferror(file) || fclose(file)) {
+			closedir(dir);
+			return -1;
+		}
 	}
-	int failed = ferror(file) || fclose(file) != 0;
-	return failed ? -1 : count;
+	return closedir(dir) ? -1 : count;
 }
 
 int main(int argc, char **argv)
 {
-	if (argc != 2 || (strcmp(argv[1], "write") && strcmp(argv[1], "recover")))
+	if (argc != 3 || (strcmp(argv[1], "write") && strcmp(argv[1], "recover")))
 		return 2;
 	int writer = !strcmp(argv[1], "write");
-	if (!writer && count_baseline() != 10) {
-		perror("baseline verification");
+	cut_point = argv[2];
+	int rotation = !strncmp(cut_point, "file_after_", 11);
+	if (!writer && count_baseline() != 10)
 		return 3;
-	}
 	audit_config_t config = AUDIT_DEFAULT_CONFIG();
 	config.log_dir = ".";
 	config.name = "powercut";
-	config.rotation.mode = LOGGER_ROTATE_NONE;
+	config.rotation.mode = rotation ? LOGGER_ROTATE_SIZE : LOGGER_ROTATE_NONE;
+	if (rotation)
+		config.rotation.max_file_size = 750;
 	if (audit_init(&config)) {
 		perror("audit_init");
 		return 4;
 	}
 	if (writer) {
 		for (int i = 0; i < 10; ++i)
-			if (write_record("BASELINE")) {
+			if (record("BASELINE")) {
 				perror("baseline write");
 				return 5;
 			}
-		/* The host cuts power as soon as this marker reaches the serial port. */
-		puts("POWERCUT_READY");
-		fflush(stdout);
+		if (audit_shutdown_status() || audit_init(&config)) {
+			perror("baseline checkpoint");
+			return 6;
+		}
+		if (!strcmp(cut_point, "acknowledged")) {
+			puts("POWERCUT_POINT_acknowledged");
+			fflush(stdout);
+			for (;;)
+				pause();
+		}
+		armed = 1;
 		for (;;)
-			if (write_record("AFTER_READY")) {
-				perror("continued write");
-				return 6;
+			if (record("CRASH_TARGET")) {
+				perror("target write or missing hook");
+				return 7;
 			}
 	}
-	if (write_record("AFTER_RECOVERY") || audit_shutdown_status() ||
+	if (record("AFTER_RECOVERY") || audit_shutdown_status() ||
 	    audit_verify_file("powercut.audit.log") || count_baseline() != 10) {
 		perror("post-recovery verification");
-		return 7;
+		return 8;
 	}
 	puts("POWERCUT_RECOVERY_PASS");
 	return 0;
