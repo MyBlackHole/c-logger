@@ -42,11 +42,11 @@ local function cmake_bool(value)
     return value and "TRUE" or "FALSE"
 end
 
-local function configure_install_metadata(target)
+local function configure_install_metadata(target, mkdir, writefile)
     local shared = target:kind() == "shared"
     local legacy = has_config("legacy_fork")
     local generated = path.join(target:autogendir(), "install")
-    os.mkdir(generated)
+    mkdir(generated)
 
     local config = string.format([[
 include(CMakeFindDependencyMacro)
@@ -69,7 +69,7 @@ endforeach()
 ]], project_version, abi_version, cmake_bool(shared), cmake_bool(not shared),
        cmake_bool(legacy))
     local config_file = path.join(generated, "LoggerConfig.cmake")
-    io.writefile(config_file, config)
+    writefile(config_file, config)
 
     local compile_definitions = {}
     if not shared then
@@ -102,7 +102,7 @@ set_property(TARGET Logger::logger APPEND PROPERTY COMPATIBLE_INTERFACE_STRING
 unset(_IMPORT_PREFIX)
 ]], library_type, library_file, soname, defprop, abi_version)
     local targets_file = path.join(generated, "LoggerTargets.cmake")
-    io.writefile(targets_file, targets)
+    writefile(targets_file, targets)
 
     local version = string.format([[
 set(PACKAGE_VERSION "%s")
@@ -114,7 +114,7 @@ else()
 endif()
 ]], project_version)
     local version_file = path.join(generated, "LoggerConfigVersion.cmake")
-    io.writefile(version_file, version)
+    writefile(version_file, version)
 
     local pc_definitions = ""
     if not shared then
@@ -136,7 +136,7 @@ Libs.private: -pthread
 Cflags: -I${includedir}%s
 ]], project_version, pc_definitions)
     local pc_file = path.join(generated, "logger.pc")
-    io.writefile(pc_file, pc)
+    writefile(pc_file, pc)
 
     target:add("installfiles", config_file, targets_file, version_file,
                {prefixdir = "lib/cmake/Logger"})
@@ -217,7 +217,7 @@ target("logger")
     end
 
     on_load(function (target)
-        configure_install_metadata(target)
+        configure_install_metadata(target, os.mkdir, io.writefile)
         if target:kind() == "shared" then
             local manifest = path.join(os.projectdir(), "cmake", "logger.symbols")
             local out = {"LOGGER_0.9 {\n", "  global:\n"}
@@ -236,7 +236,7 @@ target("logger")
 
             local mapfile = path.join(target:autogendir(), "logger.map")
             os.mkdir(path.directory(mapfile))
-            io.writefile(mapfile, table.concat(out))
+            writefile(mapfile, table.concat(out))
             target:add("shflags", "-Wl,--version-script=" .. mapfile, {force = true})
             target:add("shflags", "-Wl,--no-undefined", {force = true})
             target:add("shflags", "-Wl,--no-undefined-version", {force = true})
