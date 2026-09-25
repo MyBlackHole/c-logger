@@ -2,6 +2,11 @@ name: vm-powercut
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/vm-powercut.yml"
+      - "scripts/run_vm_powercut.py"
+      - "tests/vm_powercut.c"
 
 permissions:
   contents: read
