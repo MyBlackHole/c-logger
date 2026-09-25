@@ -38,7 +38,8 @@ target_link_libraries(host PRIVATE Logger::logger)
 - [Demand-driven metadata 验证](validation/METADATA_CAPTURE.md)
 - [错误处理规范](docs/ERROR_HANDLING.md)
 - [生命周期与 publish/destroy](docs/LIFECYCLE.md)
-- [本轮验证报告](validation/PACKAGING_RESULTS.md)
+- [0.9.1 发布验证](validation/RELEASE_0.9.1.md)
+- [0.9.0 历史打包验证](validation/PACKAGING_RESULTS.md)
 - [变更清单](CHANGELOG.md)
 
 以下宿主/运行时契约继续适用；历史构建状态由上方最新发布工程文档取代。
