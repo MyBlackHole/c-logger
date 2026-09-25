@@ -40,29 +40,6 @@ local logger_sources = {
     "src/console.c"
 }
 
-local function generate_version_script(target)
-    local manifest = path.join(os.scriptdir(), "cmake", "logger.symbols")
-    local content = assert(io.readfile(manifest), "cannot read ABI manifest: " .. manifest)
-    local out = {"LOGGER_0.9 {\n", "  global:\n"}
-
-    for line in content:gmatch("[^\r\n]+") do
-        local name = line:match("^%s*(.-)%s*$")
-        if name ~= "" and name:sub(1, 1) ~= "#" then
-            assert(name:match("^[a-z][a-z0-9_]+$"), "invalid ABI symbol in " .. manifest .. ": " .. name)
-            table.insert(out, "    " .. name .. ";\n")
-        end
-    end
-    if has_config("legacy_fork") then
-        table.insert(out, "    logger_fork_reinit;\n")
-    end
-    table.insert(out, "  local: *;\n};\n")
-
-    local mapfile = path.join(target:autogendir(), "logger.map")
-    os.mkdir(path.directory(mapfile))
-    io.writefile(mapfile, table.concat(out))
-    return mapfile
-end
-
 target("logger")
     set_kind(has_config("build_shared") and "shared" or "static")
     if has_config("build_shared") then
@@ -110,9 +87,25 @@ target("logger")
     add_includedirs("include", "$(builddir)/generated", {public = true})
 
     on_load(function (target)
-        import("core.base.io")
         if target:kind() == "shared" then
-            local mapfile = generate_version_script(target)
+            local manifest = path.join(os.projectdir(), "cmake", "logger.symbols")
+            local out = {"LOGGER_0.9 {\n", "  global:\n"}
+            for line in io.lines(manifest) do
+                local name = line:match("^%s*(.-)%s*$")
+                if name ~= "" and name:sub(1, 1) ~= "#" then
+                    assert(name:match("^[a-z][a-z0-9_]+$"),
+                           "invalid ABI symbol in " .. manifest .. ": " .. name)
+                    table.insert(out, "    " .. name .. ";\n")
+                end
+            end
+            if has_config("legacy_fork") then
+                table.insert(out, "    logger_fork_reinit;\n")
+            end
+            table.insert(out, "  local: *;\n};\n")
+
+            local mapfile = path.join(target:autogendir(), "logger.map")
+            os.mkdir(path.directory(mapfile))
+            io.writefile(mapfile, table.concat(out))
             target:add("shflags", "-Wl,--version-script=" .. mapfile, {force = true})
             target:add("shflags", "-Wl,--no-undefined", {force = true})
             target:add("shflags", "-Wl,--no-undefined-version", {force = true})
