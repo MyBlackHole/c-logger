@@ -11,6 +11,7 @@ on:
       - "tests/compat/**"
       - "examples/installed_consumer/**"
       - "scripts/check_release_abi.py"
+      - "scripts/check_release_assets.py"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/release-validation.yml"
   push:
@@ -59,10 +60,8 @@ jobs:
       - name: Build TGZ package
         run: cpack --config build/CPackConfig.cmake -G TGZ
 
-      - name: Verify 0.9.2 package names
-        run: |
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz' -print -quit)"
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz.sha256' -print -quit)"
+      - name: Verify package checksum
+        run: python3 scripts/check_release_assets.py --version 0.9.2 --kind "${{ matrix.kind }}"
 
       - uses: actions/upload-artifact@v4
         with:
