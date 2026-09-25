@@ -69,8 +69,11 @@ ownership bitmap，不属于 mutex lock hierarchy。
 
 `q.wait_mu` 只负责 worker empty-queue 的 sleep/wakeup 协议。
 
-它不保护 MPSC payload publication。producer 通过 slot sequence atomic publish；
-`q.wait_mu` 只防止 consumer 检查 empty 与进入 `pthread_cond_wait()` 之间丢 wakeup。
+它不保护 MPSC payload publication。producer 通过 slot sequence atomic publish。
+worker 在持锁状态 publish `consumer_waiting=1` 并重新检查 queue；普通 producer 只有
+观察到 waiting 才进入这把锁，因此 backlog/active-consumer 场景不再每条日志 lock/signal。
+
+shutdown 的 force wake 始终获取 `q.wait_mu` 并 signal，不依赖 waiting hint。
 
 ### instance lock 之间的关系
 

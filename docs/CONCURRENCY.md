@@ -70,14 +70,56 @@ consumer 完成复制后通过 1->0 atomic clear release。这里不再存在共
 spill pool 暂时耗尽不允许截断 long message。queue push 返回 unavailable，
 上层继续使用原有 DROP / SYNC overflow policy。
 
-## Queue wakeup protocol
+## Queue self-paced wakeup protocol
 
-The MPSC atomic protocol and the worker sleep protocol are separate.
+MPSC payload publication 与 worker sleep/wakeup 是两个独立协议。
 
-`q.wait_mu + q.wait_cv` ensure that a producer cannot signal in the critical
-window between the worker observing an empty queue and atomically sleeping.
-Removing the mutex around the signal/wait path requires a separately proven
-wakeup protocol.
+worker 只有在 drain 发现 queue 为空后才进入 wait protocol：
+
+```text
+lock wait_mu
+  ->
+consumer_waiting = 1 (release)
+  ->
+SC fence
+  ->
+recheck queue + running
+  ->
+still empty/running ? cond_wait : do not sleep
+```
+
+producer 先完成 `slot.seq` release publication，再执行 SC fence，然后：
+
+```text
+consumer_waiting == 0
+    -> 直接返回，不碰 wait_mu
+
+consumer_waiting == 1
+    -> lock wait_mu
+    -> exchange waiting 1 -> 0
+    -> 成功者 signal 一次
+```
+
+两个 SC fence 构成 store-buffering handshake，因此不能同时出现
+“worker 看不到新 record”和“producer 看不到 waiting”。
+
+所以 publish 落在任意窗口时都不会丢 wakeup：
+
+- producer 没看到 waiting 时，worker 的二次 recheck 必须看到已 publish record；
+- worker 的二次 recheck 没看到 record 时，producer 必须观察到 waiting 并在
+  `pthread_cond_wait()` 原子释放 mutex 后取得 `wait_mu` signal。
+
+多个 producer 同时观察到 waiting=1 时，只有一个能通过 exchange 消费通知 ownership。
+
+stop/shutdown 不依赖这个 hint，而是设置 `running=false` 后执行独立 force wake。
+
+private diagnostics：
+
+- `wait_count`：实际进入 cond_wait 的次数；
+- `producer_wake_signals`：producer 真正发送的 signal 次数；
+- `force_wake_signals`：shutdown/stop 强制 signal 次数。
+
+这些计数只在真实 wait/signal 的低频路径更新，不给每条普通 enqueue 增加统计 atomic。
 
 ## Completion versus dequeue
 

@@ -285,7 +285,7 @@ sequenceDiagram
     P->>Q: reserve slot / optional spill claim
     P->>Q: write compact record
     P->>Q: release-store slot.seq
-    P-->>W: wakeup notification
+    P-->>W: notify only if consumer_waiting
     W->>Q: acquire-load slot.seq
     W->>W: reconstruct record
     W->>Q: release spill + slot
@@ -399,9 +399,12 @@ sink 当前行为：
 | file | `writev` |
 | Syslog | per-record `send` |
 
+当前 wakeup 已改为 self-paced：worker 只有在 queue 空并准备进入 cond_wait 时才
+publish `consumer_waiting=1`；producer 只有观察到该状态才进入
+`wait_mu + cond_signal` slow path。shutdown 使用独立 force wake。
+
 因此当前明确的未来候选包括：
 
-- self-paced wakeup；
 - demand-driven producer metadata；
 - consumer-stage profiling；
 - Syslog `sendmmsg()`；
@@ -696,7 +699,7 @@ Audit security/durability 优先级高于普通日志 throughput。
 - BATCH_MAX=256；
 - eager `vsnprintf`；
 - metadata capture；
-- worker wakeup policy；
+- self-paced worker wakeup policy；
 - sink batching。
 
 ### Architecture invariant，不得用性能优化破坏
@@ -764,8 +767,6 @@ future fast API
 当前推荐顺序：
 
 ```text
-self-paced queue wakeup
-  ->
 demand-driven producer metadata
   ->
 consumer stage profiling

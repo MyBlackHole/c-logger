@@ -226,6 +226,10 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	atomic_init(&q->spill_exhaustions, 0);
 	atomic_init(&q->enqueue_pos, 0);
 	atomic_init(&q->dequeue_pos, 0);
+	atomic_init(&q->consumer_waiting, 0);
+	atomic_init(&q->wait_count, 0);
+	atomic_init(&q->producer_wake_signals, 0);
+	atomic_init(&q->force_wake_signals, 0);
 
 	int rc = pthread_mutex_init(&q->wait_mu, NULL);
 	if (rc != 0) {
@@ -255,14 +259,47 @@ void logger_queue_destroy(logger_queue_t *q)
 	q->slots = NULL;
 }
 
-void logger_queue_notify(logger_queue_t *q)
+void logger_queue_notify_if_waiting(logger_queue_t *q)
 {
-	/* payload publication 发生在这里加锁之前。consumer 在持有同一把 wait_mu 时
-	 * 检查 predicate 并进入 pthread_cond_wait()；在这段窗口内 publisher
-	 * 无法完成 signal，直到 cond_wait 原子地释放 wait_mu，因此不会丢 wakeup。
-	 * 正确性优先：不能改成无锁 signal，也不要引入未经证明的 "sleeping" flag 优化。 */
+	/*
+	 * 与 worker publish waiting 后的 SC fence 成对，禁止 store-buffering：
+	 * 不能同时出现“worker 看不到新 record”且“producer 看不到 waiting”。
+	 * fast path 仍然不碰 wait_mu/condvar。
+	 */
+	atomic_thread_fence(memory_order_seq_cst);
+	/*
+	 * worker 没有进入准备睡眠状态时，producer 完全不碰 wait_mu。
+	 *
+	 * slow path 仍必须获取同一把 wait_mu。worker 在持锁状态下先 publish
+	 * consumer_waiting=1，再重新检查 queue/running，最后才 cond_wait；
+	 * 因此 producer 要么看到 waiting=0，而 worker 的 recheck 会看到 record，
+	 * 要么看到 waiting=1，并在 cond_wait 原子释放 mutex 后取得锁并 signal。
+	 */
+	if (!atomic_load_explicit(&q->consumer_waiting, memory_order_acquire))
+		return;
+
 	guard(pthread_mutex)(&q->wait_mu);
-	pthread_cond_signal(&q->wait_cv);
+	if (!atomic_exchange_explicit(&q->consumer_waiting, 0,
+				      memory_order_acq_rel))
+		return;
+
+	(void)pthread_cond_signal(&q->wait_cv);
+	atomic_fetch_add_explicit(&q->producer_wake_signals, 1,
+				  memory_order_relaxed);
+}
+
+void logger_queue_wake_force(logger_queue_t *q)
+{
+	/*
+	 * stop/shutdown 不能依赖 producer-side waiting hint。
+	 * running 已关闭后始终发送一次强制 wake；即使 worker 尚未真正 sleep，
+	 * 同一 mutex + predicate recheck 也保证它不会随后睡死。
+	 */
+	guard(pthread_mutex)(&q->wait_mu);
+	atomic_store_explicit(&q->consumer_waiting, 0, memory_order_release);
+	(void)pthread_cond_signal(&q->wait_cv);
+	atomic_fetch_add_explicit(&q->force_wake_signals, 1,
+				  memory_order_relaxed);
 }
 
 int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
@@ -294,7 +331,7 @@ int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 						  spill_index);
 				atomic_store_explicit(&slot->seq, pos + 1,
 						      memory_order_release);
-				logger_queue_notify(q);
+				logger_queue_notify_if_waiting(q);
 				return 1;
 			}
 		} else if (diff > SIZE_MAX / 2) {
@@ -375,6 +412,26 @@ size_t logger_queue_spill_storage_bytes(const logger_queue_t *q)
 uint64_t logger_queue_spill_exhaustions(const logger_queue_t *q)
 {
 	return q ? atomic_load_explicit(&q->spill_exhaustions,
+					memory_order_relaxed) :
+		   0;
+}
+
+uint64_t logger_queue_wait_count(const logger_queue_t *q)
+{
+	return q ? atomic_load_explicit(&q->wait_count, memory_order_relaxed) :
+		   0;
+}
+
+uint64_t logger_queue_producer_wake_signals(const logger_queue_t *q)
+{
+	return q ? atomic_load_explicit(&q->producer_wake_signals,
+					memory_order_relaxed) :
+		   0;
+}
+
+uint64_t logger_queue_force_wake_signals(const logger_queue_t *q)
+{
+	return q ? atomic_load_explicit(&q->force_wake_signals,
 					memory_order_relaxed) :
 		   0;
 }

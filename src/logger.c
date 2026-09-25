@@ -432,7 +432,7 @@ static int dispose_body(logger_t *l)
 			      memory_order_release);
 	if (l->async_mode) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
-		logger_queue_notify(&l->q);
+		logger_queue_wake_force(&l->q);
 		pthread_join(l->worker, NULL);
 	}
 	pthread_mutex_lock(&l->emit_mu);

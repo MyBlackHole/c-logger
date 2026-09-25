@@ -8,7 +8,7 @@
 | global `g_lifetime_lock` | process-static | `g_logger` publish/destroy 与 read-side lifetime pin | `g_control_mu`（writer/controller）或无（reader） | instance lock | 保持显式 |
 | `logger_t.emit_mu` | logger instance | file/syslog backend 可变状态、write/sync/reopen | global lifetime pin 或 Audit operation；普通 explicit API 可直接获取 | 不允许 `progress_mu/q.wait_mu` | 简单路径可 guard |
 | `logger_t.progress_mu` | logger instance | `completed_pos/progress_cv` completion predicate | global lifetime pin；普通 explicit API 可直接获取 | 不允许 `emit_mu/q.wait_mu` | 可 guard |
-| `logger_queue_t.wait_mu` | queue instance | empty predicate + worker sleep/wakeup | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
+| `logger_queue_t.wait_mu` | queue instance | consumer_waiting handshake + condvar sleep/wakeup；producer 仅在 waiting slow path 获取 | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
 | Console `g_console_mu` | process-static | Console FILE 输出与 flush | 无 | 无 | checked guard |
 | Audit `g_control_mu` | process-static | Audit init/shutdown/controller | 无 | Audit `g_operation_mu` | 保持显式 |
 | Audit `g_operation_mu` | process-static | runtime、seq/hash、transaction、in-flight drain | Audit `g_control_mu` 或无 | Audit private logger instance lock | 保持显式 |
@@ -75,7 +75,7 @@ guard 代表该 scope 对 mutex 的 ownership；wait 返回后 destructor 再负
 - worker `emit_mu`；
 - worker `progress_mu`；
 - worker `q.wait_mu`；
-- queue notify `q.wait_mu`；
+- self-paced/force wake `q.wait_mu`；
 - Console `g_console_mu`；
 - explicit-instance 的 reopen/file-offset/flush/syslog-metrics 单锁路径。
 

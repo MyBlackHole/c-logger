@@ -285,9 +285,33 @@ void *logger_worker_main(void *p)
 		int stop;
 		{
 			guard(pthread_mutex)(&l->q.wait_mu);
+			/*
+			 * waiting 必须在持有 wait_mu 时 publish，并且 publish 后重新检查
+			 * queue/running。这样 producer 如果在任一窗口发布 record：
+			 * - 没看到 waiting：本次 recheck 会看到 record；
+			 * - 看到了 waiting：会在同一 mutex 下 signal。
+			 */
 			while (logger_queue_empty(&l->q) &&
-			       atomic_load_explicit(&l->running, memory_order_acquire))
+			       atomic_load_explicit(&l->running,
+						    memory_order_acquire)) {
+				atomic_store_explicit(&l->q.consumer_waiting, 1,
+						      memory_order_release);
+				/*
+				 * 与 producer publish slot 后的 SC fence 成对。
+				 * 如果本次 recheck 仍看不到 record，则并发 producer
+				 * 必须观察到 waiting=1 并负责 signal。
+				 */
+				atomic_thread_fence(memory_order_seq_cst);
+				if (!logger_queue_empty(&l->q) ||
+				    !atomic_load_explicit(&l->running,
+							 memory_order_acquire))
+					break;
+				atomic_fetch_add_explicit(&l->q.wait_count, 1,
+							  memory_order_relaxed);
 				pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
+			}
+			atomic_store_explicit(&l->q.consumer_waiting, 0,
+					      memory_order_release);
 			stop = !atomic_load_explicit(&l->running,
 						     memory_order_acquire) &&
 			       logger_queue_empty(&l->q);

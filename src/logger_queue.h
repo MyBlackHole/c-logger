@@ -66,7 +66,15 @@ typedef struct {
 	_Atomic size_t enqueue_pos;
 	_Atomic size_t dequeue_pos;
 
-	/* 仅用于 sleep/wakeup 协议，不负责串行化 slot payload 访问。 */
+	/*
+	 * worker sleep/wakeup 协议。
+	 * consumer_waiting=1 表示 worker 已进入 wait_mu 保护的“准备睡眠/已睡眠”状态；
+	 * producer 只有观察到 1 才进入 wait_mu + cond_signal 慢路径。
+	 */
+	_Atomic unsigned consumer_waiting;
+	_Atomic uint64_t wait_count;
+	_Atomic uint64_t producer_wake_signals;
+	_Atomic uint64_t force_wake_signals;
 	pthread_mutex_t wait_mu;
 	pthread_cond_t wait_cv;
 } logger_queue_t;
@@ -77,7 +85,8 @@ int logger_queue_push(logger_queue_t *, const logger_message_t *);
 int logger_queue_try_pop(logger_queue_t *, logger_message_t *);
 size_t logger_queue_drain(logger_queue_t *, logger_message_t *, size_t);
 int logger_queue_empty(logger_queue_t *);
-void logger_queue_notify(logger_queue_t *);
+void logger_queue_notify_if_waiting(logger_queue_t *);
+void logger_queue_wake_force(logger_queue_t *);
 size_t logger_queue_depth(const logger_queue_t *);
 
 /* private benchmark/diagnostic helpers，不进入 public ABI。 */
@@ -85,5 +94,8 @@ size_t logger_queue_storage_bytes(const logger_queue_t *);
 size_t logger_queue_spill_capacity(const logger_queue_t *);
 size_t logger_queue_spill_storage_bytes(const logger_queue_t *);
 uint64_t logger_queue_spill_exhaustions(const logger_queue_t *);
+uint64_t logger_queue_wait_count(const logger_queue_t *);
+uint64_t logger_queue_producer_wake_signals(const logger_queue_t *);
+uint64_t logger_queue_force_wake_signals(const logger_queue_t *);
 
 #endif

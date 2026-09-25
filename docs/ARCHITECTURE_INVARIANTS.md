@@ -104,7 +104,7 @@
 | atomic spill bitmap | 否 |
 | BATCH_MAX=256 | 否 |
 | eager vsnprintf | 否 |
-| per-record worker notification | 否 |
+| self-paced worker wakeup | 否 |
 | Syslog per-record send | 否 |
 
 以下性质属于当前核心 invariant：
