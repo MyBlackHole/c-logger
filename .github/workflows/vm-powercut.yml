@@ -55,3 +55,11 @@ jobs:
           path: vm-evidence/serial-*.log
           if-no-files-found: warn
           retention-days: 30
+      - name: Upload failed rotation disk for diagnosis
+        if: failure() && startsWith(matrix.point, 'file_')
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-disk-${{ matrix.point }}
+          path: vm-evidence/audit-disk.raw
+          compression-level: 9
+          retention-days: 7
