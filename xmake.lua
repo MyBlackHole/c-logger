@@ -489,7 +489,30 @@ if has_config("build_regression_tests") then
         {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
         {"crypto_vectors_test", "tests/test_crypto_vectors.c"},
         {"audit_concurrency_regression", "tests/regression/test_audit_concurrency.c"},
-        {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"}
+        {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"},
+
+        -- Link-time interception parity, group A: queue/flush and Audit I/O/state.
+        {"queue_notify_regression", "tests/regression/test_queue_notify.c",
+            {"pthread_cond_wait"}},
+        {"flush_pending_regression", "tests/regression/test_flush_pending.c",
+            {"logger_format_line", "pthread_cond_wait", "fsync"}},
+        {"flush_watermark_regression", "tests/regression/test_flush_watermark.c",
+            {"logger_format_line", "pthread_cond_wait"}},
+        {"io_accounting_regression", "tests/regression/test_io_accounting.c",
+            {"logger_format_line", "write", "writev", "fsync"}},
+        {"resource_cleanup_regression", "tests/regression/test_resource_cleanup.c",
+            {"free"}},
+        {"audit_commit_regression", "tests/regression/test_audit_commit.c",
+            {"audit_checkpoint_persist", "logger_log_sync_status", "write", "fsync",
+             "logger_file_offset"}},
+        {"audit_lifecycle_regression", "tests/regression/test_audit_lifecycle.c",
+            {"logger_destroy_status", "logger_log_sync_status", "pthread_mutex_lock"}},
+        {"checkpoint_io_regression", "tests/regression/test_checkpoint_io.c",
+            {"write", "fsync", "close", "rename"}},
+        {"crypto_failure_regression", "tests/regression/test_crypto_failure.c",
+            {"audit_digest_provider"}},
+        {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
+            {"write", "fsync", "ftruncate"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -500,6 +523,11 @@ if has_config("build_regression_tests") then
             add_deps("logger_regression_support")
             add_includedirs("src")
             add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            if spec[3] then
+                for _, symbol in ipairs(spec[3]) do
+                    add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+                end
+            end
         target_end()
     end
 
@@ -529,6 +557,85 @@ if has_config("build_regression_tests") then
     target("crypto_contract_regression")
         for _, scenario in ipairs({"vectors", "boundaries", "invalid", "threads"}) do
             add_tests(scenario, {runargs = {scenario, "sha256"}, timeout = 30})
+        end
+    target_end()
+
+    for _, name in ipairs({
+        "queue_notify_regression",
+        "flush_pending_regression",
+        "flush_watermark_regression"
+    }) do
+        target(name)
+            add_tests(name, {timeout = 15})
+        target_end()
+    end
+
+    target("resource_cleanup_regression")
+        add_tests("resource_cleanup_regression", {timeout = 15})
+    target_end()
+
+    target("io_accounting_regression")
+        for _, scenario in ipairs({
+            "drop", "fallback", "fallback-error", "async-error", "short-ok",
+            "short-error", "file-fsync", "dir-fsync", "rotation-fsync",
+            "spill-policy", "sync"
+        }) do
+            local timeout = scenario == "spill-policy" and 30 or 15
+            add_tests("io_" .. scenario .. "_regression",
+                      {runargs = scenario, timeout = timeout})
+        end
+    target_end()
+
+    target("audit_commit_regression")
+        for _, scenario in ipairs({
+            "checkpoint-once", "offset-error", "checkpoint-persistent",
+            "io-write", "io-partial", "io-fsync", "preflight",
+            "stop-error", "start-error"
+        }) do
+            add_tests("audit_" .. scenario .. "_regression",
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("audit_lifecycle_regression")
+        for _, scenario in ipairs({
+            "init-gate", "stop-gate", "teardown-race",
+            "generation", "fork-guard", "cancel"
+        }) do
+            add_tests("audit_" .. scenario .. "_regression",
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("checkpoint_io_regression")
+        for _, scenario in ipairs({
+            "ok", "write", "zero", "short-eintr",
+            "fsync", "dir-fsync", "close", "rename"
+        }) do
+            add_tests("checkpoint_" .. scenario .. "_regression",
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("crypto_failure_regression")
+        for _, scenario in ipairs({
+            "init-probe", "init-start", "write", "begin", "end", "stop",
+            "verify", "verify-empty", "recover-probe", "recover-forward", "recover-init"
+        }) do
+            add_tests("crypto_sha256_" .. scenario,
+                      {runargs = {scenario, "sha256"}, timeout = 20})
+        end
+        add_tests("crypto_none_explicit",
+                  {runargs = {"none", "sha256"}, timeout = 20})
+    target_end()
+
+    target("audit_tail_io_regression")
+        for _, scenario in ipairs({
+            "ok", "write", "zero", "short-eintr",
+            "evidence-fsync", "directory-fsync", "truncate", "active-fsync"
+        }) do
+            add_tests("tail_io_" .. scenario,
+                      {runargs = scenario, timeout = 20})
         end
     target_end()
 end

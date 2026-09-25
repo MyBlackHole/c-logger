@@ -186,11 +186,28 @@ TGZ，并解包后比较安装树的相对路径类型与 shared-library symlink
 若严格结构集合出现差异，只有明确证明属于构建系统内部 metadata 分片、且外部 consumer
 契约已经等价验证的项目才允许后续收窄比较范围；缺失 public/install contract 文件必须修复。
 
+## Wrapped regression parity — Group A
+
+Xmake 现在开始迁移 CMake 中依赖 GNU ld `--wrap` 的 white-box 回归，但仍按风险拆组。
+
+Group A 直接复用现有 `logger_regression_support` 与原测试源码，覆盖：
+
+- queue wait/flush pending/flush watermark；
+- I/O accounting 的 drop/fallback/short-write/fsync/rotation/spill/sync；
+- lexical resource cleanup；
+- Audit commit/checkpoint/lifecycle acquire；
+- checkpoint write/fsync/rename/close；
+- digest provider failure；
+- Audit tail evidence/truncate/active fsync。
+
+Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
+`-Wl,--wrap=<symbol>`，不修改 production logger，也不把测试 hook 放入安装或 XPack。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 其余需要自定义 linker interception 的 white-box regression cases；
+1. 其余 linker interception white-box regression（Group A 已迁移，process/global/explicit/file/syslog 仍待）；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
 3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
 4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
