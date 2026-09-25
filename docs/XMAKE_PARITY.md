@@ -74,6 +74,9 @@ Xmake 现在还提供一个默认关闭的 `build_private_tests` 配置，构建
 - 4 个 process crash/recovery cases；
 - multi-instance syslog test。
 
+该 job 使用 `xmake test -j1`：现有 4 个 recovery case 复用同一组 `crash.audit.*` 测试文件名，
+因此不能在同一工作目录并发执行；这与 production 并发模型无关。
+
 这验证了测试专用实现与 production artifact 可以在 Xmake 下保持分离；更复杂的
 regression support、link-time `--wrap` 仍留到下一步。
 
