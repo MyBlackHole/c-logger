@@ -236,7 +236,7 @@ target("logger")
 
             local mapfile = path.join(target:autogendir(), "logger.map")
             os.mkdir(path.directory(mapfile))
-            writefile(mapfile, table.concat(out))
+            io.writefile(mapfile, table.concat(out))
             target:add("shflags", "-Wl,--version-script=" .. mapfile, {force = true})
             target:add("shflags", "-Wl,--no-undefined", {force = true})
             target:add("shflags", "-Wl,--no-undefined-version", {force = true})
