@@ -32,10 +32,13 @@ CMAKE_C_EXTENSIONS ON
 python3 scripts/check_release_abi.py build/liblogger.so > abi.json
 # 必须由发布负责人填写真实的部署基线；越界返回非零，不修改二进制。
 python3 scripts/check_release_abi.py build/liblogger.so --max-glibc 2.25
+# 目标架构和位数应来自已决定的支持矩阵。
+python3 scripts/check_release_abi.py build/liblogger.so --machine 'Advanced Micro Devices X86-64' --elf-class ELF64
 readelf -h -d -V build/liblogger.so
 ```
 
 检查脚本记录导出集、默认符号版本、SONAME、动态依赖、CPU/ELF 类别和 GLIBC requirements。
+指定 GLIBC 上限却读不到 GLIBC 版本时检查失败；可显式核对目标架构和 ELF 位数。
 它也拒绝 libcrypto/libssl、sanitizer 运行时、私有 GLIBC、机器私有 RPATH/RUNPATH/TEXTREL。
 它不执行目标 ELF，所以可用来检查交叉产物；通过并不代表该产物已在目标环境运行过。
 静态 `.a` 没有最终 GLIBC 动态需求；对最终 SDK/应用 ELF 做依赖检查，不能从 archive

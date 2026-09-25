@@ -43,6 +43,9 @@ jobs:
       - name: Build production artifact
         run: cmake --build build -j2
 
+      - name: Run complete release tests
+        run: ctest --test-dir build --output-on-failure -j2
+
       - name: Validate installed package
         run: cmake --build build --target check-package -j2
 
@@ -51,7 +54,7 @@ jobs:
 
       - name: Inspect shared ABI
         if: matrix.kind == 'shared'
-        run: python3 scripts/check_release_abi.py build/liblogger.so
+        run: python3 scripts/check_release_abi.py build/liblogger.so --machine 'Advanced Micro Devices X86-64' --elf-class ELF64
 
       - name: Build TGZ package
         run: cpack --config build/CPackConfig.cmake -G TGZ
