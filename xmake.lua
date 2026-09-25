@@ -105,6 +105,21 @@ unset(_IMPORT_PREFIX)
     local targets_file = path.join(generated, "LoggerTargets.cmake")
     writefile(targets_file, targets)
 
+    -- Match CMake's installed export layout: keep the general imported
+    -- properties above for config-agnostic consumers, and also provide the
+    -- RELEASE configuration fragment that CMake install(EXPORT) emits.
+    local release_location = shared and ("liblogger.so." .. project_version) or "liblogger.a"
+    local release_soname = shared and
+        ('  IMPORTED_SONAME_RELEASE "liblogger.so.' .. abi_version .. '"\n') or ""
+    local release_targets = string.format([[
+set_property(TARGET Logger::logger APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
+set_target_properties(Logger::logger PROPERTIES
+  IMPORTED_LOCATION_RELEASE "${_IMPORT_PREFIX}/lib/%s"
+%s)
+]], release_location, release_soname)
+    local targets_release_file = path.join(generated, "LoggerTargets-release.cmake")
+    writefile(targets_release_file, release_targets)
+
     local version = string.format([[
 set(PACKAGE_VERSION "%s")
 if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
@@ -139,8 +154,8 @@ Cflags: -I${includedir}%s
     local pc_file = path.join(generated, "logger.pc")
     writefile(pc_file, pc)
 
-    target:add("installfiles", config_file, targets_file, version_file,
-               {prefixdir = "lib/cmake/Logger"})
+    target:add("installfiles", config_file, targets_file, targets_release_file,
+               version_file, {prefixdir = "lib/cmake/Logger"})
     target:add("installfiles", pc_file, {prefixdir = "lib/pkgconfig"})
 end
 
