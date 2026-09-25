@@ -14,31 +14,44 @@ permissions:
 jobs:
   powercut:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        point:
+          - acknowledged
+          - before_audit_fsync
+          - after_audit_fsync
+          - before_state_rename
+          - after_state_rename
+          - after_checkpoint_commit
+          - file_after_archive_rename
+          - file_after_archive_dirsync
+          - file_after_active_open
+          - file_after_active_dirsync
     steps:
       - uses: actions/checkout@v5
       - name: Install QEMU and guest kernel
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual
-      - name: Build static guest test with the production library
+      - name: Build static test-only guest
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF
-          cmake --build build -j2
-          cc -static -Iinclude -Ibuild/generated tests/vm_powercut.c build/liblogger.a -pthread -o vm_powercut
-          file vm_powercut
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build build --target vm_powercut_guest -j2
+          file build/vm_powercut_guest
       - name: Force VM power cut and verify recovery
         run: |
           kernel=$(sudo find /boot -maxdepth 1 -name 'vmlinuz-*' ! -name '*azure*' | sort -V | tail -n 1)
           test -n "$kernel"
           sudo cp "$kernel" guest-vmlinuz
           sudo chown "$(id -u):$(id -g)" guest-vmlinuz
-          python3 scripts/run_vm_powercut.py --kernel guest-vmlinuz --binary vm_powercut --output vm-evidence
+          python3 scripts/run_vm_powercut.py --kernel guest-vmlinuz --binary build/vm_powercut_guest --point '${{ matrix.point }}' --output vm-evidence
       - name: Upload VM evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vm-powercut-evidence
+          name: vm-powercut-${{ matrix.point }}
           path: vm-evidence/serial-*.log
           if-no-files-found: warn
           retention-days: 30
