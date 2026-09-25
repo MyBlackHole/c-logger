@@ -101,7 +101,7 @@ try:
         assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
     # Test pkg-config independently of CMake. Quoted paths must survive spaces.
     pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pc_dir))
-    assert run(['pkg-config','--modversion','logger'],env=pe).strip()=='0.9.2'
+    assert run(['pkg-config','--modversion','logger'],env=pe).strip()=='0.9.3'
     opts=['pkg-config','--cflags','--libs']
     if a.kind=='static': opts.append('--static')
     flags=shlex.split(run(opts+['logger'],env=pe))
@@ -112,9 +112,9 @@ try:
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()
-    for version,component,success in [('0.9.2',a.kind,True),('0.9.3',a.kind,False),
-        ('1.0.0',a.kind,False),('0.9.2','static' if a.kind=='shared' else 'shared',False),
-        ('0.9.2','invented',False),('0.9.2','legacy_fork',a.legacy)]:
+    for version,component,success in [('0.9.3',a.kind,True),('0.9.4',a.kind,False),
+        ('1.0.0',a.kind,False),('0.9.3','static' if a.kind=='shared' else 'shared',False),
+        ('0.9.3','invented',False),('0.9.3','legacy_fork',a.legacy)]:
         (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
             'find_package(Logger '+version+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
         run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
@@ -139,7 +139,7 @@ try:
     if a.kind=='shared':
         dso=lib/'liblogger.so'
         assert dso.is_symlink() and (lib/'liblogger.so.0').is_symlink()
-        assert dso.resolve().name=='liblogger.so.0.9.2'
+        assert dso.resolve().name=='liblogger.so.0.9.3'
         argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso]
         if a.legacy: argv.append('--legacy-fork')
         run(argv)
