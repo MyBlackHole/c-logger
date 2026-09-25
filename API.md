@@ -23,8 +23,9 @@
 ## 普通日志字符串寿命
 
 调用者的 fmt/source/context 输入必须在对应调用期间有效，不得并发修改。
-用户消息仍通过 vsnprintf 复制；异步记录新增加 module/source basename/function 的有界快照，
-入队和出队时正确绑定自己的缓冲区，不再保留业务 DSO 的 source 指针。
+用户消息仍通过 vsnprintf 复制。metadata 现在按 immutable `detail/include_*` 需求采集：
+只有最终格式真正会使用的 module/context/source 才进入 async queue；需要保留的
+module/source basename/function 继续做有界快照，入队后不再保留业务 DSO 的 source 指针。
 容量（不含 NUL）：module 127、basename 255、function 127 字节。
 超限在末尾以 `~` 标识缩短，按字节而不是 Unicode 代码点处理；这是有意的可见边界变化。
 仅作为元数据标签，不能拿被缩短的字符串作业务标识或安全判据。

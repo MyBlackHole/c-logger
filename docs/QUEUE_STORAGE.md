@@ -124,19 +124,40 @@ consumer 必须先完成正文复制并归还 spill block，再把 slot.seq 标�
 `spill_used[]` 不属于 mutex hierarchy。它只承担 block ownership 状态；
 slot publication 仍由 `slot.seq` 的 release/acquire 保证。
 
-## source/context snapshot
+## demand-driven metadata snapshot
 
-本轮没有缩小 source/context snapshot：
+compact slot 仍保留固定 metadata storage，因此 queue 的内存上界和 source truncation
+语义不变：
 
 - module storage 128B；
 - file storage 256B；
 - function storage 128B；
 - request/session/trace 各 64B。
 
-这样 queue 内存优化不会同时改变 source truncation 语义。
+但 producer 不再无条件填充这些区域。实例创建时根据 immutable
+`detail/include_*` 生成 private `capture_mask`：
 
-compact record 额外保存 module/file/function 的实际长度。producer 只覆盖当前字符串，
-consumer 只复制 `len+1`，因此不再为每条日志固定 memset/memcpy 整个 512B source 尾部。
+```text
+MINIMAL
+    -> 不采集 module/pid/tid/context/source
+
+NORMAL
+    -> module
+
+VERBOSE
+    -> module + configured pid/tid
+
+DEBUG
+    -> module + configured pid/tid + context
+       + configured source
+```
+
+PID 在 logger create 时缓存；raw-fork child 本来就会在访问 inherited runtime 前被拒绝，
+因此 parent logger 生命周期内无需每条日志重新 `getpid()`。
+
+async queue 只 snapshot mask 指定的 module/context/source；不用的字段只把首字节/长度清零，
+不再固定复制约 700B metadata。真正需要的 source 仍使用原 bounded copy，所以
+DSO/source lifetime contract 不变。
 
 ## worker workspace
 

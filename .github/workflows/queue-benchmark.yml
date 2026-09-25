@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       QUEUE_MEMORY_BASELINE_REF: 23504f104e900419e891b57d7187ca0bcabffdf3
-      QUEUE_TUNING_BASELINE_REF: 03223374f3b99ea0850354aa3d7c345d7f2ddd73
+      QUEUE_TUNING_BASELINE_REF: 6b926d59cda3bf176baa10b24e2c84bc49ce7943
     steps:
       - uses: actions/checkout@v5
         with:
