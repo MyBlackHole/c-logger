@@ -1,19 +1,19 @@
-# 0.9.0 发布工程候选
+# 0.9.1 受控生产发布候选
 
-这是一份**完整功能、仅内置 SHA-256**的发布工程候选，不是已经完成部署验收的 Production v1。
-本轮不改变 worker、后端、Audit 格式/恢复、fork 或取消策略。版本号不代表安全认证。
+这是一份**完整功能、仅内置 SHA-256**的受控生产发布候选，不是已经完成全部目标平台与掉电验收的 Production v1。
+相对 0.9.0，本版保持 public ABI、SONAME 0 和 `LOGGER_0.9` 符号版本不变，主要收敛 async queue 内存/热点、self-paced wakeup、按需 metadata、ownership/locking 文档与对应回归。版本号不代表安全认证。
 
 ## 版本与 ABI
 
-- 软件版本 `0.9.0`；候选 ABI major `0`；Linux SONAME `liblogger.so.0`。
-- 实体文件 `liblogger.so.0.9.0`，构建/安装系统生成 `liblogger.so.0`、`liblogger.so` 相对软链接。
+- 软件版本 `0.9.1`；候选 ABI major `0`；Linux SONAME `liblogger.so.0`。0.9.1 未新增/删除 public C symbol，继续使用 `LOGGER_0.9` 版本节点。
+- 实体文件 `liblogger.so.0.9.1`，构建/安装系统生成 `liblogger.so.0`、`liblogger.so` 相对软链接。
 - 动态导出严格限于 `cmake/logger.symbols` 中的 **62** 个既有公共 C 函数，版本节点 `LOGGER_0.9`。
   可选旧 fork helper 增加 `logger_fork_reinit`，共 **63** 个。没有新导出版本查询函数；
   `logger_version.h` 是编译时标识，`LoggerConfig.cmake` 也声明候选身份。
 - 宿主不得用 packing、短枚举等选项改变公开布局；结构版本字段不修复编译器 ABI 差异。
 - 公共函数用 `LOGGER_API` 标识，库使用 hidden visibility；ELF version script 使用 `local: *`。
   同一对象中的内部名称仍可能出现在调试/普通符号表；不承诺通过 strip 防止逆向分析。
-- `find_package(Logger 0.9.0 EXACT CONFIG REQUIRED)`：pre-1.0 使用 ExactVersion，
+- `find_package(Logger 0.9.1 EXACT CONFIG REQUIRED)`：pre-1.0 使用 ExactVersion，
   不许把“设置 SOVERSION”误写成“所有未来版本都二进制兼容”。v1 必须另行冻结支持矩阵和 ABI。
 - 原有结构/枚举布局未改。C++11 默认配置宏新增 header-only 分支，不修改 C 分支或既有动态符号。
 - 历史库 SONAME 为无版本 `liblogger.so`。本机旧二进制替换试验仅证明该实际组合；
@@ -29,7 +29,7 @@
 ```sh
 cmake -S . -B build-shared -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.0
+  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.1
 cmake --build build-shared -j4
 cmake --install build-shared
 ```
@@ -39,7 +39,7 @@ cmake --install build-shared
 ```sh
 cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.0-static
+  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.1-static
 cmake --build build-static -j4
 cmake --install build-static
 ```
@@ -52,7 +52,7 @@ SDK 二进制和 validation 不进入安装树。
 
 ```text
 <prefix>/include/logger/{logger.h,audit.h,console.h,logger_export.h,logger_version.h}
-<prefix>/lib/liblogger.so.0.9.0（或 liblogger.a）
+<prefix>/lib/liblogger.so.0.9.1（或 liblogger.a）
 <prefix>/lib/cmake/Logger/{LoggerConfig.cmake,LoggerConfigVersion.cmake,LoggerTargets*.cmake}
 <prefix>/lib/pkgconfig/logger.pc
 <prefix>/share/doc/prod_c_logger/{API.md,SECURITY.md,TESTING.md,docs/,examples/}
@@ -65,7 +65,7 @@ SDK 二进制和 validation 不进入安装树。
 ## 宿主接入
 
 ```cmake
-find_package(Logger 0.9.0 EXACT CONFIG REQUIRED) # 可指定 COMPONENTS shared/static/legacy_fork
+find_package(Logger 0.9.1 EXACT CONFIG REQUIRED) # 可指定 COMPONENTS shared/static/legacy_fork
 add_executable(host main.c)
 target_link_libraries(host PRIVATE Logger::logger)
 ```
@@ -83,7 +83,7 @@ target_link_libraries(host PRIVATE Logger::logger)
 只含无空格路径的常规例子：
 
 ```sh
-PKG_CONFIG_PATH=/opt/logger/0.9.0/lib/pkgconfig \
+PKG_CONFIG_PATH=/opt/logger/0.9.1/lib/pkgconfig \
   pkg-config --cflags --libs logger
 # 运行时应配置 loader 路径或宿主自身 RUNPATH；库不自带机器私有 RUNPATH。
 ```
