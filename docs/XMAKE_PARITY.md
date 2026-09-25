@@ -153,19 +153,36 @@ CMake 原有路径仍使用真实 `DESTDIR + cmake --install`。Xmake 3A 使用�
 再单独决定是否需要项目级 DESTDIR compatibility wrapper，而不是伪装 Xmake 原生命令已经
 提供与 CMake 完全相同的 CLI 语义。
 
+## Package parity 3B
+
+在 install parity 3A 通过后，Xmake 使用内置 XPack 生成 `targz` 二进制包，而不是自己
+拼 shell `tar` 命令。包名与当前 release asset 契约保持一致：
+
+`prod-c-logger-0.9.3-Linux-x86_64-{shared|static}.tar.gz`
+
+XPack 完成后由 Xmake `hash.sha256()` 生成同名 `.sha256` 记录。CI 首先复用现有
+`scripts/check_release_assets.py`，验证 shared/static 每种包恰好一个、摘要记录文件名正确、
+实际 SHA-256 匹配。
+
+随后 CI 解包 TGZ，并再次调用同一 `check_install.py --installed-prefix`，验证包内实际
+安装树仍满足 CMake consumer、C++11、SDK MODULE、pkg-config、ExactVersion/components、
+旧 header、ABI 与 production isolation。也就是说 package parity 不以“tar 能生成”为通过。
+
+本阶段还把 CMake 当前分发的文档树纳入 Xmake install/XPack：顶层 API/SECURITY/TESTING/
+CHANGELOG、非 HISTORY 的 `docs/*.md`、以及 `examples/installed_consumer`。历史 README/API
+继续按 CMake 规则排除。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
 1. 其余需要自定义 linker interception 的 white-box regression cases；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
-3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已进入 3A）；
-4. documentation install tree 的完整内容 parity；
-5. CPack/XPack TGZ + SHA-256；
-6. release-publish。
+3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
+4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
 
 ## 下一门禁
 
-当前下一门禁是让 install parity 3A 在 shared/static 下稳定通过；随后补 documentation /
-staging 细节，再进入 package artifact parity。只有正式 TGZ/SHA-256 仍能复用现有发布门禁后，
-才评估把 Xmake 升为 authoritative build system；在此之前 release-publish 继续只信任 CMake。
+当前下一门禁是在 package parity 3B 稳定后，比较 CPack 与 XPack 的安装树/资产语义，
+并决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让 release-publish
+切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
