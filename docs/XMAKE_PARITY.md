@@ -77,8 +77,24 @@ Xmake 现在还提供一个默认关闭的 `build_private_tests` 配置，构建
 该 job 使用 `xmake test -j1`：现有 4 个 recovery case 复用同一组 `crash.audit.*` 测试文件名，
 因此不能在同一工作目录并发执行；这与 production 并发模型无关。
 
-这验证了测试专用实现与 production artifact 可以在 Xmake 下保持分离；更复杂的
-regression support、link-time `--wrap` 仍留到下一步。
+这验证了测试专用实现与 production artifact 可以在 Xmake 下保持分离。
+
+### Regression-support parity
+
+Xmake 现在还构建独立的 `logger_regression_support`：与 CMake 相同，它使用生产源码，但只在
+私有测试 archive 中关闭 FORTIFY，production `logger` 不受影响。第一批迁移不需要自定义
+linker interception 的 regression：
+
+- MPSC queue；
+- demand-driven metadata；
+- global flush；
+- stderr SIGPIPE 的 sync/async/preblocked；
+- builtin crypto vectors；
+- Audit lifecycle/transaction concurrency；
+- SHA-256 vectors/boundaries/invalid/thread contract。
+
+这些 case 使用独立的 `regression-tests` job 串行运行，先验证 support archive 与 test runner
+语义。需要自定义 linker interception 的 regression 仍留在 CMake，作为后续单独门禁。
 
 ## 尚未迁移
 
