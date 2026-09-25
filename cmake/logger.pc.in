@@ -4,7 +4,7 @@ libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@/logger
 
 Name: prod-c-logger
-Description: Host-owned Logger and Audit (builtin SHA-256), development candidate
+Description: Host-owned Logger and Audit (builtin SHA-256), controlled-production candidate
 Version: @PROJECT_VERSION@
 Libs: -L${libdir} -llogger
 Libs.private: -pthread
