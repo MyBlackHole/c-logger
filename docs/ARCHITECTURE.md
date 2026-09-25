@@ -281,7 +281,7 @@ sequenceDiagram
     participant S as Sink
     participant F as Flush waiter
 
-    P->>P: level/state + metadata + vsnprintf
+    P->>P: level/state + demand-driven metadata + vsnprintf
     P->>Q: reserve slot / optional spill claim
     P->>Q: write compact record
     P->>Q: release-store slot.seq
@@ -340,9 +340,15 @@ consumer
 
 ### Source lifetime
 
-module/file/function 在 enqueue 时做 bounded snapshot。
+只有最终 detail/config 真正会输出的 metadata 才在 producer 采集并进入 queue：
 
-所以 SDK/caller 返回甚至 DSO 合法卸载后，已经入队的日志不再依赖原 source pointer。
+- `NORMAL+`：module；
+- `VERBOSE+`：按 `include_pid/include_tid` 采集 pid/tid；
+- `DEBUG`：context；
+- `DEBUG + include_source`：file/function/line。
+
+需要进入 async queue 的 module/source 仍做 bounded snapshot，因此 SDK/caller 返回甚至
+DSO 合法卸载后，已经入队且未来会被格式化的字段不再依赖原 source pointer。
 
 ### Spill
 
@@ -405,7 +411,6 @@ publish `consumer_waiting=1`；producer 只有观察到该状态才进入
 
 因此当前明确的未来候选包括：
 
-- demand-driven producer metadata；
 - consumer-stage profiling；
 - Syslog `sendmmsg()`；
 - adaptive batch/backpressure。
@@ -698,7 +703,7 @@ Audit security/durability 优先级高于普通日志 throughput。
 - atomic spill bitmap；
 - BATCH_MAX=256；
 - eager `vsnprintf`；
-- metadata capture；
+- demand-driven metadata capture；
 - self-paced worker wakeup policy；
 - sink batching。
 
@@ -767,8 +772,6 @@ future fast API
 当前推荐顺序：
 
 ```text
-demand-driven producer metadata
-  ->
 consumer stage profiling
   ->
 Syslog batching if evidence supports

@@ -63,23 +63,31 @@ static uint8_t queue_source_copy(char *dst, size_t cap, const char *src)
 static void queue_copy_source(logger_queue_record_t *dst,
 			      const logger_message_t *src)
 {
-	const char *file = src->file ? strrchr(src->file, '/') : NULL;
-	file = file ? file + 1 : (src->file ? src->file : "?");
+	if (src->metadata_mask & LOGGER_RECORD_META_MODULE) {
+		dst->module_len =
+			queue_source_copy(dst->module_storage,
+					  sizeof(dst->module_storage),
+					  src->module ? src->module : "app");
+	} else {
+		dst->module_len = 0;
+		dst->module_storage[0] = '\0';
+	}
 
-	/*
-	 * 保存每个 source snapshot 的实际长度。slot 复用时只覆盖当前字符串，
-	 * consumer 也只复制 len+1，避免每条日志固定 memset/memcpy 512B 尾部。
-	 */
-	dst->module_len =
-		queue_source_copy(dst->module_storage,
-				  sizeof(dst->module_storage),
-				  src->module ? src->module : "app");
-	dst->file_len = queue_source_copy(dst->file_storage,
-					 sizeof(dst->file_storage), file);
-	dst->function_len =
-		queue_source_copy(dst->function_storage,
-				  sizeof(dst->function_storage),
-				  src->func ? src->func : "?");
+	if (src->metadata_mask & LOGGER_RECORD_META_SOURCE) {
+		const char *file = src->file ? strrchr(src->file, '/') : NULL;
+		file = file ? file + 1 : (src->file ? src->file : "?");
+		dst->file_len = queue_source_copy(dst->file_storage,
+						 sizeof(dst->file_storage), file);
+		dst->function_len =
+			queue_source_copy(dst->function_storage,
+					  sizeof(dst->function_storage),
+					  src->func ? src->func : "?");
+	} else {
+		dst->file_len = 0;
+		dst->function_len = 0;
+		dst->file_storage[0] = '\0';
+		dst->function_storage[0] = '\0';
+	}
 }
 
 static void queue_record_pack(logger_queue_record_t *dst,
@@ -91,9 +99,17 @@ static void queue_record_pack(logger_queue_record_t *dst,
 	dst->pid = src->pid;
 	dst->tid = src->tid;
 	dst->line = src->line;
-	memcpy(dst->request_id, src->request_id, sizeof(dst->request_id));
-	memcpy(dst->session_id, src->session_id, sizeof(dst->session_id));
-	memcpy(dst->trace_id, src->trace_id, sizeof(dst->trace_id));
+	if (src->metadata_mask & LOGGER_RECORD_META_CONTEXT) {
+		memcpy(dst->request_id, src->request_id,
+		       sizeof(dst->request_id));
+		memcpy(dst->session_id, src->session_id,
+		       sizeof(dst->session_id));
+		memcpy(dst->trace_id, src->trace_id, sizeof(dst->trace_id));
+	} else {
+		dst->request_id[0] = '\0';
+		dst->session_id[0] = '\0';
+		dst->trace_id[0] = '\0';
+	}
 	queue_copy_source(dst, src);
 	dst->text_len = (uint16_t)text_len;
 	dst->spill_index = spill_index;
@@ -110,9 +126,20 @@ static void queue_record_unpack(logger_queue_t *q,
 	dst->pid = src->pid;
 	dst->tid = src->tid;
 	dst->line = src->line;
-	memcpy(dst->request_id, src->request_id, sizeof(dst->request_id));
-	memcpy(dst->session_id, src->session_id, sizeof(dst->session_id));
-	memcpy(dst->trace_id, src->trace_id, sizeof(dst->trace_id));
+	if (src->request_id[0])
+		memcpy(dst->request_id, src->request_id,
+		       sizeof(dst->request_id));
+	else
+		dst->request_id[0] = '\0';
+	if (src->session_id[0])
+		memcpy(dst->session_id, src->session_id,
+		       sizeof(dst->session_id));
+	else
+		dst->session_id[0] = '\0';
+	if (src->trace_id[0])
+		memcpy(dst->trace_id, src->trace_id, sizeof(dst->trace_id));
+	else
+		dst->trace_id[0] = '\0';
 	memcpy(dst->module_storage, src->module_storage,
 	       (size_t)src->module_len + 1u);
 	memcpy(dst->file_storage, src->file_storage,

@@ -243,9 +243,11 @@ LOGGER_API int logger_destroy_status(logger_t *);
 LOGGER_API void logger_destroy(logger_t *);
 LOGGER_API logger_state_t logger_get_state(const logger_t *);
 /* Input strings must be valid for the duration of the call. Async records
- * snapshot module (127 bytes), source basename (255) and function (127), plus
- * existing message/context copies. Longer source labels are visibly shortened
- * with '~'; no queued pointer retains storage from an unloadable business .so.
+ * snapshot only metadata required by detail/include_*; when module/source are
+ * required they are copied as module (127 bytes), source basename (255) and
+ * function (127). DEBUG context is copied only when that detail can emit it.
+ * Longer source labels are visibly shortened with '~'; no queued pointer needed
+ * by later formatting retains storage from an unloadable business .so.
  * This does NOT permit unloading liblogger itself or the callback provider
  * before outstanding calls and logger workers have finished. */
 LOGGER_API void logger_log(logger_t *, logger_level_t, const char *,

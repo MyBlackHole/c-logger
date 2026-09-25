@@ -354,6 +354,7 @@ logger_regression(io_accounting_regression test_io_accounting.c)
 target_link_options(io_accounting_regression PRIVATE -Wl,--wrap=logger_format_line -Wl,--wrap=write -Wl,--wrap=writev -Wl,--wrap=fsync)
 logger_regression(stderr_sigpipe_regression test_stderr_sigpipe.c)
 logger_regression(queue_mpsc_regression test_queue_mpsc.c)
+logger_regression(metadata_capture_regression test_metadata_capture.c)
 logger_regression(resource_cleanup_regression test_resource_cleanup.c)
 target_link_options(resource_cleanup_regression PRIVATE -Wl,--wrap=free)
 logger_regression(global_flush_regression test_global_flush.c)
@@ -361,6 +362,9 @@ foreach(t queue_notify_regression flush_pending_regression flush_watermark_regre
   add_test(NAME ${t} COMMAND ${t})
   set_tests_properties(${t} PROPERTIES LABELS "regression;concurrency;queue-flush" TIMEOUT 15)
 endforeach()
+add_test(NAME metadata_capture_regression COMMAND metadata_capture_regression)
+set_tests_properties(metadata_capture_regression PROPERTIES
+  LABELS "regression;unit;performance" TIMEOUT 15)
 add_test(NAME resource_cleanup_regression COMMAND resource_cleanup_regression)
 set_tests_properties(resource_cleanup_regression PROPERTIES
   LABELS "regression;resource-lifecycle;reliability" TIMEOUT 15)
@@ -717,7 +721,7 @@ endif()
 logger_regression(explicit_scope_regression test_explicit_scope.c)
 target_link_options(explicit_scope_regression PRIVATE
   -Wl,--wrap=logger_file_write -Wl,--wrap=logger_file_reopen
-  -Wl,--wrap=pthread_cond_signal -Wl,--wrap=pthread_cond_wait
+  -Wl,--wrap=logger_queue_push -Wl,--wrap=pthread_cond_wait
   -Wl,--wrap=pthread_create -Wl,--wrap=close -Wl,--wrap=fflush
   -Wl,--wrap=vfprintf -Wl,--wrap=vsnprintf -Wl,--wrap=pthread_mutex_lock
   -Wl,--wrap=pthread_setcancelstate -Wl,--wrap=logger_format_line)

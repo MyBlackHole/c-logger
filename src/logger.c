@@ -103,6 +103,47 @@ static pid_t tid_(void)
 {
 	return (pid_t)syscall(SYS_gettid);
 }
+
+static unsigned capture_mask_from_config(const logger_config_t *cfg)
+{
+	unsigned mask = 0;
+	if (cfg->detail >= LOGGER_DETAIL_NORMAL)
+		mask |= LOGGER_CAPTURE_MODULE;
+	if (cfg->detail >= LOGGER_DETAIL_VERBOSE) {
+		if (cfg->include_pid)
+			mask |= LOGGER_CAPTURE_PID;
+		if (cfg->include_tid)
+			mask |= LOGGER_CAPTURE_TID;
+	}
+	if (cfg->detail >= LOGGER_DETAIL_DEBUG) {
+		mask |= LOGGER_CAPTURE_CONTEXT;
+		if (cfg->include_source)
+			mask |= LOGGER_CAPTURE_SOURCE;
+	}
+	return mask;
+}
+
+static void prepare_record_metadata(logger_t *l, msg_t *m, const char *module,
+				    const char *file, int line,
+				    const char *function)
+{
+	unsigned mask = l->capture_mask;
+	m->metadata_mask = (uint8_t)(mask & LOGGER_CAPTURE_RECORD_MASK);
+	if (mask & LOGGER_CAPTURE_MODULE)
+		m->module = module;
+	if (mask & LOGGER_CAPTURE_PID)
+		m->pid = l->pid;
+	if (mask & LOGGER_CAPTURE_TID)
+		m->tid = tid_();
+	if (mask & LOGGER_CAPTURE_SOURCE) {
+		m->file = file;
+		m->line = line;
+		m->func = function;
+	}
+	if (mask & LOGGER_CAPTURE_CONTEXT)
+		capture_context(m);
+}
+
 logger_state_t logger_get_state(const logger_t *l)
 {
 	if (reject_access())
@@ -129,16 +170,10 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	if (!l || !fmt || (unsigned)lv >= LOGGER_OFF ||
 	    lv < atomic_load_explicit(&l->level, memory_order_relaxed))
 		return;
-	msg_t m = { .level = lv,
-		    .pid = getpid(),
-		    .tid = tid_(),
-		    .file = f,
-		    .line = line,
-		    .func = fn,
-		    .module = mod };
+	msg_t m = { .level = lv };
+	prepare_record_metadata(l, &m, mod, f, line, fn);
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
 		return;
-	capture_context(&m);
 	int formatted = vsnprintf(m.text, sizeof(m.text), fmt, ap);
 	if (formatted < 0)
 		return;
@@ -281,6 +316,8 @@ static logger_t *create_logger(const logger_config_t *input,
 	l->include_pid = cfg.include_pid;
 	l->include_tid = cfg.include_tid;
 	l->include_source = cfg.include_source;
+	l->capture_mask = capture_mask_from_config(&cfg);
+	l->pid = (l->capture_mask & LOGGER_CAPTURE_PID) ? getpid() : 0;
 	snprintf(l->ident, sizeof(l->ident), "%s",
 		 cfg.ident ? cfg.ident : "app");
 
@@ -544,17 +581,11 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 		rc = -ESHUTDOWN;
 	else if (level >=
 		 atomic_load_explicit(&l->level, memory_order_relaxed)) {
-		logger_message_t msg = { .level = level,
-					 .pid = getpid(),
-					 .tid = tid_(),
-					 .module = module,
-					 .file = file,
-					 .line = line,
-					 .func = function };
+		logger_message_t msg = { .level = level };
+		prepare_record_metadata(l, &msg, module, file, line, function);
 		if (clock_gettime(CLOCK_REALTIME, &msg.ts))
 			rc = -errno;
 		else {
-			capture_context(&msg);
 			va_list ap;
 			va_start(ap, fmt);
 			int n = vsnprintf(msg.text, sizeof(msg.text), fmt, ap);

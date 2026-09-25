@@ -24,10 +24,14 @@ int main(int argc, char **argv)
 		char big[600];
 		memset(big, 'M', sizeof(big));
 		big[599] = 0;
-		logger_message_t in = { .level = LOGGER_INFO,
-					.module = "module",
-					.file = "dir/test.c",
-					.func = "call" };
+		logger_message_t in = {
+			.level = LOGGER_INFO,
+			.metadata_mask = LOGGER_RECORD_META_MODULE |
+					 LOGGER_RECORD_META_SOURCE,
+			.module = "module",
+			.file = "dir/test.c",
+			.func = "call"
+		};
 		if (!strcmp(mode, "bounds"))
 			in.module = in.file = in.func = big;
 		if (!strcmp(mode, "null-source"))

@@ -83,6 +83,8 @@ static void check_compact_storage(void)
 	      q.cap * sizeof(logger_message_t));
 
 	logger_message_t in = { .level = LOGGER_INFO,
+				.metadata_mask = LOGGER_RECORD_META_MODULE |
+						 LOGGER_RECORD_META_SOURCE,
 				.module = "compact",
 				.file = "dir/compact.c",
 				.func = "push" },

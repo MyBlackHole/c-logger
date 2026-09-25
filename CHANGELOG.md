@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — demand-driven producer metadata
+
+- logger create 时把 immutable `detail/include_*` 编译成 private `capture_mask`，
+  producer 不再每条日志重复判断不相关 metadata。
+- `MINIMAL` 不采集 module/pid/tid/context/source；`NORMAL` 只采集 module；
+  `VERBOSE` 再按配置采集 pid/tid；`DEBUG` 才采集 context/source。
+- PID 在实例创建时缓存；继承 runtime 的 raw-fork child 本就会在使用前 ECHILD，
+  因此不再为每条需要 PID 的日志调用 `getpid()`。
+- async queue 只复制实际需要的 module/context/source，未使用区域只清首字节/长度；
+  固定 queue layout、bounded memory 和 source lifetime contract 不变。
+- 新增 metadata capture policy regression；benchmark throughput baseline 前移到
+  PR #14 合并后的 self-paced-wakeup main，避免重复计算旧优化收益。
+
 ## Unreleased — self-paced queue wakeup
 
 - async producer 成功 publish 后不再每条日志都获取 `q.wait_mu` 并

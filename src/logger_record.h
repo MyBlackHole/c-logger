@@ -7,12 +7,21 @@
 #include <string.h>
 #define LOGGER_MESSAGE_MAX 4096
 #define LOGGER_LINE_MAX 5120
+
+enum {
+	LOGGER_RECORD_META_MODULE = 1u << 0,
+	LOGGER_RECORD_META_CONTEXT = 1u << 1,
+	LOGGER_RECORD_META_SOURCE = 1u << 2
+};
+
 typedef struct logger_message {
 	logger_level_t level;
 	struct timespec ts;
 	pid_t pid, tid;
 	const char *file, *func, *module;
 	int line;
+	/* internal-only：告诉 async queue 哪些 metadata snapshot 真正有语义。 */
+	uint8_t metadata_mask;
 	char request_id[64], session_id[64], trace_id[64];
 	/* 记录实际存入 text[] 的字节数，不含 NUL；避免 async queue 再扫描正文。 */
 	uint16_t text_len;
