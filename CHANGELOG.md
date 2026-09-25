@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — top-level architecture
+
+- 新增 `docs/ARCHITECTURE.md` 作为唯一顶层架构入口，统一定义 host boundary、
+  explicit/global/Console/Audit 组件关系、sync/async 数据流、线程模型、queue/backpressure、
+  ownership/lifetime、locking/atomic、error/durability 和性能演进边界。
+- 将 bounded memory、join-before-free、flush != queue-empty、no silent truncation、
+  source lifetime isolation、sticky I/O error 等整理为 Architecture Invariants。
+- 明确 shared MPSC、single worker、512B inline、1024 spill、BATCH_MAX=256、
+  eager vsnprintf 等只是当前 implementation，可以在保持 invariant 的前提下演进。
+- 修正 queue/concurrency/known-issues 中已被最新实现替代的旧描述。
+
 ## Unreleased — queue hot-path tuning
 
 - 根据首次 compact benchmark 拆分热点，而不是简单扩大 spill pool。

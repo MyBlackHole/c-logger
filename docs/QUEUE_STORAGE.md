@@ -43,7 +43,7 @@ long message queued capacity <= 1024 spill blocks
 
 ## spill exhaustion
 
-spill pool 用尽时绝不把 long message 截成 255B。
+spill pool 用尽时绝不静默截断 long message。
 
 `logger_queue_push()` 返回 unavailable，上层继续执行已有 level overflow policy：
 
@@ -77,9 +77,9 @@ ERROR/FATAL default          -> SYNC fallback
 单个 block 的生命周期：
 
 ```text
-queue free list
+queue free bitmap
     ->
-producer 临时独占
+producer CAS claim 后临时独占
     ->
 producer 写正文
     ->
@@ -89,7 +89,7 @@ consumer acquire slot
     ->
 consumer 复制正文到 worker batch
     ->
-consumer 归还 free list
+consumer atomic clear 归还 bitmap
 ```
 
 producer 在 queue full 时会在返回前把 block 归还，因此不会泄漏。

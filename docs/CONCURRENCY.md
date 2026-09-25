@@ -21,7 +21,7 @@ Producer:
 ```text
 reserve enqueue position
     |
-write complete logger_message_t payload
+write complete compact queue record
     |
 release-store slot.seq = published
 ```
@@ -50,7 +50,7 @@ queue slot 可内嵌最多 512B 正文。更长消息先从预分配 spill pool
 publication 顺序为：
 
 ```text
-producer 从 spill freelist 取得 block（仅长消息）
+producer 从 spill bitmap claim block（仅长消息）
     ->
 写完整 spill text
     ->

@@ -32,10 +32,15 @@ No sanitizer suppression is added to make an external-library report disappear.
 
 # Engineering invariant gate
 
+总体架构和不可破坏的 review gate 见 `docs/ARCHITECTURE.md`。任何较大的 queue、
+worker、backend、lifecycle、ownership 或 public API 修改，必须先确认没有违反其中的
+Architecture Invariants，再进入专项测试。
+
 Code review 和 regression design 必须遵守内部工程约束。源码注释和内部说明以中文为主；
 API、标识符、标准术语、协议名和错误码保留英文，避免技术歧义。详见
 `docs/CODING_STYLE.md`。
 
+- top-level architecture: `docs/ARCHITECTURE.md`;
 - resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
 - counted lifetime admission: `docs/REFCOUNTING.md`;
 - lexical cleanup: `docs/RESOURCE_CLEANUP.md`;
