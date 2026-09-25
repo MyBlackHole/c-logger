@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(prod_c_logger VERSION 0.9.0 LANGUAGES C)
+project(prod_c_logger VERSION 0.9.1 LANGUAGES C)
 # First packaged development snapshot, not a certified Production v1.
 set(LOGGER_ABI_VERSION 0)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
