@@ -21,6 +21,17 @@ int logger_internal_include_source(const logger_t *);
 
 typedef struct logger_worker_workspace logger_worker_workspace_t;
 
+enum {
+	LOGGER_CAPTURE_MODULE = LOGGER_RECORD_META_MODULE,
+	LOGGER_CAPTURE_CONTEXT = LOGGER_RECORD_META_CONTEXT,
+	LOGGER_CAPTURE_SOURCE = LOGGER_RECORD_META_SOURCE,
+	LOGGER_CAPTURE_PID = 1u << 3,
+	LOGGER_CAPTURE_TID = 1u << 4,
+	LOGGER_CAPTURE_RECORD_MASK = LOGGER_RECORD_META_MODULE |
+				     LOGGER_RECORD_META_CONTEXT |
+				     LOGGER_RECORD_META_SOURCE
+};
+
 struct logger {
 	/* 原子控制/状态字段，可在不持有 emit_mu 时读取。 */
 	_Atomic logger_level_t level;
@@ -32,6 +43,9 @@ struct logger {
 	mode_t file_mode;
 	int async_mode, include_pid, include_tid, include_source;
 	logger_level_t flush_level;
+	/* 构造时按 detail/include_* 冻结；producer 不再每条日志重复推导。 */
+	unsigned capture_mask;
+	pid_t pid;
 	char ident[128];
 
 	/* backend 可变状态统一由 emit_mu 串行化。 */
