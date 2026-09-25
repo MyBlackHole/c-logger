@@ -172,6 +172,20 @@ XPack 完成后由 Xmake `hash.sha256()` 生成同名 `.sha256` 记录。CI 首�
 CHANGELOG、非 HISTORY 的 `docs/*.md`、以及 `examples/installed_consumer`。历史 README/API
 继续按 CMake 规则排除。
 
+## CPack / XPack structure parity
+
+正式切换 release-publish 之前，CI 从**同一 commit**同时构建 CPack 与 XPack 的 shared/static
+TGZ，并解包后比较安装树的相对路径类型与 shared-library symlink target。第一轮采用严格
+结构集合一致门禁，不预先把差异列入白名单。
+
+对于来自源码的 public headers、generated version header、文档与 installed-consumer 示例，
+还要求逐文件内容一致。library binary 与 CMake/pkg-config metadata 不要求字节一致：
+它们继续由现有 ABI、production-isolation、ExactVersion/components 和真实 consumer gate
+验证语义，而不是把不同构建系统的实现细节误当作 ABI。
+
+若严格结构集合出现差异，只有明确证明属于构建系统内部 metadata 分片、且外部 consumer
+契约已经等价验证的项目才允许后续收窄比较范围；缺失 public/install contract 文件必须修复。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
