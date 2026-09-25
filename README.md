@@ -1,22 +1,22 @@
-# C Logger 0.9.0 — 完整功能发布工程候选
+# C Logger 0.9.1 — 受控生产发布候选
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
-保留文件/stderr/Syslog、同步/异步、Console、完整 Audit。**不是已完成部署验收的 Production v1。**
+保留文件/stderr/Syslog、同步/异步、Console、完整 Audit。已通过当前 CI、Sanitizer、ABI/打包与性能门禁，适合目标环境验收后的受控生产；**仍不是通用 Production v1。**
 
 ## 安装及独立接入
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
 cmake --build build --target check -j4
-cmake --install build --prefix /opt/logger/0.9.0
+cmake --install build --prefix /opt/logger/0.9.1
 ```
 
 ```cmake
-find_package(Logger 0.9.0 EXACT CONFIG REQUIRED)
+find_package(Logger 0.9.1 EXACT CONFIG REQUIRED)
 target_link_libraries(host PRIVATE Logger::logger)
 ```
 
-共享产物 `liblogger.so.0.9.0` / SONAME `liblogger.so.0`；静态版本使用独立 build/prefix。
+共享产物 `liblogger.so.0.9.1` / SONAME `liblogger.so.0`；静态版本使用独立 build/prefix。
 生成的安装包仅含生产库、公开头、CMake/pkg-config 元数据和集成文档，不包含测试钩子。
 `examples/installed_consumer/` 可以直接从安装树用 C/C++11 编译运行。
 
