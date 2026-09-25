@@ -38,6 +38,111 @@ set_allowedplats("linux")
 local project_version = "0.9.3"
 local abi_version = "0"
 
+local function cmake_bool(value)
+    return value and "TRUE" or "FALSE"
+end
+
+local function configure_install_metadata(target, mkdir, writefile)
+    local shared = target:kind() == "shared"
+    local legacy = has_config("legacy_fork")
+    local generated = path.join(target:autogendir(), "install")
+    mkdir(generated)
+
+    local config = string.format([[
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+set(Logger_FOUND TRUE)
+set(Logger_VERSION "%s")
+set(Logger_ABI_VERSION "%s")
+set(Logger_CRYPTO_IMPLEMENTATION "builtin-sha256")
+set(Logger_RELEASE_CANDIDATE TRUE)
+set(Logger_shared_FOUND %s)
+set(Logger_static_FOUND %s)
+set(Logger_legacy_fork_FOUND %s)
+include("${CMAKE_CURRENT_LIST_DIR}/LoggerTargets.cmake")
+foreach(_comp IN LISTS Logger_FIND_COMPONENTS)
+  if((NOT DEFINED Logger_${_comp}_FOUND OR NOT Logger_${_comp}_FOUND)
+     AND Logger_FIND_REQUIRED_${_comp})
+    set(Logger_FOUND FALSE)
+  endif()
+endforeach()
+]], project_version, abi_version, cmake_bool(shared), cmake_bool(not shared),
+       cmake_bool(legacy))
+    local config_file = path.join(generated, "LoggerConfig.cmake")
+    writefile(config_file, config)
+
+    local compile_definitions = {}
+    if not shared then
+        table.insert(compile_definitions, "LOGGER_STATIC_DEFINE=1")
+    end
+    if legacy then
+        table.insert(compile_definitions, "LOGGER_ENABLE_LEGACY_FORK_HELPER=1")
+    end
+    local definitions = table.concat(compile_definitions, ";")
+    local library_type = shared and "SHARED" or "STATIC"
+    local library_file = shared and ("liblogger.so." .. project_version) or "liblogger.a"
+    local soname = shared and '  IMPORTED_SONAME "liblogger.so.' .. abi_version .. '"\n' or ""
+    local defprop = definitions ~= "" and
+        ('  INTERFACE_COMPILE_DEFINITIONS "' .. definitions .. '"\n') or ""
+    local targets = string.format([[
+if(TARGET Logger::logger)
+  return()
+endif()
+get_filename_component(_IMPORT_PREFIX "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+add_library(Logger::logger %s IMPORTED)
+set_target_properties(Logger::logger PROPERTIES
+  IMPORTED_LOCATION "${_IMPORT_PREFIX}/lib/%s"
+%s  INTERFACE_INCLUDE_DIRECTORIES "${_IMPORT_PREFIX}/include/logger"
+  INTERFACE_LINK_LIBRARIES "Threads::Threads"
+%s  INTERFACE_LOGGER_ABI "%s"
+  INTERFACE_LOGGER_VARIANT "production"
+)
+set_property(TARGET Logger::logger APPEND PROPERTY COMPATIBLE_INTERFACE_STRING
+  LOGGER_ABI LOGGER_VARIANT)
+unset(_IMPORT_PREFIX)
+]], library_type, library_file, soname, defprop, abi_version)
+    local targets_file = path.join(generated, "LoggerTargets.cmake")
+    writefile(targets_file, targets)
+
+    local version = string.format([[
+set(PACKAGE_VERSION "%s")
+if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
+  set(PACKAGE_VERSION_EXACT TRUE)
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+else()
+  set(PACKAGE_VERSION_COMPATIBLE FALSE)
+endif()
+]], project_version)
+    local version_file = path.join(generated, "LoggerConfigVersion.cmake")
+    writefile(version_file, version)
+
+    local pc_definitions = ""
+    if not shared then
+        pc_definitions = pc_definitions .. " -DLOGGER_STATIC_DEFINE=1"
+    end
+    if legacy then
+        pc_definitions = pc_definitions .. " -DLOGGER_ENABLE_LEGACY_FORK_HELPER=1"
+    end
+    local pc = string.format([[prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/logger
+
+Name: prod-c-logger
+Description: Host-owned Logger and Audit (builtin SHA-256), controlled-production candidate
+Version: %s
+Libs: -L${libdir} -llogger
+Libs.private: -pthread
+Cflags: -I${includedir}%s
+]], project_version, pc_definitions)
+    local pc_file = path.join(generated, "logger.pc")
+    writefile(pc_file, pc)
+
+    target:add("installfiles", config_file, targets_file, version_file,
+               {prefixdir = "lib/cmake/Logger"})
+    target:add("installfiles", pc_file, {prefixdir = "lib/pkgconfig"})
+end
+
 local logger_sources = {
     "src/logger.c",
     "src/logger_global.c",
@@ -103,8 +208,16 @@ target("logger")
         }
     })
     add_includedirs("include", "$(builddir)/generated", {public = true})
+    add_headerfiles("include/logger.h", "include/audit.h", "include/console.h",
+                    "include/logger_export.h", {prefixdir = "logger"})
+    add_installfiles("$(builddir)/generated/logger_version.h",
+                     {prefixdir = "include/logger"})
+    if has_config("legacy_fork") then
+        add_headerfiles("include/logger_fork_compat.h", {prefixdir = "logger"})
+    end
 
     on_load(function (target)
+        configure_install_metadata(target, os.mkdir, io.writefile)
         if target:kind() == "shared" then
             local manifest = path.join(os.projectdir(), "cmake", "logger.symbols")
             local out = {"LOGGER_0.9 {\n", "  global:\n"}

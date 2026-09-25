@@ -123,23 +123,49 @@ QEMU power-cut workflow 也不再只证明 CMake guest：每个既有 cut point 
 流程各执行一次。两个构建系统都必须完成同盘重启后的 baseline、恢复、追加和 chain verify。
 这仍然是虚拟机存储栈验证，不替代真实硬件断电验收。
 
+## Install parity 3A
+
+Xmake 现在开始验证**安装树外部契约**，仍不承担正式 release packaging。
+
+production `logger` target 直接声明并安装：
+
+- public headers 与生成的 `logger_version.h`；
+- shared/static production library；
+- 可重定位 `LoggerConfig.cmake` / `LoggerConfigVersion.cmake` /
+  `LoggerTargets.cmake`；
+- `logger.pc`。
+
+Xmake 安装树继续复用现有 `tests/packaging/check_install.py`，不是建立另一套“Xmake 自测”。
+该检查会把 staged prefix 移动到带空格的新位置后，再验证：
+
+- `find_package(Logger 0.9.3 EXACT CONFIG REQUIRED)`；
+- shared/static component fail-closed；
+- C 与 C++11 installed consumers；
+- PIC static library 嵌入 SDK MODULE；
+- pkg-config consumer；
+- frozen old-header consumer；
+- public layout/default 一致性；
+- production artifact isolation；
+- shared ABI/versioned DSO。
+
+CMake 原有路径仍使用真实 `DESTDIR + cmake --install`。Xmake 3A 使用官方
+`xmake install -o <staged-prefix>`，先证明安装树和 relocation 语义；若这一层稳定，
+再单独决定是否需要项目级 DESTDIR compatibility wrapper，而不是伪装 Xmake 原生命令已经
+提供与 CMake 完全相同的 CLI 语义。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
 1. 其余需要自定义 linker interception 的 white-box regression cases；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
-3. install tree；
-4. `LoggerConfig.cmake` / ExactVersion / components；
-5. pkg-config；
-6. C/C++/旧 header/SDK MODULE installed consumers；
-7. DESTDIR、relocation、prefix migration；
-8. CPack TGZ + SHA-256；
-9. release-publish。
+3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已进入 3A）；
+4. documentation install tree 的完整内容 parity；
+5. CPack/XPack TGZ + SHA-256；
+6. release-publish。
 
 ## 下一门禁
 
-crash 与 VM power-cut parity 稳定后，下一阶段进入 **install/package parity**。第一目标不是
-立即让 Xmake 发布包，而是先让 Xmake 安装树通过现有 installed-consumer、ExactVersion、
-pkg-config、DESTDIR/relocation 等同一套外部契约测试。完成后再决定是否把 Xmake 升为
-authoritative build system。
+当前下一门禁是让 install parity 3A 在 shared/static 下稳定通过；随后补 documentation /
+staging 细节，再进入 package artifact parity。只有正式 TGZ/SHA-256 仍能复用现有发布门禁后，
+才评估把 Xmake 升为 authoritative build system；在此之前 release-publish 继续只信任 CMake。

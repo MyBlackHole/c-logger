@@ -22,6 +22,8 @@ p.add_argument('--kind', choices=['shared','static'], required=True)
 p.add_argument('--cc', required=True)
 p.add_argument('--cxx', required=True)
 p.add_argument('--cmake', default='cmake')
+p.add_argument('--install-driver', choices=['cmake','xmake'], default='cmake')
+p.add_argument('--xmake', default='xmake')
 p.add_argument('--libdir', default='lib')
 p.add_argument('--includedir', default='include')
 p.add_argument('--legacy', action='store_true')
@@ -60,9 +62,15 @@ try:
     manifest = {n for n in (a.source/'cmake/logger.symbols').read_text().splitlines()
                 if n and not n.startswith('#')}
     assert declared == manifest
-    stage = work / 'destdir'; env = dict(base_env, DESTDIR=str(stage))
-    run([a.cmake, '--install', a.build, '--prefix', '/opt/logger package'], env=env)
+    stage = work / 'destdir'
     original = stage / 'opt/logger package'
+    if a.install_driver == 'cmake':
+        env = dict(base_env, DESTDIR=str(stage))
+        run([a.cmake, '--install', a.build, '--prefix', '/opt/logger package'], env=env)
+    else:
+        # Xmake exposes an install root directly with -o. Use a staged nested
+        # prefix so the same relocation and external-consumer checks apply.
+        run([a.xmake, 'install', '-o', original, 'logger'], cwd=a.source)
     assert original.is_dir()
     prefix = work / 'relocated prefix'
     original.rename(prefix)
@@ -155,8 +163,10 @@ try:
     iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
     if a.legacy: iso.append('--legacy-fork')
     run(iso)
-    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'work':str(work),'commands':log,
-            'checks':['DESTDIR install','relocated prefix with spaces','public headers only',
+    install_check = 'DESTDIR install' if a.install_driver == 'cmake' else 'Xmake staged install'
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'install_driver':a.install_driver,
+            'work':str(work),'commands':log,
+            'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
                       'version/components rejection','frozen old-header consumer',
                       'C/C++ layouts and defaults','production isolation']}

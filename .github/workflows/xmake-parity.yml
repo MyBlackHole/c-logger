@@ -10,6 +10,8 @@ on:
       - "cmake/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "tests/packaging/check_install.py"
+      - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
       - ".github/workflows/xmake-parity.yml"
   pull_request:
@@ -20,6 +22,8 @@ on:
       - "cmake/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "tests/packaging/check_install.py"
+      - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
       - ".github/workflows/xmake-parity.yml"
 
@@ -82,6 +86,45 @@ jobs:
           test -L "$dir/liblogger.so"
           test "$(readlink "$dir/liblogger.so.0")" = "liblogger.so.0.9.3"
           test "$(readlink "$dir/liblogger.so")" = "liblogger.so.0"
+
+
+  install-parity:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure install candidate
+        run: |
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          xmake f -m release -o xmake-build --build_shared="$shared"
+
+      - name: Build production artifact
+        run: xmake -j2 logger
+
+      - name: Verify installed consumer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$(find xmake-build -type f -name 'liblogger.so.0.9.3' -print -quit)"
+          else
+            artifact="$(find xmake-build -type f -name 'liblogger.a' -print -quit)"
+          fi
+          test -n "$artifact"
+          python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --install-driver xmake             --xmake xmake
 
 
   core-tests:
