@@ -120,6 +120,9 @@ int main(int argc, char **argv)
 	       ",\"queue_spill_capacity\":%zu"
 	       ",\"queue_spill_storage_bytes\":%zu"
 	       ",\"queue_spill_exhaustions\":%" PRIu64
+	       ",\"queue_wait_count\":%" PRIu64
+	       ",\"queue_producer_wake_signals\":%" PRIu64
+	       ",\"queue_force_wake_signals\":%" PRIu64
 	       ",\"queue_storage_bytes\":%zu"
 	       ",\"measurement\":\"output_completion_not_durability\",\"valid\":%s}\n",
 	       nt, sz, attempted, ps, es, ps > 0 ? attempted / ps : 0,
@@ -131,6 +134,9 @@ int main(int argc, char **argv)
 	       logger_queue_spill_capacity(&l->q),
 	       logger_queue_spill_storage_bytes(&l->q),
 	       logger_queue_spill_exhaustions(&l->q),
+	       logger_queue_wait_count(&l->q),
+	       logger_queue_producer_wake_signals(&l->q),
+	       logger_queue_force_wake_signals(&l->q),
 	       logger_queue_storage_bytes(&l->q),
 	       valid ? "true" : "false");
 	logger_destroy(l);

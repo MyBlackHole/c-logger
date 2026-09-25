@@ -51,8 +51,18 @@ static void *consume(void *arg)
 			continue;
 		}
 		pthread_mutex_lock(&queue.wait_mu);
-		while (logger_queue_empty(&queue) && atomic_load(&running))
+		while (logger_queue_empty(&queue) && atomic_load(&running)) {
+			atomic_store_explicit(&queue.consumer_waiting, 1,
+					      memory_order_release);
+			atomic_thread_fence(memory_order_seq_cst);
+			if (!logger_queue_empty(&queue) || !atomic_load(&running))
+				break;
+			atomic_fetch_add_explicit(&queue.wait_count, 1,
+						  memory_order_relaxed);
 			pthread_cond_wait(&queue.wait_cv, &queue.wait_mu);
+		}
+		atomic_store_explicit(&queue.consumer_waiting, 0,
+				      memory_order_release);
 		int stop = logger_queue_empty(&queue) && !atomic_load(&running);
 		pthread_mutex_unlock(&queue.wait_mu);
 		if (stop)
@@ -86,6 +96,8 @@ static void check_compact_storage(void)
 	}
 	CHECK(logger_queue_depth(&q) == q.spill_cap);
 	CHECK(logger_queue_depth(&q) < q.cap);
+	/* 没有 consumer 准备睡眠时，producer 不应该执行任何 cond signal。 */
+	CHECK(logger_queue_producer_wake_signals(&q) == 0);
 
 	in.line = 9999;
 	CHECK(logger_queue_push(&q, &in) == 0);
@@ -166,7 +178,7 @@ int main(void)
 	atomic_store(&producers_done, 1);
 	CHECK(pthread_join(observer, NULL) == 0);
 	atomic_store(&running, 0);
-	logger_queue_notify(&queue);
+	logger_queue_wake_force(&queue);
 	CHECK(pthread_join(consumer, NULL) == 0);
 	CHECK(consumed == PRODUCERS * RECORDS);
 	for (int i = 0; i < PRODUCERS; ++i)

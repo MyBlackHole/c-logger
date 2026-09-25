@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — self-paced queue wakeup
+
+- async producer 成功 publish 后不再每条日志都获取 `q.wait_mu` 并
+  `pthread_cond_signal()`；只有观察到 `consumer_waiting=1` 才进入 slow path。
+- worker 在持有 `wait_mu` 时 publish waiting 状态并重新检查 queue/running，
+  保留 wait-entry 窗口的 lost-wakeup correctness。
+- 多 producer 通过 atomic exchange 竞争一次 wake ownership；同一个 sleep 周期只需要
+  一个 producer signal。
+- shutdown/stop 改为独立 force wake，不能依赖 producer waiting hint。
+- 新增 private wait/signal diagnostics 和 benchmark 输出，不改变 public metrics ABI。
+- queue notify/MPSC regression 覆盖 wait-entry gap、active-backlog no-signal、
+  多 producer 与 force-stop 路径。
+
 ## Unreleased — top-level architecture
 
 - 新增 `docs/ARCHITECTURE.md` 作为唯一顶层架构入口，统一定义 host boundary、

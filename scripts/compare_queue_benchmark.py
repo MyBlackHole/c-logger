@@ -157,6 +157,19 @@ def main():
             cand_prod = median(cand_samples, "producer_logs_per_sec")
             base_e2e = median(base_samples, "end_to_end_logs_per_sec")
             cand_e2e = median(cand_samples, "end_to_end_logs_per_sec")
+            base_enqueued = median(base_samples, "enqueued")
+            cand_enqueued = median(cand_samples, "enqueued")
+            cand_waits = median(cand_samples, "queue_wait_count")
+            cand_wakes = median(
+                cand_samples, "queue_producer_wake_signals"
+            )
+            # tuning baseline 在 self-paced wakeup 之前：每次成功 enqueue
+            # 都执行一次 cond_signal，因此 old signals == enqueued。
+            wake_reduction = (
+                1.0 - cand_wakes / base_enqueued
+                if base_enqueued
+                else 0.0
+            )
 
             overloaded = (
                 any_nonzero(base_samples, "dropped")
@@ -192,6 +205,13 @@ def main():
                     ),
                     "candidate_median_spill_exhaustions": median(
                         cand_samples, "queue_spill_exhaustions"
+                    ),
+                    "baseline_assumed_wake_signals": base_enqueued,
+                    "candidate_median_wait_count": cand_waits,
+                    "candidate_median_wake_signals": cand_wakes,
+                    "candidate_wake_reduction": wake_reduction,
+                    "candidate_wake_per_enqueued": (
+                        cand_wakes / cand_enqueued if cand_enqueued else 0.0
                     ),
                     "throughput_comparable": comparable,
                 }
@@ -266,9 +286,9 @@ def main():
     md.append(
         "| threads | bytes | base prod/s | new prod/s | prod ratio | "
         "base e2e/s | new e2e/s | e2e ratio | base spill | new spill | "
-        "base drop | new drop |"
+        "old wake | new wake | wake↓ | worker waits |"
     )
-    md.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    md.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for row in rows:
         prod_ratio = (
             f"{row['producer_ratio']:.3f}x"
@@ -288,8 +308,10 @@ def main():
             f"{row['candidate_end_to_end_logs_per_sec']:.0f} | {e2e_ratio} | "
             f"{row['baseline_median_spill_exhaustions']:.0f} | "
             f"{row['candidate_median_spill_exhaustions']:.0f} | "
-            f"{row['baseline_median_dropped']:.0f} | "
-            f"{row['candidate_median_dropped']:.0f} |"
+            f"{row['baseline_assumed_wake_signals']:.0f} | "
+            f"{row['candidate_median_wake_signals']:.0f} | "
+            f"{row['candidate_wake_reduction'] * 100.0:.2f}% | "
+            f"{row['candidate_median_wait_count']:.0f} |"
         )
 
     summary = "\n".join(md) + "\n"

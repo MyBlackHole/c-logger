@@ -68,7 +68,7 @@ ERROR/FATAL default          -> SYNC fallback
 - compact `slots`；
 - `spills`；
 - lock-free `spill_used[]` bitmap；
-- `wait_mu/wait_cv`。
+- `consumer_waiting + wait_mu/wait_cv` self-paced wakeup state。
 
 最终都由 `logger_queue_destroy()` 在 worker join 后释放/销毁。
 
@@ -236,3 +236,34 @@ ratio；否则标记为 `overload`，避免把少处理日志误解释成性能�
 
 workflow 输出完整 raw samples、Markdown summary 和 Actions artifact。实测结论写入
 `validation/QUEUE_HOTPATH.md`。
+
+
+## self-paced worker wakeup
+
+普通 enqueue 不再无条件执行 `pthread_mutex_lock + pthread_cond_signal`。
+
+worker 在 queue 空时：
+
+```text
+wait_mu
+  -> publish consumer_waiting=1
+  -> SC fence
+  -> recheck queue/running
+  -> cond_wait
+```
+
+producer 在 record release-publish 后先执行 SC fence，再读取 `consumer_waiting`：
+
+- 0：worker 正在运行或尚未准备睡眠，直接返回；
+- 1：进入 `wait_mu` slow path，只有一个 producer exchange 成功并 signal。
+
+shutdown/stop 使用独立 force wake，不依赖 hint。
+
+benchmark 私有字段同时报告 `queue_wait_count`、`queue_producer_wake_signals` 和
+`queue_force_wake_signals`。上一版实现每个成功 enqueue 都 signal，因此 tuning
+baseline 的 producer signal 数等于 enqueued；candidate 可以直接计算 signal reduction。
+
+
+SC fence 是 correctness protocol 的一部分，不是可随意删除的性能细节。它防止 worker 和
+producer 在 store-buffering 交错下同时读到对方的旧状态；如果未来要替换该 barrier，
+必须重新证明 lost-wakeup 不可能，并用 wait-entry regression + TSan 验证。

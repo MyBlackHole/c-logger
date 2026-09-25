@@ -32,10 +32,17 @@ int main(void)
 	logger_t *l = logger_create(&c);
 	CHECK(l);
 	wait_flag(&in_gap);
+	CHECK(atomic_load_explicit(&l->q.consumer_waiting,
+				   memory_order_acquire) == 1);
+	CHECK(logger_queue_wait_count(&l->q) >= 1);
+	CHECK(logger_queue_producer_wake_signals(&l->q) == 0);
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, producer, l) == 0);
-	/* Wait until publication, NOT producer return: the fixed notification may
-     * legitimately block on wait_mu until consumer actually starts waiting. */
+	/*
+	 * 只等待 publication，不等 producer return：
+	 * producer 已看到 consumer_waiting=1，但此时 worker 仍持有 wait_mu，
+	 * 所以 producer 的少数 slow path 会阻塞到 cond_wait 原子释放 mutex。
+	 */
 	int published = 0;
 	for (int i = 0; i < 5000; ++i) {
 		if (atomic_load_explicit(&l->q.slots[0].seq,
@@ -48,6 +55,8 @@ int main(void)
 	CHECK(published);
 	atomic_store(&release_wait, 1);
 	CHECK(pthread_join(thread, NULL) == 0);
+	CHECK(logger_queue_producer_wake_signals(&l->q) == 1);
+	CHECK(logger_queue_force_wake_signals(&l->q) == 0);
 	int output_without_rescue = 0;
 	for (int i = 0; i < 1000; ++i) {
 		if (file_size("out.log") > 0) {
@@ -61,6 +70,6 @@ int main(void)
 	CHECK(file_contains("out.log", "last-before-idle"));
 	CHECK(output_without_rescue);
 	leave_temp(dir);
-	puts("queue notification survives publication in the wait-entry gap");
+	puts("self-paced queue wakeup survives the wait-entry publication gap");
 	return 0;
 }
