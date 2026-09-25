@@ -1,0 +1,37 @@
+name: vm-powercut
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  powercut:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install QEMU and guest kernel
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual
+      - name: Build static guest test with the production library
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF
+          cmake --build build -j2
+          cc -static -Iinclude -Ibuild/generated tests/vm_powercut.c build/liblogger.a -pthread -o vm_powercut
+          file vm_powercut
+      - name: Force VM power cut and verify recovery
+        run: |
+          kernel=$(find /boot -maxdepth 1 -name 'vmlinuz-*' | sort -V | tail -n 1)
+          test -n "$kernel"
+          python3 scripts/run_vm_powercut.py --kernel "$kernel" --binary vm_powercut --output vm-evidence
+      - name: Upload VM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-powercut-evidence
+          path: vm-evidence/serial-*.log
+          if-no-files-found: warn
+          retention-days: 30
