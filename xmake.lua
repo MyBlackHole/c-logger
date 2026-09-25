@@ -95,7 +95,7 @@ target("logger")
     end
     add_syslinks("pthread", {public = true})
 
-    set_configdir("$(buildir)/generated")
+    set_configdir("$(builddir)/generated")
     add_configfiles("include/logger_version.h.in", {
         filename = "logger_version.h",
         pattern = "@(.-)@",
@@ -107,7 +107,7 @@ target("logger")
             LOGGER_ABI_VERSION = abi_version
         }
     })
-    add_includedirs("include", "$(buildir)/generated", {public = true})
+    add_includedirs("include", "$(builddir)/generated", {public = true})
 
     on_load(function (target)
         if target:kind() == "shared" then
