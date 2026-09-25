@@ -27,6 +27,12 @@ option("build_private_tests")
     set_description("Build and register the test-only support cases")
 option_end()
 
+option("build_regression_tests")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build and register the regression-support cases")
+option_end()
+
 set_allowedplats("linux")
 
 local project_version = "0.9.3"
@@ -245,5 +251,75 @@ if has_config("build_private_tests") then
         add_deps("logger_test_support")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         add_tests("default", {timeout = 5})
+    target_end()
+end
+
+
+if has_config("build_regression_tests") then
+    -- Keep regression instrumentation on a separate same-source archive.
+    -- Production artifacts remain fortified and are never linked to this target.
+    target("logger_regression_support")
+        set_kind("static")
+        set_default(false)
+        for _, source in ipairs(logger_sources) do
+            add_files(source)
+        end
+        add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0", {force = true})
+        set_symbols("hidden")
+        add_defines("LOGGER_ENABLE_FAULT_INJECTION=0")
+        add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
+        add_syslinks("pthread", {public = true})
+        add_includedirs("include", "$(builddir)/generated", {public = true})
+    target_end()
+
+    local regression_targets = {
+        {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
+        {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
+        {"global_flush_regression", "tests/regression/test_global_flush.c"},
+        {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
+        {"crypto_vectors_test", "tests/test_crypto_vectors.c"},
+        {"audit_concurrency_regression", "tests/regression/test_audit_concurrency.c"},
+        {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"}
+    }
+
+    for _, spec in ipairs(regression_targets) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files(spec[2])
+            add_deps("logger_regression_support")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        target_end()
+    end
+
+    for _, name in ipairs({
+        "queue_mpsc_regression",
+        "metadata_capture_regression",
+        "global_flush_regression",
+        "crypto_vectors_test"
+    }) do
+        target(name)
+            add_tests("default", {timeout = 15})
+        target_end()
+    end
+
+    target("stderr_sigpipe_regression")
+        for _, scenario in ipairs({"sync", "async", "preblocked"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("audit_concurrency_regression")
+        for _, scenario in ipairs({"lifetimes", "transactions"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 30})
+        end
+    target_end()
+
+    target("crypto_contract_regression")
+        for _, scenario in ipairs({"vectors", "boundaries", "invalid", "threads"}) do
+            add_tests(scenario, {runargs = {scenario, "sha256"}, timeout = 30})
+        end
     target_end()
 end
