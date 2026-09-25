@@ -59,15 +59,15 @@ jobs:
       - name: Build TGZ package
         run: cpack --config build/CPackConfig.cmake -G TGZ
 
-      - name: Verify 0.9.1 package names
+      - name: Verify 0.9.2 package names
         run: |
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz' -print -quit)"
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz.sha256' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz.sha256' -print -quit)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: prod-c-logger-0.9.1-${{ matrix.kind }}
+          name: prod-c-logger-0.9.2-${{ matrix.kind }}
           path: |
-            prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz
-            prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz.sha256
+            prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz
+            prod-c-logger-0.9.2-*-${{ matrix.kind }}.tar.gz.sha256
           if-no-files-found: error
