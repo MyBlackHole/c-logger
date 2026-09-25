@@ -56,7 +56,8 @@ static int count_baseline(void)
 
 static int archive_filter(const struct dirent *entry)
 {
-	return !strncmp(entry->d_name, "powercut.audit.", 15) &&
+	return strcmp(entry->d_name, "powercut.audit.log") &&
+		!strncmp(entry->d_name, "powercut.audit.", 15) &&
 		strstr(entry->d_name, ".log") != NULL;
 }
 
