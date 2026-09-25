@@ -116,3 +116,20 @@ jobs:
 
       - name: Run test-only support cases
         run: xmake test -j1
+
+
+  regression-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure regression support
+        run: xmake f -m release --build_shared=n --build_regression_tests=y
+
+      - name: Run regression-support cases
+        run: xmake test -j1
