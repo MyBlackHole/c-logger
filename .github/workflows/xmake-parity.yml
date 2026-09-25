@@ -82,3 +82,20 @@ jobs:
           test -L "$dir/liblogger.so"
           test "$(readlink "$dir/liblogger.so.0")" = "liblogger.so.0.9.3"
           test "$(readlink "$dir/liblogger.so")" = "liblogger.so.0"
+
+
+  core-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure core tests
+        run: xmake f -m debug --build_shared=n --build_tests=y
+
+      - name: Run production-linked core tests
+        run: xmake test -j2
