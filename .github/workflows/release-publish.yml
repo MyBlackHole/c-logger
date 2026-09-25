@@ -53,9 +53,10 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         run: |
           cmake --build build-shared -j2
+          ctest --test-dir build-shared --output-on-failure -j2
           cmake --build build-shared --target check-package -j2
           python3 scripts/check_production_artifact.py build-shared/liblogger.so
-          python3 scripts/check_release_abi.py build-shared/liblogger.so
+          python3 scripts/check_release_abi.py build-shared/liblogger.so --machine 'Advanced Micro Devices X86-64' --elf-class ELF64
           cpack --config build-shared/CPackConfig.cmake -G TGZ
 
       - name: Configure static package
@@ -70,6 +71,7 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         run: |
           cmake --build build-static -j2
+          ctest --test-dir build-static --output-on-failure -j2
           cmake --build build-static --target check-package -j2
           python3 scripts/check_production_artifact.py build-static/liblogger.a
           cpack --config build-static/CPackConfig.cmake -G TGZ
