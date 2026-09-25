@@ -115,4 +115,4 @@ jobs:
         run: xmake f -m release --build_shared=n --build_private_tests=y
 
       - name: Run test-only support cases
-        run: xmake test -j2
+        run: xmake test -j1
