@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.3 — 2026-09-25
+
+受控发布候选验证更新。保持 public C ABI、SONAME `liblogger.so.0`、`LOGGER_0.9`
+符号版本和生产运行时契约不变。新增 Release shared/static 的进程 crash 恢复矩阵，以及
+QEMU + raw ext4 的 10 个 power-cut 点：已确认基线、Audit fsync 前后、checkpoint rename
+前后/commit 后、文件轮换 archive rename/dirsync 与 active open/dirsync。生产构建继续
+关闭 fault injection；新增 crash hook 仅存在于 test-only support target，生产宏会消除调用。
+
+本轮验证修复了 VM 测试自身的 archive 过滤错误：active `powercut.audit.log` 不再被当作
+archive 重复校验。完整 CI、release-validation、process-crash 与 VM power-cut 矩阵均通过。
+这些结果仍不替代真实硬件断电、控制器/磁盘缓存、XFS、旧 kernel/glibc、32 位、NFS/SMB
+和真实 syslogd 目标环境验收。
+
 ## 0.9.2 — 2026-09-25
 
 受控发布候选更新。保持 public ABI、SONAME `liblogger.so.0` 与 `LOGGER_0.9`
