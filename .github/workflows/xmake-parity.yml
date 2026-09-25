@@ -1,0 +1,87 @@
+name: xmake-parity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "xmake.lua"
+      - "src/**"
+      - "include/**"
+      - "cmake/logger.symbols"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - "docs/XMAKE_PARITY.md"
+      - ".github/workflows/xmake-parity.yml"
+  pull_request:
+    paths:
+      - "xmake.lua"
+      - "src/**"
+      - "include/**"
+      - "cmake/logger.symbols"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - "docs/XMAKE_PARITY.md"
+      - ".github/workflows/xmake-parity.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  production-artifact:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Check Xmake syntax
+        run: xmake check syntax
+
+      - name: Configure
+        run: |
+          if [ "${{ matrix.kind }}" = shared ]; then
+            xmake f -m release --build_shared=y
+          else
+            xmake f -m release --build_shared=n
+          fi
+
+      - name: Build production artifact
+        run: xmake -j2 logger
+
+      - name: Locate artifact
+        id: artifact
+        run: |
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$(find build -type f -name 'liblogger.so.0.9.3' -print -quit)"
+          else
+            artifact="$(find build -type f -name 'liblogger.a' -print -quit)"
+          fi
+          test -n "$artifact"
+          echo "path=$artifact" >> "$GITHUB_OUTPUT"
+          file "$artifact"
+
+      - name: Verify production isolation
+        run: python3 scripts/check_production_artifact.py "${{ steps.artifact.outputs.path }}"
+
+      - name: Verify shared ABI
+        if: matrix.kind == 'shared'
+        run: >-
+          python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
+          --machine 'Advanced Micro Devices X86-64'
+          --elf-class ELF64
+
+      - name: Verify shared version links
+        if: matrix.kind == 'shared'
+        run: |
+          dir="$(dirname "${{ steps.artifact.outputs.path }}")"
+          test -L "$dir/liblogger.so.0"
+          test -L "$dir/liblogger.so"
+          test "$(readlink "$dir/liblogger.so.0")" = "liblogger.so.0.9.3"
+          test "$(readlink "$dir/liblogger.so")" = "liblogger.so.0"
