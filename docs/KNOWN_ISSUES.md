@@ -31,7 +31,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | Syslog | 已修非阻塞 socket/send、有限 EINTR、单调冷却重连、失败统计和实例配置。仅本地 datagram；无磁盘重试队列/已失败记录重放/远端持久确认。没有绝对 I/O 超时，文件/stdio、调度和锁竞争仍可能阻塞；真实 syslogd/旧平台矩阵待验收。见 SYSLOG_BACKEND.md |
 | 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 owner 管理，不允许另一个 active 故意占用归档名。NFS/SMB 未验收 |
 | 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；未验收初始化后 chroot/卸载 procfs |
-| 持久化验证 | 本轮环境 OverlayFS `fsync=volatile`，仅验收过程逻辑和进程退出，不等于系统掉电。需非 volatile ext4/XFS 与实际存储/VM 故障矩阵；输出错误后的业务重试仍可能重复 |
+| 持久化验证 | 已增加 Release shared/static 进程 crash 恢复矩阵，以及 QEMU + raw ext4 同盘重启的 10 个 power-cut 点（已确认记录、Audit fsync 前后、checkpoint rename 前后/commit 后、文件轮换 4 个阶段）。这些 CI 证据验证当前虚拟 ext4/QEMU 路径，但仍不等于物理断电、控制器/磁盘 volatile cache、XFS 或实际目标存储栈验收；输出错误后的业务重试仍可能重复 |
 | API/ABI | 公共签名和布局本轮未改。本轮 Logger config 的旧 v1 前缀/完整新尾部已有 guard-page 和独立旧头 consumer 验证；不表示所有结构、架构或前向兼容已冻结，时区变更等仍需验证；已完成 0.9.0 候选的显式导出/安装/SONAME 与本机旧头验证；v1 ABI 和跨平台矩阵尚未正式冻结 |
 | 老平台 | Linux3.x、老 glibc、32bit 未完整验收。外部密码库后端现已移除；不再承诺外部密码模块集成。fork guard 依赖 lock-free int；syscall 兼容写法不代表所有旧文件系统支持内部轮换 |
 | 显式 / Console 取消与重入 | 本轮补齐 deferred cancellation 下资源入口的取消延期和同线程重入拒绝，但不是 signal-safe / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 constructor 明确返回 ENOTSUP。若 caller 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 cleanup，先停止/join 所有借用者；不得并发 destroy 或取消私有 worker。禁用取消期间 I/O 仍可能阻塞 |
@@ -41,11 +41,11 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | Fork | raw fork 继承运行时仍拒绝。可选旧 helper 仅适用于其受控单线程前置条件，不代替宿主进程管理；默认第三方集成由宿主在合适阶段创建实例 |
 | 可选 fork helper 的 TSan | 历史上 TSan 残留后台 task 导致正向场景 EBUSY；本轮只复跑兼容 Release 651/651，没有宣称这些兼容场景的 TSan 全部通过 |
 | 成本/性能 | 普通文件常驻 3 个 fd，完整性 Audit 约 7 个 fd；无覆盖轮换新增同步。Queue 已完成 compact/hot-path 同 runner benchmark，证明默认 queue 内存显著下降并定位 long-message burst backpressure；这些结果不是整库或目标平台性能承诺。demand-driven producer metadata 与 self-paced wakeup 已完成；当前仍待评估 consumer stage、Syslog batching 等热点，见 QUEUE_STORAGE.md 与 validation/QUEUE_HOTPATH.md |
-| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；正式安装/符号工程见 RELEASE_ENGINEERING.md；0.9.2 仍需目标平台及部署验收 |
+| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；正式安装/符号工程见 RELEASE_ENGINEERING.md；0.9.3 仍需目标平台及部署验收 |
 
 ## 发布工程候选
 
-0.9.2 继续保持 62 项公开动态符号、SONAME 0、可重定位 CMake/pkg-config 安装、CPack TGZ。
+0.9.3 继续保持 62 项公开动态符号、SONAME 0、可重定位 CMake/pkg-config 安装、CPack TGZ。
 没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机布局/旧头
 兼容有独立测试。内部符号不再动态导出，白盒测试转用同源私有静态库。
 见 RELEASE_ENGINEERING.md、PLATFORM_BASELINE.md 和 validation/PACKAGING_RESULTS.md。
