@@ -1,5 +1,5 @@
 set_project("prod_c_logger")
-set_xmakever("2.8.2")
+set_xmakever("2.8.5")
 
 -- Xmake is a parity build at this stage. CMake remains authoritative for
 -- install/package/release until the later migration gates are completed.
@@ -13,6 +13,12 @@ option("legacy_fork")
     set_default(false)
     set_showmenu(true)
     set_description("Build the compatibility-only logger_fork_reinit helper")
+option_end()
+
+option("build_tests")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build and register the production-linked core test set")
 option_end()
 
 set_allowedplats("linux")
@@ -112,3 +118,48 @@ target("logger")
         end
     end)
 target_end()
+
+
+if has_config("build_tests") then
+    -- Phase 2A: only tests that link the production logger directly. White-box
+    -- regression/fault/crash targets remain on CMake until their private support
+    -- libraries and --wrap contracts are migrated explicitly.
+    local logger_tests = {
+        {"test_logger", "tests/test_logger.c", 60},
+        {"rotation_test", "tests/test_rotation.c", 60},
+        {"audit_test", "tests/test_audit.c", 60},
+        {"audit_failure_test", "tests/test_audit_failure.c", 60},
+        {"audit_transaction_test", "tests/test_audit_transaction.c", 60},
+        {"console_test", "tests/test_console.c", 60},
+        {"format_test", "tests/test_format.c", 60},
+        {"context_test", "tests/test_context.c", 60},
+        {"permissions_test", "tests/test_permissions.c", 60},
+        {"audit_instance_test", "tests/test_audit_instance.c", 60},
+        {"audit_integrity_test", "tests/test_audit_integrity.c", 60},
+        {"audit_restart_test", "tests/test_audit_restart.c", 60},
+        {"audit_recovery_test", "tests/test_audit_recovery.c", 60},
+        {"audit_rotation_recovery_test", "tests/test_audit_rotation_recovery.c", 60},
+        {"fork_test", "tests/test_fork.c", 60},
+        {"audit_fork_test", "tests/test_audit_fork.c", 60},
+        {"fork_guard_test", "tests/test_fork_guard.c", 5},
+        {"lifecycle_test", "tests/test_lifecycle.c", 10},
+        {"concurrency_stress_test", "tests/test_concurrency_stress.c", 20},
+        {"api_contract_test", "tests/test_api_contract.c", 60},
+        {"config_abi_test", "tests/test_config_abi.c", 60},
+        {"audit_single_writer_test", "tests/test_audit_single_writer.c", 60},
+        {"redaction_test", "tests/test_redaction.c", 60},
+        {"reinit_test", "tests/test_reinit.c", 10},
+        {"multi_instance_test", "tests/test_multi_instance.c", 60}
+    }
+
+    for _, spec in ipairs(logger_tests) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files(spec[2])
+            add_deps("logger")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            add_tests("default", {timeout = spec[3]})
+        target_end()
+    end
+end
