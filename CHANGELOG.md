@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased — demand-driven producer metadata
+## 0.9.1 — 2026-09-25
+
+受控生产发布候选。相对 0.9.0 保持 public ABI、SONAME `liblogger.so.0` 和
+`LOGGER_0.9` 符号版本不变，集中完成 async queue 内存/热点优化、self-paced wakeup、
+按需 metadata、Linux-style ownership/locking 收敛以及对应 benchmark / sanitizer 回归。
+
+### demand-driven producer metadata
 
 - logger create 时把 immutable `detail/include_*` 编译成 private `capture_mask`，
   producer 不再每条日志重复判断不相关 metadata。
@@ -13,7 +19,7 @@
 - 新增 metadata capture policy regression；benchmark throughput baseline 前移到
   PR #14 合并后的 self-paced-wakeup main，避免重复计算旧优化收益。
 
-## Unreleased — self-paced queue wakeup
+### self-paced queue wakeup
 
 - async producer 成功 publish 后不再每条日志都获取 `q.wait_mu` 并
   `pthread_cond_signal()`；只有观察到 `consumer_waiting=1` 才进入 slow path。
@@ -26,7 +32,7 @@
 - queue notify/MPSC regression 覆盖 wait-entry gap、active-backlog no-signal、
   多 producer 与 force-stop 路径。
 
-## Unreleased — top-level architecture
+### top-level architecture
 
 - 新增 `docs/ARCHITECTURE.md` 作为唯一顶层架构入口，统一定义 host boundary、
   explicit/global/Console/Audit 组件关系、sync/async 数据流、线程模型、queue/backpressure、
@@ -38,7 +44,7 @@
   eager vsnprintf 等只是当前 implementation，可以在保持 invariant 的前提下演进。
 - 修正 queue/concurrency/known-issues 中已被最新实现替代的旧描述。
 
-## Unreleased — queue hot-path tuning
+### queue hot-path tuning
 
 - 根据首次 compact benchmark 拆分热点，而不是简单扩大 spill pool。
 - inline 正文上限提升到 512B，使 256B 常见日志完全绕过 spill path。
@@ -49,7 +55,7 @@
 - source snapshot 记录实际长度，只复制有效字节，减少 slot 复用时固定 512B 尾部流量。
 - benchmark 改为三版本同 runner：pre-compact 做内存门禁，上一版 compact 做吞吐调优基线。
 
-## Unreleased — queue benchmark validation
+### queue benchmark validation
 
 - 新增同 runner before/after benchmark workflow，固定 compact 前 commit
   `23504f104e900419e891b57d7187ca0bcabffdf3` 作为结构与吞吐基线。
@@ -59,7 +65,7 @@
 - benchmark 原始样本和 Markdown 汇总作为 Actions artifact 保存，避免只保留单个
   logs/sec 数字。
 
-## Unreleased — compact queue storage
+### compact queue storage
 
 - 将 MPSC queue slot 从完整 `logger_message_t` 改为 compact record：
   保留 metadata/source/context snapshot，正文使用 256B inline storage。
@@ -71,7 +77,7 @@
   regression 覆盖 inline/long roundtrip、spill block 归还以及真实 Logger
   drop/sync-fallback 行为。
 
-## Unreleased — locking audit
+### locking audit
 
 - 新增完整 Lock Matrix，明确 global、instance、Console、Audit 的保护对象、
   固定 lock order、禁止嵌套关系和 guard 适用边界。
@@ -82,14 +88,14 @@
 - 扩展 resource cleanup regression，验证 pthread guard 自动 unlock、
   checked acquire 与 trylock -EBUSY 语义。
 
-## Unreleased — 中文代码说明规范
+### 中文代码说明规范
 
 - 规定源码注释、ownership/locking/lifecycle 等工程说明以中文为主；API、标识符、
   标准术语、协议名和错误码保留英文，避免翻译造成技术歧义。
 - 首批将 cleanup、queue、file ownership、process guard 等核心内部注释改为中文主述。
 - 新增 `docs/CODING_STYLE.md`，要求后续修改到的历史英文解释性注释同步中文化。
 
-## Unreleased — refcount policy
+### refcount policy
 
 - Add REFCOUNTED as an explicit lifetime state while documenting that current
   production objects use owner/borrow, lifetime pin, join or lifecycle
@@ -99,7 +105,7 @@
 - Mark the process `live_objects` census and global lifetime rwlock pin
   explicitly as non-refcount mechanisms.
 
-## Unreleased — resource ownership audit
+### resource ownership audit
 
 - Make the build dialect explicit as C11 plus GNU C extensions, matching the
   private Linux-style cleanup implementation.
@@ -109,7 +115,7 @@
   explicit `take_fd()` ownership transfer; keep error-bearing and shared
   finalization explicit.
 
-## Unreleased — engineering invariants
+### engineering invariants
 
 - Add project-wide ownership, locking, concurrency, error-handling and lifecycle
   contracts around the Linux-style cleanup layer.
@@ -119,7 +125,7 @@
   automatic cleanup as the primary resource model.
 
 
-## Unreleased — internal resource ownership
+### internal resource ownership
 
 - Adopt a Linux-style internal resource-management model: DEFINE_FREE/__free,
   no_free_ptr/return_ptr/retain_and_null_ptr, CLASS, guard/scoped_guard and
@@ -137,7 +143,7 @@
   acquisition-error reporting.
 
 
-## Unreleased — resource footprint
+### resource footprint
 
 - Move the async worker's batch records, formatted-line buffers and iovec
   scratch arrays from the worker stack into instance-owned heap workspace.
@@ -146,7 +152,7 @@
   payload redesign has an explicit memory baseline.
 
 
-## Unreleased — production blocker hardening
+### production blocker hardening
 
 - Prevent stderr EPIPE from delivering a new SIGPIPE to the host thread/process;
   preserve the caller's signal mask and process-global SIGPIPE disposition.
