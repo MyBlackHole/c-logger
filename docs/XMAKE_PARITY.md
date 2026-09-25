@@ -96,12 +96,23 @@ linker interception 的 regression：
 这些 case 使用独立的 `regression-tests` job 串行运行，先验证 support archive 与 test runner
 语义。需要自定义 linker interception 的 regression 仍留在 CMake，作为后续单独门禁。
 
+### Sanitizer core parity
+
+Xmake 使用 2.8.3+ 的 sanitizer policies，而不是已经进入弃用路径的 sanitizer build modes。
+CI 对 25 个 production-linked core tests 分别运行：
+
+- AddressSanitizer + UndefinedBehaviorSanitizer；
+- ThreadSanitizer。
+
+这一步验证 Xmake 能把 sanitizer 同时应用到 production static logger 与测试 executable。
+完整 CMake suite 仍保留为 sanitizer 发布门禁，直到尚未迁移的 regression 集合完成 parity。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
 1. white-box regression support 与 link-time `--wrap` cases；
-2. sanitizer profiles；
+2. 完整 sanitizer regression profile（core parity 已迁移）；
 3. QEMU power-cut guest target；
 4. install tree；
 5. `LoggerConfig.cmake` / ExactVersion / components；
