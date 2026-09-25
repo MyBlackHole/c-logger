@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.2 — 2026-09-25
+
+受控发布候选更新。保持 public ABI、SONAME `liblogger.so.0` 与 `LOGGER_0.9`
+符号版本。发布工程在 shared/static 两种 Release 构建上执行完整 CTest；
+static 白盒回归使用同源独立测试库，避免 FORTIFY 改写 libc 调用后绕过
+`--wrap` 钩子。生产静态库及运行时源码未改变。ABI 工具增加目标 ELF
+架构/位数和 GLIBC 上限缺失版本的拒绝检查。目标平台与掉电验收仍待完成。
+
 ## 0.9.1 — 2026-09-25
 
 受控生产发布候选。相对 0.9.0 保持 public ABI、SONAME `liblogger.so.0` 和
