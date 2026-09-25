@@ -41,11 +41,11 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | Fork | raw fork 继承运行时仍拒绝。可选旧 helper 仅适用于其受控单线程前置条件，不代替宿主进程管理；默认第三方集成由宿主在合适阶段创建实例 |
 | 可选 fork helper 的 TSan | 历史上 TSan 残留后台 task 导致正向场景 EBUSY；本轮只复跑兼容 Release 651/651，没有宣称这些兼容场景的 TSan 全部通过 |
 | 成本/性能 | 普通文件常驻 3 个 fd，完整性 Audit 约 7 个 fd；无覆盖轮换新增同步。Queue 已完成 compact/hot-path 同 runner benchmark，证明默认 queue 内存显著下降并定位 long-message burst backpressure；这些结果不是整库或目标平台性能承诺。demand-driven producer metadata 与 self-paced wakeup 已完成；当前仍待评估 consumer stage、Syslog batching 等热点，见 QUEUE_STORAGE.md 与 validation/QUEUE_HOTPATH.md |
-| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；正式安装/符号工程见 RELEASE_ENGINEERING.md；0.9.0 仍需目标平台及部署验收 |
+| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；正式安装/符号工程见 RELEASE_ENGINEERING.md；0.9.1 仍需目标平台及部署验收 |
 
 ## 发布工程候选
 
-0.9.0 已建立 62 项公开动态符号、SONAME 0、可重定位 CMake/pkg-config 安装、CPack TGZ。
+0.9.1 继续保持 62 项公开动态符号、SONAME 0、可重定位 CMake/pkg-config 安装、CPack TGZ。
 没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机布局/旧头
 兼容有独立测试。内部符号不再动态导出，白盒测试转用同源私有静态库。
 见 RELEASE_ENGINEERING.md、PLATFORM_BASELINE.md 和 validation/PACKAGING_RESULTS.md。
