@@ -64,11 +64,27 @@ single-writer、redaction、reinit 和 multi-instance。
 这一阶段故意不把 white-box support library、`--wrap`、fault injection 或 crash hook
 混进 production-linked 测试，以继续保持生产/测试实现边界。
 
+### Test-only support parity
+
+Xmake 现在还提供一个默认关闭的 `build_private_tests` 配置，构建独立的
+`logger_test_support` 静态测试库。该 target 与 production `logger` 分离，额外编译
+`src/logger_fault.c` 并启用测试宏，只用于以下现有测试：
+
+- 5 个 file/state error-path cases；
+- 4 个 process crash/recovery cases；
+- multi-instance syslog test。
+
+该 job 使用 `xmake test -j1`：现有 4 个 recovery case 复用同一组 `crash.audit.*` 测试文件名，
+因此不能在同一工作目录并发执行；这与 production 并发模型无关。
+
+这验证了测试专用实现与 production artifact 可以在 Xmake 下保持分离；更复杂的
+regression support、link-time `--wrap` 仍留到下一步。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. white-box regression / fault / crash 测试与私有 support libraries；
+1. white-box regression support 与 link-time `--wrap` cases；
 2. sanitizer profiles；
 3. QEMU power-cut guest target；
 4. install tree；

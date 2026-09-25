@@ -21,6 +21,12 @@ option("build_tests")
     set_description("Build and register the production-linked core test set")
 option_end()
 
+option("build_private_tests")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build and register the test-only support cases")
+option_end()
+
 set_allowedplats("linux")
 
 local project_version = "0.9.3"
@@ -162,4 +168,82 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+end
+
+
+if has_config("build_private_tests") then
+    -- This archive intentionally carries the environment-driven test hooks.
+    -- It is never installed and is never linked into the production logger.
+    target("logger_test_support")
+        set_kind("static")
+        set_default(false)
+        for _, source in ipairs(logger_sources) do
+            add_files(source)
+        end
+        add_files("src/logger_fault.c")
+        add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        set_symbols("hidden")
+        add_defines("LOGGER_ENABLE_FAULT_INJECTION=1")
+        add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
+        add_syslinks("pthread", {public = true})
+        add_includedirs("include", "$(builddir)/generated", {public = true})
+    target_end()
+
+    target("fault_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_faults.c")
+        add_deps("logger_test_support")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_tests("file_write", {
+            runargs = "logger",
+            runenvs = {LOGGER_FAULT_POINT = "file_write", LOGGER_FAULT_ERRNO = "5"},
+            timeout = 10
+        })
+        add_tests("file_fsync", {
+            runargs = "logger",
+            runenvs = {LOGGER_FAULT_POINT = "file_fsync", LOGGER_FAULT_ERRNO = "5"},
+            timeout = 10
+        })
+        add_tests("state_write", {
+            runargs = "audit",
+            runenvs = {LOGGER_FAULT_POINT = "state_write", LOGGER_FAULT_ERRNO = "5"},
+            timeout = 10
+        })
+        add_tests("state_fsync", {
+            runargs = "audit",
+            runenvs = {LOGGER_FAULT_POINT = "state_fsync", LOGGER_FAULT_ERRNO = "5"},
+            timeout = 10
+        })
+        add_tests("state_rename", {
+            runargs = "audit",
+            runenvs = {LOGGER_FAULT_POINT = "state_rename", LOGGER_FAULT_ERRNO = "5"},
+            timeout = 10
+        })
+    target_end()
+
+    target("crash_recovery_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_crash_recovery.c")
+        add_deps("logger_test_support")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, point in ipairs({
+            "after_audit_fsync",
+            "before_state_rename",
+            "after_state_rename",
+            "after_checkpoint_commit"
+        }) do
+            add_tests(point, {runargs = point, timeout = 10})
+        end
+    target_end()
+
+    target("syslog_multi_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_syslog_multi.c")
+        add_deps("logger_test_support")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_tests("default", {timeout = 5})
+    target_end()
 end
