@@ -7,7 +7,11 @@ on:
       - "xmake.lua"
       - "src/**"
       - "include/**"
+      - "CMakeLists.txt"
       - "cmake/logger.symbols"
+      - "cmake/LoggerPackaging.cmake"
+      - "cmake/LoggerConfig.cmake.in"
+      - "cmake/logger.pc.in"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_release_assets.py"
@@ -20,7 +24,11 @@ on:
       - "xmake.lua"
       - "src/**"
       - "include/**"
+      - "CMakeLists.txt"
       - "cmake/logger.symbols"
+      - "cmake/LoggerPackaging.cmake"
+      - "cmake/LoggerConfig.cmake.in"
+      - "cmake/logger.pc.in"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_release_assets.py"
@@ -184,6 +192,95 @@ jobs:
           fi
           test -f "$artifact"
           python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --installed-prefix "$prefix"
+
+
+  package-structure-parity:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Build CPack and XPack from the same commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.kind }}" = shared ]; then
+            cmake_shared=ON
+            xmake_shared=y
+          else
+            cmake_shared=OFF
+            xmake_shared=n
+          fi
+
+          cmake -S . -B cmake-package-build             -DCMAKE_BUILD_TYPE=Release             -DBUILD_SHARED_LIBS="$cmake_shared"             -DBUILD_TESTING=OFF
+          cmake --build cmake-package-build -j2
+          cmake -E make_directory cpack-out
+          cpack --config cmake-package-build/CPackConfig.cmake -G TGZ -B cpack-out
+
+          xmake f -m release -o xmake-package-build --build_shared="$xmake_shared"
+          xmake pack -f targz -o xpack-out
+
+      - name: Compare package tree structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cpack_pkg="$(find cpack-out -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          xpack_pkg="$(find xpack-out -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          test -n "$cpack_pkg"
+          test -n "$xpack_pkg"
+
+          mkdir -p compare/cmake compare/xmake
+          tar -xzf "$cpack_pkg" -C compare/cmake
+          tar -xzf "$xpack_pkg" -C compare/xmake
+
+          cheader="$(find compare/cmake -type f -path '*/include/logger/logger.h' -print -quit)"
+          xheader="$(find compare/xmake -type f -path '*/include/logger/logger.h' -print -quit)"
+          test -n "$cheader"
+          test -n "$xheader"
+          croot="$(dirname "$(dirname "$(dirname "$cheader")")")"
+          xroot="$(dirname "$(dirname "$(dirname "$xheader")")")"
+
+          (
+            cd "$croot"
+            find . -mindepth 1 -printf '%P\t%y\n' | LC_ALL=C sort
+          ) > compare/cpack-structure.txt
+          (
+            cd "$xroot"
+            find . -mindepth 1 -printf '%P\t%y\n' | LC_ALL=C sort
+          ) > compare/xpack-structure.txt
+          diff -u compare/cpack-structure.txt compare/xpack-structure.txt
+
+          (
+            cd "$croot"
+            find . -type l -printf '%P -> %l\n' | LC_ALL=C sort
+          ) > compare/cpack-symlinks.txt
+          (
+            cd "$xroot"
+            find . -type l -printf '%P -> %l\n' | LC_ALL=C sort
+          ) > compare/xpack-symlinks.txt
+          diff -u compare/cpack-symlinks.txt compare/xpack-symlinks.txt
+
+      - name: Compare source-derived installed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cheader="$(find compare/cmake -type f -path '*/include/logger/logger.h' -print -quit)"
+          xheader="$(find compare/xmake -type f -path '*/include/logger/logger.h' -print -quit)"
+          croot="$(dirname "$(dirname "$(dirname "$cheader")")")"
+          xroot="$(dirname "$(dirname "$(dirname "$xheader")")")"
+
+          while IFS= read -r file; do
+            rel="${file#"$croot"/}"
+            cmp "$file" "$xroot/$rel"
+          done < <(find "$croot/include" "$croot/share/doc" -type f | LC_ALL=C sort)
 
 
   core-tests:
