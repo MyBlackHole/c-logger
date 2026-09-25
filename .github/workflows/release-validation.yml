@@ -58,13 +58,13 @@ jobs:
 
       - name: Verify 0.9.1 package names
         run: |
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*.tar.gz' -print -quit)"
-          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*.tar.gz.sha256' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz.sha256' -print -quit)"
 
       - uses: actions/upload-artifact@v4
         with:
           name: prod-c-logger-0.9.1-${{ matrix.kind }}
           path: |
-            prod-c-logger-0.9.1-*.tar.gz
-            prod-c-logger-0.9.1-*.tar.gz.sha256
+            prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz
+            prod-c-logger-0.9.1-*-${{ matrix.kind }}.tar.gz.sha256
           if-no-files-found: error
