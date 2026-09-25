@@ -14,7 +14,7 @@ enum point {
 	P_NONE,
 	P_WRITE,
 	P_REOPEN,
-	P_NOTIFY,
+	P_QUEUE,
 	P_WAIT,
 	P_CREATE,
 	P_CLOSE,
@@ -169,11 +169,11 @@ int __wrap_logger_file_reopen(logger_file_t *f)
 	probe(P_REOPEN);
 	return __real_logger_file_reopen(f);
 }
-int __real_pthread_cond_signal(pthread_cond_t *);
-int __wrap_pthread_cond_signal(pthread_cond_t *cv)
+int __real_logger_queue_push(logger_queue_t *, const logger_message_t *);
+int __wrap_logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 {
-	probe(P_NOTIFY);
-	return __real_pthread_cond_signal(cv);
+	probe(P_QUEUE);
+	return __real_logger_queue_push(q, m);
 }
 int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
@@ -367,7 +367,7 @@ static void cancel_case(void)
 	if (use_console)
 		atomic_store(&point, P_STDIO);
 	else if (!strcmp(scenario, "queue"))
-		atomic_store(&point, P_NOTIFY);
+		atomic_store(&point, P_QUEUE);
 	else if (!strcmp(scenario, "flush") ||
 		 !strcmp(scenario, "flush-void") ||
 		 !strcmp(scenario, "fallback")) {

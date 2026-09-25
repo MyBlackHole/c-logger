@@ -721,7 +721,7 @@ endif()
 logger_regression(explicit_scope_regression test_explicit_scope.c)
 target_link_options(explicit_scope_regression PRIVATE
   -Wl,--wrap=logger_file_write -Wl,--wrap=logger_file_reopen
-  -Wl,--wrap=pthread_cond_signal -Wl,--wrap=pthread_cond_wait
+  -Wl,--wrap=logger_queue_push -Wl,--wrap=pthread_cond_wait
   -Wl,--wrap=pthread_create -Wl,--wrap=close -Wl,--wrap=fflush
   -Wl,--wrap=vfprintf -Wl,--wrap=vsnprintf -Wl,--wrap=pthread_mutex_lock
   -Wl,--wrap=pthread_setcancelstate -Wl,--wrap=logger_format_line)
