@@ -20,7 +20,8 @@ target_link_libraries(host PRIVATE Logger::logger)
 生成的安装包仅含生产库、公开头、CMake/pkg-config 元数据和集成文档，不包含测试钩子。
 `examples/installed_consumer/` 可以直接从安装树用 C/C++11 编译运行。
 
-- [总体架构与 Architecture Invariants](docs/ARCHITECTURE.md)
+- [总体架构](docs/ARCHITECTURE.md)
+- [Architecture Invariants / 架构 review gate](docs/ARCHITECTURE_INVARIANTS.md)
 - [发布工程、版本与兼容边界](docs/RELEASE_ENGINEERING.md)
 - [实际平台构建基线与门禁](docs/PLATFORM_BASELINE.md)
 - [代码与注释规范](docs/CODING_STYLE.md)
