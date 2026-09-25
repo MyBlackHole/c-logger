@@ -1,0 +1,70 @@
+name: release-validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "include/logger_version.h.in"
+      - "tests/packaging/**"
+      - "tests/compat/**"
+      - "examples/installed_consumer/**"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - ".github/workflows/release-validation.yml"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: shared
+            shared: "ON"
+            artifact: "build/liblogger.so"
+          - kind: static
+            shared: "OFF"
+            artifact: "build/liblogger.a"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure release package
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=${{ matrix.shared }}
+          -DBUILD_TESTING=ON
+
+      - name: Build production artifact
+        run: cmake --build build -j2
+
+      - name: Validate installed package
+        run: cmake --build build --target check-package -j2
+
+      - name: Inspect production artifact
+        run: python3 scripts/check_production_artifact.py "${{ matrix.artifact }}"
+
+      - name: Inspect shared ABI
+        if: matrix.kind == 'shared'
+        run: python3 scripts/check_release_abi.py build/liblogger.so
+
+      - name: Build TGZ package
+        run: cpack --config build/CPackConfig.cmake -G TGZ
+
+      - name: Verify 0.9.1 package names
+        run: |
+          test -n "$(find build -maxdepth 1 -name 'prod-c-logger-0.9.1-*.tar.gz' -print -quit)"
+          test -n "$(find build -maxdepth 1 -name 'prod-c-logger-0.9.1-*.tar.gz.sha256' -print -quit)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prod-c-logger-0.9.1-${{ matrix.kind }}
+          path: |
+            build/prod-c-logger-0.9.1-*.tar.gz
+            build/prod-c-logger-0.9.1-*.tar.gz.sha256
+          if-no-files-found: error
