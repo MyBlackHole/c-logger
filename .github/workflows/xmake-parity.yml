@@ -133,3 +133,30 @@ jobs:
 
       - name: Run regression-support cases
         run: xmake test -j1
+
+
+  sanitizer-core:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address-undefined, thread]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure sanitized core tests
+        run: |
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            policies="build.sanitizer.address,build.sanitizer.undefined"
+          else
+            policies="build.sanitizer.thread"
+          fi
+          xmake f -m debug --build_shared=n --build_tests=y --policies="$policies"
+
+      - name: Run sanitized core tests
+        run: xmake test -j2
