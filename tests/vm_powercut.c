@@ -72,15 +72,22 @@ static int verify_chain(int rotation)
 	int result = 0;
 	for (int i = 0; i < n; ++i) {
 		if (!result && audit_verify_file_from(entries[i]->d_name,
-				previous[0] ? previous : NULL, next))
+				previous[0] ? previous : NULL, next)) {
+			perror(entries[i]->d_name);
 			result = -1;
+		}
 		if (!result)
 			memcpy(previous, next, sizeof(previous));
 		free(entries[i]);
 	}
 	free(entries);
-	return result ? result : audit_verify_file_from("powercut.audit.log",
+	if (result)
+		return result;
+	result = audit_verify_file_from("powercut.audit.log",
 		previous[0] ? previous : NULL, next);
+	if (result)
+		perror("powercut.audit.log");
+	return result;
 }
 
 int main(int argc, char **argv)
