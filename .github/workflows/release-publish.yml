@@ -78,10 +78,10 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         run: |
           version="${{ steps.version.outputs.version }}"
-          test -n "$(find build-shared -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
-          test -n "$(find build-shared -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
-          test -n "$(find build-static -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
-          test -n "$(find build-static -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
 
       - name: Publish GitHub release
         if: steps.existing.outputs.exists != 'true'
@@ -95,10 +95,10 @@ jobs:
             --title "c-logger ${version} — Controlled Production Candidate" \
             --notes-file "${{ steps.version.outputs.notes }}" \
             --prerelease \
-            build-shared/prod-c-logger-${version}-*.tar.gz \
-            build-shared/prod-c-logger-${version}-*.tar.gz.sha256 \
-            build-static/prod-c-logger-${version}-*.tar.gz \
-            build-static/prod-c-logger-${version}-*.tar.gz.sha256
+            prod-c-logger-${version}-*-shared.tar.gz \
+            prod-c-logger-${version}-*-shared.tar.gz.sha256 \
+            prod-c-logger-${version}-*-static.tar.gz \
+            prod-c-logger-${version}-*-static.tar.gz.sha256
 
       - name: Release already exists
         if: steps.existing.outputs.exists == 'true'
