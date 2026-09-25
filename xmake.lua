@@ -1,5 +1,6 @@
 set_project("prod_c_logger")
 set_xmakever("2.8.5")
+includes("@builtin/xpack")
 
 -- Xmake is a parity build at this stage. CMake remains authoritative for
 -- install/package/release until the later migration gates are completed.
@@ -218,6 +219,22 @@ target("logger")
 
     on_load(function (target)
         configure_install_metadata(target, os.mkdir, io.writefile)
+
+        target:add("installfiles", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
+                   {prefixdir = "share/doc/prod_c_logger"})
+        for _, doc in ipairs(os.files(path.join(os.projectdir(), "docs", "*.md"))) do
+            if path.filename(doc):sub(1, 7) ~= "HISTORY" then
+                target:add("installfiles", doc,
+                           {prefixdir = "share/doc/prod_c_logger/docs"})
+            end
+        end
+        target:add("installfiles", "examples/installed_consumer/CMakeLists.txt",
+                   "examples/installed_consumer/main.c",
+                   "examples/installed_consumer/cpp.cpp",
+                   "examples/installed_consumer/plugin.c",
+                   "examples/installed_consumer/plugin_loader.c",
+                   {prefixdir = "share/doc/prod_c_logger/examples/installed_consumer"})
+
         if target:kind() == "shared" then
             local manifest = path.join(os.projectdir(), "cmake", "logger.symbols")
             local out = {"LOGGER_0.9 {\n", "  global:\n"}
@@ -243,6 +260,22 @@ target("logger")
         end
     end)
 target_end()
+
+local package_kind = has_config("build_shared") and "shared" or "static"
+xpack("logger_package")
+    set_formats("targz")
+    set_version(project_version)
+    set_title("c-logger " .. project_version .. " controlled production candidate")
+    set_description("Host-owned C Logger and Audit, builtin SHA-256")
+    set_basename("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+    add_targets("logger")
+    after_package(function (package)
+        local output = package:outputfile()
+        local digest = hash.sha256(output)
+        io.writefile(output .. ".sha256",
+                     digest .. "  " .. path.filename(output) .. "\n")
+    end)
+xpack_end()
 
 
 if has_config("build_tests") then
