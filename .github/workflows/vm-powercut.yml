@@ -29,7 +29,7 @@ jobs:
           file vm_powercut
       - name: Force VM power cut and verify recovery
         run: |
-          kernel=$(find /boot -maxdepth 1 -name 'vmlinuz-*' | sort -V | tail -n 1)
+          kernel=$(find /boot -maxdepth 1 -name 'vmlinuz-*' -readable | sort -V | tail -n 1)
           test -n "$kernel"
           python3 scripts/run_vm_powercut.py --kernel "$kernel" --binary vm_powercut --output vm-evidence
       - name: Upload VM evidence
