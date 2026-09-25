@@ -26,6 +26,12 @@ CMAKE_C_EXTENSIONS ON
 调用变成旧 glibc 可用的实现。本轮只有 native Linux x86_64 实际验证；没有交付或启动
 旧 glibc/32-bit/sysroot 镜像，不能宣称整个 Linux 3.x/4.x/5.x 矩阵通过。
 
+当前主线另有两类 crash/durability 证据：Release shared/static 的进程终止恢复矩阵，
+以及 Ubuntu 24.04 runner 上 QEMU guest 使用 raw ext4 虚拟盘的 10 点强制断电矩阵。
+后者在写入阶段观察到指定 serial marker 后由 host SIGKILL QEMU，再使用同一 ext4 raw disk
+启动恢复并验证 Audit chain。它比 OverlayFS 进程退出测试更接近掉电语义，但仍不是实际服务器、
+存储控制器/磁盘 volatile cache、XFS 或最低支持 kernel/glibc 的平台验收。
+
 ## 检查产物的可重复命令
 
 ```sh
