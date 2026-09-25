@@ -1,4 +1,4 @@
-# C Logger 0.9.1 — 受控生产发布候选
+# C Logger 0.9.2 — 受控生产发布候选
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
 保留文件/stderr/Syslog、同步/异步、Console、完整 Audit。已通过当前 CI、Sanitizer、ABI/打包与性能门禁，适合目标环境验收后的受控生产；**仍不是通用 Production v1。**
@@ -8,15 +8,15 @@
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
 cmake --build build --target check -j4
-cmake --install build --prefix /opt/logger/0.9.1
+cmake --install build --prefix /opt/logger/0.9.2
 ```
 
 ```cmake
-find_package(Logger 0.9.1 EXACT CONFIG REQUIRED)
+find_package(Logger 0.9.2 EXACT CONFIG REQUIRED)
 target_link_libraries(host PRIVATE Logger::logger)
 ```
 
-共享产物 `liblogger.so.0.9.1` / SONAME `liblogger.so.0`；静态版本使用独立 build/prefix。
+共享产物 `liblogger.so.0.9.2` / SONAME `liblogger.so.0`；静态版本使用独立 build/prefix。
 生成的安装包仅含生产库、公开头、CMake/pkg-config 元数据和集成文档，不包含测试钩子。
 `examples/installed_consumer/` 可以直接从安装树用 C/C++11 编译运行。
 
@@ -38,7 +38,8 @@ target_link_libraries(host PRIVATE Logger::logger)
 - [Demand-driven metadata 验证](validation/METADATA_CAPTURE.md)
 - [错误处理规范](docs/ERROR_HANDLING.md)
 - [生命周期与 publish/destroy](docs/LIFECYCLE.md)
-- [0.9.1 发布验证](validation/RELEASE_0.9.1.md)
+- [0.9.2 发布说明](docs/RELEASE_NOTES_0.9.2.md)
+- [0.9.1 历史发布验证](validation/RELEASE_0.9.1.md)
 - [0.9.0 历史打包验证](validation/PACKAGING_RESULTS.md)
 - [变更清单](CHANGELOG.md)
 
