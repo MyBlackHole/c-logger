@@ -8,18 +8,17 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 
 
-def guest_init(phase):
+def guest_init(phase, point):
     return f"""#!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mount -t ext4 /dev/vda /mnt || exec sh
 cd /mnt || exit 1
-/vm_powercut {phase}
+/vm_powercut {phase} {point}
 result=$?
 echo GUEST_EXIT_$result
 sync
@@ -27,7 +26,7 @@ poweroff -f
 """
 
 
-def boot(root, kernel, disk, binary, phase, timeout):
+def boot(root, kernel, disk, binary, phase, point, timeout):
     initramfs = root / f"initramfs-{phase}.cpio.gz"
     stage = root / f"stage-{phase}"
     for directory in ("bin", "dev", "proc", "sys", "mnt"):
@@ -37,7 +36,7 @@ def boot(root, kernel, disk, binary, phase, timeout):
     for applet in ("sh", "mount", "poweroff", "sync"):
         (stage / "bin" / applet).symlink_to("busybox")
     init = stage / "init"
-    init.write_text(guest_init(phase))
+    init.write_text(guest_init(phase, point))
     init.chmod(0o755)
     with initramfs.open("wb") as out:
         cpio = subprocess.Popen(
@@ -56,7 +55,8 @@ def boot(root, kernel, disk, binary, phase, timeout):
         proc = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT,
                                 start_new_session=True)
         deadline = time.monotonic() + timeout
-        marker = b"POWERCUT_READY" if phase == "write" else b"POWERCUT_RECOVERY_PASS"
+        marker = (f"POWERCUT_POINT_{point}".encode() if phase == "write"
+                  else b"POWERCUT_RECOVERY_PASS")
         seen = False
         try:
             while time.monotonic() < deadline:
@@ -85,6 +85,11 @@ def main():
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--point", choices=(
+        "acknowledged", "before_audit_fsync", "after_audit_fsync",
+        "before_state_rename", "after_state_rename", "after_checkpoint_commit",
+        "file_after_archive_rename", "file_after_archive_dirsync",
+        "file_after_active_open", "file_after_active_dirsync"), required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     disk = args.output / "audit-disk.raw"
@@ -93,7 +98,7 @@ def main():
     subprocess.run(["mkfs.ext4", "-F", "-q", str(disk)], check=True)
     for phase in ("write", "recover"):
         boot(args.output, args.kernel.resolve(), disk.resolve(), args.binary.resolve(),
-             phase, 180)
+             phase, args.point, 180)
 
 
 if __name__ == "__main__":
