@@ -78,10 +78,10 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         run: |
           version="${{ steps.version.outputs.version }}"
-          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
-          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
-          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz" -print -quit)"
-          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*.tar.gz.sha256" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*-shared.tar.gz" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*-shared.tar.gz.sha256" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*-static.tar.gz" -print -quit)"
+          test -n "$(find . -maxdepth 1 -name "prod-c-logger-${version}-*-static.tar.gz.sha256" -print -quit)"
 
       - name: Publish GitHub release
         if: steps.existing.outputs.exists != 'true'
