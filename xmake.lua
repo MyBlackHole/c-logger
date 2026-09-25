@@ -240,7 +240,7 @@ if has_config("build_private_tests") then
             "after_state_rename",
             "after_checkpoint_commit"
         }) do
-            add_tests(point, {runargs = point, timeout = 10})
+            add_tests("crash_" .. point, {runargs = point, timeout = 10})
         end
     target_end()
 
@@ -251,6 +251,54 @@ if has_config("build_private_tests") then
         add_deps("logger_test_support")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         add_tests("default", {timeout = 5})
+    target_end()
+
+    -- Complete the same nine process-crash cases used by focused CMake CI.
+    target("audit_rotation_crash_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_audit_rotation_crash.c")
+        add_deps("logger_test_support")
+        add_includedirs("src", "tests/regression")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_ldflags("-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
+        add_tests("rotation_crash_sha256", {
+            runargs = {"rotation", "sha256"},
+            timeout = 30
+        })
+    target_end()
+
+    target("file_audit_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_file_audit.c")
+        add_deps("logger_test_support")
+        add_includedirs("src", "tests/regression")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, scenario in ipairs({"logger-busy", "state-busy", "audit-busy", "cwd"}) do
+            add_tests("file_audit_" .. scenario, {runargs = scenario, timeout = 20})
+        end
+        for _, point in ipairs({
+            "file_after_archive_rename",
+            "file_after_archive_dirsync",
+            "file_after_active_open",
+            "file_after_active_dirsync"
+        }) do
+            add_tests("file_crash_sha256_" .. point, {
+                runargs = {point, "sha256"},
+                timeout = 20
+            })
+        end
+    target_end()
+
+    -- The QEMU guest deliberately links only the test-support archive.
+    target("vm_powercut_guest")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/vm_powercut.c")
+        add_deps("logger_test_support")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_ldflags("-static", "-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
     target_end()
 end
 
