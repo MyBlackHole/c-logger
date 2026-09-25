@@ -7,9 +7,7 @@ static logger_t *make_logger(logger_detail_t detail, int include_pid,
 			     int include_tid, int include_source)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
-	c.outputs = LOGGER_OUT_FILE;
-	c.file_path = "/dev/null";
-	c.rotation.mode = LOGGER_ROTATE_NONE;
+	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = 0;
 	c.detail = detail;
 	c.include_pid = include_pid;
