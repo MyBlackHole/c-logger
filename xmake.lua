@@ -110,6 +110,7 @@ target("logger")
     add_includedirs("include", "$(builddir)/generated", {public = true})
 
     on_load(function (target)
+        import("core.base.io")
         if target:kind() == "shared" then
             local mapfile = generate_version_script(target)
             target:add("shflags", "-Wl,--version-script=" .. mapfile, {force = true})
