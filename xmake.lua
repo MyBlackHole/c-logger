@@ -15,9 +15,7 @@ option("legacy_fork")
     set_description("Build the compatibility-only logger_fork_reinit helper")
 option_end()
 
-if not is_plat("linux") then
-    raise("c-logger Xmake parity build currently supports Linux/ELF only")
-end
+set_allowedplats("linux")
 
 local project_version = "0.9.3"
 local abi_version = "0"
@@ -112,7 +110,7 @@ target("logger")
     add_includedirs("include", "$(buildir)/generated", {public = true})
 
     on_load(function (target)
-        if target:targetkind() == "shared" then
+        if target:kind() == "shared" then
             local mapfile = generate_version_script(target)
             target:add("shflags", "-Wl,--version-script=" .. mapfile, {force = true})
             target:add("shflags", "-Wl,--no-undefined", {force = true})
