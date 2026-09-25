@@ -9,7 +9,8 @@ Xmake 当前是 **并行验证构建**，不是发布权威。
 - Xmake 产物必须通过与 CMake 发布产物相同的 ABI/production-isolation 检查。
 - 当前 Xmake 产物不得直接替代正式 release asset。
 
-CI 固定使用 Xmake 3.1.1；工程最低要求为 2.8.2，因为 SONAME version support 从该版本开始。
+CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version support 需要 2.8.2，
+内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
 
 ## 第一阶段覆盖
 
@@ -53,11 +54,21 @@ python3 scripts/check_production_artifact.py <artifact>
 python3 scripts/check_release_abi.py <shared-elf>
 ```
 
+## 第二阶段：core test parity
+
+已加入 `build_tests` 可选配置，并使用 Xmake 自带的 `add_tests` / `xmake test` 注册和运行
+25 个**直接链接 production logger** 的核心测试。该集合覆盖基础 Logger、rotation、Audit、
+Console、format/context/permissions、fork guard、lifecycle、concurrency、API/ABI、
+single-writer、redaction、reinit 和 multi-instance。
+
+这一阶段故意不把 white-box support library、`--wrap`、fault injection 或 crash hook
+混进 production-linked 测试，以继续保持生产/测试实现边界。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 完整 CTest / regression / fault / crash 测试注册；
+1. white-box regression / fault / crash 测试与私有 support libraries；
 2. sanitizer profiles；
 3. QEMU power-cut guest target；
 4. install tree；
@@ -70,6 +81,6 @@ python3 scripts/check_release_abi.py <shared-elf>
 
 ## 下一门禁
 
-第一阶段 CI 稳定后再迁测试目标。只有 shared/static 测试语义、sanitizer、crash 和 VM power-cut
+production artifact 与 core test CI 稳定后，再迁 private regression/fault/crash targets。只有 shared/static 测试语义、sanitizer、crash 和 VM power-cut
 都能复用相同验证证据后，才进入 install/package parity。最终是否把 Xmake 升为 authoritative
 build system，需要在 install/package parity 完成后再决定。
