@@ -322,6 +322,7 @@ int logger_file_sync(logger_file_t *f)
 {
 	if (!f || f->fd < 0)
 		return -EBADF;
+	logger_fault_crash_if_requested("before_audit_fsync");
 	int rc = sync_data(f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
