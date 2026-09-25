@@ -7,6 +7,9 @@ on:
       - ".github/workflows/vm-powercut.yml"
       - "scripts/run_vm_powercut.py"
       - "tests/vm_powercut.c"
+      - "xmake.lua"
+      - "src/**"
+      - "include/**"
 
 permissions:
   contents: read
@@ -31,35 +34,51 @@ jobs:
           - file_after_active_dirsync
     steps:
       - uses: actions/checkout@v5
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
       - name: Install QEMU and guest kernel
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual
-      - name: Build static test-only guest
+      - name: Build CMake and Xmake static test-only guests
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
-          cmake --build build --target vm_powercut_guest -j2
-          file build/vm_powercut_guest
-      - name: Force VM power cut and verify recovery
+          cmake -S . -B cmake-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build cmake-build --target vm_powercut_guest -j2
+          xmake f -m release -o xmake-build --build_shared=n --build_private_tests=y
+          xmake -j2 vm_powercut_guest
+          xmake_guest="$(find xmake-build -type f -name vm_powercut_guest -print -quit)"
+          test -n "$xmake_guest"
+          cp "$xmake_guest" vm_powercut_guest_xmake
+          file cmake-build/vm_powercut_guest vm_powercut_guest_xmake
+      - name: Force VM power cut and verify CMake recovery
         run: |
           kernel=$(sudo find /boot -maxdepth 1 -name 'vmlinuz-*' ! -name '*azure*' | sort -V | tail -n 1)
           test -n "$kernel"
           sudo cp "$kernel" guest-vmlinuz
           sudo chown "$(id -u):$(id -g)" guest-vmlinuz
-          python3 scripts/run_vm_powercut.py --kernel guest-vmlinuz --binary build/vm_powercut_guest --point '${{ matrix.point }}' --output vm-evidence
+          python3 scripts/run_vm_powercut.py --kernel guest-vmlinuz --binary cmake-build/vm_powercut_guest --point '${{ matrix.point }}' --output vm-evidence-cmake
+      - name: Force VM power cut and verify Xmake recovery
+        run: |
+          python3 scripts/run_vm_powercut.py --kernel guest-vmlinuz --binary vm_powercut_guest_xmake --point '${{ matrix.point }}' --output vm-evidence-xmake
       - name: Upload VM evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: vm-powercut-${{ matrix.point }}
-          path: vm-evidence/serial-*.log
+          path: |
+            vm-evidence-cmake/serial-*.log
+            vm-evidence-xmake/serial-*.log
           if-no-files-found: warn
           retention-days: 30
-      - name: Upload failed rotation disk for diagnosis
+      - name: Upload failed rotation disks for diagnosis
         if: failure() && startsWith(matrix.point, 'file_')
         uses: actions/upload-artifact@v4
         with:
-          name: failed-disk-${{ matrix.point }}
-          path: vm-evidence/audit-disk.raw
+          name: failed-disks-${{ matrix.point }}
+          path: |
+            vm-evidence-cmake/audit-disk.raw
+            vm-evidence-xmake/audit-disk.raw
           compression-level: 9
           retention-days: 7

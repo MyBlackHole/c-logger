@@ -107,23 +107,39 @@ CI 对 25 个 production-linked core tests 分别运行：
 这一步验证 Xmake 能把 sanitizer 同时应用到 production static logger 与测试 executable。
 完整 CMake suite 仍保留为 sanitizer 发布门禁，直到尚未迁移的 regression 集合完成 parity。
 
+## Crash / VM power-cut parity
+
+Xmake 现在把 focused process-crash 集合补齐为与 CTest 相同的 9 个 case：
+
+- 4 个 Audit checkpoint / fsync crash point；
+- 1 个 rotation crash recovery；
+- 4 个 file rotation switch crash point。
+
+`xmake-parity` 对 shared/static 两种配置分别执行这 9 个 case，并重复 3 次。测试二进制仍链接
+独立的 `logger_test_support`，不会把 crash hook 带入 production `logger`。
+
+QEMU power-cut workflow 也不再只证明 CMake guest：每个既有 cut point 会在同一 runner 上
+分别构建 CMake 与 Xmake 的静态 test-only guest，并使用同一个 kernel / 同样的 raw ext4
+流程各执行一次。两个构建系统都必须完成同盘重启后的 baseline、恢复、追加和 chain verify。
+这仍然是虚拟机存储栈验证，不替代真实硬件断电验收。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. white-box regression support 与 link-time `--wrap` cases；
+1. 其余需要自定义 linker interception 的 white-box regression cases；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
-3. QEMU power-cut guest target；
-4. install tree；
-5. `LoggerConfig.cmake` / ExactVersion / components；
-6. pkg-config；
-7. C/C++/旧 header/SDK MODULE installed consumers；
-8. DESTDIR、relocation、prefix migration；
-9. CPack TGZ + SHA-256；
-10. release-publish。
+3. install tree；
+4. `LoggerConfig.cmake` / ExactVersion / components；
+5. pkg-config；
+6. C/C++/旧 header/SDK MODULE installed consumers；
+7. DESTDIR、relocation、prefix migration；
+8. CPack TGZ + SHA-256；
+9. release-publish。
 
 ## 下一门禁
 
-production artifact 与 core test CI 稳定后，再迁 private regression/fault/crash targets。只有 shared/static 测试语义、sanitizer、crash 和 VM power-cut
-都能复用相同验证证据后，才进入 install/package parity。最终是否把 Xmake 升为 authoritative
-build system，需要在 install/package parity 完成后再决定。
+crash 与 VM power-cut parity 稳定后，下一阶段进入 **install/package parity**。第一目标不是
+立即让 Xmake 发布包，而是先让 Xmake 安装树通过现有 installed-consumer、ExactVersion、
+pkg-config、DESTDIR/relocation 等同一套外部契约测试。完成后再决定是否把 Xmake 升为
+authoritative build system。

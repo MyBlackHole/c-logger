@@ -118,6 +118,54 @@ jobs:
         run: xmake test -j1
 
 
+  process-crash:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure process-crash parity
+        run: |
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          xmake f -m release --build_shared="$shared" --build_private_tests=y
+
+      - name: Run nine process-crash cases three times
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            "crash_recovery_test/crash_after_audit_fsync"
+            "crash_recovery_test/crash_before_state_rename"
+            "crash_recovery_test/crash_after_state_rename"
+            "crash_recovery_test/crash_after_checkpoint_commit"
+            "audit_rotation_crash_regression/rotation_crash_sha256"
+            "file_audit_regression/file_crash_sha256_file_after_archive_rename"
+            "file_audit_regression/file_crash_sha256_file_after_archive_dirsync"
+            "file_audit_regression/file_crash_sha256_file_after_active_open"
+            "file_audit_regression/file_crash_sha256_file_after_active_dirsync"
+          )
+          test "${#tests[@]}" -eq 9
+          for attempt in 1 2 3; do
+            for test_name in "${tests[@]}"; do
+              echo "attempt=${attempt} test=${test_name}"
+              xmake test "${test_name}"
+            done
+          done
+
+
   regression-tests:
     runs-on: ubuntu-24.04
     steps:
