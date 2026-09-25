@@ -99,3 +99,20 @@ jobs:
 
       - name: Run production-linked core tests
         run: xmake test -j2
+
+
+  private-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure test-only support cases
+        run: xmake f -m release --build_shared=n --build_private_tests=y
+
+      - name: Run test-only support cases
+        run: xmake test -j2
