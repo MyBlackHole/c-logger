@@ -24,6 +24,8 @@ p.add_argument('--cxx', required=True)
 p.add_argument('--cmake', default='cmake')
 p.add_argument('--install-driver', choices=['cmake','xmake'], default='cmake')
 p.add_argument('--xmake', default='xmake')
+p.add_argument('--installed-prefix', type=Path,
+               help='Validate an already installed/extracted prefix instead of running an installer')
 p.add_argument('--libdir', default='lib')
 p.add_argument('--includedir', default='include')
 p.add_argument('--legacy', action='store_true')
@@ -63,17 +65,22 @@ try:
                 if n and not n.startswith('#')}
     assert declared == manifest
     stage = work / 'destdir'
-    original = stage / 'opt/logger package'
-    if a.install_driver == 'cmake':
-        env = dict(base_env, DESTDIR=str(stage))
-        run([a.cmake, '--install', a.build, '--prefix', '/opt/logger package'], env=env)
-    else:
-        # Xmake exposes an install root directly with -o. Use a staged nested
-        # prefix so the same relocation and external-consumer checks apply.
-        run([a.xmake, 'install', '-o', original, 'logger'], cwd=a.source)
-    assert original.is_dir()
     prefix = work / 'relocated prefix'
-    original.rename(prefix)
+    if a.installed_prefix:
+        original = a.installed_prefix.resolve()
+        assert original.is_dir()
+        shutil.copytree(original, prefix, symlinks=True)
+    else:
+        original = stage / 'opt/logger package'
+        if a.install_driver == 'cmake':
+            env = dict(base_env, DESTDIR=str(stage))
+            run([a.cmake, '--install', a.build, '--prefix', '/opt/logger package'], env=env)
+        else:
+            # Xmake exposes an install root directly with -o. Use a staged nested
+            # prefix so the same relocation and external-consumer checks apply.
+            run([a.xmake, 'install', '-o', original, 'logger'], cwd=a.source)
+        assert original.is_dir()
+        original.rename(prefix)
     include = prefix / a.includedir / 'logger'
     lib = prefix / a.libdir
     config_dir = lib / 'cmake/Logger'
@@ -163,7 +170,10 @@ try:
     iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
     if a.legacy: iso.append('--legacy-fork')
     run(iso)
-    install_check = 'DESTDIR install' if a.install_driver == 'cmake' else 'Xmake staged install'
+    if a.installed_prefix:
+        install_check = 'preinstalled package tree'
+    else:
+        install_check = 'DESTDIR install' if a.install_driver == 'cmake' else 'Xmake staged install'
     report={'passed':True,'kind':a.kind,'legacy':a.legacy,'install_driver':a.install_driver,
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',

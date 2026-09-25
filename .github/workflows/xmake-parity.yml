@@ -10,6 +10,7 @@ on:
       - "cmake/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "scripts/check_release_assets.py"
       - "tests/packaging/check_install.py"
       - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
@@ -22,6 +23,7 @@ on:
       - "cmake/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "scripts/check_release_assets.py"
       - "tests/packaging/check_install.py"
       - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
@@ -125,6 +127,63 @@ jobs:
           fi
           test -n "$artifact"
           python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --install-driver xmake             --xmake xmake
+
+
+  package-parity:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure package candidate
+        run: |
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          xmake f -m release -o xmake-build --build_shared="$shared"
+
+      - name: Build XPack TGZ and checksum
+        run: xmake pack -f targz -o xpack-out
+
+      - name: Verify release asset naming and SHA-256
+        run: >-
+          python3 scripts/check_release_assets.py
+          --directory xpack-out
+          --version 0.9.3
+          --kind "${{ matrix.kind }}"
+
+      - name: Verify packaged install tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find xpack-out -maxdepth 1 -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          test -n "$package"
+          mkdir unpack
+          tar -xzf "$package" -C unpack
+          header="$(find unpack -type f -path '*/include/logger/logger.h' -print -quit)"
+          test -n "$header"
+          prefix="$(dirname "$(dirname "$(dirname "$header")")")"
+          test -f "$prefix/share/doc/prod_c_logger/API.md"
+          test -f "$prefix/share/doc/prod_c_logger/docs/XMAKE_PARITY.md"
+          test ! -e "$prefix/share/doc/prod_c_logger/docs/HISTORY_API.md"
+          test ! -e "$prefix/share/doc/prod_c_logger/docs/HISTORY_README.md"
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$prefix/lib/liblogger.so.0.9.3"
+          else
+            artifact="$prefix/lib/liblogger.a"
+          fi
+          test -f "$artifact"
+          python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --installed-prefix "$prefix"
 
 
   core-tests:
