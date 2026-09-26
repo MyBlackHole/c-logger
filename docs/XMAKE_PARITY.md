@@ -239,14 +239,19 @@ Xmake 使用与 CMake 相同的 12 个 GNU ld `--wrap` 边界，仅链接到
 
 ## Wrapped regression parity — Group D
 
-第四组迁移 syslog fault/lifetime 白盒测试：
+第四组按当前 CMake 定义迁移 syslog backend/fault/config/compat/fallback 回归：
 
-- `syslog_fault_regression`：openlog/syslog/closelog、queue/file fallback、format fault，
-  以及 init/open/sync/async/shutdown/cancel/restore-policy 场景；
-- `syslog_lifetime_regression`：reader-lock saturation、teardown/cancel、generation 与
-  start/stop gate。
+- `syslog_backend_regression`：bounded nonblocking I/O、reconnect、endpoint、tag、
+  cwd、metrics 与 fork-guard；
+- `syslog_fault_regression`：socket/connect/send/clock/close 的 syscall fault matrix；
+- `syslog_config_regression`：旧 struct 边界与 tail 兼容；
+- `logger_v1_consumer`：冻结 v1 header 对当前实现的兼容验证；
+- `syslog_fallback_regression`：pressure 下 fallback/queue 行为。
 
-两者使用与 CMake 相同的 GNU ld `--wrap` 边界，只链接测试 support archive。
+其中 fault/config/v1/fallback 使用与 CMake 相同的 GNU ld `--wrap` 边界。
+此前 Group D 曾误指向不存在的 `test_syslog_fault.c` 并登记了不属于当前 CMake
+suite 的 lifetime scenarios；CI 首次实际构建该 target 后暴露问题，本组现已按
+`CMakeLists.txt` 重新对齐。
 
 ## Wrapped regression parity — Group E
 
