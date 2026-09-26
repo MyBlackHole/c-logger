@@ -661,7 +661,13 @@ if has_config("build_regression_tests") then
     target("process_fork_regression")
         on_test(function (target, opt)
             import("core.base.process")
-            local proc = process.openv(target:targetfile(), opt.runargs or {})
+            local argv = opt.runargs
+            if argv == nil then
+                argv = {}
+            elseif type(argv) == "string" then
+                argv = {argv}
+            end
+            local proc = process.openv(target:targetfile(), argv)
             local code, errors = proc:wait((opt.timeout or 12) * 1000)
             if code < 0 then
                 proc:kill()
