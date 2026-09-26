@@ -203,17 +203,38 @@ Group A 直接复用现有 `logger_regression_support` 与原测试源码，覆�
 Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
 `-Wl,--wrap=<symbol>`，不修改 production logger，也不把测试 hook 放入安装或 XPack。
 
+## Wrapped regression parity — Group B
+
+第二组继续复用同一个 `logger_regression_support`，迁移 process fork 与 global facade
+生命周期/取消路径：
+
+- `process_fork_regression`：atfork 注册、继承 runtime 拒绝、锁持有窗口、注册窗口、
+  earlier handler、prepare/bypass/prefork，以及 global/explicit/Console/context/Audit/verify
+  的注册边界；
+- `global_lifecycle_regression`：generation admission、bootstrap/start/stop gate、reentry、
+  acquire-error、shutdown/fsync 与 child 路径；
+- `global_cancel_regression`：write/queue/flush/reopen/reader/create/shutdown/bootstrap/
+  control-wait/restore-policy 取消恢复。
+
+这些 executable 使用与 CMake 相同的 `--wrap` 符号集合。CMake 对 process-fork case 的
+退出码 77 使用 `SKIP_RETURN_CODE`；Xmake 当前文档没有等价的 skip-return-code 配置，
+因此该 target 使用局部 `on_test` runner，把 77 保持为非失败结果，同时仍执行每 case
+12 秒超时。CMake 还把每个 CTest case 放进独立的 `test-work/<test>` 工作目录；该 runner
+同样为每个 process-fork case 创建独立工作目录，防止 audit lock/log/state 等持久测试产物
+跨 case 污染。这个适配只存在于测试 target，不影响 production logger。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 其余 linker interception white-box regression（Group A 已迁移，process/global/explicit/file/syslog 仍待）；
+1. 其余 linker interception white-box regression（Group A/B 已迁移，explicit/file/syslog 仍待）；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
 3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
 4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
 
 ## 下一门禁
 
-当前下一门禁是在 package parity 3B 稳定后，比较 CPack 与 XPack 的安装树/资产语义，
-并决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让 release-publish
-切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
+CPack / XPack 安装树与资产结构 parity 已进入 CI，当前下一门禁是继续收敛剩余
+explicit/file/syslog linker-interception regression。之后再补完整 sanitizer regression profile，
+并单独决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
+release-publish 切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
