@@ -271,6 +271,26 @@ wrapper 集合、测试名称与 timeout 与 CMake 保持一致。已有
 `file_audit_regression`（busy/cwd 与四个 process-crash 点）继续由
 Xmake private/process-crash 门禁覆盖，不重复引入第二套实现。
 
+## Static sanitizer prerequisite — Audit / crypto regression parity
+
+完整 sanitizer profile 不能只重复当前 25 个 core tests；CMake 的 sanitizer job 在
+`LOGGER_ENABLE_INSTALL=OFF` 下执行完整 default static CTest suite。因此先把缺失的
+实现行为回归逐组迁到 Xmake。
+
+本组直接复用 CMake 现有源码与 case 名称：
+
+- `audit_record_regression`：40 个严格 record codec/parser case；
+- `audit_recovery_strict_regression`：27 个 recovery/checkpoint/archive case；
+- `audit_reader_regression`：16 个 bounded reader case；
+- `crypto_builtin_only_regression`：2 个链接真实 production logger 的 builtin SHA-256
+  lifecycle / historical fixture case；
+- `sha256_only_regression`：12 个 public/private boundary 与历史状态拒绝 case。
+
+前三者和 `sha256_only_regression` 链接 `logger_regression_support`；
+`crypto_builtin_only_regression` 与 CMake 一样链接真实 `logger`，避免把 test-only
+实现误当成 production crypto boundary。fixture 参数使用工程绝对路径，不依赖 Xmake
+默认运行目录。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
