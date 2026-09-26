@@ -535,7 +535,14 @@ if has_config("build_regression_tests") then
             {"logger_file_write", "logger_file_reopen", "logger_queue_push",
              "pthread_cond_wait", "pthread_create", "close", "fflush",
              "vfprintf", "vsnprintf", "pthread_mutex_lock",
-             "pthread_setcancelstate", "logger_format_line"}}
+             "pthread_setcancelstate", "logger_format_line"}},
+
+        -- Link-time interception parity, group D: syslog faults and lifecycle.
+        {"syslog_fault_regression", "tests/regression/test_syslog_fault.c",
+            {"openlog", "syslog", "closelog", "logger_queue_push",
+             "logger_file_write", "logger_format_line"}},
+        {"syslog_lifetime_regression", "tests/regression/test_syslog_lifetime.c",
+            {"pthread_rwlock_rdlock"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -793,6 +800,28 @@ if has_config("build_regression_tests") then
             add_tests("explicit_global-worker_reentry_" .. scenario,
                       {runargs = {"reentry", "global-worker", scenario},
                        timeout = 10})
+        end
+    target_end()
+
+    target("syslog_fault_regression")
+        for _, scenario in ipairs({
+            "init", "open", "sync", "async", "both",
+            "shutdown-file", "shutdown-syslog", "invalid-facility",
+            "cancel", "open-cancel", "flush-cancel", "flush-void-cancel",
+            "close-cancel", "restore-policy"
+        }) do
+            add_tests("syslog_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("syslog_lifetime_regression")
+        for _, scenario in ipairs({
+            "saturation", "teardown", "cancel",
+            "generation", "start-gate", "stop-gate"
+        }) do
+            add_tests("syslog_lifetime_" .. scenario,
+                      {runargs = scenario, timeout = 15})
         end
     target_end()
 end
