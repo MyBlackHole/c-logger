@@ -310,17 +310,33 @@ host-owned case 需要运行时加载 `example_sdk`。Xmake 使用
 测试 runner 从 dependency target 取得实际 shared-library path 并作为参数传入，同时为
 每个 case 创建独立工作目录。
 
+## Full sanitizer regression parity
+
+`xmake-parity` 的 sanitizer job 现在保留原有 `sanitizer-core` job id（避免无意义地
+更改 branch-protection check 名），但语义已经从 core-only 提升为完整 default-static suite：
+
+- Debug、static logger，与 CMake sanitizer 配置一致；
+- address+undefined 与 thread 两个 profile；
+- 同时启用 production-linked core、fault-enabled private tests 与全部 regression tests；
+- `xmake test -j1` 运行完整测试集合；CTest 使用 `-j2`，但它为每个 case 设置独立
+  working directory。Xmake 尚未对所有 case 做全局 working-directory 隔离，因此这里
+  先串行执行，测试内部的真实并发/取消/fork/stress 行为不变；
+- sanitizer 结束后再对实际 `liblogger.a` 运行
+  `scripts/check_production_artifact.py`，对应 CMake sanitizer suite 中仍然存在的
+  `crypto_production_artifact_isolation`；
+- sanitizer 配置不承担 install/package parity，因为 CMake 在 sanitizer 模式下同样默认
+  `LOGGER_ENABLE_INSTALL=OFF`。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 完整 sanitizer regression profile（core parity 已迁移）；
-2. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
-3. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
+1. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
+2. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
 
 ## 下一门禁
 
-CPack / XPack 安装树与资产结构 parity 已进入 CI，linker-interception regression
-Group A–E 也已全部迁移。当前下一门禁是补完整 sanitizer regression profile，并单独
-决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
-release-publish 切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
+CPack / XPack 安装树与资产结构、linker-interception regression Group A–E，以及
+default-static sanitizer profile 都已进入 CI。当前下一门禁是单独决定是否需要项目级
+DESTDIR CLI compatibility；之后才讨论让 release-publish 切换到 Xmake。在正式切换前，
+GitHub Release 仍只信任 CMake/CPack。
