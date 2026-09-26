@@ -662,10 +662,17 @@ if has_config("build_regression_tests") then
         on_test(function (target, opt)
             local targetfile = path.absolute(target:targetfile())
             local runargs = table.wrap(opt.runargs or target:get("runargs"))
+            local rundir = opt.rundir
+            if not rundir then
+                local testname = opt.name:gsub("[/\\>=<|%*]", "_")
+                rundir = path.join(target:autogendir(), "test-work", testname)
+                os.tryrm(rundir)
+                os.mkdir(rundir)
+            end
             local code, errors = os.execv(targetfile, runargs, {
                 try = true,
                 timeout = opt.run_timeout or 12000,
-                curdir = opt.rundir or target:rundir(),
+                curdir = rundir,
                 envs = opt.runenvs
             })
             if code == 0 or code == 77 then
