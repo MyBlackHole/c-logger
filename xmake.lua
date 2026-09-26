@@ -528,7 +528,14 @@ if has_config("build_regression_tests") then
             {"logger_create", "logger_destroy_status", "logger_file_write",
              "logger_file_reopen", "logger_queue_push", "logger_format_line",
              "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock",
-             "dprintf"}}
+             "dprintf"}},
+
+        -- Link-time interception parity, group C: explicit instance/Console scope.
+        {"explicit_scope_regression", "tests/regression/test_explicit_scope.c",
+            {"logger_file_write", "logger_file_reopen", "logger_queue_push",
+             "pthread_cond_wait", "pthread_create", "close", "fflush",
+             "vfprintf", "vsnprintf", "pthread_mutex_lock",
+             "pthread_setcancelstate", "logger_format_line"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -735,6 +742,57 @@ if has_config("build_regression_tests") then
         }) do
             add_tests("global_cancel_" .. scenario,
                       {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("explicit_scope_regression")
+        for _, scenario in ipairs({
+            "write", "source", "sync", "format", "queue", "fallback",
+            "flush", "flush-void", "reopen", "syslog-metrics",
+            "create", "create-fail", "destroy"
+        }) do
+            add_tests("explicit_cancel_" .. scenario,
+                      {runargs = {"cancel", scenario}, timeout = 15})
+        end
+        for _, scenario in ipairs({
+            "print", "info", "warn", "error", "verbose", "debug", "source"
+        }) do
+            add_tests("console_cancel_" .. scenario,
+                      {runargs = {"console-cancel", scenario}, timeout = 15})
+        end
+        for _, scenario in ipairs({
+            "log", "source", "sync", "flush", "flush-void", "reopen",
+            "destroy", "destroy-void", "create", "level", "state",
+            "dropped", "metrics", "io", "syslog", "context-set",
+            "context-clear", "context-get", "console", "console-debug",
+            "console-init", "console-level", "console-color", "console-tty",
+            "global", "global-write", "audit", "audit-status"
+        }) do
+            add_tests("explicit_reentry_" .. scenario,
+                      {runargs = {"reentry", "write", scenario}, timeout = 10})
+        end
+        for _, origin in ipairs({
+            "worker", "console", "create", "format", "reopen", "destroy"
+        }) do
+            for _, scenario in ipairs({
+                "flush", "destroy", "create", "global", "audit", "console"
+            }) do
+                add_tests("explicit_" .. origin .. "_reentry_" .. scenario,
+                          {runargs = {"reentry", origin, scenario}, timeout = 10})
+            end
+        end
+        for _, scenario in ipairs({
+            "restore-policy", "create-async-reject", "setup-failure",
+            "stdio-first-error", "context-alias", "debug-overflow",
+            "invalid-level"
+        }) do
+            add_tests("explicit_contract_" .. scenario,
+                      {runargs = {"contract", scenario}, timeout = 15})
+        end
+        for _, scenario in ipairs({"global", "create"}) do
+            add_tests("explicit_global-worker_reentry_" .. scenario,
+                      {runargs = {"reentry", "global-worker", scenario},
+                       timeout = 10})
         end
     target_end()
 end
