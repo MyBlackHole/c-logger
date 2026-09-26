@@ -512,7 +512,23 @@ if has_config("build_regression_tests") then
         {"crypto_failure_regression", "tests/regression/test_crypto_failure.c",
             {"audit_digest_provider"}},
         {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
-            {"write", "fsync", "ftruncate"}}
+            {"write", "fsync", "ftruncate"}},
+
+        -- Link-time interception parity, group B: process fork and global lifecycle.
+        {"process_fork_regression", "tests/regression/test_process_fork.c",
+            {"pthread_atfork", "pthread_mutex_lock", "pthread_rwlock_rdlock",
+             "pthread_rwlock_wrlock", "pthread_once", "calloc", "free",
+             "pthread_create", "write", "close", "vsnprintf", "vfprintf",
+             "logger_vlog_internal"}},
+        {"global_lifecycle_regression", "tests/regression/test_global_lifecycle.c",
+            {"pthread_mutex_lock", "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
+             "logger_create", "logger_destroy_status", "logger_file_write",
+             "logger_file_reopen", "dprintf", "fsync"}},
+        {"global_cancel_regression", "tests/regression/test_global_cancel.c",
+            {"logger_create", "logger_destroy_status", "logger_file_write",
+             "logger_file_reopen", "logger_queue_push", "logger_format_line",
+             "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock",
+             "dprintf"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -635,6 +651,81 @@ if has_config("build_regression_tests") then
             "evidence-fsync", "directory-fsync", "truncate", "active-fsync"
         }) do
             add_tests("tail_io_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
+    -- skip-return-code option, so preserve the same non-failure semantics in
+    -- a target-local test runner while retaining the per-case timeout.
+    target("process_fork_regression")
+        on_test(function (target, opt)
+            import("core.base.process")
+            local proc = process.openv(target:targetfile(), opt.runargs or {})
+            local code, errors = proc:wait((opt.timeout or 12) * 1000)
+            if code < 0 then
+                proc:kill()
+            end
+            proc:close()
+            if code == 0 or code == 77 then
+                if code == 77 then
+                    print("%s/%s skipped (exit 77)", target:name(), opt.name)
+                end
+                return true
+            end
+            return false, errors or ("exit code: " .. tostring(code))
+        end)
+        for _, scenario in ipairs({
+            "global", "explicit", "console-only", "context-only", "audit-only",
+            "verify-only", "emit-held", "progress-held", "console-held",
+            "reader-held", "registration-window", "earlier-handler",
+            "after-shutdown", "prepare", "bypass-handler", "prefork",
+            "register-global", "register-explicit", "register-console",
+            "register-context", "register-audit", "register-verify"
+        }) do
+            add_tests("process_fork_" .. scenario,
+                      {runargs = scenario, timeout = 12})
+        end
+    target_end()
+
+    target("global_lifecycle_regression")
+        for _, op in ipairs({
+            "write", "flush", "flush-void", "reopen",
+            "level", "dropped", "metrics", "io"
+        }) do
+            add_tests("global_generation_" .. op,
+                      {runargs = {"generation", op}, timeout = 20})
+        end
+        for _, scenario in ipairs({
+            "contract", "bootstrap-generation", "shutdown-generation",
+            "start-gate", "stop-gate", "closed-readers", "stop-during-start",
+            "double-stop", "shutdown-error", "shutdown-fsync",
+            "bootstrap-stop", "child"
+        }) do
+            add_tests("global_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+        for _, scenario in ipairs({
+            "bootstrap", "create", "write", "reopen", "destroy"
+        }) do
+            add_tests("global_reentry_" .. scenario,
+                      {runargs = {"reentry", scenario}, timeout = 20})
+        end
+        for _, scenario in ipairs({
+            "read", "control", "publish", "create", "stop"
+        }) do
+            add_tests("global_error_" .. scenario,
+                      {runargs = {"acquire-error", scenario}, timeout = 20})
+        end
+    target_end()
+
+    target("global_cancel_regression")
+        for _, scenario in ipairs({
+            "write", "queue", "flush", "flush-void", "reopen", "reader",
+            "create", "create-fail", "shutdown", "bootstrap",
+            "control-wait", "restore-policy"
+        }) do
+            add_tests("global_cancel_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
     target_end()
