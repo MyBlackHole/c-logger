@@ -656,23 +656,18 @@ if has_config("build_regression_tests") then
     target_end()
 
     -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
-    -- skip-return-code option, so preserve the same non-failure semantics in
-    -- a target-local test runner while retaining the per-case timeout.
+    -- skip-return-code option, so keep its normal test execution contract and
+    -- only extend the accepted exit codes for this target.
     target("process_fork_regression")
         on_test(function (target, opt)
-            import("core.base.process")
-            local argv = opt.runargs
-            if argv == nil then
-                argv = {}
-            elseif type(argv) == "string" then
-                argv = {argv}
-            end
-            local proc = process.openv(target:targetfile(), argv)
-            local code, errors = proc:wait((opt.timeout or 12) * 1000)
-            if code < 0 then
-                proc:kill()
-            end
-            proc:close()
+            local targetfile = path.absolute(target:targetfile())
+            local runargs = table.wrap(opt.runargs or target:get("runargs"))
+            local code, errors = os.execv(targetfile, runargs, {
+                try = true,
+                timeout = opt.run_timeout or 12000,
+                curdir = opt.rundir or target:rundir(),
+                envs = opt.runenvs
+            })
             if code == 0 or code == 77 then
                 if code == 77 then
                     print("%s/%s skipped (exit 77)", target:name(), opt.name)
