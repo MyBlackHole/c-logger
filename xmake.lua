@@ -490,6 +490,10 @@ if has_config("build_regression_tests") then
         {"crypto_vectors_test", "tests/test_crypto_vectors.c"},
         {"audit_concurrency_regression", "tests/regression/test_audit_concurrency.c"},
         {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"},
+        {"audit_record_regression", "tests/regression/test_audit_record.c"},
+        {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
+        {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
+        {"sha256_only_regression", "tests/regression/test_sha256_only.c"},
 
         -- Link-time interception parity, group A: queue/flush and Audit I/O/state.
         {"queue_notify_regression", "tests/regression/test_queue_notify.c",
@@ -684,6 +688,89 @@ if has_config("build_regression_tests") then
             add_tests("tail_io_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
+    target_end()
+
+    target("audit_record_regression")
+        for _, scenario in ipairs({
+            "roundtrip", "bounds", "fuzz", "suffix", "duplicate", "unknown",
+            "reorder", "escape", "escape-nul", "escape-print", "raw-control",
+            "unclosed", "seq-zero", "seq-overflow", "seq-leading", "seq-negative",
+            "txn-plus", "txn-overflow", "error-overflow", "error-underflow",
+            "negative-zero", "phase", "result", "attempt-result", "missing-result",
+            "empty-event", "empty-operation", "instance", "bad-prefix", "bad-date",
+            "trailing-space", "crlf", "missing-lf", "short-hash", "long-hash",
+            "hash-nonhex", "hash-upper", "oversize", "oversize-eof", "nul"
+        }) do
+            add_tests("record_sha256_" .. scenario,
+                      {runargs = {scenario, "sha256"}, timeout = 30})
+        end
+    target_end()
+
+    target("audit_recovery_strict_regression")
+        for _, scenario in ipairs({
+            "forward", "partial", "complete-no-lf", "oversize-complete",
+            "oversize-eof", "malformed", "nul", "checkpoint-offset",
+            "checkpoint-ahead", "checkpoint-seq", "before-checkpoint-corrupt",
+            "names", "archives", "time-backwards", "active-larger", "no-active",
+            "empty-active", "archive-partial", "missing-middle", "duplicate",
+            "branch", "active-not-last", "lost-state-genesis",
+            "lost-state-retained", "retained-anchor", "symlink", "fifo"
+        }) do
+            add_tests("recovery_sha256_" .. scenario,
+                      {runargs = {scenario, "sha256"}, timeout = 30})
+        end
+    target_end()
+
+    target("audit_reader_regression")
+        for _, scenario in ipairs({
+            "reader", "ok", "suffix", "second-line", "second-blank",
+            "negative-offset", "large-offset", "leading-seq", "unknown-alg",
+            "short-hash", "long-hash", "short-crc", "unknown-version",
+            "missing-lf", "nul", "bad-crc"
+        }) do
+            add_tests("strict_reader_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("sha256_only_regression")
+        for _, scenario in ipairs({
+            "provider", "config", "verify-empty", "verify-missing", "live"
+        }) do
+            add_tests("sha256_only_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+        local legacy_sm3 = path.join(os.projectdir(), "tests", "fixtures",
+                                     "legacy_crypto", "sm3")
+        for _, scenario in ipairs({
+            "verify-history", "checkpoint-read", "checkpoint-write",
+            "recover-id", "init-history", "init-missing-state",
+            "init-relabel-state"
+        }) do
+            add_tests("sha256_only_" .. scenario,
+                      {runargs = {scenario, legacy_sm3}, timeout = 20})
+        end
+    target_end()
+
+    -- Uses the real production logger, matching CMake's builtin-only boundary.
+    target("crypto_builtin_only_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_crypto_builtin_only.c")
+        add_deps("logger")
+        add_includedirs("src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        add_tests("crypto_builtin_sha256_lifecycle",
+                  {runargs = {"lifecycle", "sha256"}, timeout = 30})
+        add_tests("crypto_builtin_sha256_legacy", {
+            runargs = {
+                "legacy", "sha256",
+                path.join(os.projectdir(), "tests", "fixtures",
+                          "legacy_crypto", "sha256")
+            },
+            timeout = 30
+        })
     target_end()
 
     -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
