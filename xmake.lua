@@ -338,7 +338,7 @@ if has_config("build_tests") then
 end
 
 
-if has_config("build_private_tests") then
+if has_config("build_private_tests") or has_config("build_regression_tests") then
     -- This archive intentionally carries the environment-driven test hooks.
     -- It is never installed and is never linked into the production logger.
     target("logger_test_support")
@@ -355,7 +355,9 @@ if has_config("build_private_tests") then
         add_syslinks("pthread", {public = true})
         add_includedirs("include", "$(builddir)/generated", {public = true})
     target_end()
+end
 
+if has_config("build_private_tests") then
     target("fault_test")
         set_kind("binary")
         set_default(false)
@@ -494,6 +496,17 @@ if has_config("build_regression_tests") then
         {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
         {"sha256_only_regression", "tests/regression/test_sha256_only.c"},
+
+        -- Default-static parity needed by the full sanitizer profile.
+        {"production_isolation_regression", "tests/regression/test_fault_isolation.c",
+            {"connect"}},
+        {"source_ownership_regression", "tests/regression/test_source_ownership.c",
+            {"logger_format_line"}},
+        {"destroy_status_regression", "tests/regression/test_destroy_status.c",
+            {"close"}},
+        {"host_format_regression", "tests/regression/test_host_format.c"},
+        {"global_stress_regression", "tests/regression/test_global_stress.c"},
+        {"bench_matrix", "tests/bench_matrix.c"},
 
         -- Link-time interception parity, group A: queue/flush and Audit I/O/state.
         {"queue_notify_regression", "tests/regression/test_queue_notify.c",
@@ -771,6 +784,159 @@ if has_config("build_regression_tests") then
             },
             timeout = 30
         })
+    target_end()
+
+    target("production_isolation_regression")
+        for _, scenario in ipairs({
+            "file_write", "file_fsync", "file_rename", "file_ftruncate",
+            "state_write", "state_fsync", "state_rename", "short-write",
+            "syslog-path", "after_audit_fsync", "before_state_rename",
+            "after_state_rename", "after_checkpoint_commit"
+        }) do
+            add_tests("production_isolation_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("test_hooks_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_fault_isolation.c")
+        add_deps("logger_test_support")
+        add_includedirs("src")
+        add_defines("TEST_EXPECT_HOOKS=1")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        add_ldflags("-Wl,--wrap=connect", {force = true})
+        for _, scenario in ipairs({
+            "file_write", "file_fsync", "file_rename", "file_ftruncate",
+            "state_write", "state_fsync", "state_rename", "short-write",
+            "syslog-path", "after_audit_fsync", "before_state_rename",
+            "after_state_rename", "after_checkpoint_commit"
+        }) do
+            add_tests("test_hooks_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("source_ownership_regression")
+        for _, scenario in ipairs({
+            "queue-copy", "bounds", "null-source", "log", "log-source"
+        }) do
+            add_tests("source_ownership_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("destroy_status_regression")
+        for _, scenario in ipairs({"null", "drain", "io-error", "close-error"}) do
+            add_tests("destroy_status_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("host_format_regression")
+        add_tests("host_format_bounds", {timeout = 15})
+    target_end()
+
+    target("global_stress_regression")
+        for _, scenario in ipairs({"init-race", "sync", "async"}) do
+            add_tests("global_stress_" .. scenario,
+                      {runargs = scenario, timeout = 30})
+        end
+    target_end()
+
+    target("bench_matrix")
+        add_tests("benchmark_accounting_smoke",
+                  {runargs = {"4", "1000", "64"}, timeout = 15})
+    target_end()
+
+    -- CMake's console_host regression deliberately links the real logger.
+    target("console_host_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_console_host.c")
+        add_deps("logger")
+        add_includedirs("src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        for _, scenario in ipairs({"cancel", "reentry", "config-snapshot"}) do
+            add_tests("console_host_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    -- Host-owned integration: build the SDK as an order-only dependency and
+    -- pass its exact shared-library path to the executable, matching CMake.
+    target("example_sdk")
+        set_kind("shared")
+        set_default(false)
+        add_files("examples/host_owned/example_sdk.c")
+        add_includedirs("examples/host_owned", {public = true})
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+    target_end()
+
+    local function run_with_example_sdk(target, opt)
+        local sdk = target:dep("example_sdk")
+        assert(sdk, "example_sdk dependency is required")
+        local args = table.wrap(opt.runargs or target:get("runargs"))
+        local sdkfile = path.absolute(sdk:targetfile())
+        if target:name() == "host_owned_example" then
+            args = {sdkfile, "host.log"}
+        else
+            table.insert(args, sdkfile)
+        end
+        local testname = opt.name:gsub("[/\\>=<|%*]", "_")
+        local rundir = path.join(target:autogendir(), "test-work", testname)
+        os.tryrm(rundir)
+        os.mkdir(rundir)
+        local code, errors = os.execv(path.absolute(target:targetfile()), args, {
+            try = true,
+            timeout = opt.run_timeout or 15000,
+            curdir = rundir,
+            envs = opt.runenvs
+        })
+        if code == 0 then
+            return true
+        end
+        return false, errors or ("exit code: " .. tostring(code))
+    end
+
+    target("host_owned_example")
+        set_kind("binary")
+        set_default(false)
+        add_files("examples/host_owned/host.c")
+        add_deps("logger")
+        add_deps("example_sdk", {inherit = false})
+        add_includedirs("examples/host_owned")
+        add_syslinks("dl")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        on_test(run_with_example_sdk)
+        add_tests("host_owned_example", {timeout = 15})
+    target_end()
+
+    target("host_ownership_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_host_ownership.c")
+        add_deps("logger_regression_support")
+        add_deps("example_sdk", {inherit = false})
+        add_includedirs("src", "examples/host_owned")
+        add_syslinks("dl")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        add_ldflags("-Wl,--wrap=logger_format_line", {force = true})
+        on_test(run_with_example_sdk)
+        for _, scenario in ipairs({
+            "quiet", "callback-only", "invalid-options", "shared-sync",
+            "shared-async", "separate", "concurrent", "unload-pending",
+            "message-data", "global-independent"
+        }) do
+            add_tests("host_ownership_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
     target_end()
 
     -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
