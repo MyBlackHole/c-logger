@@ -219,7 +219,9 @@ Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
 这些 executable 使用与 CMake 相同的 `--wrap` 符号集合。CMake 对 process-fork case 的
 退出码 77 使用 `SKIP_RETURN_CODE`；Xmake 当前文档没有等价的 skip-return-code 配置，
 因此该 target 使用局部 `on_test` runner，把 77 保持为非失败结果，同时仍执行每 case
-12 秒超时。这个适配只存在于测试 target，不影响 production logger。
+12 秒超时。CMake 还把每个 CTest case 放进独立的 `test-work/<test>` 工作目录；该 runner
+同样为每个 process-fork case 创建独立工作目录，防止 audit lock/log/state 等持久测试产物
+跨 case 污染。这个适配只存在于测试 target，不影响 production logger。
 
 ## 尚未迁移
 
