@@ -223,11 +223,25 @@ Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
 同样为每个 process-fork case 创建独立工作目录，防止 audit lock/log/state 等持久测试产物
 跨 case 污染。这个适配只存在于测试 target，不影响 production logger。
 
+## Wrapped regression parity — Group C
+
+第三组迁移 explicit instance 与 Console 的取消/reentry 白盒测试：
+
+- `explicit_scope_regression`：instance write/source/sync/format/queue/fallback/flush/reopen/
+  syslog metrics/create/destroy 的 cancellation；
+- Console print/info/warn/error/verbose/debug/source cancellation；
+- write/worker/Console/create/format/reopen/destroy/global-worker 多入口 reentry；
+- restore-policy、async create reject、setup failure、stdio first-error、context alias、
+  debug overflow 与 invalid-level contract。
+
+Xmake 使用与 CMake 相同的 12 个 GNU ld `--wrap` 边界，仅链接到
+`logger_regression_support`；production `logger`、安装树与 release assets 不含这些 hook。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 其余 linker interception white-box regression（Group A/B 已迁移，explicit/file/syslog 仍待）；
+1. 其余 linker interception white-box regression（Group A/B/C 已迁移，file/syslog 仍待）；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
 3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
 4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
@@ -235,6 +249,6 @@ Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
 ## 下一门禁
 
 CPack / XPack 安装树与资产结构 parity 已进入 CI，当前下一门禁是继续收敛剩余
-explicit/file/syslog linker-interception regression。之后再补完整 sanitizer regression profile，
+file/syslog linker-interception regression。之后再补完整 sanitizer regression profile，
 并单独决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
 release-publish 切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
