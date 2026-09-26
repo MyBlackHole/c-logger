@@ -542,7 +542,20 @@ if has_config("build_regression_tests") then
             {"openlog", "syslog", "closelog", "logger_queue_push",
              "logger_file_write", "logger_format_line"}},
         {"syslog_lifetime_regression", "tests/regression/test_syslog_lifetime.c",
-            {"pthread_rwlock_rdlock"}}
+            {"pthread_rwlock_rdlock"}},
+
+        -- Link-time interception parity, group E: file backend ownership/rotation.
+        {"file_backend_regression", "tests/regression/test_file_backend.c",
+            {"openat", "fsync", "close", "clock_gettime",
+             "logger_file_rename_noreplace", "unlinkat", "flock", "writev"}},
+        {"file_platform_regression", "tests/regression/test_file_platform.c",
+            {"syscall"}},
+        {"file_global_regression", "tests/regression/test_file_global.c",
+            {"logger_destroy_status", "pthread_mutex_lock"}},
+        {"file_legacy_probe", "tests/regression/test_file_legacy_probe.c",
+            {"clock_gettime"}},
+        {"file_audit_close_regression", "tests/regression/test_file_audit_close.c",
+            {"logger_create_reserved_file", "close"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -823,5 +836,54 @@ if has_config("build_regression_tests") then
             add_tests("syslog_lifetime_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
+    target_end()
+
+    target("file_backend_regression")
+        for _, scenario in ipairs({
+            "owner-same", "owner-process", "owner-race", "owner-exit",
+            "owner-alias", "owner-close-other", "path-empty", "path-long",
+            "name-long", "path-directory", "path-fifo", "path-symlink",
+            "path-dangling", "path-hardlink", "path-reserved-logger-lock",
+            "path-reserved-audit-lock", "lock-symlink", "lock-hardlink",
+            "lock-fifo", "device-rotate", "device-shared", "init-cleanup",
+            "reopen-ok", "reopen-permission", "reopen-space", "reopen-emfile",
+            "reopen-directory", "reopen-symlink", "reopen-sync",
+            "reopen-dir-sync", "reopen-close", "collision", "clock-backwards",
+            "collision-limit", "rotation-unsupported", "rotation-rename-error",
+            "rotation-new-open", "rotation-dir-sync", "rotation-new-sync",
+            "rotation-new-dir-sync", "cwd", "directory-rename",
+            "active-replaced", "retention", "retention-error", "vectors", "eintr"
+        }) do
+            add_tests("file_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("file_platform_regression")
+        for _, scenario in ipairs({"real", "enosys", "einval", "eopnotsupp"}) do
+            add_tests("file_noreplace_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("file_global_regression")
+        for _, scenario in ipairs({"repeat-no-effects", "teardown"}) do
+            add_tests("file_global_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("file_legacy_probe")
+        for _, scenario in ipairs({
+            "owner", "reopen", "collision", "cwd",
+            "symlink", "hardlink", "global-repeat"
+        }) do
+            add_tests("file_blackbox_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("file_audit_close_regression")
+        add_tests("file_audit_close", {timeout = 20})
     target_end()
 end

@@ -248,18 +248,35 @@ Xmake 使用与 CMake 相同的 12 个 GNU ld `--wrap` 边界，仅链接到
 
 两者使用与 CMake 相同的 GNU ld `--wrap` 边界，只链接测试 support archive。
 
+## Wrapped regression parity — Group E
+
+第五组补齐 file backend 的 linker-interception 白盒测试，并继续复用
+`logger_regression_support`：
+
+- `file_backend_regression`：owner/lock/path hardening、reopen、rotation、
+  retention、cwd/directory rename、active replacement、EINTR 等场景；
+- `file_platform_regression`：`renameat2(RENAME_NOREPLACE)` 的 real/ENOSYS/
+  EINVAL/EOPNOTSUPP 平台分支；
+- `file_global_regression`：global teardown 与重复 stop 无副作用；
+- `file_legacy_probe`：owner/reopen/collision/cwd/symlink/hardlink/global-repeat
+  黑盒兼容探针；
+- `file_audit_close_regression`：reserved audit file 创建与 close 错误路径。
+
+wrapper 集合、测试名称与 timeout 与 CMake 保持一致。已有
+`file_audit_regression`（busy/cwd 与四个 process-crash 点）继续由
+Xmake private/process-crash 门禁覆盖，不重复引入第二套实现。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 其余 linker interception white-box regression（Group A/B/C/D 已迁移，仅 file backend 仍待）；
-2. 完整 sanitizer regression profile（core parity 已迁移）；
-3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
-4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
+1. 完整 sanitizer regression profile（core parity 已迁移）；
+2. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
+3. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
 
 ## 下一门禁
 
-CPack / XPack 安装树与资产结构 parity 已进入 CI，当前下一门禁是继续收敛剩余
-file backend linker-interception regression。之后再补完整 sanitizer regression profile，
-并单独决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
+CPack / XPack 安装树与资产结构 parity 已进入 CI，linker-interception regression
+Group A–E 也已全部迁移。当前下一门禁是补完整 sanitizer regression profile，并单独
+决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
 release-publish 切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
