@@ -537,12 +537,16 @@ if has_config("build_regression_tests") then
              "vfprintf", "vsnprintf", "pthread_mutex_lock",
              "pthread_setcancelstate", "logger_format_line"}},
 
-        -- Link-time interception parity, group D: syslog faults and lifecycle.
-        {"syslog_fault_regression", "tests/regression/test_syslog_fault.c",
-            {"openlog", "syslog", "closelog", "logger_queue_push",
-             "logger_file_write", "logger_format_line"}},
-        {"syslog_lifetime_regression", "tests/regression/test_syslog_lifetime.c",
-            {"pthread_rwlock_rdlock"}},
+        -- Link-time interception parity, group D: syslog backend/fault/config/compat.
+        {"syslog_backend_regression", "tests/regression/test_syslog_backend.c"},
+        {"syslog_fault_regression", "tests/regression/test_syslog_faults.c",
+            {"socket", "connect", "send", "clock_gettime", "close"}},
+        {"syslog_config_regression", "tests/regression/test_syslog_config.c",
+            {"connect"}},
+        {"logger_v1_consumer", "tests/compat/test_logger_v1_consumer.c",
+            {"connect"}},
+        {"syslog_fallback_regression", "tests/regression/test_syslog_fallback.c",
+            {"logger_format_line"}},
 
         -- Link-time interception parity, group E: file backend ownership/rotation.
         {"file_backend_regression", "tests/regression/test_file_backend.c",
@@ -816,26 +820,55 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    target("syslog_fault_regression")
+    target("syslog_backend_regression")
         for _, scenario in ipairs({
-            "init", "open", "sync", "async", "both",
-            "shutdown-file", "shutdown-syslog", "invalid-facility",
-            "cancel", "open-cancel", "flush-cancel", "flush-void-cancel",
-            "close-cancel", "restore-policy"
+            "flags", "wire", "file-fails", "pressure", "multi-backend",
+            "async-pressure", "reconnect", "deferred", "required-missing",
+            "endpoint-type", "fd-churn", "init-cleanup", "isolation",
+            "threads", "copy-path", "cwd", "default-tag", "max-tag",
+            "long-tag", "tag-injection", "bad-facility", "bad-startup",
+            "bad-interval", "empty-path", "long-path", "invalid-metrics",
+            "fork-guard"
         }) do
-            add_tests("syslog_" .. scenario,
+            add_tests("syslog_backend_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
     target_end()
 
-    target("syslog_lifetime_regression")
+    target("syslog_fault_regression")
         for _, scenario in ipairs({
-            "saturation", "teardown", "cancel",
-            "generation", "start-gate", "stop-gate"
+            "socket-emfile", "socket-enfile", "socket-enomem", "socket-eintr",
+            "connect-eacces", "connect-eperm", "connect-enoent",
+            "connect-refused", "connect-inprogress", "connect-eintr",
+            "connect-again", "connect-prototype", "deferred-permission",
+            "deferred-cooldown", "backwards-clock", "clock-init",
+            "send-again", "send-nobufs", "send-enomem", "send-msgsize",
+            "send-eintr", "send-pipe", "send-reset", "send-notconn",
+            "send-refused", "send-io", "eintr-then-success", "zero-send",
+            "short-send", "clock-disconnect", "close-disconnect",
+            "reconnect-failure", "oversize", "max-packet"
         }) do
-            add_tests("syslog_lifetime_" .. scenario,
+            add_tests("syslog_fault_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
+    target_end()
+
+    target("syslog_config_regression")
+        for _, scenario in ipairs({
+            "prefix", "zero-prefix", "header-only",
+            "unknown-header", "partial-tail", "future-tail"
+        }) do
+            add_tests("syslog_config_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("logger_v1_consumer")
+        add_tests("syslog_old_header_consumer", {timeout = 15})
+    target_end()
+
+    target("syslog_fallback_regression")
+        add_tests("syslog_fallback_pressure", {timeout = 15})
     target_end()
 
     target("file_backend_regression")
