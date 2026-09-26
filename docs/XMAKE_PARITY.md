@@ -237,11 +237,22 @@ Xmake 仅在对应测试 executable 链接阶段增加与 CMake 相同的
 Xmake 使用与 CMake 相同的 12 个 GNU ld `--wrap` 边界，仅链接到
 `logger_regression_support`；production `logger`、安装树与 release assets 不含这些 hook。
 
+## Wrapped regression parity — Group D
+
+第四组迁移 syslog fault/lifetime 白盒测试：
+
+- `syslog_fault_regression`：openlog/syslog/closelog、queue/file fallback、format fault，
+  以及 init/open/sync/async/shutdown/cancel/restore-policy 场景；
+- `syslog_lifetime_regression`：reader-lock saturation、teardown/cancel、generation 与
+  start/stop gate。
+
+两者使用与 CMake 相同的 GNU ld `--wrap` 边界，只链接测试 support archive。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
 
-1. 其余 linker interception white-box regression（Group A/B/C 已迁移，file/syslog 仍待）；
+1. 其余 linker interception white-box regression（Group A/B/C/D 已迁移，仅 file backend 仍待）；
 2. 完整 sanitizer regression profile（core parity 已迁移）；
 3. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
 4. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
@@ -249,6 +260,6 @@ Xmake 使用与 CMake 相同的 12 个 GNU ld `--wrap` 边界，仅链接到
 ## 下一门禁
 
 CPack / XPack 安装树与资产结构 parity 已进入 CI，当前下一门禁是继续收敛剩余
-file/syslog linker-interception regression。之后再补完整 sanitizer regression profile，
+file backend linker-interception regression。之后再补完整 sanitizer regression profile，
 并单独决定是否需要项目级 DESTDIR compatibility。只有这些门禁稳定后，才讨论让
 release-publish 切换到 Xmake；在此之前正式 GitHub Release 仍只信任 CMake/CPack。
