@@ -382,6 +382,8 @@ jobs:
         run: xmake test -j1
 
 
+  # Keep the historical job id stable for branch-protection continuity, but
+  # exercise the complete default-static test surface rather than only core tests.
   sanitizer-core:
     runs-on: ubuntu-24.04
     strategy:
@@ -396,14 +398,32 @@ jobs:
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure sanitized core tests
+      - name: Configure sanitized static suite
         run: |
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
             policies="build.sanitizer.address,build.sanitizer.undefined"
           else
             policies="build.sanitizer.thread"
           fi
-          xmake f -m debug --build_shared=n --build_tests=y --policies="$policies"
+          xmake f -m debug \
+            --build_shared=n \
+            --build_tests=y \
+            --build_private_tests=y \
+            --build_regression_tests=y \
+            --policies="$policies"
 
-      - name: Run sanitized core tests
-        run: xmake test -j2
+      # CMake uses ctest -j2, but also assigns every case its own working
+      # directory. Until Xmake has the same global isolation, serialize the
+      # complete suite; the concurrency regressions still create real threads.
+      - name: Run sanitized static suite
+        run: xmake test -j1
+
+      # Mirrors CMake's crypto_production_artifact_isolation test, which remains
+      # registered in sanitizer builds even though install/packaging tests do not.
+      - name: Verify sanitized production isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$(find build -type f -name 'liblogger.a' -print -quit)"
+          test -n "$artifact"
+          python3 scripts/check_production_artifact.py "$artifact"
