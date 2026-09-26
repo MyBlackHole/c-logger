@@ -291,6 +291,25 @@ Xmake private/process-crash 门禁覆盖，不重复引入第二套实现。
 实现误当成 production crypto boundary。fixture 参数使用工程绝对路径，不依赖 Xmake
 默认运行目录。
 
+## Static sanitizer prerequisite — remaining default-static regressions
+
+Audit/crypto parity 之后，本组补齐 CMake sanitizer default-static suite 中剩余的实现行为
+target（shared-only 与 legacy-fork opt-in 目标不属于这个 profile）：
+
+- production isolation 与显式 test-hook isolation，各 13 个 case；
+- source ownership 5 个、destroy status 4 个、host format 1 个；
+- global stress 3 个、Console host 3 个、benchmark accounting smoke 1 个；
+- host-owned integration example 1 个、host ownership regression 10 个。
+
+`test_hooks_regression` 复用 fault-enabled `logger_test_support`；production isolation
+继续使用 fault-disabled `logger_regression_support`。Console host 与 host-owned example
+继续链接真实 production `logger`。
+
+host-owned case 需要运行时加载 `example_sdk`。Xmake 使用
+`add_deps("example_sdk", {inherit = false})` 只建立构建依赖，不把 SDK 链入 host；
+测试 runner 从 dependency target 取得实际 shared-library path 并作为参数传入，同时为
+每个 case 创建独立工作目录。
+
 ## 尚未迁移
 
 以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
