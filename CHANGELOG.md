@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.4 — 2026-09-27
+
+受控生产发布候选的构建/发布权威收敛版本。保持 public C API/ABI、SONAME
+`liblogger.so.0`、`LOGGER_0.9` symbol version 和默认 62 项 public symbol set 不变；
+运行时行为不因构建系统迁移而改变。
+
+本版完成 Xmake 单一权威迁移：全部 production/test/regression/sanitizer、focused crash、
+QEMU power-cut、当前 queue benchmark candidate、install、XPack 与 GitHub Release 都由
+Xmake 驱动；根 CMake build/CTest/CPack 与旧 packaging helper 删除。下游 CMake 兼容仍保留，
+发布包继续生成 `LoggerConfig.cmake` 并用真实独立 consumer 验证
+`find_package(Logger ... CONFIG)`。
+
+ABI allowlist 从 `cmake/logger.symbols` 迁到中立的 `abi/logger.symbols`。package gate
+直接读取 `VERSION`，不再硬编码候选版本；本地 `scripts/check.sh` 和辅助 benchmark/
+cross-version 工具也适配 Xmake 输出布局。
+
 ## 0.9.3 — 2026-09-25
 
 受控发布候选验证更新。保持 public C ABI、SONAME `liblogger.so.0`、`LOGGER_0.9`
