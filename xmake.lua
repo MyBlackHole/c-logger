@@ -853,6 +853,23 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+    if has_config("build_shared") then
+        target("global_shared_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_global_stress.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_defines("LOGGER_PUBLIC_ABI_TEST=1")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, scenario in ipairs({"init-race", "sync", "async"}) do
+                add_tests("global_shared_" .. scenario,
+                          {runargs = scenario, timeout = 30})
+            end
+        target_end()
+    end
+
     target("bench_matrix")
         add_tests("benchmark_accounting_smoke",
                   {runargs = {"4", "1000", "64"}, timeout = 15})
@@ -872,6 +889,39 @@ if has_config("build_regression_tests") then
                       {runargs = scenario, timeout = 20})
         end
     target_end()
+
+    if has_config("build_shared") then
+        target("liblogger_dlclose_test")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/test_liblogger_dlclose.c")
+            add_deps("logger", {inherit = false})
+            add_includedirs("include", "$(builddir)/generated")
+            add_syslinks("dl")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            on_test(function (target, opt)
+                local logger = target:dep("logger")
+                assert(logger, "logger dependency is required")
+                local testname = opt.name:gsub("[/\\>=<|%*]", "_")
+                local rundir = path.join(target:autogendir(), "test-work", testname)
+                os.tryrm(rundir)
+                os.mkdir(rundir)
+                local code, errors = os.execv(path.absolute(target:targetfile()),
+                                              {path.absolute(logger:targetfile())}, {
+                    try = true,
+                    timeout = opt.run_timeout or 20000,
+                    curdir = rundir,
+                    envs = opt.runenvs
+                })
+                if code == 0 then
+                    return true
+                end
+                return false, errors or ("exit code: " .. tostring(code))
+            end)
+            add_tests("liblogger_dlclose", {timeout = 20})
+        target_end()
+    end
 
     -- Host-owned integration: build the SDK as an order-only dependency and
     -- pass its exact shared-library path to the executable, matching CMake.
@@ -1095,6 +1145,30 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+    if has_config("build_shared") then
+        target("syslog_shared_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_syslog_backend.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, scenario in ipairs({
+                "flags", "wire", "file-fails", "pressure", "multi-backend",
+                "async-pressure", "reconnect", "deferred", "required-missing",
+                "endpoint-type", "fd-churn", "init-cleanup", "isolation",
+                "threads", "copy-path", "cwd", "default-tag", "max-tag",
+                "long-tag", "tag-injection", "bad-facility", "bad-startup",
+                "bad-interval", "empty-path", "long-path", "invalid-metrics",
+                "fork-guard"
+            }) do
+                add_tests("syslog_shared_" .. scenario,
+                          {runargs = scenario, timeout = 15})
+            end
+        target_end()
+    end
+
     target("syslog_fault_regression")
         for _, scenario in ipairs({
             "socket-emfile", "socket-enfile", "socket-enomem", "socket-eintr",
@@ -1126,6 +1200,18 @@ if has_config("build_regression_tests") then
     target("logger_v1_consumer")
         add_tests("syslog_old_header_consumer", {timeout = 15})
     target_end()
+
+    if has_config("build_shared") then
+        target("logger_v1_shared_consumer")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/compat/test_logger_v1_shared.c")
+            add_deps("logger")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            add_tests("syslog_old_header_shared_consumer", {timeout = 15})
+        target_end()
+    end
 
     target("syslog_fallback_regression")
         add_tests("syslog_fallback_pressure", {timeout = 15})
