@@ -12,6 +12,10 @@ Xmake 当前是 **并行验证构建**，不是发布权威。
 CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version support 需要 2.8.2，
 内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
 
+项目版本号现在只从仓库根目录 `VERSION` 读取。CMake、Xmake、生成的
+`logger_version.h`、XPack 包名以及 Xmake parity workflow 都消费同一个版本源；
+升级版本不再同时修改 `CMakeLists.txt` 与 `xmake.lua`。
+
 ## 第一阶段覆盖
 
 Xmake 已表达以下生产契约：
