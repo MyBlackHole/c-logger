@@ -346,18 +346,25 @@ CMake package consumer、pkg-config、ABI/isolation 与最终 XPack 解包后的
 contract 已有独立 CI 门禁。如果后续真实下游明确依赖 CMake 风格 DESTDIR，再单独增加
 compatibility wrapper，而不是把它伪装成 Xmake 原生语义。
 
+## Shared-only regression parity
+
+Xmake shared regression profile 现在也覆盖 CMake 原先独占的 4 个真实 DSO 测试：
+
+- `syslog_shared_regression`：27 个 syslog backend 场景直接链接真实 shared logger；
+- `global_shared_regression`：3 个 global stress 场景，启用
+  `LOGGER_PUBLIC_ABI_TEST`，只检查 public/shared 可观察状态；
+- `logger_v1_shared_consumer`：冻结 v1 header 直接链接当前 shared logger；
+- `liblogger_dlclose_test`：测试 executable 不链接 logger，只以 order-only dependency
+  构建 DSO，并将实际 `liblogger.so.<VERSION>` 路径传给 `dlopen`。
+
+这些 target 只在 `--build_shared=y --build_regression_tests=y` 时注册，因此不会污染
+static profile。
+
 ## 尚未迁移
 
-以下目标仍由 CMake reference gate 独占；它们**不阻塞 Xmake 发布权威**，但在删除
-CMake build system 之前需要迁移：
+删除 CMake build system 前现在只剩：
 
-1. `fork_reinit_regression`：legacy fork helper opt-in；
-2. `syslog_shared_regression`；
-3. `global_shared_regression`；
-4. `liblogger_dlclose_test`；
-5. `logger_v1_shared_consumer`。
-
-后四项均为 shared-only integration/ABI 测试。
+1. `fork_reinit_regression`：legacy fork helper opt-in。
 
 ## Release authority
 
