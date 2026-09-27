@@ -428,6 +428,36 @@ jobs:
           done
 
 
+  aux-targets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure auxiliary targets
+        run: xmake f -m release --build_shared=n --build_regression_tests=y
+
+      - name: Build auxiliary tools and examples
+        run: >-
+          xmake -j2
+          bench_logger
+          multi_instance_example
+          syslog_client_example
+          crypto_chain_tool
+
+
   legacy-fork:
     runs-on: ubuntu-24.04
     steps:

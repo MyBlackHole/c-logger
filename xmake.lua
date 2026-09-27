@@ -283,6 +283,43 @@ target("logger")
     end)
 target_end()
 
+-- Non-default tools/examples that CMake exposes under BUILD_TESTING.
+target("bench_logger")
+    set_kind("binary")
+    set_default(false)
+    add_files("tests/bench_logger.c")
+    add_deps("logger")
+    add_cflags("-std=gnu11", {force = true})
+target_end()
+
+target("multi_instance_example")
+    set_kind("binary")
+    set_default(false)
+    add_files("examples/multi_instance.c")
+    add_deps("logger")
+    add_cflags("-std=gnu11", {force = true})
+target_end()
+
+target("syslog_client_example")
+    set_kind("binary")
+    set_default(false)
+    add_files("examples/syslog_client.c")
+    add_deps("logger")
+    add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+               {force = true})
+target_end()
+
+if has_config("legacy_fork") then
+    target("fork_reinit_example")
+        set_kind("binary")
+        set_default(false)
+        add_files("examples/fork_reinit.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+    target_end()
+end
+
 local package_kind = has_config("build_shared") and "shared" or "static"
 xpack("logger_package")
     set_formats("targz")
@@ -507,6 +544,7 @@ if has_config("build_regression_tests") then
         {"crypto_vectors_test", "tests/test_crypto_vectors.c"},
         {"audit_concurrency_regression", "tests/regression/test_audit_concurrency.c"},
         {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"},
+        {"crypto_chain_tool", "tests/regression/crypto_chain_tool.c"},
         {"audit_record_regression", "tests/regression/test_audit_record.c"},
         {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
@@ -1031,14 +1069,6 @@ if has_config("build_regression_tests") then
             end
         target_end()
 
-        target("fork_reinit_example")
-            set_kind("binary")
-            set_default(false)
-            add_files("examples/fork_reinit.c")
-            add_deps("logger")
-            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                       {force = true})
-        target_end()
     end
 
     -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
