@@ -15,12 +15,11 @@ Xmake 当前是 **生产发布构建权威**。
 CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version support 需要 2.8.2，
 内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
 
-项目版本号现在只从仓库根目录 `VERSION` 读取。CMake 直接读取该文件；Xmake
-描述域不开放文件 I/O，因此调用方先执行
-`export LOGGER_PROJECT_VERSION="$(cat VERSION)"`，随后 configure/build/test/pack
+项目版本号只从仓库根目录 `VERSION` 读取。Xmake 描述域不开放文件 I/O，因此调用方
+先执行 `export LOGGER_PROJECT_VERSION="$(cat VERSION)"`，随后 configure/build/test/pack
 及其子进程都读取同一环境变量。CI 使用 `GITHUB_ENV` 在每个 Xmake job 内固定该值。
-生成的 `logger_version.h`、XPack 包名以及所有包含 Xmake 构建的 CI（包括 VM power-cut）
-不再维护第二份发布版本号。
+生成的 `logger_version.h`、XPack 包名以及所有 CI（包括 VM power-cut）都不维护第二份
+发布版本号。
 
 ## 第一阶段覆盖
 
@@ -31,9 +30,9 @@ Xmake 已表达以下生产契约：
 - shared / static；
 - static PIC；
 - hidden visibility + public `LOGGER_API`；
-- `liblogger.so.0.9.3` / SONAME `liblogger.so.0`；
+- `liblogger.so.<VERSION>` / SONAME `liblogger.so.0`；
 - `LOGGER_0.9` ELF symbol version；
-- public symbol allowlist 直接读取现有 `cmake/logger.symbols`，不维护第二份 ABI 清单；
+- public symbol allowlist 直接读取现有 `abi/logger.symbols`，不维护第二份 ABI 清单；
 - `--no-undefined` / `--no-undefined-version`；
 - production fault injection disabled；
 - builtin SHA-256 only；
@@ -405,23 +404,22 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 脚本/阈值。两个冻结 baseline ref 继续使用各自历史 commit 内的 CMake 构建，这是有意保留
 的历史重现方式：删除当前源码树的 CMake 不应改写过去基准二进制的构建定义。
 
-## 尚未迁移
+## 迁移完成
 
-按当前 `CMakeLists.txt` 的 executable/regression target 名称审计，Xmake 已无已知
-CMake-only executable target；release/CPack reference、native CI、focused crash、VM
-power-cut 和当前 benchmark candidate 都已切到 Xmake authority。
+项目自身的 CMake build system 已完成退役：
 
-彻底删除当前工程 CMake build system 前只剩根 `CMakeLists.txt` 与只服务旧构建系统的
-packaging/helper 文件待删除或收敛。
+- production shared/static、tests、sanitizer、crash、VM power-cut、benchmark candidate、
+  install 与 packaging 均由 Xmake 驱动；
+- ABI allowlist 已迁到中立的 `abi/logger.symbols`；
+- 根 `CMakeLists.txt` 与旧 CMake packaging/helper 文件不再属于当前工程；
+- `scripts/check.sh` 已切到 Xmake，本地旧 profile 名仅作为保守完整-suite 兼容别名。
 
-installed-consumer 中的 CMake 工程和发布包内的 `LoggerConfig.cmake` 兼容面不在删除范围，
-它们验证的是下游 `find_package` 契约。
+仍然保留的 CMake 内容只有**下游消费兼容面**：`examples/installed_consumer/CMakeLists.txt`
+以及 Xmake 在安装树中生成的 `LoggerConfig.cmake` / `LoggerTargets*.cmake`。它们用于验证
+`find_package(Logger ... CONFIG)`，不重新引入项目级 CMake 构建权威。
 
 ## Release authority
 
 `release-validation` 以 Xmake/XPack package matrix 为正式产物门禁；
 `release-publish` 只收集通过验证的 XPack shared/static TGZ 与 SHA-256 并创建 GitHub
-Release，不再等待 CMake reference suite。
-
-因此发布权威迁移已经完成；后续工作只是在不降低测试、故障恢复和 benchmark 证据质量的
-前提下，移除当前源码树剩余的 CMake build-system 依赖。
+Release。发布、测试和故障恢复证据链不再依赖当前源码树中的 CMake/CTest/CPack。
