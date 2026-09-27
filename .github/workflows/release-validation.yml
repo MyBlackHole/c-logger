@@ -8,7 +8,7 @@ on:
       - "xmake.lua"
       - "src/**"
       - "include/**"
-      - "cmake/logger.symbols"
+      - "abi/logger.symbols"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/installed_consumer/**"

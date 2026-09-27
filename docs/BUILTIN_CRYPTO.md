@@ -28,15 +28,25 @@ cfg.name = "backup";
 ## 构建
 
 ```sh
-cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target check -j4
-cmake -S . -B build-prod -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF
-cmake --build build-prod -j4
-python3 scripts/check_production_artifact.py build-prod/liblogger.so
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+
+# 完整 shared 验证
+xmake f -m release -o build \
+  --build_shared=y \
+  --build_tests=y \
+  --build_private_tests=y \
+  --build_regression_tests=y
+xmake test -j1
+
+# 仅 production shared artifact
+xmake f -m release -o build-prod --build_shared=y
+xmake -j4 logger
+artifact="$(find build-prod -type f -name "liblogger.so.$(cat VERSION)" -print -quit)"
+python3 scripts/check_production_artifact.py "$artifact"
 ```
 
-不需要密码后端或摘要算法的 CMake 开关。旧 LOGGER_CRYPTO_BACKEND=builtin 参数仍按
-迁移规则提示弃用并删除缓存；旧 openssl 或其他值明确拒绝。宿主自己的密码依赖不受影响。
+不需要密码后端或摘要算法的构建开关。项目只编译 builtin SHA-256；旧 OpenSSL/SM3 backend
+不再是可选择配置。宿主自己的密码依赖不受影响。
 
 ## 已有数据与拒绝语义
 

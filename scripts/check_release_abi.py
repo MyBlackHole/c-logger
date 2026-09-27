@@ -81,7 +81,7 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('artifact', type=Path)
-    p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'cmake/logger.symbols')
+    p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'abi/logger.symbols')
     p.add_argument('--legacy-fork', action='store_true')
     p.add_argument('--max-glibc', help='Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements')
     p.add_argument('--machine', help='Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64')

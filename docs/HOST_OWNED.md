@@ -73,7 +73,12 @@ example_sdk_options_t opts = {"backup", example_to_logger, log};
 原 `logger_fork_reinit()` 在默认产物中不再提供。旧应用明确开启：
 
 ```sh
-cmake -S . -B build-compat -DLOGGER_ENABLE_LEGACY_FORK_HELPER=ON
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-compat \
+  --build_shared=n \
+  --legacy_fork=y \
+  --build_regression_tests=y
+xmake -j4 logger fork_reinit_example
 ```
 
 兼容产物仍含原来的 /proc 检查、clean token 和 fork 操作，旧限制不变。
@@ -82,10 +87,10 @@ cmake -S . -B build-compat -DLOGGER_ENABLE_LEGACY_FORK_HELPER=ON
 
 ## ABI/构建
 
-- `BUILD_SHARED_LIBS=ON` 生成 liblogger.so，OFF 生成 liblogger.a；默认 OFF 保持旧构建方式。
+- Xmake `--build_shared=y` 生成 liblogger.so，`n` 生成 liblogger.a；默认 static。
 - 所有 direct borrowers 必须使用创建该 logger_t 的同一个实现，不跨静态副本、版本或 dlmopen namespace 传句柄。
 - callback-only SDK 不链接 logger，更适合独立发布、不同宿主日志系统和语言边界。
-- 本轮只完成 build-tree shared 流程，不宣称 SONAME、符号隐藏、安装包或 ABI 冻结已经完成。
+- 当前 shared release 已固定 SONAME、hidden visibility、显式 ABI allowlist 与安装/XPack contract。
 - 有 --wrap 的白盒 regression 在 shared 配置下使用同源 production-static 测试库。
   普通 integration、host_owned_example 和 liblogger_dlclose 真正调用 liblogger.so；报告明确区分。
 
@@ -95,7 +100,5 @@ cmake -S . -B build-compat -DLOGGER_ENABLE_LEGACY_FORK_HELPER=ON
   https://docs.gtk.org/glib/func.log_set_writer_func.html
 - libcurl 的 debug callback 显式传递 size 和 user data：
   https://curl.se/libcurl/c/CURLOPT_DEBUGFUNCTION.html
-- CMake BUILD_SHARED_LIBS 只对没有强制 STATIC/SHARED 类型的 add_library 生效：
-  https://cmake.org/cmake/help/latest/variable/BUILD_SHARED_LIBS.html
 - dlopen/dlclose 资源与卸载语义：
   https://man7.org/linux/man-pages/man3/dlopen.3.html

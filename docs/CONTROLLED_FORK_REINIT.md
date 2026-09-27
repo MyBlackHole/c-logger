@@ -1,5 +1,5 @@
 > 本轮更新：此文描述 **opt-in 兼容 helper**，不再是第三方集成默认入口。
-> 需要 `-DLOGGER_ENABLE_LEGACY_FORK_HELPER=ON`；默认产物不编译该函数。
+> 需要 Xmake `--legacy_fork=y`；默认产物不编译该函数。
 > 新集成参见 [HOST_OWNED.md](HOST_OWNED.md)。下文保留原兼容约束。
 
 # 初始化后 fork 并重新初始化（受控模式）

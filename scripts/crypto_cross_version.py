@@ -11,10 +11,21 @@ def main():
     parser.add_argument("reference_build", type=Path)
     parser.add_argument("candidate_build", type=Path)
     args = parser.parse_args()
-    tools = [p.resolve() / "crypto_chain_tool" for p in (args.reference_build, args.candidate_build)]
-    for path in tools:
-        if not path.is_file():
-            parser.error(f"build crypto_chain_tool first: {path}")
+    def resolve_tool(path):
+        path = path.resolve()
+        if path.is_file():
+            return path
+        matches = sorted(
+            candidate for candidate in path.rglob("crypto_chain_tool")
+            if candidate.is_file()
+        )
+        if len(matches) != 1:
+            parser.error(
+                f"expected exactly one crypto_chain_tool under {path}, found {len(matches)}"
+            )
+        return matches[0]
+
+    tools = [resolve_tool(p) for p in (args.reference_build, args.candidate_build)]
     for algorithm in ("sha256",):
         for first, second in (tools, tools[::-1]):
             with tempfile.TemporaryDirectory(prefix="logger-crypto-cross-") as directory:

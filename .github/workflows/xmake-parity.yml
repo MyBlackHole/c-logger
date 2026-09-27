@@ -10,7 +10,7 @@ on:
       - "tests/**"
       - "examples/**"
       - "VERSION"
-      - "cmake/logger.symbols"
+      - "abi/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_release_assets.py"
@@ -26,7 +26,7 @@ on:
       - "tests/**"
       - "examples/**"
       - "VERSION"
-      - "cmake/logger.symbols"
+      - "abi/logger.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_release_assets.py"
@@ -151,7 +151,7 @@ jobs:
             artifact="$(find xmake-build -type f -name 'liblogger.a' -print -quit)"
           fi
           test -n "$artifact"
-          python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --install-driver xmake             --xmake xmake
+          python3 tests/packaging/check_install.py             --source .             --build xmake-build             --artifact "$artifact"             --kind "${{ matrix.kind }}"             --cc cc             --cxx c++             --cmake cmake             --xmake xmake
 
 
   package-parity:
