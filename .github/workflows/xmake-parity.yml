@@ -428,6 +428,50 @@ jobs:
           done
 
 
+  legacy-fork:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure legacy fork regression profile
+        run: >-
+          xmake f -m release
+          --build_shared=n
+          --legacy_fork=y
+          --build_regression_tests=y
+
+      - name: Build legacy fork example
+        run: xmake -j2 fork_reinit_example
+
+      - name: Run legacy fork regression cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          scenarios=(
+            async sync drain no-init console-only after-shutdown context raw-guard
+            thread-busy explicit-busy explicit-only audit-busy proc-failure fork-failure
+            io-failure close-failure creation-failure registration-failure earlier-handler
+            nested repeat explicit-recreate audit-conflict
+          )
+          test "${#scenarios[@]}" -eq 23
+          for scenario in "${scenarios[@]}"; do
+            xmake test "fork_reinit_regression/fork_reinit_${scenario}"
+          done
+
+
   regression-tests:
     runs-on: ubuntu-24.04
     steps:
