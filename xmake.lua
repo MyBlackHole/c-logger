@@ -354,6 +354,10 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         for _, source in ipairs(logger_sources) do
             add_files(source)
         end
+        if has_config("legacy_fork") then
+            add_files("src/logger_fork.c")
+            add_defines("LOGGER_ENABLE_LEGACY_FORK_HELPER=1", {public = true})
+        end
         add_files("src/logger_fault.c")
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         set_symbols("hidden")
@@ -481,6 +485,10 @@ if has_config("build_regression_tests") then
         set_default(false)
         for _, source in ipairs(logger_sources) do
             add_files(source)
+        end
+        if has_config("legacy_fork") then
+            add_files("src/logger_fork.c")
+            add_defines("LOGGER_ENABLE_LEGACY_FORK_HELPER=1", {public = true})
         end
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0", {force = true})
@@ -995,6 +1003,43 @@ if has_config("build_regression_tests") then
                       {runargs = scenario, timeout = 15})
         end
     target_end()
+
+    if has_config("legacy_fork") then
+        target("fork_reinit_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_fork_reinit.c")
+            add_deps("logger_regression_support")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, symbol in ipairs({
+                "fork", "opendir", "close", "calloc", "pthread_atfork"
+            }) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({
+                "async", "sync", "drain", "no-init", "console-only",
+                "after-shutdown", "context", "raw-guard", "thread-busy",
+                "explicit-busy", "explicit-only", "audit-busy", "proc-failure",
+                "fork-failure", "io-failure", "close-failure",
+                "creation-failure", "registration-failure", "earlier-handler",
+                "nested", "repeat", "explicit-recreate", "audit-conflict"
+            }) do
+                add_tests("fork_reinit_" .. scenario,
+                          {runargs = scenario, timeout = 20})
+            end
+        target_end()
+
+        target("fork_reinit_example")
+            set_kind("binary")
+            set_default(false)
+            add_files("examples/fork_reinit.c")
+            add_deps("logger")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+        target_end()
+    end
 
     -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
     -- skip-return-code option, so keep its normal test execution contract and
