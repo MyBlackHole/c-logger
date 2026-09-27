@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "CMakeLists.txt"
+      - "VERSION"
       - "docs/RELEASE_NOTES_*.md"
       - ".github/workflows/release-publish.yml"
 
@@ -12,8 +12,13 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      notes: ${{ steps.version.outputs.notes }}
+      exists: ${{ steps.existing.outputs.exists }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -21,9 +26,11 @@ jobs:
 
       - name: Resolve release version
         id: version
+        shell: bash
         run: |
-          version="$(sed -n 's/^project(prod_c_logger VERSION \([0-9][0-9.]*\) LANGUAGES C)$/\1/p' CMakeLists.txt)"
-          test -n "$version"
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           notes="docs/RELEASE_NOTES_${version}.md"
           test -f "$notes"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -41,64 +48,196 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Configure shared package
-        if: steps.existing.outputs.exists != 'true'
+  package:
+    name: xpack (${{ matrix.kind }})
+    needs: prepare
+    if: needs.prepare.outputs.exists != 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure authoritative release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          xmake f -m release -o xmake-build \
+            --build_shared="$shared" \
+            --build_tests=y \
+            --build_private_tests=y \
+            --build_regression_tests=y \
+            --project_version="${{ needs.prepare.outputs.version }}"
+
+      - name: Run complete Xmake release suite
+        run: xmake test -j1
+
+      - name: Locate production artifact
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$(find xmake-build -type f -name "liblogger.so.${version}" -print -quit)"
+          else
+            artifact="$(find xmake-build -type f -name 'liblogger.a' -print -quit)"
+          fi
+          test -n "$artifact"
+          echo "path=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect production artifact
+        run: python3 scripts/check_production_artifact.py "${{ steps.artifact.outputs.path }}"
+
+      - name: Inspect shared ABI
+        if: matrix.kind == 'shared'
         run: >-
-          cmake -S . -B build-shared
+          python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
+          --machine 'Advanced Micro Devices X86-64'
+          --elf-class ELF64
+
+      - name: Build authoritative XPack TGZ
+        run: xmake pack -f targz -o xpack-out
+
+      - name: Verify XPack asset
+        run: >-
+          python3 scripts/check_release_assets.py
+          --directory xpack-out
+          --version "${{ needs.prepare.outputs.version }}"
+          --kind "${{ matrix.kind }}"
+
+      - name: Verify packaged install tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          package="$(find xpack-out -maxdepth 1 -type f -name "prod-c-logger-${version}-*-${{ matrix.kind }}.tar.gz" -print -quit)"
+          test -n "$package"
+          mkdir unpack
+          tar -xzf "$package" -C unpack
+          header="$(find unpack -type f -path '*/include/logger/logger.h' -print -quit)"
+          test -n "$header"
+          prefix="$(dirname "$(dirname "$(dirname "$header")")")"
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$prefix/lib/liblogger.so.${version}"
+          else
+            artifact="$prefix/lib/liblogger.a"
+          fi
+          test -f "$artifact"
+          python3 tests/packaging/check_install.py \
+            --source . \
+            --build xmake-build \
+            --artifact "$artifact" \
+            --kind "${{ matrix.kind }}" \
+            --cc cc \
+            --cxx c++ \
+            --cmake cmake \
+            --installed-prefix "$prefix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prod-c-logger-${{ needs.prepare.outputs.version }}-${{ matrix.kind }}
+          path: |
+            xpack-out/prod-c-logger-${{ needs.prepare.outputs.version }}-*-${{ matrix.kind }}.tar.gz
+            xpack-out/prod-c-logger-${{ needs.prepare.outputs.version }}-*-${{ matrix.kind }}.tar.gz.sha256
+          if-no-files-found: error
+
+  cmake-reference:
+    name: cmake-reference (${{ matrix.kind }})
+    needs: prepare
+    if: needs.prepare.outputs.exists != 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: shared
+            shared: "ON"
+            artifact: "cmake-build/liblogger.so"
+          - kind: static
+            shared: "OFF"
+            artifact: "cmake-build/liblogger.a"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure CMake reference build
+        run: >-
+          cmake -S . -B cmake-build
           -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_SHARED_LIBS=ON
+          -DBUILD_SHARED_LIBS=${{ matrix.shared }}
           -DBUILD_TESTING=ON
 
-      - name: Build and validate shared package
-        if: steps.existing.outputs.exists != 'true'
-        run: |
-          cmake --build build-shared -j2
-          ctest --test-dir build-shared --output-on-failure -j2
-          cmake --build build-shared --target check-package -j2
-          python3 scripts/check_production_artifact.py build-shared/liblogger.so
-          python3 scripts/check_release_abi.py build-shared/liblogger.so --machine 'Advanced Micro Devices X86-64' --elf-class ELF64
-          cpack --config build-shared/CPackConfig.cmake -G TGZ
+      - name: Build CMake reference
+        run: cmake --build cmake-build -j2
 
-      - name: Configure static package
-        if: steps.existing.outputs.exists != 'true'
+      - name: Run CMake reference suite
+        run: ctest --test-dir cmake-build --output-on-failure -j2
+
+      - name: Validate CMake reference install contract
+        run: cmake --build cmake-build --target check-package -j2
+
+      - name: Inspect CMake reference artifact
+        run: python3 scripts/check_production_artifact.py "${{ matrix.artifact }}"
+
+      - name: Inspect CMake reference shared ABI
+        if: matrix.kind == 'shared'
         run: >-
-          cmake -S . -B build-static
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_SHARED_LIBS=OFF
-          -DBUILD_TESTING=ON
+          python3 scripts/check_release_abi.py "${{ matrix.artifact }}"
+          --machine 'Advanced Micro Devices X86-64'
+          --elf-class ELF64
 
-      - name: Build and validate static package
-        if: steps.existing.outputs.exists != 'true'
-        run: |
-          cmake --build build-static -j2
-          ctest --test-dir build-static --output-on-failure -j2
-          cmake --build build-static --target check-package -j2
-          python3 scripts/check_production_artifact.py build-static/liblogger.a
-          cpack --config build-static/CPackConfig.cmake -G TGZ
+  publish:
+    needs: [prepare, package, cmake-reference]
+    if: needs.prepare.outputs.exists != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
 
-      - name: Verify package assets
-        if: steps.existing.outputs.exists != 'true'
-        run: |
-          version="${{ steps.version.outputs.version }}"
-          python3 scripts/check_release_assets.py --version "$version"
+      - name: Download validated XPack assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prod-c-logger-${{ needs.prepare.outputs.version }}-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify complete release asset set
+        run: >-
+          python3 scripts/check_release_assets.py
+          --directory release-assets
+          --version "${{ needs.prepare.outputs.version }}"
 
       - name: Publish GitHub release
-        if: steps.existing.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          version="${{ steps.version.outputs.version }}"
-          tag="${{ steps.version.outputs.tag }}"
-          gh release create "$tag" \
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          gh release create "${{ needs.prepare.outputs.tag }}" \
             --target "$GITHUB_SHA" \
             --title "c-logger ${version} — Controlled Production Candidate" \
-            --notes-file "${{ steps.version.outputs.notes }}" \
+            --notes-file "${{ needs.prepare.outputs.notes }}" \
             --prerelease \
-            prod-c-logger-${version}-*-shared.tar.gz \
-            prod-c-logger-${version}-*-shared.tar.gz.sha256 \
-            prod-c-logger-${version}-*-static.tar.gz \
-            prod-c-logger-${version}-*-static.tar.gz.sha256
+            release-assets/prod-c-logger-${version}-*-shared.tar.gz \
+            release-assets/prod-c-logger-${version}-*-shared.tar.gz.sha256 \
+            release-assets/prod-c-logger-${version}-*-static.tar.gz \
+            release-assets/prod-c-logger-${version}-*-static.tar.gz.sha256
 
-      - name: Release already exists
-        if: steps.existing.outputs.exists == 'true'
-        run: echo "${{ steps.version.outputs.tag }} already exists; nothing to publish."
+  release-already-exists:
+    needs: prepare
+    if: needs.prepare.outputs.exists == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "${{ needs.prepare.outputs.tag }} already exists; nothing to publish."
