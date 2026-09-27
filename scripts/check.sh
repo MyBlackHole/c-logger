@@ -20,6 +20,7 @@ fi
 configure_full() {
   xmake f -m "$mode" -o "$build" \
     --build_shared="$shared" \
+    --legacy_fork=n \
     --build_tests=y \
     --build_private_tests=y \
     --build_regression_tests=y
@@ -29,6 +30,7 @@ case "$profile" in
   fast)
     xmake f -m "$mode" -o "$build" \
       --build_shared="$shared" \
+      --legacy_fork=n \
       --build_tests=y \
       --build_private_tests=n \
       --build_regression_tests=n
@@ -38,6 +40,7 @@ case "$profile" in
   crash)
     xmake f -m release -o "$build" \
       --build_shared="$shared" \
+      --legacy_fork=n \
       --build_tests=n \
       --build_private_tests=y \
       --build_regression_tests=n
@@ -51,7 +54,7 @@ case "$profile" in
       --build_tests=n \
       --build_private_tests=n \
       --build_regression_tests=y
-    exec xmake test 'fork_reinit_regression/*' -j1
+    exec xmake test -j1 'fork_reinit_regression/*'
     ;;
 
   production)
