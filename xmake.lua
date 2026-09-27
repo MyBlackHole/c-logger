@@ -35,16 +35,10 @@ option("build_regression_tests")
 option_end()
 
 -- Xmake description scope deliberately disallows file I/O. VERSION remains the
--- single source; configure passes it through this string option.
-option("project_version")
-    set_default("0.0.0")
-    set_showmenu(false)
-    set_description("Project version injected from repository VERSION")
-option_end()
-
+-- single source; callers export it once and every Xmake subprocess inherits it.
 set_allowedplats("linux")
 
-local project_version = get_config("project_version")
+local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
 local abi_version = "0"
@@ -244,7 +238,7 @@ target("logger")
 
     on_load(function (target)
         if project_version == "0.0.0" or not version_major then
-            raise("configure with --project_version=$(cat VERSION)")
+            raise("export LOGGER_PROJECT_VERSION=$(cat VERSION) before invoking Xmake")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
