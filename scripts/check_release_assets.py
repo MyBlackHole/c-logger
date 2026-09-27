@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the exact shared/static CPack assets before upload or publication."""
+"""Verify the exact shared/static release package assets before upload or publication."""
 import argparse
 import hashlib
 import re
