@@ -2,6 +2,8 @@
 """Boot a minimal Linux guest twice, killing QEMU after acknowledged audit writes."""
 
 import argparse
+import gzip
+import lzma
 import os
 from pathlib import Path
 import shutil
@@ -11,12 +13,68 @@ import sys
 import time
 
 
-def guest_init(phase, point):
+def _copy_module(stage, source):
+    relative = source.relative_to("/")
+    destination = stage / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if source.suffix == ".zst":
+        destination = destination.with_suffix("")
+        with destination.open("wb") as out:
+            subprocess.run(["zstd", "-q", "-d", "-c", str(source)],
+                           stdout=out, check=True)
+    elif source.suffix == ".xz":
+        destination = destination.with_suffix("")
+        with lzma.open(source, "rb") as src, destination.open("wb") as out:
+            shutil.copyfileobj(src, out)
+    elif source.suffix == ".gz":
+        destination = destination.with_suffix("")
+        with gzip.open(source, "rb") as src, destination.open("wb") as out:
+            shutil.copyfileobj(src, out)
+    else:
+        shutil.copy2(source, destination)
+
+
+def stage_filesystem_support(stage, kernel_release, filesystem):
+    if filesystem != "xfs":
+        return False
+
+    result = subprocess.run(
+        ["modprobe", "--show-depends", "-S", kernel_release, "xfs"],
+        check=True, text=True, stdout=subprocess.PIPE,
+    )
+    module_paths = []
+    builtin = False
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        if line.startswith("builtin "):
+            builtin = True
+        elif line.startswith("insmod "):
+            source = Path(line.split(None, 1)[1])
+            if not source.is_file():
+                raise RuntimeError(f"kernel module not found: {source}")
+            module_paths.append(source)
+
+    if not module_paths:
+        if builtin:
+            return False
+        raise RuntimeError(f"xfs module unavailable for kernel {kernel_release}")
+
+    for source in module_paths:
+        _copy_module(stage, source)
+    subprocess.run(["depmod", "-b", str(stage), kernel_release], check=True)
+    return True
+
+
+def guest_init(phase, point, filesystem, load_xfs_module):
+    load_module = "modprobe xfs || exit 90\n" if load_xfs_module else ""
     return f"""#!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
-mount -t ext4 /dev/vda /mnt || exec sh
+echo VM_KERNEL_$(/bin/busybox uname -r)
+{load_module}mount -t {filesystem} /dev/vda /mnt || exec sh
+echo VM_FILESYSTEM_{filesystem}
 cd /mnt || exit 1
 /vm_powercut {phase} {point}
 result=$?
@@ -26,17 +84,19 @@ poweroff -f
 """
 
 
-def boot(root, kernel, disk, binary, phase, point, timeout):
+def boot(root, kernel, kernel_release, disk, binary, filesystem, phase, point, timeout):
     initramfs = root / f"initramfs-{phase}.cpio.gz"
     stage = root / f"stage-{phase}"
     for directory in ("bin", "dev", "proc", "sys", "mnt"):
         (stage / directory).mkdir(parents=True)
     shutil.copy2(binary, stage / "vm_powercut")
     shutil.copy2("/bin/busybox", stage / "bin/busybox")
-    for applet in ("sh", "mount", "poweroff", "sync"):
+    for applet in ("sh", "mount", "modprobe", "poweroff", "sync"):
         (stage / "bin" / applet).symlink_to("busybox")
+
+    load_xfs_module = stage_filesystem_support(stage, kernel_release, filesystem)
     init = stage / "init"
-    init.write_text(guest_init(phase, point))
+    init.write_text(guest_init(phase, point, filesystem, load_xfs_module))
     init.chmod(0o755)
     with initramfs.open("wb") as out:
         cpio = subprocess.Popen(
@@ -83,8 +143,10 @@ def boot(root, kernel, disk, binary, phase, point, timeout):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kernel", type=Path, required=True)
+    parser.add_argument("--kernel-release", required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--filesystem", choices=("ext4", "xfs"), required=True)
     parser.add_argument("--point", choices=(
         "acknowledged", "before_audit_fsync", "after_audit_fsync",
         "before_state_rename", "after_state_rename", "after_checkpoint_commit",
@@ -94,16 +156,21 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     disk = args.output / "audit-disk.raw"
     with disk.open("wb") as file:
-        file.truncate(256 * 1024 * 1024)
-    subprocess.run(["mkfs.ext4", "-F", "-q", str(disk)], check=True)
+        file.truncate(512 * 1024 * 1024)
+    if args.filesystem == "ext4":
+        mkfs = ["mkfs.ext4", "-F", "-q", str(disk)]
+    else:
+        mkfs = ["mkfs.xfs", "-f", "-q", str(disk)]
+    subprocess.run(mkfs, check=True)
     for phase in ("write", "recover"):
-        boot(args.output, args.kernel.resolve(), disk.resolve(), args.binary.resolve(),
+        boot(args.output, args.kernel.resolve(), args.kernel_release,
+             disk.resolve(), args.binary.resolve(), args.filesystem,
              phase, args.point, 180)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
         sys.exit(1)

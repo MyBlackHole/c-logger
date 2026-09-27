@@ -2,12 +2,10 @@
 
 ## C 语言与编译器方言
 
-项目的语言基线是 **C11**，但不是 strict ISO C11。构建系统显式设置：
+项目的语言基线是 **C11**，但不是 strict ISO C11。Xmake 的 production target 显式使用：
 
-```cmake
-CMAKE_C_STANDARD 11
-CMAKE_C_STANDARD_REQUIRED ON
-CMAKE_C_EXTENSIONS ON
+```text
+-std=gnu11 -Wall -Wextra -Wpedantic -Werror
 ```
 
 内部 Linux-style 资源管理依赖 GCC/Clang 兼容 GNU C 扩展，包括
@@ -16,8 +14,8 @@ CMAKE_C_EXTENSIONS ON
 这些扩展只存在于私有实现，不进入已安装 public ABI/header 契约。
 
 当前 CI 验证的是 Linux/ELF 上的 GNU-compatible toolchain；更换编译器或 sysroot 时，
-除了 C11 支持，还必须验证这些 cleanup 扩展、原子语义和 pthread 行为。不得仅通过修改
-`CMAKE_C_STANDARD` 或关闭 extensions 来宣称 strict-C11 兼容。
+除了 C11 支持，还必须验证这些 cleanup 扩展、原子语义和 pthread 行为。不得仅通过改写
+语言标准 flag 来宣称 strict-C11 兼容。
 
 ## 不把工具链元数据当平台验收
 
@@ -27,10 +25,12 @@ CMAKE_C_EXTENSIONS ON
 旧 glibc/32-bit/sysroot 镜像，不能宣称整个 Linux 3.x/4.x/5.x 矩阵通过。
 
 当前主线另有两类 crash/durability 证据：Release shared/static 的进程终止恢复矩阵，
-以及 Ubuntu 24.04 runner 上 QEMU guest 使用 raw ext4 虚拟盘的 10 点强制断电矩阵。
-后者在写入阶段观察到指定 serial marker 后由 host SIGKILL QEMU，再使用同一 ext4 raw disk
-启动恢复并验证 Audit chain。它比 OverlayFS 进程退出测试更接近掉电语义，但仍不是实际服务器、
-存储控制器/磁盘 volatile cache、XFS 或最低支持 kernel/glibc 的平台验收。
+以及 Ubuntu 24.04 runner 上 QEMU guest 使用 raw ext4/XFS 虚拟盘的 10 点强制断电矩阵。
+后者在写入阶段观察到指定 serial marker 后由 host SIGKILL QEMU，再使用同一 raw disk
+启动恢复并验证 Audit chain；XFS guest 会把与所选 guest kernel 匹配的 XFS module/dependency
+打入最小 initramfs。串口证据显式记录 guest kernel release 和 mounted filesystem，避免把
+宿主环境误当成 guest 验收结果。该矩阵比 OverlayFS 进程退出测试更接近掉电语义，但仍不是
+实际服务器、存储控制器/磁盘 volatile cache 或最低支持 kernel/glibc 的平台验收。
 
 ## 检查产物的可重复命令
 
