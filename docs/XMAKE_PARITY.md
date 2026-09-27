@@ -7,9 +7,10 @@ Xmake 当前是 **生产发布构建权威**。
 - production shared/static、install metadata、XPack TGZ 与 GitHub Release asset 由 Xmake 生成；
 - `release-validation` 与 `release-publish` 对最终 XPack 包执行 ABI、production-isolation、
   checksum 与真实 installed-consumer contract；
-- CMake 暂时保留为 transition reference gate，用于对照完整 CTest/install contract，并覆盖
-  尚未迁移的 shared-only / legacy helper 测试；
-- CPack 不再产生或上传正式 GitHub Release asset。
+- release CMake reference gate 已退役，GitHub Release 不再依赖 CMake/CTest/CPack 成功；
+- installed CMake consumer 测试继续保留，因为 `find_package(Logger ... CONFIG)` 是发布包的
+  对外兼容契约，而不是本项目的构建权威；
+- CPack 不再参与正式 release 或 package-structure parity。
 
 CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version support 需要 2.8.2，
 内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
@@ -183,19 +184,15 @@ XPack 完成后由 Xmake `hash.sha256()` 生成同名 `.sha256` 记录。CI 首�
 CHANGELOG、非 HISTORY 的 `docs/*.md`、以及 `examples/installed_consumer`。历史 README/API
 继续按 CMake 规则排除。
 
-## CPack / XPack structure parity
+## CPack / XPack structure parity — completed
 
-正式切换 release-publish 之前，CI 从**同一 commit**同时构建 CPack 与 XPack 的 shared/static
-TGZ，并解包后比较安装树的相对路径类型与 shared-library symlink target。第一轮采用严格
-结构集合一致门禁，不预先把差异列入白名单。
+在 release authority 切换前，CI 已从同一 commit 对 shared/static 的 CPack 与 XPack TGZ
+执行严格安装树、symlink 与 source-derived file 对照；该门禁已完成迁移验证使命并退役。
 
-对于来自源码的 public headers、generated version header、文档与 installed-consumer 示例，
-还要求逐文件内容一致。library binary 与 CMake/pkg-config metadata 不要求字节一致：
-它们继续由现有 ABI、production-isolation、ExactVersion/components 和真实 consumer gate
-验证语义，而不是把不同构建系统的实现细节误当作 ABI。
-
-若严格结构集合出现差异，只有明确证明属于构建系统内部 metadata 分片、且外部 consumer
-契约已经等价验证的项目才允许后续收窄比较范围；缺失 public/install contract 文件必须修复。
+当前不再为每个提交重复生成 CPack。XPack 包继续通过 ABI、production-isolation、
+ExactVersion/components、真实 C/C++ consumer、SDK MODULE、pkg-config、旧 header 与
+安装树 relocation 检查来验证对外契约；这些检查直接针对最终发布包，而不是依赖旧构建
+系统作为 oracle。
 
 ## Wrapped regression parity — Group A
 
@@ -389,14 +386,24 @@ CMake 剩余的 4 个非测试 executable/tool/example 也已迁入 Xmake：
 ## 尚未迁移
 
 按当前 `CMakeLists.txt` 的 executable/regression target 名称审计，Xmake 已无已知
-CMake-only executable target。下一步可以去掉 release workflow 中的 CMake reference
-gate，然后审计 library/install/package/custom target 后删除 CMake build/packaging 文件。
+CMake-only executable target，release/CPack reference gate 也已退役。彻底删除当前工程
+CMake build system 前还剩以下独立迁移面：
+
+- `.github/workflows/ci.yml`：shared/debug/sanitizer 仍由 CMake 驱动；
+- `.github/workflows/crash-recovery.yml`：focused crash evidence 仍由 CTest 驱动；
+- `.github/workflows/vm-powercut.yml`：仍同时运行 CMake 与 Xmake guest；
+- `.github/workflows/queue-benchmark.yml`：candidate 仍用 CMake；历史 baseline commit
+  可继续用各自提交中原有的 CMake 构建方式，不要求重写历史；
+- 根 `CMakeLists.txt` 与只服务旧构建系统的 packaging helper 仍待删除/收敛。
+
+installed-consumer 中的 CMake 工程和发布包内的 `LoggerConfig.cmake` 兼容面不在删除范围，
+它们验证的是下游 `find_package` 契约。
 
 ## Release authority
 
-`release-validation` 现在以 Xmake/XPack package matrix 为正式产物门禁；CMake matrix
-只作为 reference，不上传 package。正式 `release-publish` 同样只收集通过验证的 XPack
-shared/static TGZ 与 SHA-256，并在 CMake reference suite 同时成功后创建 GitHub Release。
+`release-validation` 以 Xmake/XPack package matrix 为正式产物门禁；
+`release-publish` 只收集通过验证的 XPack shared/static TGZ 与 SHA-256 并创建 GitHub
+Release，不再等待 CMake reference suite。
 
-下一阶段若目标是**彻底删除 CMake**，优先迁移上述 5 个剩余目标；如果只要求可靠发布，
-当前 release authority 迁移已经完成。
+因此发布权威迁移已经完成；后续工作只是在不降低测试、故障恢复和 benchmark 证据质量的
+前提下，移除当前源码树剩余的 CMake build-system 依赖。
