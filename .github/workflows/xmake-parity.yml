@@ -81,7 +81,7 @@ jobs:
         run: |
           version="$(cat VERSION)"
           if [ "${{ matrix.kind }}" = shared ]; then
-            artifact="$(find build -type f -name 'liblogger.so.${version}' -print -quit)"
+            artifact="$(find build -type f -name "liblogger.so.${version}" -print -quit)"
           else
             artifact="$(find build -type f -name 'liblogger.a' -print -quit)"
           fi
@@ -150,7 +150,7 @@ jobs:
           version="$(cat VERSION)"
           set -euo pipefail
           if [ "${{ matrix.kind }}" = shared ]; then
-            artifact="$(find xmake-build -type f -name 'liblogger.so.${version}' -print -quit)"
+            artifact="$(find xmake-build -type f -name "liblogger.so.${version}" -print -quit)"
           else
             artifact="$(find xmake-build -type f -name 'liblogger.a' -print -quit)"
           fi
@@ -204,7 +204,7 @@ jobs:
         run: |
           version="$(cat VERSION)"
           set -euo pipefail
-          package="$(find xpack-out -maxdepth 1 -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          package="$(find xpack-out -maxdepth 1 -type f -name "prod-c-logger-${version}-*-${{ matrix.kind }}.tar.gz" -print -quit)"
           test -n "$package"
           mkdir unpack
           tar -xzf "$package" -C unpack
@@ -271,8 +271,8 @@ jobs:
         run: |
           version="$(cat VERSION)"
           set -euo pipefail
-          cpack_pkg="$(find cpack-out -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
-          xpack_pkg="$(find xpack-out -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          cpack_pkg="$(find cpack-out -type f -name "prod-c-logger-${version}-*-${{ matrix.kind }}.tar.gz" -print -quit)"
+          xpack_pkg="$(find xpack-out -type f -name "prod-c-logger-${version}-*-${{ matrix.kind }}.tar.gz" -print -quit)"
           test -n "$cpack_pkg"
           test -n "$xpack_pkg"
 
