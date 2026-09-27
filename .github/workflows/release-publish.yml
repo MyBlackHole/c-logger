@@ -60,6 +60,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        run: echo "LOGGER_PROJECT_VERSION=${{ needs.prepare.outputs.version }}" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -79,7 +82,6 @@ jobs:
             --build_tests=y \
             --build_private_tests=y \
             --build_regression_tests=y \
-            --project_version="${{ needs.prepare.outputs.version }}"
 
       - name: Run complete Xmake release suite
         run: xmake test -j1
