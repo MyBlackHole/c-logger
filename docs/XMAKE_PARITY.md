@@ -16,7 +16,8 @@ CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version
 描述域不开放文件 I/O，因此调用方先执行
 `export LOGGER_PROJECT_VERSION="$(cat VERSION)"`，随后 configure/build/test/pack
 及其子进程都读取同一环境变量。CI 使用 `GITHUB_ENV` 在每个 Xmake job 内固定该值。
-生成的 `logger_version.h`、XPack 包名以及 parity workflow 不再维护第二份发布版本号。
+生成的 `logger_version.h`、XPack 包名以及所有包含 Xmake 构建的 CI（包括 VM power-cut）
+不再维护第二份发布版本号。
 
 ## 第一阶段覆盖
 
