@@ -186,13 +186,15 @@ kernel/glibc 验收。
 
 1. 读取 `VERSION`；
 2. 要求 `docs/RELEASE_NOTES_<VERSION>.md` 存在；
-3. 如果 `v<VERSION>` 已存在则不重复发布；
-4. shared/static 分别执行完整 Xmake release suite；
-5. 生成并验证 XPack + SHA-256；
-6. 汇总四个 release asset；
-7. 创建 prerelease GitHub Release。
+3. 解析 `v<VERSION>` tag/release 状态；已有 tag 时锁定该 tag 对应 commit，重试不能改用更新后的 `main` 源码；
+4. 已有 release 只有在 prerelease 元数据正确、四个 asset 齐全且包内 SHA-256 校验全部通过时才视为完成并跳过；
+5. release 缺失或不完整时，shared/static 分别执行完整 Xmake release suite；
+6. 生成并验证 XPack + SHA-256，汇总四个 authoritative release asset；
+7. release 不存在时创建 prerelease；release 已存在但不完整时使用 `gh release upload --clobber` 修复同名资产；
+8. 发布后重新下载远端四个 asset，并再次执行数量、SHA-256、prerelease/title 校验。
 
-因此发布新代码必须先递增 `VERSION`；不能复用已经存在的 tag。
+`workflow_dispatch` 因而是幂等恢复入口：完整 release 不会重复发布，不完整 release 会从既有 tag 的源码重建并修复。
+发布新代码仍必须先递增 `VERSION`；不能把同一 tag 改指向另一份源码。
 
 ## Legacy fork helper
 
