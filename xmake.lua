@@ -451,7 +451,11 @@ if has_config("build_private_tests") then
             "after_state_rename",
             "after_checkpoint_commit"
         }) do
-            add_tests("crash_" .. point, {runargs = point, timeout = 10})
+            add_tests("crash_" .. point, {
+                group = "process-crash",
+                runargs = point,
+                timeout = 10
+            })
         end
     target_end()
 
@@ -474,6 +478,7 @@ if has_config("build_private_tests") then
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         add_ldflags("-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
         add_tests("rotation_crash_sha256", {
+            group = "process-crash",
             runargs = {"rotation", "sha256"},
             timeout = 30
         })
@@ -496,6 +501,7 @@ if has_config("build_private_tests") then
             "file_after_active_dirsync"
         }) do
             add_tests("file_crash_sha256_" .. point, {
+                group = "process-crash",
                 runargs = {point, "sha256"},
                 timeout = 20
             })

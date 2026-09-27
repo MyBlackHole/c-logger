@@ -4,21 +4,21 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "xmake.lua"
+      - "VERSION"
       - "src/**"
       - "include/**"
       - "tests/**"
-      - "cmake/**"
-      - "CMakeLists.txt"
       - "scripts/check_crash_matrix.py"
       - ".github/workflows/crash-recovery.yml"
   push:
     branches: [main]
     paths:
+      - "xmake.lua"
+      - "VERSION"
       - "src/**"
       - "include/**"
       - "tests/**"
-      - "cmake/**"
-      - "CMakeLists.txt"
       - "scripts/check_crash_matrix.py"
       - ".github/workflows/crash-recovery.yml"
 
@@ -34,32 +34,54 @@ jobs:
       matrix:
         include:
           - kind: shared
-            shared: "ON"
+            shared: "y"
           - kind: static
-            shared: "OFF"
+            shared: "n"
     steps:
       - uses: actions/checkout@v5
 
-      - name: Configure release build
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=${{ matrix.shared }}
-
-      - name: Build
-        run: cmake --build build -j2
-
-      - name: Verify crash test registration
-        run: |
-          ctest --test-dir build --show-only=json-v1 > crash-matrix.json
-          python3 scripts/check_crash_matrix.py crash-matrix.json
-
-      - name: Run process-crash recovery three times
+      - name: Export project version
         shell: bash
         run: |
           set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure release crash profile
+        run: >-
+          xmake f -m release -o xmake-build
+          --build_shared=${{ matrix.shared }}
+          --build_private_tests=y
+
+      - name: Run and verify process-crash recovery three times
+        shell: bash
+        run: |
+          set -uo pipefail
+          overall=0
+
           for attempt in 1 2 3; do
-            ctest --test-dir build -L crash --output-on-failure -j2 \
-              --output-junit "crash-junit-${attempt}.xml" \
-              2>&1 | tee "crash-${attempt}.log"
+            echo "process-crash attempt=$attempt"
+            xmake test -g process-crash -j1 -vD 2>&1 | tee "crash-$attempt.log"
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -ne 0 ]; then
+              overall=1
+            fi
           done
+
+          python3 scripts/check_crash_matrix.py \
+            crash-1.log crash-2.log crash-3.log \
+            --output crash-matrix.json \
+            --junit-dir . || overall=1
+
+          if [ "$overall" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Upload crash recovery evidence
         if: always()
@@ -70,6 +92,7 @@ jobs:
             crash-matrix.json
             crash-*.log
             crash-junit-*.xml
-            build/Testing/Temporary/LastTest.log
+            xmake-build/.gens/**/tests/*.stdout.log
+            xmake-build/.gens/**/tests/*.errors.log
           if-no-files-found: warn
           retention-days: 30
