@@ -32,6 +32,9 @@ a = p.parse_args()
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
 version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
 assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), version
+version_major, version_minor, version_patch = map(int, version.split('.'))
+next_patch = f'{version_major}.{version_minor}.{version_patch + 1}'
+next_major = f'{version_major + 1}.0.0'
 work = Path(tempfile.mkdtemp(prefix='install-check-', dir=Path.cwd()))
 log = []; counter = 0
 base_env = dict(os.environ)
@@ -124,8 +127,8 @@ try:
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()
-    for requested,component,success in [(version,a.kind,True),('9.9.9',a.kind,False),
-        ('1.0.0',a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
+    for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
+        (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
         (version,'invented',False),(version,'legacy_fork',a.legacy)]:
         (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
             'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
