@@ -360,11 +360,24 @@ Xmake shared regression profile 现在也覆盖 CMake 原先独占的 4 个真�
 这些 target 只在 `--build_shared=y --build_regression_tests=y` 时注册，因此不会污染
 static profile。
 
+## Legacy fork helper parity
+
+最后一个 CMake-only 回归目标也已迁入 Xmake：
+
+- `logger_regression_support` / `logger_test_support` 在 `--legacy_fork=y` 时与
+  CMake 的 `LOGGER_SOURCES` 一致，额外编译 `src/logger_fork.c` 并导出
+  `LOGGER_ENABLE_LEGACY_FORK_HELPER=1`；
+- `fork_reinit_regression` 使用与 CMake 相同的 5 个 GNU ld wrapper，覆盖 23 个
+  controlled single-thread fork/continue 场景；
+- `fork_reinit_example` 也由 Xmake 构建；
+- 默认 release 仍保持 legacy helper 关闭；独立 `legacy-fork` CI job 显式以
+  `--legacy_fork=y` 构建 example 并逐个执行 23 个回归 case。
+
 ## 尚未迁移
 
-删除 CMake build system 前现在只剩：
-
-1. `fork_reinit_regression`：legacy fork helper opt-in。
+按当前 CMake 注册的测试/示例目标，Xmake 已无已知 CMake-only 功能目标。
+下一步可以移除 release workflow 中的 CMake reference gate，并审计后删除 CMake
+build/packaging 文件。
 
 ## Release authority
 
