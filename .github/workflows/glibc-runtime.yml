@@ -1,0 +1,176 @@
+name: glibc-runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/glibc-runtime.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/**"
+      - "include/**"
+      - "abi/logger.symbols"
+      - "scripts/check.sh"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - "tests/packaging/**"
+      - "examples/installed_consumer/**"
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: ubuntu-${{ matrix.userland }} / ${{ matrix.kind }}
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:${{ matrix.userland }}
+    strategy:
+      fail-fast: false
+      matrix:
+        userland: ["20.04", "22.04", "24.04"]
+        kind: [shared, static]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build and inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ca-certificates cmake curl file git pkg-config \
+            python3 binutils
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Enable Xmake in root-owned container
+        shell: bash
+        run: |
+          set -euo pipefail
+          real_xmake="$(command -v xmake)"
+          wrapper="$RUNNER_TEMP/xmake-root-bin"
+          mkdir -p "$wrapper"
+          cat > "$wrapper/xmake" <<EOF
+          #!/bin/sh
+          case "\${1:-}" in
+            f|config|test|install)
+              task="\$1"
+              shift
+              exec "$real_xmake" "\$task" --root "\$@"
+              ;;
+            *)
+              exec "$real_xmake" --root "\$@"
+              ;;
+          esac
+          EOF
+          chmod +x "$wrapper/xmake"
+          echo "$wrapper" >> "$GITHUB_PATH"
+
+      - name: Record userland baseline
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          test -n "$glibc_version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "glibc_version=$glibc_version" >> "$GITHUB_OUTPUT"
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+          {
+            echo "requested_userland=ubuntu-${{ matrix.userland }}"
+            echo "kind=${{ matrix.kind }}"
+            echo "project_version=$version"
+            echo "glibc=$(getconf GNU_LIBC_VERSION)"
+            echo "kernel=$(uname -r)"
+            echo
+            cat /etc/os-release
+            echo
+            cc --version
+            echo
+            xmake --version
+          } > platform-evidence.txt
+          cat platform-evidence.txt
+
+      - name: Run production-linked core tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          BUILD_DIR=platform-build \
+          BUILD_SHARED="$shared" \
+          MODE=release \
+          JOBS=2 \
+            scripts/check.sh fast
+
+      - name: Locate and inspect production artifact
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.baseline.outputs.version }}"
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$(find platform-build -type f -name "liblogger.so.${version}" -print -quit)"
+          else
+            artifact="$(find platform-build -type f -name 'liblogger.a' -print -quit)"
+          fi
+          test -n "$artifact"
+          echo "path=$artifact" >> "$GITHUB_OUTPUT"
+          file "$artifact"
+          sha256sum "$artifact" | tee -a platform-evidence.txt
+          python3 scripts/check_production_artifact.py "$artifact"
+
+      - name: Check shared GLIBC ceiling
+        if: matrix.kind == 'shared'
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${{ steps.artifact.outputs.path }}"
+          glibc_version="${{ steps.baseline.outputs.glibc_version }}"
+          python3 scripts/check_release_abi.py "$artifact" \
+            --machine 'Advanced Micro Devices X86-64' \
+            --elf-class ELF64 \
+            --max-glibc "$glibc_version"
+          {
+            echo
+            echo "dynamic_dependencies:"
+            ldd "$artifact"
+            echo
+            echo "version_requirements:"
+            readelf --version-info "$artifact"
+          } >> platform-evidence.txt
+
+      - name: Verify installed C and C++ consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/packaging/check_install.py \
+            --source . \
+            --build platform-build \
+            --artifact "${{ steps.artifact.outputs.path }}" \
+            --kind "${{ matrix.kind }}" \
+            --cc cc \
+            --cxx c++ \
+            --cmake cmake \
+            --xmake xmake
+
+      - name: Upload platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glibc-runtime-ubuntu-${{ matrix.userland }}-${{ matrix.kind }}
+          path: platform-evidence.txt
+          if-no-files-found: error
+          retention-days: 30
