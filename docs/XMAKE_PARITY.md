@@ -2,12 +2,14 @@
 
 ## 状态
 
-Xmake 当前是 **并行验证构建**，不是发布权威。
+Xmake 当前是 **生产发布构建权威**。
 
-- CMake 继续负责完整测试、install、CMake package、pkg-config、CPack 和 GitHub Release。
-- Xmake 第一阶段只负责生产 `logger` shared/static artifact。
-- Xmake 产物必须通过与 CMake 发布产物相同的 ABI/production-isolation 检查。
-- 当前 Xmake 产物不得直接替代正式 release asset。
+- production shared/static、install metadata、XPack TGZ 与 GitHub Release asset 由 Xmake 生成；
+- `release-validation` 与 `release-publish` 对最终 XPack 包执行 ABI、production-isolation、
+  checksum 与真实 installed-consumer contract；
+- CMake 暂时保留为 transition reference gate，用于对照完整 CTest/install contract，并覆盖
+  尚未迁移的 shared-only / legacy helper 测试；
+- CPack 不再产生或上传正式 GitHub Release asset。
 
 CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version support 需要 2.8.2，
 内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
@@ -333,16 +335,32 @@ host-owned case 需要运行时加载 `example_sdk`。Xmake 使用
 - sanitizer 配置不承担 install/package parity，因为 CMake 在 sanitizer 模式下同样默认
   `LOGGER_ENABLE_INSTALL=OFF`。
 
+## DESTDIR 策略
+
+CMake 风格的 `DESTDIR=...` CLI 兼容明确设为 **non-goal**，不再阻塞发布迁移。
+Xmake 使用原生 `xmake install -o <staged-prefix>`，并且 staged install、relocation、
+CMake package consumer、pkg-config、ABI/isolation 与最终 XPack 解包后的 installed-consumer
+contract 已有独立 CI 门禁。如果后续真实下游明确依赖 CMake 风格 DESTDIR，再单独增加
+compatibility wrapper，而不是把它伪装成 Xmake 原生语义。
+
 ## 尚未迁移
 
-以下仍由 CMake 独占，未达到 parity 前不得删除 CMake：
+以下目标仍由 CMake reference gate 独占；它们**不阻塞 Xmake 发布权威**，但在删除
+CMake build system 之前需要迁移：
 
-1. CMake 式 DESTDIR CLI parity（Xmake staged install/relocation 已通过 3A）；
-2. release-publish 仍只使用 CMake/CPack；XPack 只作为并行 release-asset parity。
+1. `fork_reinit_regression`：legacy fork helper opt-in；
+2. `syslog_shared_regression`；
+3. `global_shared_regression`；
+4. `liblogger_dlclose_test`；
+5. `logger_v1_shared_consumer`。
 
-## 下一门禁
+后四项均为 shared-only integration/ABI 测试。
 
-CPack / XPack 安装树与资产结构、linker-interception regression Group A–E，以及
-default-static sanitizer profile 都已进入 CI。当前下一门禁是单独决定是否需要项目级
-DESTDIR CLI compatibility；之后才讨论让 release-publish 切换到 Xmake。在正式切换前，
-GitHub Release 仍只信任 CMake/CPack。
+## Release authority
+
+`release-validation` 现在以 Xmake/XPack package matrix 为正式产物门禁；CMake matrix
+只作为 reference，不上传 package。正式 `release-publish` 同样只收集通过验证的 XPack
+shared/static TGZ 与 SHA-256，并在 CMake reference suite 同时成功后创建 GitHub Release。
+
+下一阶段若目标是**彻底删除 CMake**，优先迁移上述 5 个剩余目标；如果只要求可靠发布，
+当前 release authority 迁移已经完成。
