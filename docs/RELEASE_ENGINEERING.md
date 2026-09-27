@@ -1,124 +1,228 @@
-# 0.9.3 受控生产发布候选
+# Release Engineering
 
-这是一份**完整功能、仅内置 SHA-256**的受控生产发布候选，不是已经完成全部目标平台与掉电验收的 Production v1。
-相对 0.9.0，本版保持 public ABI、SONAME 0 和 `LOGGER_0.9` 符号版本不变，主要收敛 async queue 内存/热点、self-paced wakeup、按需 metadata、ownership/locking 文档与对应回归。版本号不代表安全认证。
+c-logger 当前是**受控生产发布候选**，不是已经完成全部目标平台、真实掉电和安全认证的
+Production v1。软件版本由仓库根 `VERSION` 唯一决定；ABI major 仍为 `0`，ELF symbol
+version 仍为 `LOGGER_0.9`。
 
-## 版本与 ABI
+## 构建权威
 
-- 软件版本 `0.9.3`；候选 ABI major `0`；Linux SONAME `liblogger.so.0`。0.9.3 未新增/删除 public C symbol，继续使用 `LOGGER_0.9` 版本节点。
-- 实体文件 `liblogger.so.0.9.3`，构建/安装系统生成 `liblogger.so.0`、`liblogger.so` 相对软链接。
-- 动态导出严格限于 `cmake/logger.symbols` 中的 **62** 个既有公共 C 函数，版本节点 `LOGGER_0.9`。
-  可选旧 fork helper 增加 `logger_fork_reinit`，共 **63** 个。没有新导出版本查询函数；
-  `logger_version.h` 是编译时标识，`LoggerConfig.cmake` 也声明候选身份。
-- 宿主不得用 packing、短枚举等选项改变公开布局；结构版本字段不修复编译器 ABI 差异。
-- 公共函数用 `LOGGER_API` 标识，库使用 hidden visibility；ELF version script 使用 `local: *`。
-  同一对象中的内部名称仍可能出现在调试/普通符号表；不承诺通过 strip 防止逆向分析。
-- `find_package(Logger 0.9.3 EXACT CONFIG REQUIRED)`：pre-1.0 使用 ExactVersion，
-  不许把“设置 SOVERSION”误写成“所有未来版本都二进制兼容”。v1 必须另行冻结支持矩阵和 ABI。
-- 原有结构/枚举布局未改。C++11 默认配置宏新增 header-only 分支，不修改 C 分支或既有动态符号。
-- 历史库 SONAME 为无版本 `liblogger.so`。本机旧二进制替换试验仅证明该实际组合；
-  不能将这个候选普遍作为任意历史库的热替换品。依赖私有符号的旧调用方不受支持。
-- 不同 ABI/独立静态副本之间不得交换 `logger_t *`。宿主及 SDK 要共享实例，应使用同一库实现，
-  或把日志变成宿主回调。库名称相同不是对象可混用的证明。
+项目自身只使用 Xmake：
 
-## 构建、安装
+- 最低 Xmake：2.8.5；
+- CI 固定 Xmake：3.1.1；
+- Linux/ELF only；
+- GNU C11；
+- GNU-compatible linker，需要 version-script 支持。
 
-最低构建工具 CMake 3.16、C11 编译器、Linux/ELF 与支持版本脚本的 GNU-compatible linker。
-运行旧系统要使用对应工具链/系统根；构建工具最低版本不是运行平台验收结论。
+CMake 不再是项目 build/test/install/package 系统。发布包仍生成 CMake config metadata，
+并用真实下游 CMake consumer 验证，这是兼容面而不是构建权威。
+
+运行 Xmake 前：
 
 ```sh
-cmake -S . -B build-shared -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.3
-cmake --build build-shared -j4
-cmake --install build-shared
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 ```
 
-静态产物使用独立构建目录：
+如果没有导出版本，Xmake 会拒绝生产构建，避免生成 `0.0.0` artifact。
+
+## ABI 契约
+
+- SONAME：`liblogger.so.0`；
+- shared 实体文件：`liblogger.so.<VERSION>`；
+- symbol version：`LOGGER_0.9`；
+- public C symbol allowlist：`abi/logger.symbols`；
+- 默认 public symbol set：62 项；
+- legacy fork helper 显式开启时额外导出 `logger_fork_reinit`；
+- production 默认 hidden visibility，并使用 version script `local: *`；
+- production fault injection 固定关闭。
+
+新增/删除 public API 必须同时修改 public header 与 `abi/logger.symbols`，并通过
+`scripts/check_release_abi.py`。禁止用 glob 代替显式 ABI allowlist。
+
+pre-1.0 不承诺未来版本自动 ABI 兼容；安装包的 `LoggerConfigVersion.cmake` 只对**完全相同**
+版本返回 ExactVersion 成功。
+
+## Shared build
 
 ```sh
-cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=/opt/logger/0.9.3-static
-cmake --build build-static -j4
-cmake --install build-static
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-shared --build_shared=y
+xmake -j4 logger
 ```
 
-每个安装前缀描述一种选定的链接类型。不要先后往同一个前缀混装 static/shared 或兼容/默认
-产物；覆盖 Targets/pc 文件不代表它们会自动变成多组件并存包。替换安装用新的干净前缀。
-安装目录必须相对 prefix，不接受绝对 LIBDIR/INCLUDEDIR 或 `..`，保证包重定位。
-支持 `DESTDIR` 和 `cmake --install --prefix`，默认私有头、测试库、fault injector、示例业务
-SDK 二进制和 validation 不进入安装树。
+验证：
+
+```sh
+artifact="$(find build-shared -type f -name "liblogger.so.$(cat VERSION)" -print -quit)"
+python3 scripts/check_production_artifact.py "$artifact"
+python3 scripts/check_release_abi.py "$artifact"
+```
+
+## Static build
+
+```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-static --build_shared=n
+xmake -j4 logger
+```
+
+static production library 使用 PIC，可嵌入 SDK MODULE；fault/crash/regression support archive
+不属于安装内容。
+
+## 安装
+
+Xmake 原生安装：
+
+```sh
+xmake install -o /opt/logger/current logger
+```
+
+安装树：
 
 ```text
 <prefix>/include/logger/{logger.h,audit.h,console.h,logger_export.h,logger_version.h}
-<prefix>/lib/liblogger.so.0.9.3（或 liblogger.a）
+<prefix>/lib/liblogger.so.<VERSION>（或 liblogger.a）
 <prefix>/lib/cmake/Logger/{LoggerConfig.cmake,LoggerConfigVersion.cmake,LoggerTargets*.cmake}
 <prefix>/lib/pkgconfig/logger.pc
-<prefix>/share/doc/prod_c_logger/{API.md,SECURITY.md,TESTING.md,docs/,examples/}
+<prefix>/share/doc/prod_c_logger/{API.md,SECURITY.md,TESTING.md,CHANGELOG.md,docs/,examples/}
 ```
 
-实际 lib/doc 目录受 GNUInstallDirs 影响，可以使用 `lib64` 或 multiarch 路径。
-旧 helper 仅 `LOGGER_ENABLE_LEGACY_FORK_HELPER=ON` 编译并安装其头；CMake target 和 pc
-同时传播相应宏，不在默认包中安装一个声明不存在符号的兼容头。
+Xmake `-o <prefix>` 是安装根。CMake 风格 `DESTDIR` CLI 不是当前项目契约；发布 CI 对 Xmake
+staged install 和最终 XPack 解包树直接做 relocation/consumer 验证，因此不需要保留旧安装
+driver 作为 oracle。
 
-## 宿主接入
+不要把 shared/static 或 default/legacy 两种变体覆盖安装到同一 prefix。一个 prefix 描述一个
+确定的链接/feature 组合。
+
+## 下游 CMake / pkg-config
+
+安装包继续提供：
 
 ```cmake
-find_package(Logger 0.9.3 EXACT CONFIG REQUIRED) # 可指定 COMPONENTS shared/static/legacy_fork
-add_executable(host main.c)
+find_package(Logger CONFIG REQUIRED)
 target_link_libraries(host PRIVATE Logger::logger)
 ```
 
-```c
-#include <logger.h>
-#include <audit.h>
-#include <console.h>
-```
+可选 component：
 
-无 CMake 时通过 pkg-config 获取路径/线程依赖。使用静态包时加 `--static`。
-含空格路径使用支持 pkg-config shell quoting 的构建系统/参数解析；不要在 shell 中对输出
-做未经处理的普通词拆分。没有依赖外部密码库。
+- `shared`
+- `static`
+- `legacy_fork`
 
-只含无空格路径的常规例子：
+CI 使用 `EXACT` + component 组合检查 fail-closed 行为。
+
+pkg-config：
 
 ```sh
-PKG_CONFIG_PATH=/opt/logger/0.9.3/lib/pkgconfig \
-  pkg-config --cflags --libs logger
-# 运行时应配置 loader 路径或宿主自身 RUNPATH；库不自带机器私有 RUNPATH。
+PKG_CONFIG_PATH=<prefix>/lib/pkgconfig pkg-config --cflags --libs logger
 ```
 
-`examples/installed_consumer/` 是不需要源码树头文件的独立 C/C++11 工程，执行文件日志、多实例、
-Audit、Console，并加载一个完整销毁实例后才卸载的 SDK MODULE。静态 Logger 使用 PIC，
-可以被 SDK 链入；其符号默认不泄漏到 SDK 的动态符号表。SDK 自己决定其公开接口。
-普通全局 LOG_* 与系统 syslog 同名宏的历史命名边界没有在本轮改变。
+static consumer 使用 `pkg-config --static`。
 
-## 验收和分发包
+`examples/installed_consumer/` 是发布包的独立下游工程，只能使用 installed headers/library；
+CI 会检查它的 compile commands，禁止回指源码树 private include。
+
+## XPack
+
+权威二进制包使用内置 XPack：
 
 ```sh
-cmake -S . -B build-check -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build-check --target check -j4
-cmake --build build-check --target check-package -j4
-cpack --config build-check/CPackConfig.cmake -G TGZ
-python3 scripts/check_release_abi.py build-check/liblogger.so
-python3 scripts/check_production_artifact.py build-check/liblogger.so
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-package --build_shared=y
+xmake pack -f targz -o xpack-out
 ```
 
-`check-package` 会构建生产库再测试真正 install、DESTDIR、含空格前缀迁移、独立 CMake/
-C++11/pkg-config consumer、PIC MODULE、旧头 consumer、公开布局/default 一致性、版本/组件
-拒绝、ELF exports/SONAME 和运行期 dlsym/dlvsym。需要 native C/C++ 编译器、Python 3.8+、
-pkg-config、nm、readelf。白盒测试不再要求公开私有符号；真实 DSO 测试继续直接运行 DSO。
+文件名：
 
-CPack TGZ 为本工具链生成的 native **候选二进制**，不捆绑 glibc，不代表任意 Linux 可运行。
-CPack 同时生成 SHA-256 校验文件。上游没有提供项目 LICENSE 文本，本轮不擅自增加许可证；
-发行者仍应明确第三方交付授权和版本支持策略。
+```text
+prod-c-logger-<VERSION>-Linux-x86_64-shared.tar.gz
+prod-c-logger-<VERSION>-Linux-x86_64-static.tar.gz
+```
 
-Sanitizer 构建默认 `LOGGER_ENABLE_INSTALL=OFF`；显式要求安装插桩产物会配置失败。
-这些构建不生成包，不能误发给宿主。交叉编译不会尝试在 build host 执行 native 安装测试；
-必须在目标环境另行运行，而不是当成测试通过。
+每个 TGZ 同时生成同名 `.sha256`。release gate 会检查每种 kind 恰好一个包、checksum 文件名
+与实际 SHA-256 一致。
 
-## 兼容平台与未完成门禁
+XPack 是当前 CI 工具链生成的 native Linux/x86_64 候选二进制，不捆绑 glibc，也不代表任意
+Linux 发行版、kernel 或 CPU 自动兼容。
 
-见 PLATFORM_BASELINE.md。当前这里只冻结一个可检查的候选快照，不新增老平台兼容代码，
-不宣称系统掉电、任意网络文件系统、任意 fork 或非法生命周期安全。全部功能保留，
-不以“缩减为 File-only”替代实际支持矩阵和持久化验收。
+## Release validation
+
+`.github/workflows/release-validation.yml` 对 shared/static matrix 分别执行：
+
+1. complete Xmake suite；
+2. production artifact isolation；
+3. shared ABI/SONAME/ELF class/machine 检查；
+4. XPack TGZ + SHA-256；
+5. 解包后的 installed tree；
+6. relocation 到带空格前缀；
+7. C/C++11 CMake consumer；
+8. PIC SDK MODULE；
+9. pkg-config consumer；
+10. ExactVersion/components rejection；
+11. frozen old-header consumer；
+12. public layout/default snapshot；
+13. production isolation。
+
+测试实现见 `tests/packaging/check_install.py`。该脚本直接读取 `VERSION` 和
+`abi/logger.symbols`，不维护第二份 release version/ABI 清单。
+
+## Crash / power-cut / sanitizer / benchmark
+
+发布候选还必须保留以下独立证据链：
+
+- `crash-recovery`：9 个 process-crash case，shared/static 各重复 3 次；
+- `vm-powercut`：10 个 QEMU SIGKILL + raw ext4 reboot/recovery cut point；
+- `xmake-parity` sanitizer：ASan+UBSan 与 TSan 的完整 static suite；
+- `queue-benchmark`：当前 candidate 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
+
+这些 gate 证明指定环境中的实现行为，不替代实际服务器、电源、控制器 cache、XFS 或最低
+kernel/glibc 验收。
+
+## GitHub Release
+
+`.github/workflows/release-publish.yml` 由 `main` 上的 `VERSION` / release notes 变更触发。
+
+流程：
+
+1. 读取 `VERSION`；
+2. 要求 `docs/RELEASE_NOTES_<VERSION>.md` 存在；
+3. 如果 `v<VERSION>` 已存在则不重复发布；
+4. shared/static 分别执行完整 Xmake release suite；
+5. 生成并验证 XPack + SHA-256；
+6. 汇总四个 release asset；
+7. 创建 prerelease GitHub Release。
+
+因此发布新代码必须先递增 `VERSION`；不能复用已经存在的 tag。
+
+## Legacy fork helper
+
+默认包不包含 `logger_fork_reinit`。受控兼容构建：
+
+```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-legacy \
+  --build_shared=n \
+  --legacy_fork=y \
+  --build_regression_tests=y
+xmake -j4 logger fork_reinit_example
+xmake test 'fork_reinit_regression/*' -j1
+```
+
+安装 legacy 变体时，CMake target/pkg-config metadata 会传播
+`LOGGER_ENABLE_LEGACY_FORK_HELPER=1`，并安装 `logger_fork_compat.h`。默认包不会声明不存在
+的 helper。
+
+## 不宣称的兼容性
+
+当前 release engineering 不证明：
+
+- 真实服务器掉电/reset；
+- RAID/HBA/NVMe/SATA volatile write cache；
+- XFS 或其他目标文件系统；
+- 任意网络文件系统；
+- 任意多线程 fork 后复杂库调用安全；
+- 32-bit；
+- 所有 kernel/glibc 组合；
+- 安全认证、外部可信签名、远端锚点或 WORM 合规。
+
+平台边界见 `docs/PLATFORM_BASELINE.md` 与 `docs/KNOWN_ISSUES.md`。
