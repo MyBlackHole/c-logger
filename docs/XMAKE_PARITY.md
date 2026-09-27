@@ -13,10 +13,10 @@ CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version
 内置 `xmake test` / `add_tests` 从 2.8.5 开始提供。
 
 项目版本号现在只从仓库根目录 `VERSION` 读取。CMake 直接读取该文件；Xmake
-描述域不开放文件 I/O，因此所有 configure 命令通过
-`--project_version="$(cat VERSION)"` 注入同一个值，并由 Xmake 配置持久化供后续
-build/test/pack 使用。生成的 `logger_version.h`、XPack 包名以及 parity workflow
-不再维护第二份发布版本号。
+描述域不开放文件 I/O，因此调用方先执行
+`export LOGGER_PROJECT_VERSION="$(cat VERSION)"`，随后 configure/build/test/pack
+及其子进程都读取同一环境变量。CI 使用 `GITHUB_ENV` 在每个 Xmake job 内固定该值。
+生成的 `logger_version.h`、XPack 包名以及 parity workflow 不再维护第二份发布版本号。
 
 ## 第一阶段覆盖
 
@@ -42,14 +42,14 @@ Xmake 没有采用内置 `mode.release` rule，因为该 rule 默认 strip。当
 Shared Release：
 
 ```sh
-xmake f -m release --build_shared=y --project_version="$(cat VERSION)"
+xmake f -m release --build_shared=y
 xmake -j4 logger
 ```
 
 Static Release：
 
 ```sh
-xmake f -m release --build_shared=n --project_version="$(cat VERSION)"
+xmake f -m release --build_shared=n
 xmake -j4 logger
 ```
 
