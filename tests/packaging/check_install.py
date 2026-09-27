@@ -115,8 +115,17 @@ try:
         names=run(['nm','-D','--defined-only',cb/'libinstalled_plugin.so'])
         assert 'plugin_run' in names
         assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
-    # Test pkg-config independently of CMake. Quoted paths must survive spaces.
-    pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pc_dir))
+    # Test pkg-config independently of CMake. The CMake consumer above
+    # deliberately validates a relocated prefix containing spaces. Older
+    # pkg-config implementations do not consistently preserve spaces in
+    # pcfiledir-derived -I/-L flags, so validate the .pc contract from a second
+    # no-space relocated copy instead of pretending that tool limitation is a
+    # package guarantee.
+    pkg_prefix=work/'pkg-relocated'
+    shutil.copytree(prefix,pkg_prefix,symlinks=True)
+    pkg_pc_dir=pkg_prefix/a.libdir/'pkgconfig'
+    pkg_lib=pkg_prefix/a.libdir
+    pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pkg_pc_dir))
     assert run(['pkg-config','--modversion','logger'],env=pe).strip()==version
     opts=['pkg-config','--cflags','--libs']
     if a.kind=='static': opts.append('--static')
@@ -124,7 +133,7 @@ try:
     exe=work/'pkg consumer'
     run([a.cc,'-std=c11','-Wall','-Wextra','-Wpedantic','-Werror',consumer/'main.c',
          '-o',exe]+flags)
-    pe['LD_LIBRARY_PATH']=str(lib)
+    pe['LD_LIBRARY_PATH']=str(pkg_lib)
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()

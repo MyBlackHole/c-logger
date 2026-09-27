@@ -19,10 +19,16 @@
 
 ## 不把工具链元数据当平台验收
 
-一个在新 glibc 上构建的 `.so` 会产生其实际使用的符号版本依赖。设置 CMake 的
-`CMAKE_SYSTEM_VERSION`、SOVERSION、ELF symbol version script，或改文件名都不能把这些
-调用变成旧 glibc 可用的实现。本轮只有 native Linux x86_64 实际验证；没有交付或启动
-旧 glibc/32-bit/sysroot 镜像，不能宣称整个 Linux 3.x/4.x/5.x 矩阵通过。
+一个在新 glibc 上构建的 `.so` 会产生其实际使用的符号版本依赖。设置 SOVERSION、
+ELF symbol version script 或改文件名，都不能把这些调用变成旧 glibc 可用的实现。
+
+主线 `glibc-runtime` 现在在 x86_64 Ubuntu 20.04 / 22.04 / 24.04 容器中分别构建并运行
+shared/static production artifact，执行 production-linked core tests、installed C/C++ consumer
+和 pkg-config consumer；shared 产物还用实际容器 glibc 作为 `--max-glibc` ceiling。当前已验证
+glibc 2.31、2.35、2.39 三个 userland。0.9.4 的 Ubuntu 20.04 shared build 实际最高
+GLIBC symbol requirement 为 2.25，但这只是该次构建的观测值，不自动把 2.25 宣称成长期
+支持下限。容器共享 GitHub runner kernel，因此这些结果**不建立最低 Linux kernel**；
+32-bit 也仍未验收。
 
 当前主线另有两类 crash/durability 证据：Release shared/static 的进程终止恢复矩阵，
 以及 Ubuntu 24.04 runner 上 QEMU guest 使用 raw ext4/XFS 虚拟盘的 10 点强制断电矩阵。
@@ -30,7 +36,7 @@
 启动恢复并验证 Audit chain；XFS guest 会把与所选 guest kernel 匹配的 XFS module/dependency
 打入最小 initramfs。串口证据显式记录 guest kernel release 和 mounted filesystem，避免把
 宿主环境误当成 guest 验收结果。该矩阵比 OverlayFS 进程退出测试更接近掉电语义，但仍不是
-实际服务器、存储控制器/磁盘 volatile cache 或最低支持 kernel/glibc 的平台验收。
+实际服务器、存储控制器/磁盘 volatile cache 或最低支持 kernel 的平台验收。
 
 ## 检查产物的可重复命令
 

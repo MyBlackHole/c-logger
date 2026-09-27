@@ -25,7 +25,7 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
     if artifact.read_bytes()[:8] == b'!<arch>\n':
         raise ValueError('Check the final shared ELF/consumer for GLIBC requirements; archives have no final dynamic ABI')
     dynamic = run('readelf', '-dW', str(artifact))
-    symbols = run('nm', '-D', '--defined-only', str(artifact))
+    symbols = run('nm', '-D', '--defined-only', '--with-symbol-versions', str(artifact))
     version_info = run('readelf', '--version-info', '-W', str(artifact))
     header = run('readelf', '-hW', str(artifact))
     exported = {}
@@ -34,9 +34,9 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
         if len(parts) < 3:
             continue
         full = parts[-1]
-        if full == 'LOGGER_0.9' and parts[-2] == 'A':
-            continue
         name = full.split('@', 1)[0]
+        if name == 'LOGGER_0.9' and parts[-2] == 'A':
+            continue
         exported[name] = full
     if set(exported) != names:
         errors.append({'missing': sorted(names - set(exported)),
