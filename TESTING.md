@@ -1,212 +1,224 @@
-# Round 5 fork and production isolation
+# Testing
+
+Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` 注册，CI 与本地开发使用同一
+target/test 定义。下游安装包仍使用真实 CMake consumer 验证 `find_package(Logger ...)`，
+但项目自身不再依赖 CTest。
+
+## 基本约束
+
+运行 Xmake 前先导出唯一版本源：
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target check -j4
-ctest --test-dir build -L fork-isolation --repeat until-fail:20 --output-on-failure -j4
-
-# library-only (no tests or test fault archive)
-cmake -S . -B build-lib -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-lib -j4
-python3 scripts/check_production_artifact.py build-lib/liblogger.a
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 ```
 
-The existing fork_test is intentionally changed to **fork+exec**, preserving
-parent/child message isolation and adding a CLOEXEC assertion. Exec-less child
-reinit is now rejected explicitly by the new process_fork tests, not skipped.
-The test-only wrappers assert rejection before inherited locks/once, allocation,
-formatting, thread creation, descriptor close or write. All original fault/crash scenarios remain registered. Environment-driven hook
-cases explicitly link logger_test_support, including the new positive controls.
-Other regressions default to the actual production logger; their syscall/schedule
-wrappers are test-executable-only. Both libraries share implementation sources
-and public API but differ deliberately in the private hook compile definition.
+默认测试构建使用 Linux/ELF、GNU C11、`-Wall -Wextra -Wpedantic -Werror`。production、
+fault/crash 和 white-box regression 分离：
 
-See validation/ROUND5_RESULTS.md for measured results and retained failures.
-No sanitizer suppression is added to make an external-library report disappear.
+- `logger`：真实 production artifact，fault injection 关闭；
+- `logger_test_support`：仅测试使用，包含 `src/logger_fault.c`；
+- `logger_regression_support`：same-source white-box archive，用于 GNU ld `--wrap`
+  与内部 deterministic regression。
 
-## 本轮验证范围
+后两者永不安装，也不进入 XPack。
 
-新增 `queue-flush` label，运行 `ctest --test-dir build -L queue-flush --output-on-failure`。
-`check` 从空 build 目录会先构建测试程序；labels 追加而不覆盖；各测试独立工作目录。
-专项 sanitizer 结果见 `validation/RESULTS.md`。该段记录 Round 1 的历史状态；当前剩余阻断项以 docs/KNOWN_ISSUES.md 为准。
+## 本地入口
 
-# Engineering invariant gate
+### Fast
 
-总体组件和数据流见 `docs/ARCHITECTURE.md`；不可破坏的 review gate 见
-`docs/ARCHITECTURE_INVARIANTS.md`。任何较大的 queue、worker、backend、lifecycle、
-ownership 或 public API 修改，都必须先通过 Architecture Invariants，再进入专项测试。
-
-Code review 和 regression design 必须遵守内部工程约束。源码注释和内部说明以中文为主；
-API、标识符、标准术语、协议名和错误码保留英文，避免技术歧义。详见
-`docs/CODING_STYLE.md`。
-
-- top-level architecture: `docs/ARCHITECTURE.md`;
-- architecture invariants: `docs/ARCHITECTURE_INVARIANTS.md`;
-- resource ownership: `docs/RESOURCE_OWNERSHIP.md`;
-- counted lifetime admission: `docs/REFCOUNTING.md`;
-- lexical cleanup: `docs/RESOURCE_CLEANUP.md`;
-- locking/order: `docs/LOCKING.md` + `docs/LOCK_MATRIX.md`;
-- concurrency/publication: `docs/CONCURRENCY.md`;
-- error propagation: `docs/ERROR_HANDLING.md`;
-- lifecycle/publication/destruction: `docs/LIFECYCLE.md`.
-
-A passing test is not sufficient if a change makes ownership, lock ordering or
-final release ambiguous. New resource-acquisition paths should include failure
-coverage around their acquisition/transfer boundaries.
-
-# Test strategy
-
-Tests are classified with CTest labels so local development and CI can run the
-right reliability level without maintaining separate test lists.
-
-| Label | Purpose |
-|---|---|
-| `fast` | small developer feedback set |
-| `unit` | API/helpers/format/config contracts |
-| `integration` | file, rotation, audit, syslog end-to-end behavior |
-| `concurrency` | MPSC/lifecycle/fork concurrency |
-| `fork` | explicit and defensive fork contracts |
-| `fault` | deterministic syscall failure injection |
-| `crash` | real child-process death at durability boundaries |
-| `reliability` | fault + crash verification |
-| `security` | audit integrity, recovery, single writer, redaction |
-| `crypto` | SHA-256 chain, known-answer tests, and retired-algorithm rejection |
-
-## Local commands
-
-After configuring and building:
-
-```sh
-cmake --build build --target check-fast
-cmake --build build --target check
-cmake --build build --target check-production
-```
-
-Or use:
+仅运行直接链接 production `logger` 的 core tests：
 
 ```sh
 scripts/check.sh fast
-scripts/check.sh reliability
-scripts/check.sh security
+```
+
+等价于：
+
+```sh
+xmake f -m release -o build \
+  --build_shared=n \
+  --build_tests=y \
+  --build_private_tests=n \
+  --build_regression_tests=n
+xmake test -j4
+```
+
+### Production
+
+运行当前 static/full test surface，包括 core、private fault/crash support 与全部 regression：
+
+```sh
 scripts/check.sh production
 ```
 
-`check-production` currently means the complete configured test suite. Sanitizer
-builds remain separate build directories because compiler instrumentation is a
-build property, not a CTest runtime profile.
+完整 suite 默认串行执行。部分历史测试共享固定文件名或工作目录，而测试内部的真实并发、
+取消、fork 和 stress 行为不受串行 runner 影响。
 
-## Release gate
+### Focused crash
 
-A production release should pass the complete normal suite in an unsanitized
-native Debug build, the shared Release profile, both builtin digest
-known-answer/integrity tests, and ASan/UBSan/TSan in a CI runner whose
-virtual-address environment supports those runtimes.
-
-Calls made while the caller has `PTHREAD_CANCEL_ASYNCHRONOUS` and
-`PTHREAD_CANCEL_ENABLE` are outside the Logger/Console contract: POSIX only
-requires `pthread_cancel`, `pthread_setcancelstate` and
-`pthread_setcanceltype` to be async-cancel-safe. The supported boundary is a
-caller using deferred cancellation, or a caller that has disabled cancellation
-before entering Logger. Existing restore-policy tests verify that an already
-disabled caller remains disabled and that its cancellation type is preserved;
-the constructor contract separately rejects enabled asynchronous cancellation
-with `ENOTSUP`.
-
-For shared Release white-box tests, the private same-source
-`logger_regression_support` archive is compiled with FORTIFY disabled so linker
-`--wrap` hooks continue to intercept stable libc symbols such as
-`vsnprintf/vfprintf/dprintf`. The actual production shared library remains
-fortified and is exercised by the real shared-integration/packaging tests. No
-external crypto package is used to build or run the current test suite.
-
-## Round 2 Audit state regressions
-
-`ctest --test-dir build -L audit-state --output-on-failure` runs the 25 new cases.
-They use private syscall/scheduling wrappers linked only into test executables.
-`--repeat until-fail:30 -j4` runs each case 30 times; test directories are independent.
-Legacy Audit contention/crash tests now use fork+exec instead of calling complex
-Audit initialization in an inherited child. Test assertions are not relaxed.
-
-Source and exact validation scope are recorded in `validation/ROUND2_RESULTS.md`.
-Full normal suites passing do not close the still-known crypto/recovery blockers.
-
-## Crypto regression profile (current)
-
-`crypto-failclosed` retains the two digest contracts, fixed known-answer and
-binary fixtures, concurrent hashing, START/event/STOP failure propagation,
-verification/recovery failures and empty/no-replay preflight. Failure wrappers
-exist only in test executables; no production runtime error injector is added.
-External-backend stage/policy tests are removed with the implementation they
-exercised, not suppressed or relabeled as passing. Earlier reports remain in
-validation for provenance.
+9 个 durability process-crash case 使用 Xmake 原生 `process-crash` group：
 
 ```sh
-ctest --test-dir build -L '^crypto$' --output-on-failure
-ctest --test-dir build -L '^crypto-failclosed$' --repeat until-fail:20 --output-on-failure
-ctest --test-dir build -L '^crypto-builtin-only$' --output-on-failure
-python3 scripts/crypto_cross_version.py reference-build candidate-build
+scripts/check.sh crash
+# 或
+xmake test -g process-crash -j1
 ```
 
-The last script is optional migration tooling: build `crypto_chain_tool` in
-both directories. It compares two provided versions/builds without selecting a
-crypto dependency. Normal tests use checked-in legacy log/checkpoint fixtures;
-they need no reference binary or external crypto provider. Digest fixtures are
-frozen, independently generated data, never regenerated from the code under
-test. See tests/fixtures/CRYPTO_PROVENANCE.md.
+集合固定为：
 
-ASan/UBSan: `-DLOGGER_SANITIZE=address-undefined`; TSan: `thread`, in separate
-builds. Keep leak detection enabled. CI runs the complete registered suite in
-shared Release, unsanitized native Debug, ASan/UBSan and TSan profiles. Tests for
-unsupported `ASYNC+ENABLE` entry are not registered as release requirements;
-supported cancellation-state preservation remains covered by the contract tests.
+- 4 个 Audit checkpoint/fsync cut point；
+- 1 个 Audit rotation crash recovery；
+- 4 个 file rotation switch cut point。
 
-## Round 4 audit-parser label
+专用 `crash-recovery` CI 会 shared/static 各执行 3 次，并用
+`scripts/check_crash_matrix.py` 从实际 Xmake log 核对精确集合，输出 JSON、JUnit 和原始日志。
+
+### Legacy fork compatibility
+
+默认 release 不编译 legacy helper。需要受控兼容测试时：
 
 ```sh
-ctest --test-dir build -L audit-parser --output-on-failure
-ctest --test-dir build -L audit-parser --repeat until-fail:20 --output-on-failure
+scripts/check.sh legacy-fork
 ```
 
-160 deterministic cases cover shared grammar, rehashed-but-malformed input,
-bounded reads, stream errors, full/partial EOF, checkpoint parsing, file-set
-continuity, ambiguity, evidence persistence failures and fork+exec rotation
-crashes. Tests use isolated temp directories and link-time wrappers; no new
-production runtime fault switch was added. Fault hooks are now isolated in logger_test_support; the Round 4 label does
-not imply whole-project production readiness. Complete sanitizer suites must
-still be run. Old fork timeout evidence remains in the historical reports.
+或显式：
 
-## Host-owned / shared 集成
+```sh
+xmake f -m release -o build-legacy \
+  --build_shared=n \
+  --legacy_fork=y \
+  --build_regression_tests=y
+xmake test 'fork_reinit_regression/*' -j1
+```
 
-`ctest -L host-owned` / `scripts/check.sh host-owned`。
-默认不生成23项legacy fork helper测试；显式开启兼容选项时生成并运行，不将其标记skip。
-shared配置的白盒 --wrap 测试链接同源static regression库，非带hooks库；普通集成仍链接共享库。
-`host_owned_example`、`liblogger_dlclose` 是实际shared调用测试，SDK自身无Logger依赖。
-默认生产artifact可由 `scripts/check_production_artifact.py liblogger.so` 检查；兼容产物加 `--legacy-fork`。
+## 旧 profile 参数
 
-## File-backend regression profile
+历史 `scripts/check.sh unit/integration/concurrency/reliability/security/host-owned/crypto`
+依赖 CTest 多标签。Xmake 的 test group 是单组语义，无法无损表达同一 case 同时属于多个标签。
 
-`ctest --test-dir build -L file-backend --output-on-failure` selects the new
-owner/reopen/no-clobber/path/rotation/crash regressions. White-box wrappers link
-the same source as a static test support library in shared configurations;
-host-owned and dlclose integration still exercise the real shared production
-library. Black-box probes only use pre-existing public APIs and are suitable
-for reverse-testing the input archive. Each black-box run uses a fresh private
-directory, including repeats. Never remove live production lock files.
+为避免旧命令变成“看起来成功但实际少跑”的兼容陷阱，这些参数当前仍接受，但会运行**完整
+Xmake suite 的保守超集**。后续只有在真实开发工作流需要时，才新增 Xmake 原生 focused group；
+不会为了复刻旧标签体系重新维护第二份测试分类表。
 
-## Global lifecycle 专项
+## Sanitizer
 
-`ctest --test-dir build -L '^global-lifecycle$' --output-on-failure` 覆盖准入、
-代次、取消、重入、错误回滚及并发生命周期。`global-cancel` 是其中的取消子集。
-白盒同步点只在测试链接 wrapper 中；共享构建另含 `global_shared_*` 的实际 DSO
-压力测试，不把 --wrap 静态白盒误称为 DSO 内部拦截。
+CI 对完整 default-static suite 运行两组 sanitizer：
 
-## Explicit/Console scope profile
+ASan + UBSan：
 
-`ctest --test-dir build -L explicit-scope --output-on-failure` runs deterministic
-cancellation, constructor ownership, callback reentry and real host FILE callback
-tests. Shared builds use the same-source static regression library for --wrap
-cases and the real production DSO for the unwrapped host callback integration.
+```sh
+xmake f -m debug -o build-asan \
+  --build_shared=n \
+  --build_tests=y \
+  --build_private_tests=y \
+  --build_regression_tests=y \
+  --policies=build.sanitizer.address,build.sanitizer.undefined
+xmake test -j1
+```
 
-## Release engineering candidate
+TSan：
 
-Native install-enabled builds add `packaging_install_relocate`. `check-package` builds the production target, stages and relocates a real installation, then builds independent C/C++11 and pkg-config consumers plus a PIC SDK plugin. Sanitizer builds default to installation disabled; they do not contain this distribution test. Public DSO tests must not import private symbols: crypto white-box tests and the /dev/null private-barrier benchmark use same-source static production objects. The real shared global-stress variant checks externally visible fd cleanup/status; static regressions retain the private object-count assertion. See docs/RELEASE_ENGINEERING.md.
+```sh
+xmake f -m debug -o build-tsan \
+  --build_shared=n \
+  --build_tests=y \
+  --build_private_tests=y \
+  --build_regression_tests=y \
+  --policies=build.sanitizer.thread
+xmake test -j1
+```
+
+sanitizer 后仍对生成的 production `liblogger.a` 运行
+`scripts/check_production_artifact.py`，确保 test hook 没有进入生产产物。
+
+## Shared integration
+
+shared profile 除 production-linked core tests 外还覆盖真实 DSO 边界，包括：
+
+- shared syslog backend；
+- global shared stress；
+- frozen v1 public header consumer；
+- `dlopen/dlclose` 生命周期；
+- installed package consumer。
+
+需要完整 shared suite：
+
+```sh
+xmake f -m release -o build-shared-tests \
+  --build_shared=y \
+  --build_tests=y \
+  --build_private_tests=y \
+  --build_regression_tests=y
+xmake test -j1
+```
+
+white-box `--wrap` regression 即使在 shared profile 中也链接 same-source static
+`logger_regression_support`；只有需要验证真实 DSO 观察面的 case 才直接链接 production shared
+library。不能把 static wrapper test 误称为 DSO 内部拦截。
+
+## QEMU power-cut
+
+`.github/workflows/vm-powercut.yml` 构建 static test-only `vm_powercut_guest`，对 10 个 cut
+point 执行真实 QEMU SIGKILL、raw ext4 同盘重启、恢复、追加与 Audit chain verify。
+
+覆盖：
+
+- acknowledged baseline；
+- `before_audit_fsync` / `after_audit_fsync`；
+- `before_state_rename` / `after_state_rename` / `after_checkpoint_commit`；
+- `file_after_archive_rename` / `file_after_archive_dirsync`；
+- `file_after_active_open` / `file_after_active_dirsync`。
+
+这证明 GitHub runner 上 virtual x86_64 + raw ext4 + QEMU 存储路径的恢复行为，不替代真实
+服务器断电、RAID/HBA/NVMe/SATA volatile cache 或 XFS 验收。
+
+## Queue benchmark
+
+当前 candidate 的 `bench_matrix` 由 Xmake 构建。两个冻结历史 baseline commit 继续用各自
+commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用今天的构建描述重解释过去数据。
+
+`queue-benchmark` CI 保持原线程数、record size、重复次数、memory reduction threshold 与比较
+脚本不变。
+
+## 安装与发布包验证
+
+release validation 对 shared/static 两种 XPack 都执行：
+
+1. 完整 Xmake suite；
+2. production artifact isolation；
+3. shared ELF ABI / SONAME / symbol version 检查；
+4. XPack TGZ + SHA-256；
+5. 解包后的 relocation；
+6. 独立 C/C++11 CMake consumer；
+7. PIC SDK MODULE；
+8. pkg-config consumer；
+9. ExactVersion/components fail-closed；
+10. frozen old-header 与 public layout/default 兼容。
+
+`examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
+测试资产，不代表项目重新依赖 CMake 构建。
+
+## 工程 gate
+
+测试通过不是唯一准入条件。较大的 queue、worker、backend、lifecycle、ownership、locking 或
+public API 修改还必须遵守：
+
+- `docs/ARCHITECTURE_INVARIANTS.md`
+- `docs/RESOURCE_OWNERSHIP.md`
+- `docs/REFCOUNTING.md`
+- `docs/RESOURCE_CLEANUP.md`
+- `docs/LOCKING.md`
+- `docs/LOCK_MATRIX.md`
+- `docs/CONCURRENCY.md`
+- `docs/ERROR_HANDLING.md`
+- `docs/LIFECYCLE.md`
+
+新增资源获取/转移路径应有对应失败覆盖；passing test 不能替代 ownership、锁顺序和最终释放
+关系的可证明性。
+
+## Cancellation 边界
+
+调用方处于 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 时进入 Logger/Console
+不在支持契约内。支持边界是 deferred cancellation，或调用前已禁用 cancellation。
+restore-policy regression 会验证原先 disabled 的 caller 仍保持 disabled 且 cancellation type
+不被破坏；constructor contract 会拒绝 enabled asynchronous cancellation。
