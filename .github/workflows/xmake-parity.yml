@@ -52,6 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -60,9 +68,9 @@ jobs:
       - name: Configure
         run: |
           if [ "${{ matrix.kind }}" = shared ]; then
-            xmake f -m release --build_shared=y --project_version="$(cat VERSION)"
+            xmake f -m release --build_shared=y
           else
-            xmake f -m release --build_shared=n --project_version="$(cat VERSION)"
+            xmake f -m release --build_shared=n
           fi
 
       - name: Build production artifact
@@ -111,6 +119,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -123,7 +139,7 @@ jobs:
           else
             shared=n
           fi
-          xmake f -m release -o xmake-build --build_shared="$shared" --project_version="$(cat VERSION)"
+          xmake f -m release -o xmake-build --build_shared="$shared"
 
       - name: Build production artifact
         run: xmake -j2 logger
@@ -151,6 +167,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -163,7 +187,7 @@ jobs:
           else
             shared=n
           fi
-          xmake f -m release -o xmake-build --build_shared="$shared" --project_version="$(cat VERSION)"
+          xmake f -m release -o xmake-build --build_shared="$shared"
 
       - name: Build XPack TGZ and checksum
         run: xmake pack -f targz -o xpack-out
@@ -209,6 +233,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -231,7 +263,7 @@ jobs:
           cmake -E make_directory cpack-out
           cpack --config cmake-package-build/CPackConfig.cmake -G TGZ -B cpack-out
 
-          xmake f -m release -o xmake-package-build --build_shared="$xmake_shared" --project_version="$(cat VERSION)"
+          xmake f -m release -o xmake-package-build --build_shared="$xmake_shared"
           xmake pack -f targz -o xpack-out
 
       - name: Compare package tree structure
@@ -295,13 +327,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
       - name: Configure core tests
-        run: xmake f -m debug --build_shared=n --build_tests=y --project_version="$(cat VERSION)"
+        run: xmake f -m debug --build_shared=n --build_tests=y
 
       - name: Run production-linked core tests
         run: xmake test -j2
@@ -312,13 +352,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
       - name: Configure test-only support cases
-        run: xmake f -m release --build_shared=n --build_private_tests=y --project_version="$(cat VERSION)"
+        run: xmake f -m release --build_shared=n --build_private_tests=y
 
       - name: Run test-only support cases
         run: xmake test -j1
@@ -334,6 +382,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -346,7 +402,7 @@ jobs:
           else
             shared=n
           fi
-          xmake f -m release --build_shared="$shared" --build_private_tests=y --project_version="$(cat VERSION)"
+          xmake f -m release --build_shared="$shared" --build_private_tests=y
 
       - name: Run nine process-crash cases three times
         shell: bash
@@ -377,13 +433,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
       - name: Configure regression support
-        run: xmake f -m release --build_shared=n --build_regression_tests=y --project_version="$(cat VERSION)"
+        run: xmake f -m release --build_shared=n --build_regression_tests=y
 
       - name: Run regression-support cases
         run: xmake test -j1
@@ -400,6 +464,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -413,7 +485,7 @@ jobs:
             policies="build.sanitizer.thread"
           fi
           xmake f -m debug \
-            --project_version="$(cat VERSION)" \
+            \
             --build_shared=n \
             --build_tests=y \
             --build_private_tests=y \
