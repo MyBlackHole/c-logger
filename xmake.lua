@@ -36,7 +36,12 @@ option_end()
 
 set_allowedplats("linux")
 
-local project_version = "0.9.3"
+local version_file = path.join(os.projectdir(), "VERSION")
+local project_version = assert(io.readfile(version_file), "cannot read " .. version_file)
+project_version = project_version:match("^%s*(.-)%s*$")
+local version_major, version_minor, version_patch =
+    project_version:match("^(%d+)%.(%d+)%.(%d+)$")
+assert(version_major, "VERSION must contain MAJOR.MINOR.PATCH: " .. project_version)
 local abi_version = "0"
 
 local function cmake_bool(value)
@@ -216,9 +221,9 @@ target("logger")
         filename = "logger_version.h",
         pattern = "@(.-)@",
         variables = {
-            PROJECT_VERSION_MAJOR = "0",
-            PROJECT_VERSION_MINOR = "9",
-            PROJECT_VERSION_PATCH = "3",
+            PROJECT_VERSION_MAJOR = version_major,
+            PROJECT_VERSION_MINOR = version_minor,
+            PROJECT_VERSION_PATCH = version_patch,
             PROJECT_VERSION = project_version,
             LOGGER_ABI_VERSION = abi_version
         }
