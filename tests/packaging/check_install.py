@@ -22,7 +22,6 @@ p.add_argument('--kind', choices=['shared','static'], required=True)
 p.add_argument('--cc', required=True)
 p.add_argument('--cxx', required=True)
 p.add_argument('--cmake', default='cmake')
-p.add_argument('--install-driver', choices=['cmake','xmake'], default='cmake')
 p.add_argument('--xmake', default='xmake')
 p.add_argument('--installed-prefix', type=Path,
                help='Validate an already installed/extracted prefix instead of running an installer')
@@ -31,6 +30,8 @@ p.add_argument('--includedir', default='include')
 p.add_argument('--legacy', action='store_true')
 a = p.parse_args()
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
+version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
+assert re.fullmatch(r'[0-9]+\\.[0-9]+\\.[0-9]+', version), version
 work = Path(tempfile.mkdtemp(prefix='install-check-', dir=Path.cwd()))
 log = []; counter = 0
 base_env = dict(os.environ)
@@ -61,7 +62,7 @@ try:
             if m:
                 assert line.startswith('LOGGER_API '), line
                 declared.add(m.group(1))
-    manifest = {n for n in (a.source/'cmake/logger.symbols').read_text().splitlines()
+    manifest = {n for n in (a.source/'abi/logger.symbols').read_text().splitlines()
                 if n and not n.startswith('#')}
     assert declared == manifest
     stage = work / 'destdir'
@@ -72,13 +73,9 @@ try:
         shutil.copytree(original, prefix, symlinks=True)
     else:
         original = stage / 'opt/logger package'
-        if a.install_driver == 'cmake':
-            env = dict(base_env, DESTDIR=str(stage))
-            run([a.cmake, '--install', a.build, '--prefix', '/opt/logger package'], env=env)
-        else:
-            # Xmake exposes an install root directly with -o. Use a staged nested
-            # prefix so the same relocation and external-consumer checks apply.
-            run([a.xmake, 'install', '-o', original, 'logger'], cwd=a.source)
+        # Xmake exposes an install root directly with -o. Use a staged nested
+        # prefix so the same relocation and external-consumer checks apply.
+        run([a.xmake, 'install', '-o', original, 'logger'], cwd=a.source)
         assert original.is_dir()
         original.rename(prefix)
     include = prefix / a.includedir / 'logger'
@@ -116,7 +113,7 @@ try:
         assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
     # Test pkg-config independently of CMake. Quoted paths must survive spaces.
     pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pc_dir))
-    assert run(['pkg-config','--modversion','logger'],env=pe).strip()=='0.9.3'
+    assert run(['pkg-config','--modversion','logger'],env=pe).strip()==version
     opts=['pkg-config','--cflags','--libs']
     if a.kind=='static': opts.append('--static')
     flags=shlex.split(run(opts+['logger'],env=pe))
@@ -127,11 +124,11 @@ try:
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()
-    for version,component,success in [('0.9.3',a.kind,True),('0.9.4',a.kind,False),
-        ('1.0.0',a.kind,False),('0.9.3','static' if a.kind=='shared' else 'shared',False),
-        ('0.9.3','invented',False),('0.9.3','legacy_fork',a.legacy)]:
+    for requested,component,success in [(version,a.kind,True),('9.9.9',a.kind,False),
+        ('1.0.0',a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
+        (version,'invented',False),(version,'legacy_fork',a.legacy)]:
         (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
-            'find_package(Logger '+version+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
+            'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
         run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
             expected=0 if success else 1)
     # Old public headers with the NEW installed lib. Source layout preserved.
@@ -154,13 +151,13 @@ try:
     if a.kind=='shared':
         dso=lib/'liblogger.so'
         assert dso.is_symlink() and (lib/'liblogger.so.0').is_symlink()
-        assert dso.resolve().name=='liblogger.so.0.9.3'
+        assert dso.resolve().name=='liblogger.so.'+version
         argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso]
         if a.legacy: argv.append('--legacy-fork')
         run(argv)
         # A deliberately impossible GLIBC ceiling must cause a failing gate.
         run(argv+['--max-glibc','2.0'],expected=1)
-        names=[n for n in (a.source/'cmake/logger.symbols').read_text().splitlines()
+        names=[n for n in (a.source/'abi/logger.symbols').read_text().splitlines()
                if n and not n.startswith('#')]
         if a.legacy: names.append('logger_fork_reinit')
         loader=work/'abi-loader'
@@ -173,8 +170,8 @@ try:
     if a.installed_prefix:
         install_check = 'preinstalled package tree'
     else:
-        install_check = 'DESTDIR install' if a.install_driver == 'cmake' else 'Xmake staged install'
-    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'install_driver':a.install_driver,
+        install_check = 'Xmake staged install'
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'install_driver':'xmake',
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
