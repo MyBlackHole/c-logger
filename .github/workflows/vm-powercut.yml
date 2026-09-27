@@ -17,11 +17,13 @@ permissions:
 
 jobs:
   powercut:
+    name: powercut (${{ matrix.filesystem }}, ${{ matrix.point }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
+        filesystem: [ext4, xfs]
         point:
           - acknowledged
           - before_audit_fsync
@@ -49,10 +51,11 @@ jobs:
         with:
           xmake-version: "3.1.1"
 
-      - name: Install QEMU and guest kernel
+      - name: Install QEMU, filesystem tools and guest kernel
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual
+          sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual \
+            e2fsprogs xfsprogs kmod zstd
 
       - name: Build Xmake static test-only guest
         shell: bash
@@ -71,11 +74,17 @@ jobs:
           set -euo pipefail
           kernel="$(sudo find /boot -maxdepth 1 -name 'vmlinuz-*' ! -name '*azure*' | sort -V | tail -n 1)"
           test -n "$kernel"
+          kernel_release="$(basename "$kernel")"
+          kernel_release="${kernel_release#vmlinuz-}"
+          test -n "$kernel_release"
+          test -d "/lib/modules/$kernel_release"
           sudo cp "$kernel" guest-vmlinuz
           sudo chown "$(id -u):$(id -g)" guest-vmlinuz
           python3 scripts/run_vm_powercut.py \
             --kernel guest-vmlinuz \
+            --kernel-release "$kernel_release" \
             --binary vm_powercut_guest \
+            --filesystem '${{ matrix.filesystem }}' \
             --point '${{ matrix.point }}' \
             --output vm-evidence
 
@@ -83,7 +92,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vm-powercut-${{ matrix.point }}
+          name: vm-powercut-${{ matrix.filesystem }}-${{ matrix.point }}
           path: vm-evidence/serial-*.log
           if-no-files-found: warn
           retention-days: 30
@@ -92,7 +101,7 @@ jobs:
         if: failure() && startsWith(matrix.point, 'file_')
         uses: actions/upload-artifact@v4
         with:
-          name: failed-disks-${{ matrix.point }}
+          name: failed-disks-${{ matrix.filesystem }}-${{ matrix.point }}
           path: vm-evidence/audit-disk.raw
           compression-level: 9
           retention-days: 7
