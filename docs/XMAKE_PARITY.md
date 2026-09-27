@@ -135,10 +135,13 @@ Xmake 现在把 focused process-crash 集合固定为 9 个 case：
 此前 `xmake-parity` 内重复维护的一份 9×3 case 列表已经删除，避免同一 crash suite 双跑。
 测试二进制仍链接独立的 `logger_test_support`，不会把 crash hook 带入 production `logger`。
 
-QEMU power-cut workflow 也不再只证明 CMake guest：每个既有 cut point 会在同一 runner 上
-分别构建 CMake 与 Xmake 的静态 test-only guest，并使用同一个 kernel / 同样的 raw ext4
-流程各执行一次。两个构建系统都必须完成同盘重启后的 baseline、恢复、追加和 chain verify。
-这仍然是虚拟机存储栈验证，不替代真实硬件断电验收。
+QEMU power-cut workflow 已切到 Xmake-only authority。迁移前 CI 已对同一 10 个 cut point
+同时运行 CMake/Xmake guest，确认两者都能完成同盘重启后的 baseline、恢复、追加与 chain
+verify；当前不再为每个 cut point 重复执行旧 CMake guest。
+
+权威 guest 仍是静态 test-only `vm_powercut_guest`，链接 `logger_test_support` 并保留
+`--wrap=logger_fault_crash_if_requested`。每个 cut point 继续执行真实 QEMU SIGKILL、raw ext4
+重启恢复和 chain verify；这仍然是虚拟机存储栈验证，不替代真实硬件断电验收。
 
 ## Install parity 3A
 
@@ -401,7 +404,6 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 CMake-only executable target，release/CPack reference gate 与旧 native CMake CI 也已退役。
 彻底删除当前工程 CMake build system 前还剩以下独立迁移面：
 
-- `.github/workflows/vm-powercut.yml`：仍同时运行 CMake 与 Xmake guest；
 - `.github/workflows/queue-benchmark.yml`：candidate 仍用 CMake；历史 baseline commit
   可继续用各自提交中原有的 CMake 构建方式，不要求重写历史；
 - 根 `CMakeLists.txt` 与只服务旧构建系统的 packaging helper 仍待删除/收敛。
