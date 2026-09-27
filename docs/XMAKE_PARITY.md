@@ -116,19 +116,24 @@ CI 对 25 个 production-linked core tests 分别运行：
 - AddressSanitizer + UndefinedBehaviorSanitizer；
 - ThreadSanitizer。
 
-这一步验证 Xmake 能把 sanitizer 同时应用到 production static logger 与测试 executable。
-完整 CMake suite 仍保留为 sanitizer 发布门禁，直到尚未迁移的 regression 集合完成 parity。
+这一步最初验证 Xmake 能把 sanitizer 同时应用到 production static logger 与测试 executable。
+后续完整 regression parity 已迁入 Xmake，旧 CMake sanitizer gate 也已随 native CI 退役。
 
 ## Crash / VM power-cut parity
 
-Xmake 现在把 focused process-crash 集合补齐为与 CTest 相同的 9 个 case：
+Xmake 现在把 focused process-crash 集合固定为 9 个 case：
 
 - 4 个 Audit checkpoint / fsync crash point；
 - 1 个 rotation crash recovery；
 - 4 个 file rotation switch crash point。
 
-`xmake-parity` 对 shared/static 两种配置分别执行这 9 个 case，并重复 3 次。测试二进制仍链接
-独立的 `logger_test_support`，不会把 crash hook 带入 production `logger`。
+这 9 个 `add_tests` 统一使用 Xmake 原生 `group = "process-crash"`。
+专用 `crash-recovery` workflow 对 shared/static 两种配置分别执行该 group 3 次，
+`scripts/check_crash_matrix.py` 从实际 Xmake result log 核对**精确 case 集合**，任何缺失、
+意外新增或失败都会使门禁失败，同时保留 JSON、JUnit 和原始日志证据。
+
+此前 `xmake-parity` 内重复维护的一份 9×3 case 列表已经删除，避免同一 crash suite 双跑。
+测试二进制仍链接独立的 `logger_test_support`，不会把 crash hook 带入 production `logger`。
 
 QEMU power-cut workflow 也不再只证明 CMake guest：每个既有 cut point 会在同一 runner 上
 分别构建 CMake 与 Xmake 的静态 test-only guest，并使用同一个 kernel / 同样的 raw ext4
@@ -396,7 +401,6 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 CMake-only executable target，release/CPack reference gate 与旧 native CMake CI 也已退役。
 彻底删除当前工程 CMake build system 前还剩以下独立迁移面：
 
-- `.github/workflows/crash-recovery.yml`：focused crash evidence 仍由 CTest 驱动；
 - `.github/workflows/vm-powercut.yml`：仍同时运行 CMake 与 Xmake guest；
 - `.github/workflows/queue-benchmark.yml`：candidate 仍用 CMake；历史 baseline commit
   可继续用各自提交中原有的 CMake 构建方式，不要求重写历史；
