@@ -45,6 +45,7 @@ jobs:
           version="$(cat VERSION)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Configure Xmake release candidate
         shell: bash
@@ -60,7 +61,6 @@ jobs:
             --build_tests=y \
             --build_private_tests=y \
             --build_regression_tests=y \
-            --project_version="${{ steps.version.outputs.version }}"
 
       - name: Run complete Xmake release suite
         run: xmake test -j1
