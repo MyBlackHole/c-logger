@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.5 — 2026-09-28
+
+受控生产发布候选的平台验证与发布恢复收敛版本。相对 0.9.4 **没有 `src/` / `include/`
+运行时代码变化**，继续保持 public C API/ABI、SONAME `liblogger.so.0`、
+`LOGGER_0.9` symbol version 和默认 62 项 public symbol set 不变。
+
+本版把 QEMU/raw-disk power-cut 从 ext4 扩展到 ext4 + XFS，两种文件系统都执行同一组
+10 个 cut point、host SIGKILL、同盘重启、恢复、追加和 Audit chain 验证；串口证据同时
+记录 guest kernel 与 mounted filesystem。XFS 为模块时，验证 harness 将所选 guest kernel
+对应的 XFS module/dependency 打入最小 initramfs。
+
+新增 x86_64 glibc runtime matrix，在 Ubuntu 20.04 / 22.04 / 24.04
+（glibc 2.31 / 2.35 / 2.39）分别验证 shared/static production-linked core、
+installed C/C++ consumer 与 pkg-config consumer。shared ELF 同时以容器实际 glibc 作为
+`--max-glibc` ceiling；这建立的是已验证 userland 范围，不代表最低 Linux kernel。
+
+发布链路改为可恢复幂等：已有 release 只有在 prerelease 元数据与四个远端资产全部正确且
+SHA-256 验证通过时才跳过；不完整 release 会锁定既有 tag 对应源码重新构建，并使用
+`gh release upload --clobber` 修复同名资产，发布后再次下载远端资产验证。
+
+兼容性工具补齐旧 userland 差异：root-owned container 的 Xmake wrapper、旧 binutils 的
+symbol-version 输出处理，以及老 pkg-config 对带空格 relocation 路径的工具限制隔离。
+真实物理断电、controller/device volatile cache、最低 kernel、32-bit、NFS/SMB 与真实
+syslogd 仍属于后续目标环境验收范围。
+
 ## 0.9.4 — 2026-09-27
 
 受控生产发布候选的构建/发布权威收敛版本。保持 public C API/ABI、SONAME
