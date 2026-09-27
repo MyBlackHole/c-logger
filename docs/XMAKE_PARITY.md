@@ -375,9 +375,16 @@ static profile。
 
 ## 尚未迁移
 
-按当前 CMake 注册的测试/示例目标，Xmake 已无已知 CMake-only 功能目标。
-下一步可以移除 release workflow 中的 CMake reference gate，并审计后删除 CMake
-build/packaging 文件。
+按当前 CMake **注册的测试目标**，Xmake 已无已知 CMake-only 测试；但删除 CMake
+build system 前仍有 4 个非测试 executable/tool/example 需要迁移：
+
+1. `bench_logger`；
+2. `multi_instance_example`；
+3. `syslog_client_example`；
+4. `crypto_chain_tool`。
+
+这些目标不参与当前 release test gate，但属于构建表面的一部分。下一轮先补齐它们，
+再移除 release workflow 中的 CMake reference gate，并审计/删除 CMake packaging 文件。
 
 ## Release authority
 
