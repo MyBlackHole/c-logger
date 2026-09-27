@@ -443,6 +443,23 @@ uint64_t logger_queue_spill_exhaustions(const logger_queue_t *q)
 		   0;
 }
 
+size_t logger_queue_spill_in_use(const logger_queue_t *q)
+{
+	if (!q)
+		return 0;
+	size_t words =
+		(q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
+		LOGGER_QUEUE_SPILL_WORD_BITS;
+	size_t used = 0;
+	for (size_t word = 0; word < words; ++word) {
+		unsigned value = atomic_load_explicit(&q->spill_used[word],
+						      memory_order_relaxed);
+		value &= spill_valid_mask(q->spill_cap, word);
+		used += (size_t)__builtin_popcount(value);
+	}
+	return used <= q->spill_cap ? used : q->spill_cap;
+}
+
 uint64_t logger_queue_wait_count(const logger_queue_t *q)
 {
 	return q ? atomic_load_explicit(&q->wait_count, memory_order_relaxed) :

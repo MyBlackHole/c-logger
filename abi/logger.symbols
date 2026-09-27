@@ -1,4 +1,4 @@
-# ABI snapshot 0.9.0. Explicit public C names only; do not use globs.
+# Explicit public C ABI allowlist. Additive names only; do not use globs.
 audit_after_fork_child
 audit_begin
 audit_crypto_backend
@@ -40,8 +40,10 @@ logger_flush
 logger_flush_instance
 logger_flush_instance_status
 logger_flush_status
+logger_get_global_diagnostics
 logger_get_global_io_metrics
 logger_get_global_metrics
+logger_get_diagnostics
 logger_get_io_metrics
 logger_get_metrics
 logger_get_state

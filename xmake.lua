@@ -1117,7 +1117,7 @@ if has_config("build_regression_tests") then
     target("global_lifecycle_regression")
         for _, op in ipairs({
             "write", "flush", "flush-void", "reopen",
-            "level", "dropped", "metrics", "io"
+            "level", "dropped", "metrics", "io", "diagnostics"
         }) do
             add_tests("global_generation_" .. op,
                       {runargs = {"generation", op}, timeout = 20})
@@ -1174,7 +1174,7 @@ if has_config("build_regression_tests") then
         for _, scenario in ipairs({
             "log", "source", "sync", "flush", "flush-void", "reopen",
             "destroy", "destroy-void", "create", "level", "state",
-            "dropped", "metrics", "io", "syslog", "context-set",
+            "dropped", "metrics", "io", "diagnostics", "syslog", "context-set",
             "context-clear", "context-get", "console", "console-debug",
             "console-init", "console-level", "console-color", "console-tty",
             "global", "global-write", "audit", "audit-status"

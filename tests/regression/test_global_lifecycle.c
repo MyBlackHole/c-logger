@@ -245,6 +245,7 @@ static void all_rejected(int error)
 		/* Verify rejected metric queries overwrite old caller data with zero. */
 		memset(&r.metrics, 0xa5, sizeof(r.metrics));
 		memset(&r.io, 0xa5, sizeof(r.io));
+		memset(&r.diagnostics, 0xa5, sizeof(r.diagnostics));
 		invoke(&r);
 		expect_rejection(&r, error);
 	}
@@ -273,6 +274,8 @@ static void *flood_closed(void *p)
 		if (admission_only) {
 			logger_metrics_t metrics;
 			logger_get_global_metrics(&metrics);
+			logger_diagnostics_t diagnostics;
+			logger_get_global_diagnostics(&diagnostics);
 			(void)logger_global_dropped();
 			logger_set_level(LOGGER_INFO);
 		} else
@@ -440,6 +443,11 @@ static void contract(void)
 	logger_metrics_t metrics;
 	logger_get_global_metrics(&metrics);
 	CHECK(errno == ERANGE);
+	logger_diagnostics_t diagnostics;
+	logger_get_global_diagnostics(&diagnostics);
+	CHECK(errno == ERANGE);
+	CHECK(diagnostics.state == LOGGER_STATE_RUNNING);
+	CHECK(diagnostics.outputs == LOGGER_OUT_FILE);
 	logger_set_level((logger_level_t)-1);
 	CHECK(errno == EINVAL);
 	CHECK(!stop_status());

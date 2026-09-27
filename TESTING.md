@@ -201,6 +201,19 @@ release validation 对 shared/static 两种 XPack 都执行：
 ## 工程 gate
 
 测试通过不是唯一准入条件。较大的 queue、worker、backend、lifecycle、ownership、locking 或
+## Observability regression
+
+统一 diagnostics 通过现有真实故障场景验证，而不是单独伪造计数：
+
+- queue full：检查 current depth/capacity、completion backlog 与 saturation；
+- DROP / SYNC fallback：检查独立 lifetime observation flag；
+- long-message spill exhaustion：检查 in-use/capacity/exhaustion；
+- backend write/fsync failure：检查 failed_records 与 sticky first_error；
+- flush 后：queue depth、spill in-use、completion backlog 回到 0；
+- global generation：diagnostics 与 metrics 一样受 pin/stale-generation gate 保护；
+- explicit reentry：同线程嵌套读取被 EDEADLK 拒绝并清零输出；
+- installed consumer：使用安装后的 public header/library 实际调用 diagnostics。
+
 public API 修改还必须遵守：
 
 - `docs/ARCHITECTURE_INVARIANTS.md`

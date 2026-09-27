@@ -17,17 +17,19 @@ enum operation {
 	OP_DROPPED,
 	OP_METRICS,
 	OP_IO,
+	OP_DIAGNOSTICS,
 	OP_COUNT
 };
 static const char *const operation_names[] = { "write",	  "flush", "flush-void",
 					       "reopen",  "level", "dropped",
-					       "metrics", "io" };
+					       "metrics", "io", "diagnostics" };
 typedef struct {
 	enum operation op;
 	int rc, error;
 	uint64_t value;
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;
+	logger_diagnostics_t diagnostics;
 	_Atomic int done;
 } call_result_t;
 
@@ -89,6 +91,9 @@ static inline void invoke(call_result_t *r)
 	case OP_IO:
 		logger_get_global_io_metrics(&r->io);
 		break;
+	case OP_DIAGNOSTICS:
+		logger_get_global_diagnostics(&r->diagnostics);
+		break;
 	default:
 		CHECK(!"bad operation");
 	}
@@ -114,6 +119,11 @@ static inline void expect_rejection(const call_result_t *r, int error)
 		CHECK(!r->io.async_completed && !r->io.sync_completed &&
 		      !r->io.emitted_records && !r->io.failed_records &&
 		      !r->io.first_error);
+	if (r->op == OP_DIAGNOSTICS)
+		CHECK(!r->diagnostics.enqueued &&
+		      !r->diagnostics.queue_capacity &&
+		      !r->diagnostics.observation_flags &&
+		      !r->diagnostics.first_error);
 }
 
 static inline void fixture_reset(void)

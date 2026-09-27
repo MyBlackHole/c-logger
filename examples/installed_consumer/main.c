@@ -32,7 +32,13 @@ int main(void)
 	int rc = logger_flush_instance_status(a);
 	logger_io_metrics_t io;
 	logger_get_io_metrics(a, &io);
-	if (io.emitted_records != 16 || io.failed_records)
+	logger_diagnostics_t diagnostics;
+	logger_get_diagnostics(a, &diagnostics);
+	if (io.emitted_records != 16 || io.failed_records ||
+	    diagnostics.state != LOGGER_STATE_RUNNING ||
+	    !diagnostics.async_mode || diagnostics.emitted_records != 16 ||
+	    diagnostics.failed_records || diagnostics.queue_depth ||
+	    diagnostics.completion_backlog)
 		rc = -1;
 	if (logger_destroy_status(b))
 		rc = -1;

@@ -32,7 +32,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 owner 管理，不允许另一个 active 故意占用归档名。NFS/SMB 未验收 |
 | 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；未验收初始化后 chroot/卸载 procfs |
 | 持久化验证 | 已增加 Release shared/static 进程 crash 恢复矩阵，以及 QEMU + raw ext4/XFS 同盘重启的 10 个 power-cut 点（已确认记录、Audit fsync 前后、checkpoint rename 前后/commit 后、文件轮换 4 个阶段）。串口证据记录 guest kernel/filesystem。这些 CI 证据验证当前虚拟 QEMU 文件系统路径，但仍不等于物理断电、控制器/磁盘 volatile cache 或实际目标存储栈验收；输出错误后的业务重试仍可能重复 |
-| API/ABI | 公共签名和布局本轮未改。本轮 Logger config 的旧 v1 前缀/完整新尾部已有 guard-page 和独立旧头 consumer 验证；不表示所有结构、架构或前向兼容已冻结，时区变更等仍需验证；已完成 0.9.0 候选的显式导出/安装/SONAME 与本机旧头验证；v1 ABI 和跨平台矩阵尚未正式冻结 |
+| API/ABI | 0.9.5 发布版保持 62 项 public symbol；当前 development 在不修改旧 metrics 布局/旧函数签名的前提下新增 `logger_get_diagnostics` / `logger_get_global_diagnostics` 两个 additive accessor，allowlist 为 64 项。Logger config 的旧 v1 前缀/完整新尾部已有 guard-page 和独立旧头 consumer 验证；v1 ABI 和跨平台矩阵尚未正式冻结 |
 | 老平台 | x86_64 glibc userland 已在 Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）对 shared/static core、installed C/C++ consumer 与 pkg-config consumer 建立 CI 门禁；容器共享 runner kernel，因此 Linux3.x/最低 kernel 与 32bit 仍未验收。外部密码库后端现已移除；fork guard 依赖 lock-free int；syscall 兼容写法不代表所有旧文件系统支持内部轮换 |
 | 显式 / Console 取消与重入 | 本轮补齐 deferred cancellation 下资源入口的取消延期和同线程重入拒绝，但不是 signal-safe / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 constructor 明确返回 ENOTSUP。若 caller 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 cleanup，先停止/join 所有借用者；不得并发 destroy 或取消私有 worker。禁用取消期间 I/O 仍可能阻塞 |
 | Audit 事务 | ATTEMPT/RESULT 不是跨业务操作原子事务，也不能跨 shutdown 用旧事务结束新生命周期。API 不是信号处理接口 |
@@ -45,7 +45,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 
 ## 发布工程候选
 
-0.9.5 继续保持 62 项公开动态符号、SONAME 0、可重定位 CMake/pkg-config 下游安装契约和
+0.9.5 发布版保持 62 项公开动态符号；当前 development 增加 2 个 diagnostics accessor。SONAME 0、可重定位 CMake/pkg-config 下游安装契约和
 XPack TGZ。没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机
 布局/旧头兼容有独立测试。内部符号不再动态导出，白盒测试转用同源私有静态库。
 见 RELEASE_ENGINEERING.md、PLATFORM_BASELINE.md 和 validation/PACKAGING_RESULTS.md。
