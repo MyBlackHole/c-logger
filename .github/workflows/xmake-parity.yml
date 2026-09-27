@@ -8,6 +8,7 @@ on:
       - "src/**"
       - "include/**"
       - "CMakeLists.txt"
+      - "VERSION"
       - "cmake/logger.symbols"
       - "cmake/LoggerPackaging.cmake"
       - "cmake/LoggerConfig.cmake.in"
@@ -25,6 +26,7 @@ on:
       - "src/**"
       - "include/**"
       - "CMakeLists.txt"
+      - "VERSION"
       - "cmake/logger.symbols"
       - "cmake/LoggerPackaging.cmake"
       - "cmake/LoggerConfig.cmake.in"
@@ -69,8 +71,9 @@ jobs:
       - name: Locate artifact
         id: artifact
         run: |
+          version="$(cat VERSION)"
           if [ "${{ matrix.kind }}" = shared ]; then
-            artifact="$(find build -type f -name 'liblogger.so.0.9.3' -print -quit)"
+            artifact="$(find build -type f -name 'liblogger.so.${version}' -print -quit)"
           else
             artifact="$(find build -type f -name 'liblogger.a' -print -quit)"
           fi
@@ -91,10 +94,11 @@ jobs:
       - name: Verify shared version links
         if: matrix.kind == 'shared'
         run: |
+          version="$(cat VERSION)"
           dir="$(dirname "${{ steps.artifact.outputs.path }}")"
           test -L "$dir/liblogger.so.0"
           test -L "$dir/liblogger.so"
-          test "$(readlink "$dir/liblogger.so.0")" = "liblogger.so.0.9.3"
+          test "$(readlink "$dir/liblogger.so.0")" = "liblogger.so.${version}"
           test "$(readlink "$dir/liblogger.so")" = "liblogger.so.0"
 
 
@@ -127,9 +131,10 @@ jobs:
       - name: Verify installed consumer contract
         shell: bash
         run: |
+          version="$(cat VERSION)"
           set -euo pipefail
           if [ "${{ matrix.kind }}" = shared ]; then
-            artifact="$(find xmake-build -type f -name 'liblogger.so.0.9.3' -print -quit)"
+            artifact="$(find xmake-build -type f -name 'liblogger.so.${version}' -print -quit)"
           else
             artifact="$(find xmake-build -type f -name 'liblogger.a' -print -quit)"
           fi
@@ -167,14 +172,15 @@ jobs:
         run: >-
           python3 scripts/check_release_assets.py
           --directory xpack-out
-          --version 0.9.3
+          --version "$(cat VERSION)"
           --kind "${{ matrix.kind }}"
 
       - name: Verify packaged install tree
         shell: bash
         run: |
+          version="$(cat VERSION)"
           set -euo pipefail
-          package="$(find xpack-out -maxdepth 1 -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          package="$(find xpack-out -maxdepth 1 -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
           test -n "$package"
           mkdir unpack
           tar -xzf "$package" -C unpack
@@ -186,7 +192,7 @@ jobs:
           test ! -e "$prefix/share/doc/prod_c_logger/docs/HISTORY_API.md"
           test ! -e "$prefix/share/doc/prod_c_logger/docs/HISTORY_README.md"
           if [ "${{ matrix.kind }}" = shared ]; then
-            artifact="$prefix/lib/liblogger.so.0.9.3"
+            artifact="$prefix/lib/liblogger.so.${version}"
           else
             artifact="$prefix/lib/liblogger.a"
           fi
@@ -231,9 +237,10 @@ jobs:
       - name: Compare package tree structure
         shell: bash
         run: |
+          version="$(cat VERSION)"
           set -euo pipefail
-          cpack_pkg="$(find cpack-out -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
-          xpack_pkg="$(find xpack-out -type f -name 'prod-c-logger-0.9.3-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          cpack_pkg="$(find cpack-out -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
+          xpack_pkg="$(find xpack-out -type f -name 'prod-c-logger-${version}-*-'${{ matrix.kind }}'.tar.gz' -print -quit)"
           test -n "$cpack_pkg"
           test -n "$xpack_pkg"
 
