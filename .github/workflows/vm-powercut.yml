@@ -8,6 +8,7 @@ on:
       - "scripts/run_vm_powercut.py"
       - "tests/vm_powercut.c"
       - "xmake.lua"
+      - "VERSION"
       - "src/**"
       - "include/**"
 
@@ -34,6 +35,13 @@ jobs:
           - file_after_active_dirsync
     steps:
       - uses: actions/checkout@v5
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:

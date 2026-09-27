@@ -34,9 +34,13 @@ option("build_regression_tests")
     set_description("Build and register the regression-support cases")
 option_end()
 
+-- Xmake description scope deliberately disallows file I/O. VERSION remains the
+-- single source; callers export it once and every Xmake subprocess inherits it.
 set_allowedplats("linux")
 
-local project_version = "0.9.3"
+local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
+local version_major, version_minor, version_patch =
+    project_version:match("^(%d+)%.(%d+)%.(%d+)$")
 local abi_version = "0"
 
 local function cmake_bool(value)
@@ -216,9 +220,9 @@ target("logger")
         filename = "logger_version.h",
         pattern = "@(.-)@",
         variables = {
-            PROJECT_VERSION_MAJOR = "0",
-            PROJECT_VERSION_MINOR = "9",
-            PROJECT_VERSION_PATCH = "3",
+            PROJECT_VERSION_MAJOR = version_major,
+            PROJECT_VERSION_MINOR = version_minor,
+            PROJECT_VERSION_PATCH = version_patch,
             PROJECT_VERSION = project_version,
             LOGGER_ABI_VERSION = abi_version
         }
@@ -233,6 +237,9 @@ target("logger")
     end
 
     on_load(function (target)
+        if project_version == "0.0.0" or not version_major then
+            raise("export LOGGER_PROJECT_VERSION=$(cat VERSION) before invoking Xmake")
+        end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
         target:add("installfiles", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
