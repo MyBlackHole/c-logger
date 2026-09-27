@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
 jobs:
   prepare:
     runs-on: ubuntu-24.04
@@ -19,7 +23,11 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       notes: ${{ steps.version.outputs.notes }}
-      exists: ${{ steps.existing.outputs.exists }}
+      release_exists: ${{ steps.existing.outputs.release_exists }}
+      release_complete: ${{ steps.existing.outputs.release_complete }}
+      tag_exists: ${{ steps.existing.outputs.tag_exists }}
+      source_ref: ${{ steps.existing.outputs.source_ref }}
+      source_sha: ${{ steps.existing.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,21 +46,70 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "notes=$notes" >> "$GITHUB_OUTPUT"
 
-      - name: Check existing GitHub release
+      - name: Resolve release recovery state
         id: existing
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          title="c-logger ${version} — Controlled Production Candidate"
+
+          git fetch --tags --force
+          if source_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
+            tag_exists=true
+            source_ref="refs/tags/${tag}"
+            tag_version="$(git show "${tag}:VERSION")"
+            if [ "$tag_version" != "$version" ]; then
+              echo "tag $tag contains VERSION=$tag_version, expected $version" >&2
+              exit 1
+            fi
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            tag_exists=false
+            source_sha="$GITHUB_SHA"
+            source_ref="$GITHUB_SHA"
           fi
+
+          release_exists=false
+          release_complete=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_exists=true
+            if [ "$tag_exists" != true ]; then
+              echo "release $tag exists but its git tag cannot be resolved" >&2
+              exit 1
+            fi
+
+            metadata="$(gh release view "$tag" --json assets,isPrerelease,name)"
+            asset_count="$(jq -r '.assets | length' <<<"$metadata")"
+            release_name="$(jq -r '.name' <<<"$metadata")"
+            is_prerelease="$(jq -r '.isPrerelease' <<<"$metadata")"
+
+            rm -rf existing-release-assets
+            mkdir -p existing-release-assets
+            if [ "$asset_count" = 4 ] \
+              && [ "$release_name" = "$title" ] \
+              && [ "$is_prerelease" = true ] \
+              && gh release download "$tag" --dir existing-release-assets \
+              && [ "$(find existing-release-assets -maxdepth 1 -type f | wc -l)" -eq 4 ] \
+              && python3 scripts/check_release_assets.py \
+                   --directory existing-release-assets \
+                   --version "$version"; then
+              release_complete=true
+            fi
+          fi
+
+          echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
+          echo "release_complete=$release_complete" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
   package:
     name: xpack (${{ matrix.kind }})
     needs: prepare
-    if: needs.prepare.outputs.exists != 'true'
+    if: needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -60,9 +117,15 @@ jobs:
         kind: [shared, static]
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_ref }}
 
       - name: Export project version
-        run: echo "LOGGER_PROJECT_VERSION=${{ needs.prepare.outputs.version }}" >> "$GITHUB_ENV"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat VERSION)" = "${{ needs.prepare.outputs.version }}"
+          echo "LOGGER_PROJECT_VERSION=${{ needs.prepare.outputs.version }}" >> "$GITHUB_ENV"
 
       - name: Set up Xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -159,10 +222,12 @@ jobs:
 
   publish:
     needs: [prepare, package]
-    if: needs.prepare.outputs.exists != 'true'
+    if: needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_ref }}
 
       - name: Download validated XPack assets
         uses: actions/download-artifact@v4
@@ -177,26 +242,64 @@ jobs:
           --directory release-assets
           --version "${{ needs.prepare.outputs.version }}"
 
-      - name: Publish GitHub release
+      - name: Publish or repair GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
-          gh release create "${{ needs.prepare.outputs.tag }}" \
-            --target "$GITHUB_SHA" \
-            --title "c-logger ${version} — Controlled Production Candidate" \
-            --notes-file "${{ needs.prepare.outputs.notes }}" \
-            --prerelease \
-            release-assets/prod-c-logger-${version}-*-shared.tar.gz \
-            release-assets/prod-c-logger-${version}-*-shared.tar.gz.sha256 \
-            release-assets/prod-c-logger-${version}-*-static.tar.gz \
+          tag="${{ needs.prepare.outputs.tag }}"
+          notes="${{ needs.prepare.outputs.notes }}"
+          title="c-logger ${version} — Controlled Production Candidate"
+
+          test "$(cat VERSION)" = "$version"
+          shopt -s nullglob
+          assets=(
+            release-assets/prod-c-logger-${version}-*-shared.tar.gz
+            release-assets/prod-c-logger-${version}-*-shared.tar.gz.sha256
+            release-assets/prod-c-logger-${version}-*-static.tar.gz
             release-assets/prod-c-logger-${version}-*-static.tar.gz.sha256
+          )
+          if [ "${#assets[@]}" -ne 4 ]; then
+            printf 'expected four validated release assets, found %s\n' "${#assets[@]}" >&2
+            exit 1
+          fi
+
+          if [ "${{ needs.prepare.outputs.release_exists }}" = true ]; then
+            gh release edit "$tag" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease
+            gh release upload "$tag" --clobber "${assets[@]}"
+          elif [ "${{ needs.prepare.outputs.tag_exists }}" = true ]; then
+            gh release create "$tag" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease \
+              "${assets[@]}"
+          else
+            gh release create "$tag" \
+              --target "${{ needs.prepare.outputs.source_sha }}" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease \
+              "${assets[@]}"
+          fi
+
+          rm -rf release-verify
+          mkdir -p release-verify
+          gh release download "$tag" --dir release-verify
+          test "$(find release-verify -maxdepth 1 -type f | wc -l)" -eq 4
+          python3 scripts/check_release_assets.py \
+            --directory release-verify \
+            --version "$version"
+          test "$(gh release view "$tag" --json isPrerelease --jq '.isPrerelease')" = true
+          test "$(gh release view "$tag" --json name --jq '.name')" = "$title"
 
   release-already-exists:
     needs: prepare
-    if: needs.prepare.outputs.exists == 'true'
+    if: needs.prepare.outputs.release_complete == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - run: echo "${{ needs.prepare.outputs.tag }} already exists; nothing to publish."
+      - run: echo "${{ needs.prepare.outputs.tag }} already exists with the complete validated asset set; nothing to publish."
