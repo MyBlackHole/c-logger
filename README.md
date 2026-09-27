@@ -147,6 +147,7 @@ xmake test 'fork_reinit_regression/*' -j1
 - [生命周期](docs/LIFECYCLE.md)
 - [File backend](docs/FILE_BACKEND.md)
 - [Syslog backend](docs/SYSLOG_BACKEND.md)
+- [可观测性与问题发现](docs/OBSERVABILITY.md)
 - [内置摘要契约](docs/BUILTIN_CRYPTO.md)
 - [平台基线](docs/PLATFORM_BASELINE.md)
 - [已知限制](docs/KNOWN_ISSUES.md)

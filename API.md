@@ -1,7 +1,8 @@
 # 当前 API 与集成边界
 
-本轮未扩写公开配置/metrics 结构，没有改变旧函数签名。新增加 `logger_destroy_status()`；
-`logger_fork_reinit()` 的默认可用性有明确变化：仅 opt-in 兼容产物提供。
+旧 `logger_metrics_t` / `logger_io_metrics_t` 布局和既有函数签名保持不变。当前 development
+新增 `logger_get_diagnostics()` / `logger_get_global_diagnostics()` 两个 additive observability
+accessor；`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供。
 
 ## 显式实例（第三方默认入口）
 
@@ -19,6 +20,18 @@
 
 生命周期中不得在仍有 caller/worker 使用句柄时 free、重建或卸载库。
 不增加 init 引用计数，不隐式夺取借用句柄所有权。
+
+## Diagnostics / observability
+
+`logger_get_diagnostics()` 提供 backend-lock-free 的统一运行状态快照，包括 queue depth/capacity、
+completion backlog、spill 使用/耗尽、worker wait/wakeup、drop/fallback、output failure 和
+sticky first_error。它不 flush、不 reconnect、不做文件/网络 I/O，也不清理错误状态。
+
+`logger_get_global_diagnostics()` 使用现有 global generation/lifetime pin；不会越过
+STARTING/STOPPING admission gate。Syslog 的完整一致 metrics 仍由
+`logger_get_syslog_metrics()` 提供，因为其 backend counters 由 `emit_mu` 保护。
+
+问题发现与采样语义见 [OBSERVABILITY.md](docs/OBSERVABILITY.md)。
 
 ## 普通日志字符串寿命
 

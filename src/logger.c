@@ -788,6 +788,88 @@ void logger_get_io_metrics(const logger_t *l, logger_io_metrics_t *out)
 		atomic_load_explicit(&l->first_error, memory_order_acquire);
 }
 
+void logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
+{
+	if (!out)
+		return;
+	memset(out, 0, sizeof(*out));
+	if (reject_access() || !l)
+		return;
+
+	out->state = atomic_load_explicit(&l->state, memory_order_acquire);
+	out->level = atomic_load_explicit(&l->level, memory_order_relaxed);
+	out->outputs = l->outputs;
+	out->async_mode = l->async_mode;
+	out->worker_running =
+		l->async_mode ?
+			atomic_load_explicit(&l->running, memory_order_acquire) :
+			0;
+
+	for (unsigned i = 0; i < 6; ++i)
+		out->dropped_records += atomic_load_explicit(
+			&l->dropped_by_level[i], memory_order_relaxed);
+	out->sync_fallbacks =
+		atomic_load_explicit(&l->sync_fallbacks, memory_order_relaxed);
+	out->enqueued =
+		atomic_load_explicit(&l->enqueued, memory_order_relaxed);
+	out->consumer_batches =
+		atomic_load_explicit(&l->consumer_batches, memory_order_relaxed);
+	out->consumer_records =
+		atomic_load_explicit(&l->consumer_records, memory_order_relaxed);
+	out->async_completed =
+		atomic_load_explicit(&l->async_completed, memory_order_acquire);
+	out->sync_completed =
+		atomic_load_explicit(&l->sync_completed, memory_order_acquire);
+	out->emitted_records =
+		atomic_load_explicit(&l->emitted_records, memory_order_relaxed);
+	out->failed_records =
+		atomic_load_explicit(&l->failed_records, memory_order_relaxed);
+	out->first_error =
+		atomic_load_explicit(&l->first_error, memory_order_acquire);
+
+	if (l->async_mode) {
+		out->queue_capacity = (uint64_t)l->q.cap;
+		out->queue_depth = (uint64_t)logger_queue_depth(&l->q);
+		out->queue_high_watermark = atomic_load_explicit(
+			&l->queue_high_watermark, memory_order_relaxed);
+		out->queue_storage_bytes =
+			(uint64_t)logger_queue_storage_bytes(&l->q);
+		out->spill_capacity =
+			(uint64_t)logger_queue_spill_capacity(&l->q);
+		out->spill_in_use =
+			(uint64_t)logger_queue_spill_in_use(&l->q);
+		out->spill_exhaustions =
+			logger_queue_spill_exhaustions(&l->q);
+		out->consumer_waiting = (int)atomic_load_explicit(
+			&l->q.consumer_waiting, memory_order_acquire);
+		out->worker_wait_count = logger_queue_wait_count(&l->q);
+		out->producer_wake_signals =
+			logger_queue_producer_wake_signals(&l->q);
+		out->force_wake_signals =
+			logger_queue_force_wake_signals(&l->q);
+		out->completion_backlog =
+			out->enqueued > out->async_completed ?
+				out->enqueued - out->async_completed :
+				0;
+	}
+
+	if (out->dropped_records)
+		out->observation_flags |= LOGGER_DIAG_DROPS_OBSERVED;
+	if (out->sync_fallbacks)
+		out->observation_flags |= LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED;
+	if (out->queue_capacity &&
+	    out->queue_high_watermark >= out->queue_capacity)
+		out->observation_flags |= LOGGER_DIAG_QUEUE_SATURATED;
+	if (out->spill_exhaustions)
+		out->observation_flags |=
+			LOGGER_DIAG_SPILL_EXHAUSTIONS_OBSERVED;
+	if (out->failed_records || out->first_error)
+		out->observation_flags |= LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED;
+	if (out->async_mode && out->state == LOGGER_STATE_RUNNING &&
+	    !out->worker_running)
+		out->observation_flags |= LOGGER_DIAG_WORKER_STOPPED;
+}
+
 int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 {
 	logger_scope_t scope;

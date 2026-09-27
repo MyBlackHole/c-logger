@@ -325,6 +325,20 @@ void logger_get_global_io_metrics(logger_io_metrics_t *out)
 	(void)finish(&scope, rc);
 }
 
+void logger_get_global_diagnostics(logger_diagnostics_t *out)
+{
+	if (!out)
+		return;
+	memset(out, 0, sizeof(*out));
+	global_scope_t scope;
+	if (begin(&scope))
+		return;
+	int rc = pin(&scope, 0);
+	if (!rc)
+		logger_get_diagnostics(g_logger, out);
+	(void)finish(&scope, rc);
+}
+
 void logger_global_write(logger_level_t level, const char *module,
 			 const char *file, int line, const char *func,
 			 const char *fmt, ...)

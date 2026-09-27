@@ -125,6 +125,24 @@ static void spill_policy(void)
 	CHECK(dropped(&metrics) == 1);
 	CHECK(metrics.queue_high_watermark == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_spill_exhaustions(&instance->q) == 2);
+	logger_diagnostics_t diagnostics;
+	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(diagnostics.state == LOGGER_STATE_RUNNING);
+	CHECK(diagnostics.async_mode && diagnostics.worker_running);
+	CHECK(diagnostics.queue_capacity == LOGGER_QUEUE_SPILL_LIMIT * 2u);
+	CHECK(diagnostics.queue_depth == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(diagnostics.spill_capacity == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(diagnostics.spill_in_use == LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(diagnostics.spill_exhaustions == 2);
+	CHECK(diagnostics.completion_backlog ==
+	      1u + LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK((diagnostics.observation_flags &
+	       LOGGER_DIAG_SPILL_EXHAUSTIONS_OBSERVED) != 0);
+	CHECK((diagnostics.observation_flags & LOGGER_DIAG_DROPS_OBSERVED) != 0);
+	CHECK((diagnostics.observation_flags &
+	       LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED) != 0);
+	CHECK((diagnostics.observation_flags &
+	       LOGGER_DIAG_QUEUE_SATURATED) == 0);
 	check_terminal(0, 1, 1, 0);
 
 	atomic_store(&release_format, 1);
@@ -156,6 +174,19 @@ static void full_queue(const char *mode)
 	CHECK(metrics.sync_fallbacks == (uint64_t)fallback);
 	CHECK(dropped(&metrics) == (uint64_t)!fallback);
 	CHECK(metrics.queue_high_watermark <= 2);
+	logger_diagnostics_t diagnostics;
+	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(diagnostics.queue_capacity == 2);
+	CHECK(diagnostics.queue_depth == 2);
+	CHECK(diagnostics.completion_backlog == 3);
+	CHECK((diagnostics.observation_flags & LOGGER_DIAG_QUEUE_SATURATED) !=
+	      0);
+	CHECK(!!(diagnostics.observation_flags &
+		 LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED) == fallback);
+	CHECK(!!(diagnostics.observation_flags & LOGGER_DIAG_DROPS_OBSERVED) ==
+	      !fallback);
+	CHECK(!!(diagnostics.observation_flags &
+		 LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED) == failure);
 	check_terminal(0, fallback, fallback && !failure, failure);
 	atomic_store(&release_format, 1);
 	int rc = logger_flush_instance_status(instance);
@@ -252,16 +283,46 @@ int main(int argc, char **argv)
 	}
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;
+	logger_diagnostics_t diagnostics;
 	logger_get_metrics(instance, &metrics);
 	logger_get_io_metrics(instance, &io);
-	printf("scenario=%s enqueued=%llu dequeued=%llu completed=%llu sync=%llu emitted=%llu failed=%llu drops=%llu first_error=%d\n",
+	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(diagnostics.enqueued == metrics.enqueued);
+	CHECK(diagnostics.sync_fallbacks == metrics.sync_fallbacks);
+	CHECK(diagnostics.consumer_batches == metrics.consumer_batches);
+	CHECK(diagnostics.consumer_records == metrics.consumer_records);
+	CHECK(diagnostics.queue_high_watermark == metrics.queue_high_watermark);
+	CHECK(diagnostics.dropped_records == dropped(&metrics));
+	CHECK(diagnostics.async_completed == io.async_completed);
+	CHECK(diagnostics.sync_completed == io.sync_completed);
+	CHECK(diagnostics.emitted_records == io.emitted_records);
+	CHECK(diagnostics.failed_records == io.failed_records);
+	CHECK(diagnostics.first_error == io.first_error);
+	CHECK(!!(diagnostics.observation_flags & LOGGER_DIAG_DROPS_OBSERVED) ==
+	      (dropped(&metrics) != 0));
+	CHECK(!!(diagnostics.observation_flags &
+		 LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED) ==
+	      (metrics.sync_fallbacks != 0));
+	CHECK(!!(diagnostics.observation_flags &
+		 LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED) ==
+	      (io.failed_records != 0 || io.first_error != 0));
+	if (diagnostics.async_mode) {
+		CHECK(diagnostics.queue_depth == 0);
+		CHECK(diagnostics.completion_backlog == 0);
+		CHECK(diagnostics.spill_in_use == 0);
+	} else {
+		CHECK(!diagnostics.queue_capacity && !diagnostics.queue_depth &&
+		      !diagnostics.worker_running);
+	}
+	printf("scenario=%s enqueued=%llu dequeued=%llu completed=%llu sync=%llu emitted=%llu failed=%llu drops=%llu first_error=%d flags=0x%x\n",
 	       argv[1], (unsigned long long)metrics.enqueued,
 	       (unsigned long long)metrics.consumer_records,
 	       (unsigned long long)io.async_completed,
 	       (unsigned long long)io.sync_completed,
 	       (unsigned long long)io.emitted_records,
 	       (unsigned long long)io.failed_records,
-	       (unsigned long long)dropped(&metrics), io.first_error);
+	       (unsigned long long)dropped(&metrics), io.first_error,
+	       diagnostics.observation_flags);
 	logger_destroy(instance);
 	leave_temp(dir);
 	return 0;

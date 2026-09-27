@@ -91,6 +91,58 @@ typedef struct {
 	uint64_t failed_records;
 	int first_error; /* positive errno; never cleared within an instance */
 } logger_io_metrics_t;
+
+/* Unified low-overhead observability snapshot.
+ *
+ * This does not replace logger_metrics_t/logger_io_metrics_t: those layouts stay
+ * frozen for existing callers. Diagnostics adds current queue/worker state and
+ * objective lifetime observations without acquiring backend locks, performing
+ * I/O, flushing, reconnecting or clearing errors. Live fields are race-free
+ * approximate snapshots and may span concurrent updates.
+ */
+typedef enum {
+	LOGGER_DIAG_DROPS_OBSERVED = 1u << 0,
+	LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED = 1u << 1,
+	LOGGER_DIAG_QUEUE_SATURATED = 1u << 2,
+	LOGGER_DIAG_SPILL_EXHAUSTIONS_OBSERVED = 1u << 3,
+	LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED = 1u << 4,
+	LOGGER_DIAG_WORKER_STOPPED = 1u << 5
+} logger_diagnostic_flag_t;
+
+typedef struct {
+	logger_state_t state;
+	logger_level_t level;
+	unsigned outputs;
+	unsigned observation_flags;
+	int async_mode;
+	int worker_running;
+	int consumer_waiting;
+	int first_error;
+
+	uint64_t dropped_records;
+	uint64_t sync_fallbacks;
+	uint64_t enqueued;
+	uint64_t consumer_batches;
+	uint64_t consumer_records;
+	uint64_t async_completed;
+	uint64_t sync_completed;
+	uint64_t emitted_records;
+	uint64_t failed_records;
+
+	uint64_t queue_capacity;
+	uint64_t queue_depth;
+	uint64_t queue_high_watermark;
+	uint64_t completion_backlog;
+	uint64_t queue_storage_bytes;
+
+	uint64_t spill_capacity;
+	uint64_t spill_in_use;
+	uint64_t spill_exhaustions;
+
+	uint64_t worker_wait_count;
+	uint64_t producer_wake_signals;
+	uint64_t force_wake_signals;
+} logger_diagnostics_t;
 /* Local Unix datagram Syslog. No per-sink spool or blocking retry queue.
  * REQUIRED preserves create-time connection failure; DEFERRED permits only
  * transient endpoint unavailability and exposes it in metrics/sticky status.
@@ -281,6 +333,10 @@ LOGGER_API void logger_set_instance_level(logger_t *, logger_level_t);
 LOGGER_API uint64_t logger_dropped(const logger_t *);
 LOGGER_API void logger_get_metrics(const logger_t *, logger_metrics_t *);
 LOGGER_API void logger_get_io_metrics(const logger_t *, logger_io_metrics_t *);
+/* Lock-free/backend-lock-free observability snapshot. Invalid/reentrant/child
+ * access returns a zeroed snapshot and follows existing metrics errno behavior.
+ * The caller must still protect the logger_t lifetime against concurrent destroy. */
+LOGGER_API void logger_get_diagnostics(const logger_t *, logger_diagnostics_t *);
 /* Live instance required; same external lifetime protection as other controls.
  * 0 / -1+errno. ENOTSUP if Syslog is not selected; output unchanged on error.
  * This does not connect, retry, flush, or reset sticky I/O errors. */
@@ -335,6 +391,7 @@ LOGGER_API void logger_set_level(logger_level_t);
 LOGGER_API uint64_t logger_global_dropped(void);
 LOGGER_API void logger_get_global_metrics(logger_metrics_t *);
 LOGGER_API void logger_get_global_io_metrics(logger_io_metrics_t *);
+LOGGER_API void logger_get_global_diagnostics(logger_diagnostics_t *);
 LOGGER_API void logger_global_write(logger_level_t, const char *, const char *,
 				    int, const char *, const char *, ...)
 #if defined(__GNUC__) || defined(__clang__)

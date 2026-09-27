@@ -94,6 +94,7 @@ size_t logger_queue_storage_bytes(const logger_queue_t *);
 size_t logger_queue_spill_capacity(const logger_queue_t *);
 size_t logger_queue_spill_storage_bytes(const logger_queue_t *);
 uint64_t logger_queue_spill_exhaustions(const logger_queue_t *);
+size_t logger_queue_spill_in_use(const logger_queue_t *);
 uint64_t logger_queue_wait_count(const logger_queue_t *);
 uint64_t logger_queue_producer_wake_signals(const logger_queue_t *);
 uint64_t logger_queue_force_wake_signals(const logger_queue_t *);
