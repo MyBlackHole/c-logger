@@ -101,7 +101,8 @@ try:
     run([a.cmake, '-S', consumer, '-B', cb, '-DCMAKE_PREFIX_PATH='+str(prefix),
          '-DCMAKE_C_COMPILER='+a.cc, '-DCMAKE_CXX_COMPILER='+a.cxx,
          '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF','-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON',
-         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON','-DCONSUMER_TEST_CXX=ON'])
+         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON','-DCONSUMER_TEST_CXX=ON',
+         '-DCONSUMER_LOGGER_VERSION='+version])
     run([a.cmake, '--build', cb, '-j2'])
     commands=(cb/'compile_commands.json').read_text()
     assert str(a.source/'include') not in commands and str(a.source/'src') not in commands

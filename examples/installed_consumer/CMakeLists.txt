@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(logger_installed_consumer LANGUAGES C)
-# The pre-1.0 candidate uses ExactVersion matching deliberately.
-find_package(Logger 0.9.3 EXACT CONFIG REQUIRED)
+# Release validation passes the exact package version explicitly. Keep the
+# example usable outside CI when no version is supplied.
+set(CONSUMER_LOGGER_VERSION "" CACHE STRING "Exact installed Logger version to require")
+if(CONSUMER_LOGGER_VERSION)
+  find_package(Logger ${CONSUMER_LOGGER_VERSION} EXACT CONFIG REQUIRED)
+else()
+  find_package(Logger CONFIG REQUIRED)
+endif()
 add_executable(logger_consumer main.c)
 target_compile_features(logger_consumer PRIVATE c_std_11)
 target_compile_options(logger_consumer PRIVATE -Wall -Wextra -Wpedantic -Werror)
