@@ -2,8 +2,8 @@ set_project("prod_c_logger")
 set_xmakever("2.8.5")
 includes("@builtin/xpack")
 
--- Xmake owns the production install/package/release path. CMake remains a
--- transition reference gate until the remaining shared-only/legacy tests move.
+-- Xmake is the sole project build/test/install/package authority.
+-- Installed CMake/pkg-config metadata remains a downstream compatibility surface.
 option("build_shared")
     set_default(false)
     set_showmenu(true)
@@ -258,7 +258,7 @@ target("logger")
                    {prefixdir = "share/doc/prod_c_logger/examples/installed_consumer"})
 
         if target:kind() == "shared" then
-            local manifest = path.join(os.projectdir(), "cmake", "logger.symbols")
+            local manifest = path.join(os.projectdir(), "abi", "logger.symbols")
             local out = {"LOGGER_0.9 {\n", "  global:\n"}
             for line in io.lines(manifest) do
                 local name = line:match("^%s*(.-)%s*$")
@@ -283,7 +283,7 @@ target("logger")
     end)
 target_end()
 
--- Non-default tools/examples that CMake exposes under BUILD_TESTING.
+-- Non-default auxiliary tools/examples.
 target("bench_logger")
     set_kind("binary")
     set_default(false)
@@ -338,9 +338,7 @@ xpack_end()
 
 
 if has_config("build_tests") then
-    -- Phase 2A: only tests that link the production logger directly. White-box
-    -- regression/fault/crash targets remain on CMake until their private support
-    -- libraries and --wrap contracts are migrated explicitly.
+    -- Production-linked core tests.
     local logger_tests = {
         {"test_logger", "tests/test_logger.c", 60},
         {"rotation_test", "tests/test_rotation.c", 60},
@@ -468,7 +466,7 @@ if has_config("build_private_tests") then
         add_tests("default", {timeout = 5})
     target_end()
 
-    -- Complete the same nine process-crash cases used by focused CMake CI.
+    -- Fixed nine-case process-crash evidence set.
     target("audit_rotation_crash_regression")
         set_kind("binary")
         set_default(false)
@@ -824,7 +822,7 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    -- Uses the real production logger, matching CMake's builtin-only boundary.
+    -- Uses the real production logger for the builtin-only boundary.
     target("crypto_builtin_only_regression")
         set_kind("binary")
         set_default(false)
@@ -927,7 +925,7 @@ if has_config("build_regression_tests") then
                   {runargs = {"4", "1000", "64"}, timeout = 15})
     target_end()
 
-    -- CMake's console_host regression deliberately links the real logger.
+    -- Console host regression deliberately links the real production logger.
     target("console_host_regression")
         set_kind("binary")
         set_default(false)
@@ -976,7 +974,7 @@ if has_config("build_regression_tests") then
     end
 
     -- Host-owned integration: build the SDK as an order-only dependency and
-    -- pass its exact shared-library path to the executable, matching CMake.
+    -- pass its exact shared-library path to the executable.
     target("example_sdk")
         set_kind("shared")
         set_default(false)
@@ -1077,9 +1075,7 @@ if has_config("build_regression_tests") then
 
     end
 
-    -- CTest marks process-fork exit 77 as skipped. Xmake has no documented
-    -- skip-return-code option, so keep its normal test execution contract and
-    -- only extend the accepted exit codes for this target.
+    -- Treat process-fork exit 77 as an accepted skip-equivalent result.
     target("process_fork_regression")
         on_test(function (target, opt)
             local targetfile = path.absolute(target:targetfile())
