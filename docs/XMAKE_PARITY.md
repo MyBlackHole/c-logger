@@ -383,13 +383,19 @@ CMake 剩余的 4 个非测试 executable/tool/example 也已迁入 Xmake：
 另外 `fork_reinit_example` 已从 regression-only scope 移到真正的
 `--legacy_fork=y` 构建表面，不再要求同时启用 `build_regression_tests`。
 
+## Native CI authority
+
+旧 `.github/workflows/ci.yml` 的 shared Release/ABI、Debug 和两组 sanitizer 门禁已由
+Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉全量 workflow 后产生触发
+空窗，`xmake-parity` 的 push/pull_request path filter 同时纳入 `tests/**` 与
+`examples/**`；测试源码和示例变化会继续触发主 Xmake 门禁。
+
 ## 尚未迁移
 
 按当前 `CMakeLists.txt` 的 executable/regression target 名称审计，Xmake 已无已知
-CMake-only executable target，release/CPack reference gate 也已退役。彻底删除当前工程
-CMake build system 前还剩以下独立迁移面：
+CMake-only executable target，release/CPack reference gate 与旧 native CMake CI 也已退役。
+彻底删除当前工程 CMake build system 前还剩以下独立迁移面：
 
-- `.github/workflows/ci.yml`：shared/debug/sanitizer 仍由 CMake 驱动；
 - `.github/workflows/crash-recovery.yml`：focused crash evidence 仍由 CTest 驱动；
 - `.github/workflows/vm-powercut.yml`：仍同时运行 CMake 与 Xmake guest；
 - `.github/workflows/queue-benchmark.yml`：candidate 仍用 CMake；历史 baseline commit
