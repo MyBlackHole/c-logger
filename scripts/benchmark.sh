@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 build="${BUILD_DIR:-build}"
+binary="${BENCH_BIN:-}"
 records="${BENCH_RECORDS:-10000}"
 out="${BENCH_OUT:-benchmark-results}"
 mkdir -p "$out"
@@ -8,9 +9,18 @@ csv="$out/results.csv"
 json="$out/results.jsonl"
 echo "threads,message_bytes,attempted,producer_seconds,end_to_end_seconds,producer_logs_per_sec,end_to_end_logs_per_sec,enqueued,dropped,sync_fallbacks,queue_high_watermark,consumer_records,consumer_batches,queue_slot_bytes,queue_spill_capacity,queue_spill_exhaustions,queue_wait_count,queue_producer_wake_signals,queue_force_wake_signals,queue_storage_bytes" > "$csv"
 : > "$json"
+
+if [ -z "$binary" ]; then
+  binary="$(find "$build" -type f -name bench_matrix -perm -111 -print -quit)"
+fi
+if [ -z "$binary" ] || [ ! -x "$binary" ]; then
+  echo "bench_matrix not found; build it with: xmake -j4 bench_matrix" >&2
+  exit 2
+fi
+
 for t in 1 2 4 8 16 32 64; do
   for size in 64 256 1024 4000; do
-    line="$("$build/bench_matrix" "$t" "$records" "$size")"
+    line="$("$binary" "$t" "$records" "$size")"
     echo "$line" >> "$json"
     python3 - "$line" >> "$csv" <<'PY'
 import json,sys
