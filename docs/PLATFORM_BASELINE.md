@@ -58,9 +58,10 @@ readelf -h -d -V build/liblogger.so
 4. 在实际目标执行完整功能/错误/生命周期测试，检测运行期特性。
 5. 在非 volatile 的 ext4/XFS 和真实存储栈验证崩溃/掉电语义，进行持续运行和资源检查。
 
-`cmake/toolchains/linux-baseline.cmake.example` 是要求提供真实路径的工具链模板，不是已验收
-的 SDK。设置 `LOGGER_BASELINE_CC`、`LOGGER_BASELINE_SYSROOT`、`LOGGER_BASELINE_ARCH` 后使用；
-不要把 `/` 伪装成旧系统根来制造“交叉兼容成功”。
+项目不再提供伪造“最低平台”的 CMake toolchain 模板。部署团队必须提供真实且可追溯的
+compiler/toolchain/sysroot，并在 Xmake 配置中显式选择；不要把 `/` 或当前 runner 根目录伪装成
+旧系统 sysroot 来制造“交叉兼容成功”。工具链路径、版本、sysroot 来源和 checksum 都应进入
+发布证据。
 
 已知需平台验证/兼容设计的功能：`getrandom` wrapper/系统调用，`RENAME_NOREPLACE` 的内核和
 文件系统支持，Audit 的 procfd 路径，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
@@ -68,8 +69,8 @@ readelf -h -d -V build/liblogger.so
 
 ## 参考接口契约
 
-- CMake SOVERSION: https://cmake.org/cmake/help/latest/prop_tgt/SOVERSION.html
-- CMake 可重定位包: https://cmake.org/cmake/help/latest/guide/importing-exporting/index.html
+- Xmake target version/SONAME: https://xmake.io/api/description/project-target.html
+- Xmake 安装/打包接口: https://xmake.io/api/description/xpack-interfaces.html
 - GNU ld symbol version: https://sourceware.org/binutils/docs/ld/VERSION.html
 - getrandom 版本边界: https://man7.org/linux/man-pages/man2/getrandom.2.html
 
