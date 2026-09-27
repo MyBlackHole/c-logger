@@ -2,8 +2,8 @@ set_project("prod_c_logger")
 set_xmakever("2.8.5")
 includes("@builtin/xpack")
 
--- Xmake is a parity build at this stage. CMake remains authoritative for
--- install/package/release until the later migration gates are completed.
+-- Xmake owns the production install/package/release path. CMake remains a
+-- transition reference gate until the remaining shared-only/legacy tests move.
 option("build_shared")
     set_default(false)
     set_showmenu(true)
