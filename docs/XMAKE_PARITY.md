@@ -373,18 +373,24 @@ static profile。
 - 默认 release 仍保持 legacy helper 关闭；独立 `legacy-fork` CI job 显式以
   `--legacy_fork=y` 构建 example 并逐个执行 23 个回归 case。
 
+## Remaining tool/example parity
+
+CMake 剩余的 4 个非测试 executable/tool/example 也已迁入 Xmake：
+
+- `bench_logger`：链接 production logger；
+- `multi_instance_example`：链接 production logger；
+- `syslog_client_example`：链接 production logger，并保留 CMake 的严格编译告警；
+- `crypto_chain_tool`：继续链接 `logger_regression_support`，供
+  `scripts/crypto_cross_version.py` 使用。
+
+另外 `fork_reinit_example` 已从 regression-only scope 移到真正的
+`--legacy_fork=y` 构建表面，不再要求同时启用 `build_regression_tests`。
+
 ## 尚未迁移
 
-按当前 CMake **注册的测试目标**，Xmake 已无已知 CMake-only 测试；但删除 CMake
-build system 前仍有 4 个非测试 executable/tool/example 需要迁移：
-
-1. `bench_logger`；
-2. `multi_instance_example`；
-3. `syslog_client_example`；
-4. `crypto_chain_tool`。
-
-这些目标不参与当前 release test gate，但属于构建表面的一部分。下一轮先补齐它们，
-再移除 release workflow 中的 CMake reference gate，并审计/删除 CMake packaging 文件。
+按当前 `CMakeLists.txt` 的 executable/regression target 名称审计，Xmake 已无已知
+CMake-only executable target。下一步可以去掉 release workflow 中的 CMake reference
+gate，然后审计 library/install/package/custom target 后删除 CMake build/packaging 文件。
 
 ## Release authority
 
