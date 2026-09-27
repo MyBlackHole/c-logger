@@ -43,6 +43,7 @@ Xmake 没有采用内置 `mode.release` rule，因为该 rule 默认 strip。当
 Shared Release：
 
 ```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 xmake f -m release --build_shared=y
 xmake -j4 logger
 ```
@@ -50,6 +51,7 @@ xmake -j4 logger
 Static Release：
 
 ```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 xmake f -m release --build_shared=n
 xmake -j4 logger
 ```
