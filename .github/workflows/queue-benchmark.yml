@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/queue-benchmark.yml"
+      - "xmake.lua"
+      - "VERSION"
       - "src/logger_queue.c"
       - "src/logger_queue.h"
       - "src/logger_record.h"
@@ -17,6 +19,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "xmake.lua"
+      - "VERSION"
       - "src/logger_queue.c"
       - "src/logger_queue.h"
       - "src/logger_record.h"
@@ -36,6 +40,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Prepare memory baseline
         run: >-
           git worktree add ../queue-memory-baseline
@@ -46,14 +63,21 @@ jobs:
           git worktree add ../queue-tuning-baseline
           "$QUEUE_TUNING_BASELINE_REF"
 
-      - name: Configure candidate
+      - name: Configure Xmake candidate
         run: >-
-          cmake -S . -B build-queue-candidate
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_SHARED_LIBS=OFF
+          xmake f -m release -o build-queue-candidate
+          --build_shared=n
+          --build_regression_tests=y
 
       - name: Build candidate benchmark
-        run: cmake --build build-queue-candidate --target bench_matrix -j2
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake -j2 bench_matrix
+          candidate="$(find build-queue-candidate -type f -name bench_matrix -print -quit)"
+          test -n "$candidate"
+          echo "QUEUE_CANDIDATE_BIN=$candidate" >> "$GITHUB_ENV"
+          file "$candidate"
 
       - name: Configure memory baseline
         run: >-
@@ -82,7 +106,7 @@ jobs:
           python3 scripts/compare_queue_benchmark.py
           --memory-baseline-bin build-queue-memory-baseline/bench_matrix
           --throughput-baseline-bin build-queue-tuning-baseline/bench_matrix
-          --candidate-bin build-queue-candidate/bench_matrix
+          --candidate-bin "$QUEUE_CANDIDATE_BIN"
           --memory-baseline-ref "$QUEUE_MEMORY_BASELINE_REF"
           --throughput-baseline-ref "$QUEUE_TUNING_BASELINE_REF"
           --threads 1,4,16

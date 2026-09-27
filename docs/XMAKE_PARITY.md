@@ -398,15 +398,21 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 空窗，`xmake-parity` 的 push/pull_request path filter 同时纳入 `tests/**` 与
 `examples/**`；测试源码和示例变化会继续触发主 Xmake 门禁。
 
+## Queue benchmark authority
+
+`.github/workflows/queue-benchmark.yml` 的**当前 candidate** 已改由 Xmake 构建
+`bench_matrix`，仍使用同一 `logger_regression_support`、同一 benchmark source 和原比较
+脚本/阈值。两个冻结 baseline ref 继续使用各自历史 commit 内的 CMake 构建，这是有意保留
+的历史重现方式：删除当前源码树的 CMake 不应改写过去基准二进制的构建定义。
+
 ## 尚未迁移
 
 按当前 `CMakeLists.txt` 的 executable/regression target 名称审计，Xmake 已无已知
-CMake-only executable target，release/CPack reference gate 与旧 native CMake CI 也已退役。
-彻底删除当前工程 CMake build system 前还剩以下独立迁移面：
+CMake-only executable target；release/CPack reference、native CI、focused crash、VM
+power-cut 和当前 benchmark candidate 都已切到 Xmake authority。
 
-- `.github/workflows/queue-benchmark.yml`：candidate 仍用 CMake；历史 baseline commit
-  可继续用各自提交中原有的 CMake 构建方式，不要求重写历史；
-- 根 `CMakeLists.txt` 与只服务旧构建系统的 packaging helper 仍待删除/收敛。
+彻底删除当前工程 CMake build system 前只剩根 `CMakeLists.txt` 与只服务旧构建系统的
+packaging/helper 文件待删除或收敛。
 
 installed-consumer 中的 CMake 工程和发布包内的 `LoggerConfig.cmake` 兼容面不在删除范围，
 它们验证的是下游 `find_package` 契约。
