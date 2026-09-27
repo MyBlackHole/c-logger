@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-publish-${{ github.ref }}
+  group: release-publish
   cancel-in-progress: false
 
 jobs:
@@ -61,6 +61,11 @@ jobs:
           if source_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
             tag_exists=true
             source_ref="refs/tags/${tag}"
+            tag_version="$(git show "${tag}:VERSION")"
+            if [ "$tag_version" != "$version" ]; then
+              echo "tag $tag contains VERSION=$tag_version, expected $version" >&2
+              exit 1
+            fi
           else
             tag_exists=false
             source_sha="$GITHUB_SHA"
