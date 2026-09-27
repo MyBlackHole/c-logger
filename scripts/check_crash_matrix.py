@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fail if the focused Xmake process-crash suite silently loses or gains cases."""
+"""Verify the exact Xmake process-crash suite and emit machine-readable evidence."""
 
 import argparse
 import json
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -22,13 +23,14 @@ EXPECTED = {
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 TEST_RESULT = re.compile(
-    r"^\s*\[\s*\d+%\]:\s+(\S+/\S+)\s+.*\b(?:passed|failed)\b"
+    r"^\s*\[\s*\d+%\]:\s+(\S+/\S+)\s+.*?"
+    r"\b(passed|failed)\s+([0-9.]+)s\s*$"
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Verify the exact Xmake process-crash test set in one or more logs."
+        description="Verify Xmake process-crash logs against the fixed nine-case contract."
     )
     parser.add_argument("logs", nargs="+", type=Path, help="xmake test output log")
     parser.add_argument(
@@ -36,17 +38,75 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="optional JSON evidence file containing the observed test set per run",
     )
+    parser.add_argument(
+        "--junit-dir",
+        type=Path,
+        help="optional directory for one JUnit XML report per input log",
+    )
     return parser.parse_args()
 
 
-def tests_from_log(path: Path) -> set[str]:
-    selected: set[str] = set()
+def results_from_log(path: Path) -> dict[str, tuple[str, float]]:
+    results: dict[str, tuple[str, float]] = {}
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = ANSI_ESCAPE.sub("", raw_line)
         match = TEST_RESULT.match(line)
         if match:
-            selected.add(match.group(1))
-    return selected
+            results[match.group(1)] = (match.group(2), float(match.group(3)))
+    return results
+
+
+def write_junit(
+    path: Path,
+    log: Path,
+    results: dict[str, tuple[str, float]],
+    missing: set[str],
+    unexpected: set[str],
+) -> None:
+    failures = len(missing) + len(unexpected)
+    failures += sum(
+        1 for name, (status, _) in results.items()
+        if name in EXPECTED and status != "passed"
+    )
+    suite = ET.Element(
+        "testsuite",
+        {
+            "name": "process-crash",
+            "tests": str(len(EXPECTED) + len(unexpected)),
+            "failures": str(failures),
+            "errors": "0",
+            "time": f"{sum(duration for _, duration in results.values()):.3f}",
+        },
+    )
+    suite.set("source", str(log))
+
+    for name in sorted(EXPECTED):
+        status, duration = results.get(name, ("missing", 0.0))
+        case = ET.SubElement(
+            suite,
+            "testcase",
+            {"name": name, "classname": "process-crash", "time": f"{duration:.3f}"},
+        )
+        if status == "missing":
+            ET.SubElement(case, "failure", {"message": "missing from Xmake test output"})
+        elif status != "passed":
+            ET.SubElement(case, "failure", {"message": f"Xmake status: {status}"})
+
+    for name in sorted(unexpected):
+        status, duration = results[name]
+        case = ET.SubElement(
+            suite,
+            "testcase",
+            {"name": name, "classname": "process-crash.unexpected", "time": f"{duration:.3f}"},
+        )
+        ET.SubElement(
+            case,
+            "failure",
+            {"message": f"unexpected process-crash case with Xmake status: {status}"},
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
 
 
 def main() -> int:
@@ -57,24 +117,47 @@ def main() -> int:
     }
     failed = False
 
-    for path in args.logs:
-        selected = tests_from_log(path)
+    if args.junit_dir:
+        args.junit_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, path in enumerate(args.logs, start=1):
+        results = results_from_log(path)
+        selected = set(results)
         missing = EXPECTED - selected
         unexpected = selected - EXPECTED
+        failed_cases = sorted(
+            name for name, (status, _) in results.items()
+            if name in EXPECTED and status != "passed"
+        )
         evidence["runs"].append(
             {
                 "log": str(path),
                 "tests": sorted(selected),
+                "statuses": {
+                    name: {"status": status, "seconds": duration}
+                    for name, (status, duration) in sorted(results.items())
+                },
                 "missing": sorted(missing),
                 "unexpected": sorted(unexpected),
+                "failed": failed_cases,
             }
         )
 
-        if missing or unexpected:
+        if args.junit_dir:
+            write_junit(
+                args.junit_dir / f"crash-junit-{index}.xml",
+                path,
+                results,
+                missing,
+                unexpected,
+            )
+
+        if missing or unexpected or failed_cases:
             failed = True
             print(
-                f"{path}: crash suite mismatch: "
-                f"missing={sorted(missing)}, unexpected={sorted(unexpected)}",
+                f"{path}: crash suite mismatch/failure: "
+                f"missing={sorted(missing)}, unexpected={sorted(unexpected)}, "
+                f"failed={failed_cases}",
                 file=sys.stderr,
             )
         else:
