@@ -34,14 +34,19 @@ option("build_regression_tests")
     set_description("Build and register the regression-support cases")
 option_end()
 
+-- Xmake description scope deliberately disallows file I/O. VERSION remains the
+-- single source; configure passes it through this string option.
+option("project_version")
+    set_default("0.0.0")
+    set_showmenu(false)
+    set_description("Project version injected from repository VERSION")
+option_end()
+
 set_allowedplats("linux")
 
-local version_file = path.join(os.projectdir(), "VERSION")
-local project_version = assert(io.readfile(version_file), "cannot read " .. version_file)
-project_version = project_version:match("^%s*(.-)%s*$")
+local project_version = get_config("project_version")
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
-assert(version_major, "VERSION must contain MAJOR.MINOR.PATCH: " .. project_version)
 local abi_version = "0"
 
 local function cmake_bool(value)
@@ -238,6 +243,9 @@ target("logger")
     end
 
     on_load(function (target)
+        if project_version == "0.0.0" or not version_major then
+            raise("configure with --project_version=$(cat VERSION)")
+        end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
         target:add("installfiles", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
