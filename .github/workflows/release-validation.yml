@@ -6,10 +6,9 @@ on:
     paths:
       - "VERSION"
       - "xmake.lua"
-      - "CMakeLists.txt"
       - "src/**"
       - "include/**"
-      - "cmake/**"
+      - "cmake/logger.symbols"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/installed_consumer/**"
@@ -134,45 +133,3 @@ jobs:
             xpack-out/prod-c-logger-${{ steps.version.outputs.version }}-*-${{ matrix.kind }}.tar.gz
             xpack-out/prod-c-logger-${{ steps.version.outputs.version }}-*-${{ matrix.kind }}.tar.gz.sha256
           if-no-files-found: error
-
-  cmake-reference:
-    name: cmake-reference (${{ matrix.kind }})
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - kind: shared
-            shared: "ON"
-            artifact: "cmake-build/liblogger.so"
-          - kind: static
-            shared: "OFF"
-            artifact: "cmake-build/liblogger.a"
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Configure CMake reference build
-        run: >-
-          cmake -S . -B cmake-build
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_SHARED_LIBS=${{ matrix.shared }}
-          -DBUILD_TESTING=ON
-
-      - name: Build CMake reference
-        run: cmake --build cmake-build -j2
-
-      - name: Run CMake reference suite
-        run: ctest --test-dir cmake-build --output-on-failure -j2
-
-      - name: Validate CMake reference install contract
-        run: cmake --build cmake-build --target check-package -j2
-
-      - name: Inspect CMake reference artifact
-        run: python3 scripts/check_production_artifact.py "${{ matrix.artifact }}"
-
-      - name: Inspect CMake reference shared ABI
-        if: matrix.kind == 'shared'
-        run: >-
-          python3 scripts/check_release_abi.py "${{ matrix.artifact }}"
-          --machine 'Advanced Micro Devices X86-64'
-          --elf-class ELF64
