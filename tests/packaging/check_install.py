@@ -31,7 +31,7 @@ p.add_argument('--legacy', action='store_true')
 a = p.parse_args()
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
 version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
-assert re.fullmatch(r'[0-9]+\\.[0-9]+\\.[0-9]+', version), version
+assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), version
 work = Path(tempfile.mkdtemp(prefix='install-check-', dir=Path.cwd()))
 log = []; counter = 0
 base_env = dict(os.environ)
