@@ -1117,7 +1117,7 @@ if has_config("build_regression_tests") then
     target("global_lifecycle_regression")
         for _, op in ipairs({
             "write", "flush", "flush-void", "reopen",
-            "level", "dropped", "metrics", "io", "diagnostics"
+            "level", "dropped", "metrics", "io", "diagnostics", "file-metrics"
         }) do
             add_tests("global_generation_" .. op,
                       {runargs = {"generation", op}, timeout = 20})
@@ -1159,7 +1159,7 @@ if has_config("build_regression_tests") then
     target("explicit_scope_regression")
         for _, scenario in ipairs({
             "write", "source", "sync", "format", "queue", "fallback",
-            "flush", "flush-void", "reopen", "syslog-metrics",
+            "flush", "flush-void", "reopen", "syslog-metrics", "file-metrics",
             "create", "create-fail", "destroy"
         }) do
             add_tests("explicit_cancel_" .. scenario,
@@ -1174,7 +1174,7 @@ if has_config("build_regression_tests") then
         for _, scenario in ipairs({
             "log", "source", "sync", "flush", "flush-void", "reopen",
             "destroy", "destroy-void", "create", "level", "state",
-            "dropped", "metrics", "io", "diagnostics", "syslog", "context-set",
+            "dropped", "metrics", "io", "diagnostics", "file-metrics", "syslog", "context-set",
             "context-clear", "context-get", "console", "console-debug",
             "console-init", "console-level", "console-color", "console-tty",
             "global", "global-write", "audit", "audit-status"
@@ -1308,7 +1308,8 @@ if has_config("build_regression_tests") then
             "collision-limit", "rotation-unsupported", "rotation-rename-error",
             "rotation-new-open", "rotation-dir-sync", "rotation-new-sync",
             "rotation-new-dir-sync", "cwd", "directory-rename",
-            "active-replaced", "retention", "retention-error", "vectors", "eintr"
+            "active-replaced", "retention", "retention-error", "metrics-contract",
+            "vectors", "eintr"
         }) do
             add_tests("file_" .. scenario,
                       {runargs = scenario, timeout = 20})

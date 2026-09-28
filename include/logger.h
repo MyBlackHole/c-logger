@@ -143,6 +143,43 @@ typedef struct {
 	uint64_t producer_wake_signals;
 	uint64_t force_wake_signals;
 } logger_diagnostics_t;
+
+/* Coherent File backend snapshot, taken under the instance output mutex.
+ * Counters cover only the selected file sink; stderr/Syslog are separate.
+ * bytes_written includes partial bytes committed before a later write failure.
+ * last_error is the latest file operation result (0 after a successful file
+ * operation); specialized last_* errors retain the latest failure in that class.
+ */
+typedef struct {
+	uint64_t write_operations;
+	uint64_t failed_write_operations;
+	uint64_t write_syscalls;
+	uint64_t interrupted_write_syscalls;
+	uint64_t failed_write_syscalls;
+	uint64_t bytes_written;
+
+	uint64_t data_sync_attempts;
+	uint64_t data_sync_failures;
+	uint64_t directory_sync_attempts;
+	uint64_t directory_sync_failures;
+
+	uint64_t rotation_attempts;
+	uint64_t rotation_successes;
+	uint64_t rotation_failures;
+	uint64_t reopen_attempts;
+	uint64_t reopen_successes;
+	uint64_t reopen_failures;
+	uint64_t retention_deletions;
+
+	uint64_t current_size;
+	int detached;
+	int last_error;
+	int last_write_error;
+	int last_sync_error;
+	int last_rotation_error;
+	int last_reopen_error;
+} logger_file_metrics_t;
+
 /* Local Unix datagram Syslog. No per-sink spool or blocking retry queue.
  * REQUIRED preserves create-time connection failure; DEFERRED permits only
  * transient endpoint unavailability and exposes it in metrics/sticky status.
@@ -337,6 +374,9 @@ LOGGER_API void logger_get_io_metrics(const logger_t *, logger_io_metrics_t *);
  * access returns a zeroed snapshot and follows existing metrics errno behavior.
  * The caller must still protect the logger_t lifetime against concurrent destroy. */
 LOGGER_API void logger_get_diagnostics(const logger_t *, logger_diagnostics_t *);
+/* Coherent File backend snapshot. 0 / -1+errno; ENOTSUP when file output is not
+ * selected. No flush/fsync/reopen is performed and the snapshot is read-only. */
+LOGGER_API int logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
 /* Live instance required; same external lifetime protection as other controls.
  * 0 / -1+errno. ENOTSUP if Syslog is not selected; output unchanged on error.
  * This does not connect, retry, flush, or reset sticky I/O errors. */
@@ -392,6 +432,9 @@ LOGGER_API uint64_t logger_global_dropped(void);
 LOGGER_API void logger_get_global_metrics(logger_metrics_t *);
 LOGGER_API void logger_get_global_io_metrics(logger_io_metrics_t *);
 LOGGER_API void logger_get_global_diagnostics(logger_diagnostics_t *);
+/* Same snapshot through the current global generation. Returns 0/-1+errno and
+ * preserves global admission/generation semantics. */
+LOGGER_API int logger_get_global_file_metrics(logger_file_metrics_t *);
 LOGGER_API void logger_global_write(logger_level_t, const char *, const char *,
 				    int, const char *, const char *, ...)
 #if defined(__GNUC__) || defined(__clang__)

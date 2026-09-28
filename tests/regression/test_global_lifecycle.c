@@ -246,8 +246,11 @@ static void all_rejected(int error)
 		memset(&r.metrics, 0xa5, sizeof(r.metrics));
 		memset(&r.io, 0xa5, sizeof(r.io));
 		memset(&r.diagnostics, 0xa5, sizeof(r.diagnostics));
+		memset(&r.file_metrics, 0xa5, sizeof(r.file_metrics));
 		invoke(&r);
 		expect_rejection(&r, error);
+		if (r.op == OP_FILE_METRICS)
+			CHECK(((const unsigned char *)&r.file_metrics)[0] == 0xa5);
 	}
 }
 static void start_gate(void)
@@ -448,6 +451,10 @@ static void contract(void)
 	CHECK(errno == ERANGE);
 	CHECK(diagnostics.state == LOGGER_STATE_RUNNING);
 	CHECK(diagnostics.outputs == LOGGER_OUT_FILE);
+	logger_file_metrics_t file_metrics;
+	CHECK(logger_get_global_file_metrics(&file_metrics) == 0);
+	CHECK(errno == ERANGE);
+	CHECK(!file_metrics.failed_write_operations);
 	logger_set_level((logger_level_t)-1);
 	CHECK(errno == EINVAL);
 	CHECK(!stop_status());

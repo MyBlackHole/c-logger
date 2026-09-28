@@ -209,6 +209,7 @@ release validation 对 shared/static 两种 XPack 都执行：
 - DROP / SYNC fallback：检查独立 lifetime observation flag；
 - long-message spill exhaustion：检查 in-use/capacity/exhaustion；
 - backend write/fsync failure：检查 failed_records 与 sticky first_error；
+- File sink：检查 write/writev syscall、partial bytes、data/dir fsync、rotation、reopen 分类计数；
 - flush 后：queue depth、spill in-use、completion backlog 回到 0；
 - global generation：diagnostics 与 metrics 一样受 pin/stale-generation gate 保护；
 - explicit reentry：同线程嵌套读取被 EDEADLK 拒绝并清零输出；

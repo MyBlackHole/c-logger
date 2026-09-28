@@ -362,6 +362,13 @@ static void reopen_case(const char *scenario)
 							       0;
 	int rc = logger_reopen_instance(l);
 	CHECK(expected ? rc == -1 && errno == expected : rc == 0);
+	logger_file_metrics_t file_metrics;
+	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
+	CHECK(file_metrics.reopen_attempts == 1);
+	CHECK(file_metrics.reopen_successes == (uint64_t)!expected);
+	CHECK(file_metrics.reopen_failures == (uint64_t)!!expected);
+	CHECK(file_metrics.last_reopen_error == (expected ? expected : 0));
+	CHECK(file_metrics.last_error == (expected ? expected : 0));
 	CHECK(fds() == count);
 	if (expected && strcmp(scenario, "reopen-close")) {
 		CHECK(l->file_backend.fd == old_fd &&
@@ -377,6 +384,12 @@ static void reopen_case(const char *scenario)
 			CHECK(unlink("out.log") == 0);
 		}
 		CHECK(logger_reopen_instance(l) == 0);
+		CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
+		CHECK(file_metrics.reopen_attempts == 2);
+		CHECK(file_metrics.reopen_successes == 1);
+		CHECK(file_metrics.reopen_failures == 1);
+		CHECK(file_metrics.last_reopen_error == expected);
+		CHECK(file_metrics.last_error == 0);
 	} else
 		CHECK(l->file_backend.fd != old_fd);
 	LOGGER_INFO(l, "test", "new-file");
@@ -406,6 +419,15 @@ static void collision(const char *scenario)
 		rename_error = EACCES;
 	int rc = logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__,
 					__LINE__, __func__, "second");
+	logger_file_metrics_t file_metrics;
+	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
+	CHECK(file_metrics.rotation_attempts == 1);
+	CHECK(file_metrics.rotation_successes == (uint64_t)!rename_error);
+	CHECK(file_metrics.rotation_failures == (uint64_t)!!rename_error);
+	CHECK(file_metrics.last_rotation_error ==
+	      (rename_error ? rename_error : 0));
+	CHECK(file_metrics.last_write_error ==
+	      (rename_error ? rename_error : 0));
 	if (rename_error) {
 		CHECK(rc == -rename_error);
 		CHECK(file_contains("out.log", "first") &&
@@ -449,6 +471,14 @@ static void rotation_failure(const char *scenario)
 	int expected = data_open_error ? data_open_error : EIO;
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
 				     __func__, "unwritten") == -expected);
+	logger_file_metrics_t file_metrics;
+	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
+	CHECK(file_metrics.rotation_attempts == 1);
+	CHECK(!file_metrics.rotation_successes && file_metrics.rotation_failures == 1);
+	CHECK(file_metrics.last_rotation_error == expected);
+	CHECK(file_metrics.last_write_error == expected);
+	CHECK(file_metrics.last_error == expected);
+	CHECK(file_metrics.detached);
 	CHECK(l->file_backend.fd == old_fd && l->file_backend.detached);
 	const char *archive = "out.20231114T221320.000000Z.log";
 	off_t size = file_size(archive);
@@ -459,6 +489,13 @@ static void rotation_failure(const char *scenario)
 	data_open_error = 0;
 	sync_error = 0;
 	CHECK(logger_reopen_instance(l) == 0 && !l->file_backend.detached);
+	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
+	CHECK(file_metrics.reopen_attempts == 1);
+	CHECK(file_metrics.reopen_successes == 1);
+	CHECK(!file_metrics.reopen_failures);
+	CHECK(!file_metrics.detached);
+	CHECK(file_metrics.last_rotation_error == expected);
+	CHECK(file_metrics.last_error == 0);
 	/* Disable size rotation only for this final probe. */
 	l->file_backend.rotation.mode = LOGGER_ROTATE_NONE;
 	LOGGER_INFO(l, "test", "new-active");
@@ -530,6 +567,35 @@ static void retention_case(int error)
 	unlink_error = 0;
 	finish(l);
 }
+static void metrics_contract(void)
+{
+	logger_config_t none = LOGGER_DEFAULT_CONFIG();
+	none.outputs = LOGGER_OUT_STDERR;
+	none.async_mode = 0;
+	logger_t *l = logger_create(&none);
+	CHECK(l);
+	logger_file_metrics_t metrics;
+	memset(&metrics, 0x5a, sizeof(metrics));
+	errno = 0;
+	CHECK(logger_get_file_metrics(l, &metrics) == -1 && errno == ENOTSUP);
+	CHECK(((unsigned char *)&metrics)[0] == 0x5a);
+	CHECK(logger_destroy_status(l) == 0);
+
+	logger_config_t file = config("out.log", LOGGER_ROTATE_NONE);
+	l = logger_create(&file);
+	CHECK(l);
+	memset(&metrics, 0xa5, sizeof(metrics));
+	CHECK(logger_get_file_metrics(l, &metrics) == 0);
+	CHECK(!metrics.write_operations && !metrics.failed_write_operations &&
+	      !metrics.bytes_written && !metrics.last_error);
+	emit(l, "observed");
+	CHECK(logger_get_file_metrics(l, &metrics) == 0);
+	CHECK(metrics.write_operations == 1);
+	CHECK(!metrics.failed_write_operations && metrics.bytes_written > 0);
+	CHECK(metrics.current_size == (uint64_t)file_size("out.log"));
+	finish(l);
+}
+
 static void vectors(void)
 {
 	logger_file_t f = LOGGER_FILE_EMPTY;
@@ -598,6 +664,8 @@ int main(int argc, char **argv)
 		retention_case(0);
 	else if (!strcmp(s, "retention-error"))
 		retention_case(1);
+	else if (!strcmp(s, "metrics-contract"))
+		metrics_contract();
 	else if (!strcmp(s, "vectors"))
 		vectors();
 	else if (!strcmp(s, "eintr")) {

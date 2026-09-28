@@ -31,7 +31,7 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 - shared 实体文件：`liblogger.so.<VERSION>`；
 - symbol version：`LOGGER_0.9`；
 - public C symbol allowlist：`abi/logger.symbols`；
-- 当前 development public symbol set：64 项；0.9.5 发布版为 62 项，新增的是两个 diagnostics accessor；
+- 当前 development public symbol set：66 项；0.9.5 发布版为 62 项，新增两个 diagnostics accessor 与两个 File metrics accessor；
 - legacy fork helper 显式开启时额外导出 `logger_fork_reinit`；
 - production 默认 hidden visibility，并使用 version script `local: *`；
 - production fault injection 固定关闭。

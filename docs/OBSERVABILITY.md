@@ -65,10 +65,42 @@ diagnostics 越过 admission gate 或借到新的 generation。
 
 - `logger_get_metrics()`：稳定旧 queue/drop metrics ABI；
 - `logger_get_io_metrics()`：completion/output accounting；
+- `logger_get_file_metrics()`：File sink 一致 snapshot；需要 `emit_mu`，但不执行任何 I/O；
+- `logger_get_global_file_metrics()`：通过 global generation pin 读取同一 File snapshot；
 - `logger_get_syslog_metrics()`：Syslog 一致 snapshot；该接口需要 `emit_mu`，
   因为 Syslog backend metrics 不是 atomic；
 - `audit_get_status()`：Audit state、checkpoint、committed/checkpoint seq；
 - `logger_flush_instance_status()`：主动同步与 sticky error 返回，不是纯观测。
+
+### File backend metrics
+
+`logger_file_metrics_t` 用于把“输出失败”继续拆成文件后端的具体阶段：
+
+| 字段 | 含义 |
+|---|---|
+| `write_operations` | `logger_file_write/writev` 顶层请求数；batch writev 算一次 |
+| `failed_write_operations` | 顶层写请求最终返回失败；可由 write、rotation 或 sync 导致 |
+| `write_syscalls` | 实际 `write/writev` syscall 次数，包含 EINTR 重试 |
+| `interrupted_write_syscalls` | 被 EINTR 中断并重试的写 syscall |
+| `failed_write_syscalls` | 非 EINTR 终止错误或零长度返回 |
+| `bytes_written` | 实际成功写入的累计字节；最终 operation 失败前的 partial bytes 也计入 |
+| `data_sync_attempts/failures` | active/archive/new-active data fsync；含 flush/rotation/reopen 内部 sync |
+| `directory_sync_attempts/failures` | 目录持久化 fsync；含创建/轮换/retention/reopen 路径 |
+| `rotation_attempts/successes/failures` | 内部 size/day rotation 结果 |
+| `reopen_attempts/successes/failures` | 显式 reopen 结果 |
+| `retention_deletions` | retention 成功 unlink 的历史归档数量 |
+| `current_size` | 当前 active fd 的已知累计大小 |
+| `detached` | active 已被 rename 成 archive，但新 active 切换未完成 |
+| `last_error` | 最近一次 File 顶层操作结果；后续成功可清零 |
+| `last_write_error` | 最近一次 write operation 失败 errno；后续成功不清历史 |
+| `last_sync_error` | 最近一次 data/directory sync 失败 errno；成功不清历史 |
+| `last_rotation_error` | 最近一次 rotation 失败 errno；成功不清历史 |
+| `last_reopen_error` | 最近一次 reopen 失败 errno；成功不清历史 |
+
+读取 File metrics 会短暂获取 `emit_mu` 来取得一致快照，但不会 write、fsync、reopen、
+rotate 或清除任何错误。若 backend 正被真实文件 I/O 阻塞，File metrics 读取也可能等待
+该 mutex；此时先用 lock-free `logger_get_diagnostics()` 判断 completion backlog，再在
+允许等待一致 sink snapshot 时读取 File metrics。
 
 ## observation_flags
 
@@ -174,6 +206,15 @@ LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED
 
 `first_error` 是 sticky errno，后续成功不会清除。
 
+若启用了 File backend，读取 `logger_get_file_metrics()` 区分：
+
+- write/writev 终止错误；
+- partial bytes 后失败；
+- data fsync 与 directory fsync；
+- rotation 失败；
+- reopen 失败；
+- detached active-file 状态。
+
 若启用了 Syslog，再读取 `logger_get_syslog_metrics()` 区分：
 
 - backpressure；
@@ -182,7 +223,9 @@ LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED
 - reconnect；
 - close failure。
 
-文件 fsync/reopen/rotation 错误不应通过“之后又成功写了一条”被视为已消失。
+File 的 `last_error` 会随后续成功清零，但 `last_write_error/last_sync_error/
+last_rotation_error/last_reopen_error` 保留各类别最近一次失败；Logger 的 `first_error` 仍是实例级 sticky
+历史错误。不能通过“之后又成功写了一条”推断先前 durability failure 已撤销。
 
 ### 6. worker/wakeup 异常
 
