@@ -18,11 +18,12 @@ enum operation {
 	OP_METRICS,
 	OP_IO,
 	OP_DIAGNOSTICS,
+	OP_FILE_METRICS,
 	OP_COUNT
 };
 static const char *const operation_names[] = { "write",	  "flush", "flush-void",
 					       "reopen",  "level", "dropped",
-					       "metrics", "io", "diagnostics" };
+					       "metrics", "io", "diagnostics", "file-metrics" };
 typedef struct {
 	enum operation op;
 	int rc, error;
@@ -30,6 +31,7 @@ typedef struct {
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;
 	logger_diagnostics_t diagnostics;
+	logger_file_metrics_t file_metrics;
 	_Atomic int done;
 } call_result_t;
 
@@ -94,6 +96,9 @@ static inline void invoke(call_result_t *r)
 	case OP_DIAGNOSTICS:
 		logger_get_global_diagnostics(&r->diagnostics);
 		break;
+	case OP_FILE_METRICS:
+		r->rc = logger_get_global_file_metrics(&r->file_metrics);
+		break;
 	default:
 		CHECK(!"bad operation");
 	}
@@ -104,7 +109,8 @@ static inline void invoke(call_result_t *r)
 static inline void expect_rejection(const call_result_t *r, int error)
 {
 	CHECK(r->error == error);
-	if (r->op == OP_FLUSH || r->op == OP_REOPEN)
+	if (r->op == OP_FLUSH || r->op == OP_REOPEN ||
+	    r->op == OP_FILE_METRICS)
 		CHECK(r->rc == -1);
 	if (r->op == OP_DROPPED)
 		CHECK(r->value == 0);

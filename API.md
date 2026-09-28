@@ -1,8 +1,8 @@
 # 当前 API 与集成边界
 
 旧 `logger_metrics_t` / `logger_io_metrics_t` 布局和既有函数签名保持不变。当前 development
-新增 `logger_get_diagnostics()` / `logger_get_global_diagnostics()` 两个 additive observability
-accessor；`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供。
+新增 diagnostics 与 File metrics 共四个 additive observability accessor；既有 metrics 结构
+不扩写；`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供。
 
 ## 显式实例（第三方默认入口）
 
@@ -28,8 +28,11 @@ completion backlog、spill 使用/耗尽、worker wait/wakeup、drop/fallback、
 sticky first_error。它不 flush、不 reconnect、不做文件/网络 I/O，也不清理错误状态。
 
 `logger_get_global_diagnostics()` 使用现有 global generation/lifetime pin；不会越过
-STARTING/STOPPING admission gate。Syslog 的完整一致 metrics 仍由
-`logger_get_syslog_metrics()` 提供，因为其 backend counters 由 `emit_mu` 保护。
+STARTING/STOPPING admission gate。File/Syslog 的完整一致 sink metrics 分别由
+`logger_get_file_metrics()` / `logger_get_syslog_metrics()` 提供，因为 backend
+counters 由 `emit_mu` 保护。File snapshot 不执行 write/fsync/rotation/reopen，只读取
+累计事实；global facade 可用 `logger_get_global_file_metrics()` 通过当前 generation pin
+读取同一份 File 状态。
 
 问题发现与采样语义见 [OBSERVABILITY.md](docs/OBSERVABILITY.md)。
 

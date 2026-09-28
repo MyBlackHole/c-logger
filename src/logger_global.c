@@ -339,6 +339,17 @@ void logger_get_global_diagnostics(logger_diagnostics_t *out)
 	(void)finish(&scope, rc);
 }
 
+int logger_get_global_file_metrics(logger_file_metrics_t *out)
+{
+	global_scope_t scope;
+	if (begin(&scope))
+		return -1;
+	int rc = !out ? -EINVAL : pin(&scope, 0);
+	if (!rc)
+		rc = logger_file_metrics_snapshot(g_logger, out);
+	return finish(&scope, rc);
+}
+
 void logger_global_write(logger_level_t level, const char *module,
 			 const char *file, int line, const char *func,
 			 const char *fmt, ...)

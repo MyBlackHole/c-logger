@@ -870,6 +870,32 @@ void logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
 		out->observation_flags |= LOGGER_DIAG_WORKER_STOPPED;
 }
 
+int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
+{
+	if (!l || !out)
+		return -EINVAL;
+	if (!(l->outputs & LOGGER_OUT_FILE))
+		return -ENOTSUP;
+	ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+	if (rc)
+		return rc;
+	logger_file_metrics_t snapshot = l->file_backend.metrics;
+	snapshot.current_size = (uint64_t)l->file_backend.current_size;
+	snapshot.detached = l->file_backend.detached;
+	*out = snapshot;
+	return 0;
+}
+
+int logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
+{
+	logger_scope_t scope;
+	if (logger_scope_begin(&scope))
+		return -1;
+	int rc = logger_file_metrics_snapshot(l, out);
+	return logger_scope_end(&scope, rc) ? -1 : 0;
+}
+
 int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 {
 	logger_scope_t scope;

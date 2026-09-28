@@ -60,6 +60,7 @@ static void nested_call(void)
 	logger_io_metrics_t io;
 	logger_syslog_metrics_t sys;
 	logger_diagnostics_t diagnostics;
+	logger_file_metrics_t file_metrics;
 	logger_config_t cfg = config_for("nested.log", 0);
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	logger_context_t ctx = { .request_id = "nested" };
@@ -104,6 +105,10 @@ static void nested_call(void)
 		memset(&diagnostics, 0xff, sizeof(diagnostics));
 		logger_get_diagnostics(log_instance, &diagnostics);
 		CHECK(!diagnostics.enqueued && !diagnostics.observation_flags);
+	} else if (!strcmp(nested, "file-metrics")) {
+		memset(&file_metrics, 0x5a, sizeof(file_metrics));
+		CHECK(logger_get_file_metrics(log_instance, &file_metrics) == -1);
+		CHECK(((unsigned char *)&file_metrics)[0] == 0x5a);
 	} else if (!strcmp(nested, "syslog")) {
 		memset(&sys, 0x5a, sizeof(sys));
 		CHECK(logger_get_syslog_metrics(log_instance, &sys) == -1);
@@ -387,7 +392,8 @@ static void cancel_case(void)
 			atomic_store(&point, P_WAIT);
 	} else if (!strcmp(scenario, "reopen"))
 		atomic_store(&point, P_REOPEN);
-	else if (!strcmp(scenario, "syslog-metrics"))
+	else if (!strcmp(scenario, "syslog-metrics") ||
+		 !strcmp(scenario, "file-metrics"))
 		atomic_store(&point, P_LOCK);
 	else if (!strcmp(scenario, "format"))
 		atomic_store(&point, P_FORMAT);

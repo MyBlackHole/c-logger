@@ -27,6 +27,7 @@ typedef struct {
 	ino_t inode;
 	struct timespec archive_time;
 	int archive_time_valid, iov_max;
+	logger_file_metrics_t metrics;
 } logger_file_t;
 #define LOGGER_FILE_EMPTY \
 	((logger_file_t){ .fd = -1, .dir_fd = -1, .lock_fd = -1 })

@@ -29,25 +29,37 @@ static int wall_day(time_t sec, int *day)
 	return 0;
 }
 
-static int sync_data(int fd)
+static int sync_data(logger_file_t *f, int fd)
 {
+	++f->metrics.data_sync_attempts;
 	int rc;
 	do {
 		rc = logger_fault_should_fail(LOGGER_FAULT_FILE_FSYNC) ?
 			     -1 :
 			     fsync(fd);
 	} while (rc < 0 && errno == EINTR);
-	return rc < 0 ? -errno : 0;
+	if (rc < 0) {
+		int error = errno ? errno : EIO;
+		++f->metrics.data_sync_failures;
+		f->metrics.last_sync_error = error;
+		return -error;
+	}
+	return 0;
 }
 
 static int sync_directory(logger_file_t *f)
 {
+	++f->metrics.directory_sync_attempts;
 	int rc;
 	do {
 		rc = fsync(f->dir_fd);
 	} while (rc < 0 && errno == EINTR);
-	if (rc < 0)
-		return -errno;
+	if (rc < 0) {
+		int error = errno ? errno : EIO;
+		++f->metrics.directory_sync_failures;
+		f->metrics.last_sync_error = error;
+		return -error;
+	}
 	f->dir_dirty = 0;
 	return 0;
 }
@@ -323,20 +335,17 @@ int logger_file_sync(logger_file_t *f)
 	if (!f || f->fd < 0)
 		return -EBADF;
 	logger_fault_crash_if_requested("before_audit_fsync");
-	int rc = sync_data(f->fd);
+	int rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (!rc && f->detached)
 		rc = -(f->switch_error ? f->switch_error : EIO);
+	f->metrics.last_error = rc < 0 ? -rc : 0;
 	return rc;
 }
 
-int logger_file_reopen(logger_file_t *f)
+static int file_reopen_impl(logger_file_t *f)
 {
-	if (!f || f->fd < 0) {
-		errno = EBADF;
-		return -1;
-	}
 	int day = 0, fd = -1;
 	struct stat st;
 	int rc = wall_day(time(NULL), &day);
@@ -345,7 +354,7 @@ int logger_file_reopen(logger_file_t *f)
 	/* Candidate errors do not retire the working fd. Sync the old segment
      * before switching; neither an open error nor fsync error erases it. */
 	if (!rc && f->managed)
-		rc = sync_data(f->fd);
+		rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (rc) {
@@ -359,6 +368,26 @@ int logger_file_reopen(logger_file_t *f)
 	if (close(old_fd) < 0)
 		return -1; /* new fd installed; do not retry close */
 	return 0;
+}
+
+int logger_file_reopen(logger_file_t *f)
+{
+	if (!f || f->fd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+	++f->metrics.reopen_attempts;
+	int rc = file_reopen_impl(f);
+	if (rc) {
+		int error = errno ? errno : EIO;
+		++f->metrics.reopen_failures;
+		f->metrics.last_reopen_error = error;
+		f->metrics.last_error = error;
+	} else {
+		++f->metrics.reopen_successes;
+		f->metrics.last_error = 0;
+	}
+	return rc;
 }
 
 static int check_active(logger_file_t *f)
@@ -478,6 +507,7 @@ static int retention(logger_file_t *f, time_t now)
 			rc = -errno;
 			break;
 		}
+		++f->metrics.retention_deletions;
 		changed = 1;
 	}
 	if (closedir(d) && !rc)
@@ -491,7 +521,7 @@ static int retention(logger_file_t *f, time_t now)
 	return rc;
 }
 
-static int rotate(logger_file_t *f)
+static int rotate_impl(logger_file_t *f)
 {
 	int rc = check_active(f);
 	if (rc)
@@ -551,7 +581,7 @@ static int rotate(logger_file_t *f)
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_open");
 	if (!rc)
-		rc = sync_data(
+		rc = sync_data(f,
 			candidate); /* persist the new empty inode first */
 	if (!rc)
 		rc = sync_directory(f);
@@ -568,6 +598,21 @@ static int rotate(logger_file_t *f)
 	if (close(old_fd))
 		return -errno;
 	return retention(f, t.tv_sec);
+}
+
+static int rotate(logger_file_t *f)
+{
+	++f->metrics.rotation_attempts;
+	int rc = rotate_impl(f);
+	if (rc) {
+		++f->metrics.rotation_failures;
+		f->metrics.last_rotation_error = -rc;
+		f->metrics.last_error = -rc;
+	} else {
+		++f->metrics.rotation_successes;
+		f->metrics.last_error = 0;
+	}
+	return rc;
 }
 
 static int prepare_write(logger_file_t *f, size_t n, const struct timespec *t)
@@ -598,21 +643,28 @@ static int prepare_write(logger_file_t *f, size_t n, const struct timespec *t)
 	return size || day ? rotate(f) : 0;
 }
 
-static int all(int fd, const char *p, size_t n, size_t *written)
+static int all(logger_file_t *f, int fd, const char *p, size_t n,
+	       size_t *written)
 {
 	*written = 0;
 	while (n) {
+		++f->metrics.write_syscalls;
 		ssize_t rc = logger_fault_should_fail(LOGGER_FAULT_FILE_WRITE) ?
 				     -1 :
 				     write(fd, p,
 					   (size_t)logger_fault_short_write(n));
 		if (rc < 0) {
-			if (errno == EINTR)
+			if (errno == EINTR) {
+				++f->metrics.interrupted_write_syscalls;
 				continue;
-			return -errno;
+			}
+			++f->metrics.failed_write_syscalls;
+			return -(errno ? errno : EIO);
 		}
-		if (!rc)
+		if (!rc) {
+			++f->metrics.failed_write_syscalls;
 			return -EIO;
+		}
 		p += rc;
 		n -= (size_t)rc;
 		*written += (size_t)rc;
@@ -632,14 +684,20 @@ static int vall(logger_file_t *f, struct iovec *v, int count, size_t *written)
 		int amount = count - first;
 		if (amount > f->iov_max)
 			amount = f->iov_max;
+		++f->metrics.write_syscalls;
 		ssize_t rc = writev(f->fd, v + first, amount);
 		if (rc < 0) {
-			if (errno == EINTR)
+			if (errno == EINTR) {
+				++f->metrics.interrupted_write_syscalls;
 				continue;
-			return -errno;
+			}
+			++f->metrics.failed_write_syscalls;
+			return -(errno ? errno : EIO);
 		}
-		if (!rc)
+		if (!rc) {
+			++f->metrics.failed_write_syscalls;
 			return -EIO;
+		}
 		*written += (size_t)rc;
 		size_t left = (size_t)rc;
 		while (first < count && left >= v[first].iov_len) {
@@ -659,6 +717,10 @@ static void account(logger_file_t *f, size_t written)
 	f->current_size = SIZE_MAX - f->current_size < written ?
 				  SIZE_MAX :
 				  f->current_size + written;
+	f->metrics.bytes_written =
+		UINT64_MAX - f->metrics.bytes_written < (uint64_t)written ?
+			UINT64_MAX :
+			f->metrics.bytes_written + (uint64_t)written;
 }
 
 int logger_file_write(logger_file_t *f, const char *p, size_t n,
@@ -666,14 +728,22 @@ int logger_file_write(logger_file_t *f, const char *p, size_t n,
 {
 	if (!p && n)
 		return -EINVAL;
+	if (!f)
+		return -EBADF;
+	++f->metrics.write_operations;
 	int rc = prepare_write(f, n, t);
-	if (rc)
-		return rc;
-	size_t written;
-	rc = all(f->fd, p, n, &written);
+	size_t written = 0;
+	if (!rc)
+		rc = all(f, f->fd, p, n, &written);
 	account(f, written);
 	if (!rc && sync)
 		rc = logger_file_sync(f);
+	if (rc) {
+		++f->metrics.failed_write_operations;
+		f->metrics.last_write_error = -rc;
+		f->metrics.last_error = -rc;
+	} else
+		f->metrics.last_error = 0;
 	return rc;
 }
 
@@ -691,14 +761,22 @@ int logger_file_writev(logger_file_t *f, struct iovec *v, int count, size_t n,
 	}
 	if (n != total)
 		return -EINVAL;
+	if (!f)
+		return -EBADF;
+	++f->metrics.write_operations;
 	int rc = prepare_write(f, n, t);
-	if (rc)
-		return rc;
-	size_t written;
-	rc = vall(f, v, count, &written);
+	size_t written = 0;
+	if (!rc)
+		rc = vall(f, v, count, &written);
 	account(f, written);
 	if (!rc && sync)
 		rc = logger_file_sync(f);
+	if (rc) {
+		++f->metrics.failed_write_operations;
+		f->metrics.last_write_error = -rc;
+		f->metrics.last_error = -rc;
+	} else
+		f->metrics.last_error = 0;
 	return rc;
 }
 

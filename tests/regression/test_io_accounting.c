@@ -87,6 +87,16 @@ static uint64_t dropped(const logger_metrics_t *m)
 		n += m->dropped[i];
 	return n;
 }
+
+static logger_file_metrics_t file_metrics(void)
+{
+	logger_file_metrics_t metrics;
+	CHECK(logger_get_file_metrics(instance, &metrics) == 0);
+	CHECK(metrics.current_size ==
+	      (uint64_t)instance->file_backend.current_size);
+	CHECK(metrics.detached == instance->file_backend.detached);
+	return metrics;
+}
 static void check_terminal(uint64_t queued, uint64_t sync, uint64_t good,
 			   uint64_t bad)
 {
@@ -229,11 +239,28 @@ int main(int argc, char **argv)
 		CHECK(logger_flush_instance_status(instance) == -1 &&
 		      errno == ENOSPC);
 		check_terminal(1, 0, 0, 1);
+		logger_file_metrics_t file = file_metrics();
+		CHECK(file.write_operations == 1);
+		CHECK(file.failed_write_operations == 1);
+		CHECK(file.write_syscalls == 1);
+		CHECK(file.failed_write_syscalls == 1);
+		CHECK(!file.bytes_written);
+		CHECK(file.last_write_error == ENOSPC);
+		/* status flush performed a later successful file sync */
+		CHECK(file.last_error == 0);
 		atomic_store(&fault, NORMAL);
 		LOGGER_INFO(instance, "io", "later-success");
 		CHECK(logger_flush_instance_status(instance) == -1 &&
 		      errno == ENOSPC);
 		check_terminal(2, 0, 1, 1);
+		file = file_metrics();
+		CHECK(file.write_operations == 2);
+		CHECK(file.failed_write_operations == 1);
+		CHECK(file.write_syscalls == 2);
+		CHECK(file.failed_write_syscalls == 1);
+		CHECK(file.bytes_written > 0);
+		CHECK(file.last_write_error == ENOSPC);
+		CHECK(file.last_error == 0);
 		CHECK(file_contains("out.log", "later-success"));
 	} else if (!strcmp(argv[1], "short-ok") ||
 		   !strcmp(argv[1], "short-error")) {
@@ -243,6 +270,17 @@ int main(int argc, char **argv)
 		int rc = logger_flush_instance_status(instance);
 		CHECK(bad ? (rc == -1 && errno == EIO) : rc == 0);
 		check_terminal(1, 0, !bad, bad);
+		logger_file_metrics_t file = file_metrics();
+		CHECK(file.write_operations == 1);
+		CHECK(file.failed_write_operations == (uint64_t)bad);
+		CHECK(file.write_syscalls == 3);
+		CHECK(file.interrupted_write_syscalls == 1);
+		CHECK(file.failed_write_syscalls == (uint64_t)bad);
+		CHECK(file.bytes_written ==
+		      (uint64_t)(bad ? 3 : file_size("out.log")));
+		CHECK(file.last_write_error == (bad ? EIO : 0));
+		/* status flush is the latest File operation in both cases */
+		CHECK(file.last_error == 0);
 		CHECK((off_t)instance->file_backend.current_size ==
 		      file_size("out.log"));
 		if (bad)
@@ -259,9 +297,23 @@ int main(int argc, char **argv)
 		      errno == EIO);
 		check_terminal(1, 0, 1,
 			       0); /* fsync failure is not an extra record */
+		logger_file_metrics_t file = file_metrics();
+		CHECK(file.data_sync_attempts == 1);
+		CHECK(file.data_sync_failures ==
+		      (uint64_t)(!strcmp(argv[1], "file-fsync")));
+		CHECK(file.directory_sync_attempts ==
+		      (uint64_t)(!strcmp(argv[1], "dir-fsync")));
+		CHECK(file.directory_sync_failures ==
+		      (uint64_t)(!strcmp(argv[1], "dir-fsync")));
+		CHECK(file.last_sync_error == EIO && file.last_error == EIO);
 		atomic_store(&fault, NORMAL);
 		CHECK(logger_flush_instance_status(instance) == -1 &&
 		      errno == EIO);
+		file = file_metrics();
+		CHECK(file.data_sync_attempts == 2);
+		CHECK(file.directory_sync_attempts >= 1);
+		CHECK(file.last_sync_error == EIO);
+		CHECK(file.last_error == 0);
 	} else if (!strcmp(argv[1], "rotation-fsync")) {
 		LOGGER_INFO(instance, "io", "old-segment");
 		CHECK(logger_wait_for_output(instance) == 0);
@@ -271,6 +323,13 @@ int main(int argc, char **argv)
 		      errno == EIO);
 		CHECK(instance->file_backend.fd >= 0);
 		check_terminal(2, 0, 1, 1);
+		logger_file_metrics_t file = file_metrics();
+		CHECK(file.rotation_attempts == 1);
+		CHECK(!file.rotation_successes && file.rotation_failures == 1);
+		CHECK(file.last_rotation_error == EIO);
+		CHECK(file.last_write_error == EIO);
+		CHECK(file.data_sync_failures == 1);
+		CHECK(file.failed_write_operations == 1);
 		CHECK(file_contains("out.log", "old-segment"));
 		CHECK(!file_contains("out.log",
 				     "must-not-rotate-after-sync-error"));

@@ -41,9 +41,11 @@ logger_flush_instance
 logger_flush_instance_status
 logger_flush_status
 logger_get_global_diagnostics
+logger_get_global_file_metrics
 logger_get_global_io_metrics
 logger_get_global_metrics
 logger_get_diagnostics
+logger_get_file_metrics
 logger_get_io_metrics
 logger_get_metrics
 logger_get_state

@@ -34,11 +34,16 @@ int main(void)
 	logger_get_io_metrics(a, &io);
 	logger_diagnostics_t diagnostics;
 	logger_get_diagnostics(a, &diagnostics);
+	logger_file_metrics_t file_metrics;
+	if (logger_get_file_metrics(a, &file_metrics))
+		rc = -1;
 	if (io.emitted_records != 16 || io.failed_records ||
 	    diagnostics.state != LOGGER_STATE_RUNNING ||
 	    !diagnostics.async_mode || diagnostics.emitted_records != 16 ||
 	    diagnostics.failed_records || diagnostics.queue_depth ||
-	    diagnostics.completion_backlog)
+	    diagnostics.completion_backlog || !file_metrics.write_operations ||
+	    file_metrics.failed_write_operations || !file_metrics.bytes_written ||
+	    !file_metrics.data_sync_attempts || file_metrics.last_error)
 		rc = -1;
 	if (logger_destroy_status(b))
 		rc = -1;
