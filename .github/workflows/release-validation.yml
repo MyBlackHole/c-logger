@@ -10,10 +10,12 @@ on:
       - "src/**"
       - "include/**"
       - "abi/logger.symbols"
+      - "abi/logger-1.0.symbols"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/installed_consumer/**"
       - "scripts/check_release_abi.py"
+      - "scripts/check_v1_abi_snapshot.py"
       - "scripts/check_release_assets.py"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/release-validation.yml"
@@ -46,6 +48,9 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Verify frozen v1 ABI snapshot
+        run: python3 scripts/check_v1_abi_snapshot.py
 
       - name: Configure Xmake release candidate
         shell: bash

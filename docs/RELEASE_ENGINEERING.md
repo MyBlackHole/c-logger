@@ -30,14 +30,17 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 - SONAME：`liblogger.so.0`；
 - shared 实体文件：`liblogger.so.<VERSION>`；
 - symbol version：`LOGGER_0.9`；
-- public C symbol allowlist：`abi/logger.symbols`；
+- active public C symbol allowlist：`abi/logger.symbols`；
+- frozen Production v1 snapshot：`abi/logger-1.0.symbols`（66 项，hardening 阶段禁止漂移）；
 - 0.9.6 候选 public symbol set：66 项；相对 0.9.5 的 62 项仅新增两个 diagnostics accessor 与两个 File metrics accessor；
 - legacy fork helper 显式开启时额外导出 `logger_fork_reinit`；
 - production 默认 hidden visibility，并使用 version script `local: *`；
 - production fault injection 固定关闭。
 
 新增/删除 public API 必须同时修改 public header 与 `abi/logger.symbols`，并通过
-`scripts/check_release_abi.py`。禁止用 glob 代替显式 ABI allowlist。
+`scripts/check_release_abi.py`。进入 v1 hardening 后，`scripts/check_v1_abi_snapshot.py` 还要求
+active manifest 与 frozen v1 snapshot 完全一致；任何 public surface 变化必须先显式重新打开
+ABI review，而不能顺手修改 snapshot。禁止用 glob 代替显式 ABI allowlist。
 
 pre-1.0 不承诺未来版本自动 ABI 兼容；安装包的 `LoggerConfigVersion.cmake` 只对**完全相同**
 版本返回 ExactVersion 成功。
