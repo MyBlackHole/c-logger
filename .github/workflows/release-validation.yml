@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "VERSION"
+      - "LICENSE"
       - "xmake.lua"
       - "src/**"
       - "include/**"
