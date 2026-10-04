@@ -1,6 +1,6 @@
 # 当前 API 与集成边界
 
-旧 `logger_metrics_t` / `logger_io_metrics_t` 布局和既有函数签名保持不变。当前 development
+旧 `logger_metrics_t` / `logger_io_metrics_t` 布局和既有函数签名保持不变。0.9.6
 新增 diagnostics 与 File metrics 共四个 additive observability accessor；既有 metrics 结构
 不扩写；`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供。
 
