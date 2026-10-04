@@ -11,7 +11,7 @@ int main()
 	if (cfg.struct_size != sizeof(cfg) ||
 	    audit.struct_size != sizeof(audit) ||
 	    console.struct_size != sizeof(console) || source.line <= 0 ||
-	    LOGGER_ABI_VERSION != 0)
+	    LOGGER_ABI_VERSION != EXPECTED_LOGGER_ABI)
 		return 1;
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "installed-cpp.log";
