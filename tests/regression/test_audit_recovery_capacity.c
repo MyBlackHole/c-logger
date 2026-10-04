@@ -47,7 +47,6 @@ int main(int argc, char **argv)
 	char tmp[] = "/tmp/audit-recovery-capacity-XXXXXX";
 	enter_temp(tmp);
 
-	const unsigned char zero[32] = { 0 };
 	unsigned char previous[32] = { 0 };
 	char middle_path[128] = { 0 };
 	record_fixture_t middle_record = { 0 };
