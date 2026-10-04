@@ -179,7 +179,7 @@ try:
         soname_link = lib / ('liblogger.so.' + a.abi_version)
         assert dso.is_symlink() and soname_link.is_symlink()
         assert dso.resolve().name=='liblogger.so.'+version
-        assert dso.readlink().name == soname_link.name
+        assert Path(os.readlink(dso)).name == soname_link.name
         argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
               '--manifest',abi_manifest,
               '--abi-version',a.abi_version,
