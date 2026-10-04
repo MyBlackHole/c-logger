@@ -194,7 +194,7 @@ try:
         if a.legacy: names.append('logger_fork_reinit')
         loader=work/'abi-loader'
         run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
-        run([loader,dso]+names)
+        run([loader,dso,a.symbol_version]+names)
     artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
     iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
     if a.legacy: iso.append('--legacy-fork')
