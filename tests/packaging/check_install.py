@@ -85,6 +85,11 @@ try:
     lib = prefix / a.libdir
     config_dir = lib / 'cmake/Logger'
     pc_dir = lib / 'pkgconfig'
+    license_file = prefix / 'share/doc/prod_c_logger/LICENSE'
+    assert license_file.is_file()
+    license_text = license_file.read_text()
+    assert 'Apache License' in license_text
+    assert 'Version 2.0, January 2004' in license_text
     expected_headers = {'logger.h','audit.h','console.h','logger_export.h','logger_version.h'}
     if a.legacy: expected_headers.add('logger_fork_compat.h')
     assert {x.name for x in include.iterdir()} == expected_headers
