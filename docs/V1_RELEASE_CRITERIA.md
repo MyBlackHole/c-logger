@@ -4,6 +4,8 @@
 candidate 的扩大承诺；只有“已冻结支持范围”中的条目满足对应 v1 证据后，才能在正式 v1
 发布中声明支持。
 
+跟踪入口：GitHub issue #73（Production release-hardening roadmap），子门禁为 #68–#72。
+
 核心原则：
 
 1. **支持范围必须可验证**，不能从 syscall 首次出现版本或构建成功反推兼容性；
