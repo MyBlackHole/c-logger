@@ -7,12 +7,14 @@
 #include <string.h>
 
 #ifdef __cplusplus
-#include <type_traits>
 #define ABI_ASSERT(expr) static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) alignof(type)
-#define ABI_FN(name, ret, ...) \
-	static_assert(std::is_same<decltype(&name), ret (*)(__VA_ARGS__)>::value, \
-		      "function type drift: " #name)
+/* The exported ABI is C. GCC format attributes on declarations are not part of
+ * the C function type, but C++ type-trait comparisons warn when those
+ * attributes are discarded. Exact function types are therefore frozen by the
+ * C11 translation unit below; C++11 independently freezes layouts, numeric
+ * constants and default initializers. */
+#define ABI_FN(name, ret, ...)
 #else
 #define ABI_ASSERT(expr) _Static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) _Alignof(type)
