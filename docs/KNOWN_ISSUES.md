@@ -1,6 +1,8 @@
 # 尚未关闭的发布阻断项（仅内置 SHA-256）
 
-本项目仍为缺陷收敛开发版，不是 Production v1。以本表和当前验证报告为准；旧轮次报告保留历史证据，不表示旧用法仍受支持。
+本项目当前发布仍不是 Production v1。v1 的支持范围、明确 unsupported 范围和硬门禁已经集中定义在
+[V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)。本表继续记录实现边界与待办；属于 v1 明确
+unsupported 的场景不再作为发布阻断项。旧轮次报告保留历史证据，不表示旧用法仍受支持。
 
 ## 已完成的定向修复
 
@@ -29,11 +31,11 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 |---|---|
 | Global API | 本轮覆盖准入、代次、连续控制 reader、取消延迟、嵌套和最终状态。仍不支持信号处理、pthread_exit/longjmp 穿过调用、跨线程回调等待环；禁用取消期间可能等待底层 I/O，无硬实时保证。详见 GLOBAL_LIFECYCLE.md |
 | Syslog | 已修非阻塞 socket/send、有限 EINTR、单调冷却重连、失败统计和实例配置。仅本地 datagram；无磁盘重试队列/已失败记录重放/远端持久确认。没有绝对 I/O 超时，文件/stdio、调度和锁竞争仍可能阻塞；真实 syslogd/旧平台矩阵待验收。见 SYSLOG_BACKEND.md |
-| 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 owner 管理，不允许另一个 active 故意占用归档名。NFS/SMB 未验收 |
-| 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；未验收初始化后 chroot/卸载 procfs |
+| 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 owner 管理，不允许另一个 active 故意占用归档名。Production v1 明确不支持 NFS/SMB/其他网络文件系统 |
+| 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；Production v1 明确不支持初始化后导致 procfs 不可访问的 chroot/namespace/procfs-unmount 场景 |
 | 持久化验证 | 已增加 Release shared/static 进程 crash 恢复矩阵，以及 QEMU + raw ext4/XFS 同盘重启的 10 个 power-cut 点（已确认记录、Audit fsync 前后、checkpoint rename 前后/commit 后、文件轮换 4 个阶段）。串口证据记录 guest kernel/filesystem。这些 CI 证据验证当前虚拟 QEMU 文件系统路径，但仍不等于物理断电、控制器/磁盘 volatile cache 或实际目标存储栈验收；输出错误后的业务重试仍可能重复 |
-| API/ABI | 0.9.6 候选固定 66 项 public symbol；相对 0.9.5 的 62 项，在不修改旧 metrics 布局/旧函数签名的前提下新增 diagnostics 与 File metrics 共 4 个 additive accessor。Logger config 的旧 v1 前缀/完整新尾部已有 guard-page 和独立旧头 consumer 验证；Production v1 ABI 和跨平台支持范围尚未正式冻结 |
-| 老平台 | x86_64 glibc userland 已在 Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）对 shared/static core、installed C/C++ consumer 与 pkg-config consumer 建立 CI 门禁；容器共享 runner kernel，因此 Linux3.x/最低 kernel 与 32bit 仍未验收。外部密码库后端现已移除；fork guard 依赖 lock-free int；syscall 兼容写法不代表所有旧文件系统支持内部轮换 |
+| API/ABI | 0.9.6 固定 66 项 public symbol；相对 0.9.5 的 62 项，在不修改旧 metrics 布局/旧函数签名的前提下新增 diagnostics 与 File metrics 共 4 个 additive accessor。Production v1 平台支持范围已经定义，但稳定 ABI identity 尚未冻结；v1 前仍需完成 SONAME 1 / LOGGER_1.0 / ABI snapshot 的独立迁移与 old/new consumer 验证 |
+| 平台基线 | Production v1 范围固定为 Linux/ELF x86_64 + glibc >= 2.31；32-bit、非 x86_64、musl/非 glibc 明确 unsupported。Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）已有 shared/static core、installed C/C++ consumer 与 pkg-config CI；最低 Linux kernel 仍是独立 v1 blocker，不能由共享 runner kernel 的 container matrix 推断 |
 | 显式 / Console 取消与重入 | 本轮补齐 deferred cancellation 下资源入口的取消延期和同线程重入拒绝，但不是 signal-safe / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 constructor 明确返回 ENOTSUP。若 caller 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 cleanup，先停止/join 所有借用者；不得并发 destroy 或取消私有 worker。禁用取消期间 I/O 仍可能阻塞 |
 | Audit 事务 | ATTEMPT/RESULT 不是跨业务操作原子事务，也不能跨 shutdown 用旧事务结束新生命周期。API 不是信号处理接口 |
 | Audit 恢复规模 | 完整扫描保留集合、段连接 O(N²)、4096 归档上限；暂无持久 segment ID/可信恢复索引/checkpoint v1 自动迁移/公开恢复告警字段 |

@@ -42,6 +42,10 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 pre-1.0 不承诺未来版本自动 ABI 兼容；安装包的 `LoggerConfigVersion.cmake` 只对**完全相同**
 版本返回 ExactVersion 成功。
 
+Production v1 的长期支持范围和 ABI 升级目标不由本文件隐式推断，统一以
+[ V1_RELEASE_CRITERIA.md ](V1_RELEASE_CRITERIA.md) 为准。当前目标是在正式 v1 前完成
+`liblogger.so.1` / `LOGGER_1.0` / frozen ABI snapshot 的独立迁移和 consumer 验证。
+
 ## Shared build
 
 ```sh
@@ -84,7 +88,7 @@ xmake install -o /opt/logger/current logger
 <prefix>/lib/liblogger.so.<VERSION>（或 liblogger.a）
 <prefix>/lib/cmake/Logger/{LoggerConfig.cmake,LoggerConfigVersion.cmake,LoggerTargets*.cmake}
 <prefix>/lib/pkgconfig/logger.pc
-<prefix>/share/doc/prod_c_logger/{API.md,SECURITY.md,TESTING.md,CHANGELOG.md,docs/,examples/}
+<prefix>/share/doc/prod_c_logger/{LICENSE,API.md,SECURITY.md,TESTING.md,CHANGELOG.md,docs/,examples/}
 ```
 
 Xmake `-o <prefix>` 是安装根。CMake 风格 `DESTDIR` CLI 不是当前项目契约；发布 CI 对 Xmake
@@ -220,11 +224,12 @@ xmake test 'fork_reinit_regression/*' -j1
 
 - 真实服务器掉电/reset；
 - RAID/HBA/NVMe/SATA volatile write cache；
-- XFS 或其他目标文件系统；
-- 任意网络文件系统；
+- 真实目标 ext4/XFS 存储栈的物理掉电语义；
+- v1 明确 unsupported 的网络/分布式文件系统；
 - 任意多线程 fork 后复杂库调用安全；
 - 32-bit；
 - 所有 kernel/glibc 组合；
 - 安全认证、外部可信签名、远端锚点或 WORM 合规。
 
-平台边界见 `docs/PLATFORM_BASELINE.md` 与 `docs/KNOWN_ISSUES.md`。
+平台边界见 `docs/PLATFORM_BASELINE.md`、`docs/V1_RELEASE_CRITERIA.md` 与
+`docs/KNOWN_ISSUES.md`。
