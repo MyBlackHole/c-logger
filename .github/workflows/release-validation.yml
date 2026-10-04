@@ -67,6 +67,12 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
 
+      - name: Verify Production v1 semantic ABI contract
+        run: |
+          xmake -j2 v1_abi_contract_c v1_abi_contract_cpp
+          xmake run v1_abi_contract_c
+          xmake run v1_abi_contract_cpp
+
       - name: Run complete Xmake release suite
         run: xmake test -j1
 
