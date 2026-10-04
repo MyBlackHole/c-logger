@@ -20,6 +20,9 @@ File sink 状态时取得现有 `emit_mu`，不会触发 I/O 或状态修复。
 个 cut point；该证据仍不替代真实服务器、电源、controller/device volatile cache、实际目标
 mount/storage stack 或最低 kernel/glibc 验收。
 
+项目分发许可正式明确为 Apache License 2.0；根目录与 XPack/install tree 均携带权威
+`LICENSE`，packaging gate 对许可文件存在性和版本文本做 fail-closed 验证。
+
 ## 0.9.5 — 2026-09-28
 
 受控生产发布候选的平台验证与发布恢复收敛版本。相对 0.9.4 **没有 `src/` / `include/`
