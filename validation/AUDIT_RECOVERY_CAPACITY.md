@@ -46,3 +46,22 @@ measured upper-bound behavior to justify any format/algorithm change.
 GitHub-hosted timing is useful for regression comparison but is not a target-server latency guarantee.
 Physical storage characteristics, controller caches and power-loss behavior remain covered by the separate
 Production v1 storage-validation gate.
+
+## Initial CI observation
+
+The first successful Ubuntu 24.04 GitHub-hosted run observed:
+
+- 4096 archives + 1 active record;
+- valid recovery: 1426.317 ms;
+- missing-middle failure: 163.836 ms;
+- corrupt-middle failure: 56.037 ms;
+- truncated-middle failure: 55.813 ms;
+- max RSS: 2248 KiB;
+- fixture setup: 166.811 ms.
+
+This does not justify a recovery-index redesign by itself. The dedicated workflow now repeats the 4096-archive run three times and applies deliberately broad engineering regression guards:
+
+- valid recovery must remain <= 10 seconds on the Ubuntu 24.04 hosted runner;
+- process max RSS must remain <= 64 MiB.
+
+These are CI regression guards with substantial headroom over the initial observation, not target-server latency or memory SLAs. If either guard becomes too tight because of runner variability, adjust only with recorded evidence; if the implementation approaches the guard on stable runners, open an optimization task with measured targets before changing the on-disk format.
