@@ -1,0 +1,20 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG XMAKE_VERSION=3.1.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates cmake curl file git pkg-config python3 binutils \
+    kmod xfsprogs linux-image-generic initramfs-tools systemd-sysv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "v${XMAKE_VERSION}" https://github.com/xmake-io/xmake.git /tmp/xmake \
+    && cd /tmp/xmake \
+    && ./configure --prefix=/usr/local \
+    && make -j2 \
+    && make install \
+    && rm -rf /tmp/xmake
+
+RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.31" \
+    && kernel="$(ls /boot/vmlinuz-5.4.* 2>/dev/null | sort -V | tail -n 1)" \
+    && test -n "$kernel"
