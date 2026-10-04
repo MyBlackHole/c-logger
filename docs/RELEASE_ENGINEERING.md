@@ -78,6 +78,19 @@ preview **不是正式 v1 release**：`VERSION` 仍为 0.9.6，默认构建仍�
 XPack 也使用独立的 `prod-c-logger-v1-abi-preview-...` 名称，不能被正式 release asset
 检查接受。最终把 ABI 1 切为默认值必须与正式 v1 版本迁移一起完成。
 
+### v1 semantic ABI contract
+
+`abi/LOGGER_1_0_CONTRACT.md` 与 `tests/packaging/v1_abi_contract.c` 冻结初始 v1 的语义 ABI：
+
+- 所有现有 public struct 的 size/alignment/全部 field offset；
+- public enum 与数值宏；
+- 66 个默认 production public function 的精确 C type；
+- Logger/Audit/Console 配置版本与默认值；
+- 1.x additive-only 规则和需要新 ABI major 的破坏性变化。
+
+该 contract 同时按 C11/C++11 编译运行，并进入 `xmake-parity` 和 shared/static
+`release-validation`。ELF SONAME/symbol-version gate 与 semantic contract 是两层独立门禁。
+
 ## Shared build
 
 ```sh
