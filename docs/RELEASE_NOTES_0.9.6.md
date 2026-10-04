@@ -77,6 +77,11 @@ target_link_libraries(host PRIVATE Logger::logger)
 
 或 pkg-config。
 
+## 分发许可
+
+0.9.6 起项目明确采用 **Apache License 2.0** 分发；根目录 `LICENSE` 是权威许可文本，
+XPack/install tree 同时携带该文件，packaging gate 会拒绝缺失或错误的许可文件。
+
 ## 发布门禁
 
 0.9.6 发布前要求继续通过：
