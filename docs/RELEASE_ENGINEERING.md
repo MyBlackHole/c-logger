@@ -31,7 +31,7 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 - shared 实体文件：`liblogger.so.<VERSION>`；
 - symbol version：`LOGGER_0.9`；
 - public C symbol allowlist：`abi/logger.symbols`；
-- 当前 development public symbol set：66 项；0.9.5 发布版为 62 项，新增两个 diagnostics accessor 与两个 File metrics accessor；
+- 0.9.6 候选 public symbol set：66 项；相对 0.9.5 的 62 项仅新增两个 diagnostics accessor 与两个 File metrics accessor；
 - legacy fork helper 显式开启时额外导出 `logger_fork_reinit`；
 - production 默认 hidden visibility，并使用 version script `local: *`；
 - production fault injection 固定关闭。
@@ -171,12 +171,12 @@ Linux 发行版、kernel 或 CPU 自动兼容。
 发布候选还必须保留以下独立证据链：
 
 - `crash-recovery`：9 个 process-crash case，shared/static 各重复 3 次；
-- `vm-powercut`：10 个 QEMU SIGKILL + raw ext4 reboot/recovery cut point；
+- `vm-powercut`：ext4 + XFS 各 10 个 QEMU SIGKILL + raw-disk reboot/recovery cut point；
 - `xmake-parity` sanitizer：ASan+UBSan 与 TSan 的完整 static suite；
 - `queue-benchmark`：当前 candidate 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
 
-这些 gate 证明指定环境中的实现行为，不替代实际服务器、电源、控制器 cache、XFS 或最低
-kernel/glibc 验收。
+这些 gate 证明指定虚拟环境中的实现行为，不替代实际服务器、电源、控制器/device volatile
+cache、实际目标 mount/storage stack 或最低 kernel/glibc 验收。
 
 ## GitHub Release
 
