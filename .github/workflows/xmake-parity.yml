@@ -45,6 +45,35 @@ permissions:
   contents: read
 
 jobs:
+  v1-semantic-abi:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure semantic ABI contract
+        run: xmake f -m release --build_shared=n
+
+      - name: Build C and C++11 ABI contracts
+        run: xmake -j2 v1_abi_contract_c v1_abi_contract_cpp
+
+      - name: Run C and C++11 ABI contracts
+        run: |
+          xmake run v1_abi_contract_c
+          xmake run v1_abi_contract_cpp
+
   production-artifact:
     runs-on: ubuntu-24.04
     strategy:
