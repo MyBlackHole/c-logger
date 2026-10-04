@@ -10,6 +10,12 @@ option("build_shared")
     set_description("Build the production logger as a shared library")
 option_end()
 
+option("v1_abi_preview")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build the non-default Production v1 ABI preview (SONAME 1 / LOGGER_1.0)")
+option_end()
+
 option("legacy_fork")
     set_default(false)
     set_showmenu(true)
@@ -41,7 +47,10 @@ set_allowedplats("linux")
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
-local abi_version = "0"
+local v1_abi_preview = has_config("v1_abi_preview")
+local abi_version = v1_abi_preview and "1" or "0"
+local symbol_version = v1_abi_preview and "LOGGER_1.0" or "LOGGER_0.9"
+local abi_manifest = v1_abi_preview and "abi/logger-1.0.symbols" or "abi/logger.symbols"
 
 local function cmake_bool(value)
     return value and "TRUE" or "FALSE"
@@ -258,8 +267,8 @@ target("logger")
                    {prefixdir = "share/doc/prod_c_logger/examples/installed_consumer"})
 
         if target:kind() == "shared" then
-            local manifest = path.join(os.projectdir(), "abi", "logger.symbols")
-            local out = {"LOGGER_0.9 {\n", "  global:\n"}
+            local manifest = path.join(os.projectdir(), abi_manifest)
+            local out = {symbol_version .. " {\n", "  global:\n"}
             for line in io.lines(manifest) do
                 local name = line:match("^%s*(.-)%s*$")
                 if name ~= "" and name:sub(1, 1) ~= "#" then
@@ -321,12 +330,18 @@ if has_config("legacy_fork") then
 end
 
 local package_kind = has_config("build_shared") and "shared" or "static"
+local package_basename = v1_abi_preview
+    and ("prod-c-logger-v1-abi-preview-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+    or ("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+local package_title = v1_abi_preview
+    and ("c-logger " .. project_version .. " Production v1 ABI preview")
+    or ("c-logger " .. project_version .. " controlled production candidate")
 xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
-    set_title("c-logger " .. project_version .. " controlled production candidate")
+    set_title(package_title)
     set_description("Host-owned C Logger and Audit, builtin SHA-256")
-    set_basename("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+    set_basename(package_basename)
     add_targets("logger")
     after_package(function (package)
         local output = package:outputfile()

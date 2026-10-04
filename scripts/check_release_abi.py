@@ -16,7 +16,8 @@ def run(*args):
                           env=dict(os.environ, LC_ALL='C')).stdout
 
 
-def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_class=None):
+def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_class=None,
+            abi_version='0', symbol_version='LOGGER_0.9'):
     names = {s.strip() for s in manifest.read_text().splitlines()
              if s.strip() and not s.lstrip().startswith('#')}
     if legacy:
@@ -35,18 +36,20 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
             continue
         full = parts[-1]
         name = full.split('@', 1)[0]
-        if name == 'LOGGER_0.9' and parts[-2] == 'A':
+        if name == symbol_version and parts[-2] == 'A':
             continue
         exported[name] = full
     if set(exported) != names:
         errors.append({'missing': sorted(names - set(exported)),
                        'unexpected': sorted(set(exported) - names)})
-    wrong_versions = [full for full in exported.values() if not full.endswith('@@LOGGER_0.9')]
+    wrong_versions = [full for full in exported.values()
+                      if not full.endswith('@@' + symbol_version)]
     if wrong_versions:
         errors.append({'wrong_default_symbol_versions': wrong_versions})
     sonames = re.findall(r'\(SONAME\).*?\[(.*?)\]', dynamic)
-    if sonames != ['liblogger.so.0']:
-        errors.append({'soname': sonames})
+    expected_soname = 'liblogger.so.' + abi_version
+    if sonames != [expected_soname]:
+        errors.append({'soname': sonames, 'expected': expected_soname})
     if re.search(r'\((?:RPATH|RUNPATH|TEXTREL)\)', dynamic):
         errors.append('Production ELF contains RPATH/RUNPATH/TEXTREL')
     needed = re.findall(r'\(NEEDED\).*?\[(.*?)\]', dynamic)
@@ -75,7 +78,9 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
             'machine': field('Machine'), 'class': field('Class'), 'data': field('Data'),
             'required_glibc_versions': ['.'.join(map(str, t)) for t in glibc],
             'glibc_ceiling': max_glibc, 'expected_machine': machine,
-            'expected_class': elf_class, 'kernel_compatibility': 'not established by ELF inspection'}
+            'expected_class': elf_class, 'expected_abi_version': abi_version,
+            'expected_symbol_version': symbol_version,
+            'kernel_compatibility': 'not established by ELF inspection'}
 
 
 def main():
@@ -86,12 +91,21 @@ def main():
     p.add_argument('--max-glibc', help='Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements')
     p.add_argument('--machine', help='Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64')
     p.add_argument('--elf-class', choices=('ELF32', 'ELF64'), help='Required target ELF class')
+    p.add_argument('--abi-version', default='0',
+                   help='Expected SONAME ABI major, default: 0')
+    p.add_argument('--symbol-version', default='LOGGER_0.9',
+                   help='Expected default ELF symbol version, default: LOGGER_0.9')
     a = p.parse_args()
     if a.max_glibc and not re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', a.max_glibc):
         p.error('--max-glibc must be a dotted numeric version, e.g. 2.25')
+    if not re.fullmatch(r'[0-9]+', a.abi_version):
+        p.error('--abi-version must be numeric')
+    if not re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version):
+        p.error('--symbol-version must look like LOGGER_1.0')
     try:
         report = inspect(a.artifact.resolve(strict=True), a.manifest.resolve(strict=True),
-                         a.legacy_fork, a.max_glibc, a.machine, a.elf_class)
+                         a.legacy_fork, a.max_glibc, a.machine, a.elf_class,
+                         a.abi_version, a.symbol_version)
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(json.dumps({'passed': False, 'error': str(e)}, indent=2))
         return 2

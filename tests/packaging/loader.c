@@ -2,19 +2,20 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
-/* argv: DSO followed by the exact public export names. */
+/* argv: DSO, symbol version, followed by the exact public export names. */
 int main(int argc, char **argv)
 {
-	if (argc < 3)
+	if (argc < 4)
 		return 1;
 	void *h = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
 	if (!h) {
 		fprintf(stderr, "%s\n", dlerror());
 		return 2;
 	}
-	for (int i = 2; i < argc; ++i) {
+	const char *version = argv[2];
+	for (int i = 3; i < argc; ++i) {
 		void *a = dlsym(h, argv[i]);
-		void *b = dlvsym(h, argv[i], "LOGGER_0.9");
+		void *b = dlvsym(h, argv[i], version);
 		if (!a || a != b) {
 			fprintf(stderr, "missing/version error: %s\n", argv[i]);
 			return 3;

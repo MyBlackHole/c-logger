@@ -49,6 +49,35 @@ Production v1 的长期支持范围和 ABI 升级目标不由本文件隐式推�
 [ V1_RELEASE_CRITERIA.md ](V1_RELEASE_CRITERIA.md) 为准。当前目标是在正式 v1 前完成
 `liblogger.so.1` / `LOGGER_1.0` / frozen ABI snapshot 的独立迁移和 consumer 验证。
 
+### 非默认 v1 ABI preview
+
+v1 hardening 使用显式的 `--v1_abi_preview=y` 配置验证未来 ABI identity，而不改变当前
+0.9.6 默认产物：
+
+```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o v1-abi-build \
+  --build_shared=y \
+  --build_tests=y \
+  --v1_abi_preview=y
+xmake -j4 logger
+xmake test -j2
+
+artifact="$(find v1-abi-build -type f -name "liblogger.so.$(cat VERSION)" -print -quit)"
+python3 scripts/check_release_abi.py "$artifact" \
+  --manifest abi/logger-1.0.symbols \
+  --abi-version 1 \
+  --symbol-version LOGGER_1.0
+```
+
+preview 的目标契约是 SONAME `liblogger.so.1`、symbol version `LOGGER_1.0`、冻结的
+66-symbol v1 snapshot，以及安装 metadata 中 `LOGGER_ABI_VERSION=1`。CI 同时运行
+shared/static installed consumer。
+
+preview **不是正式 v1 release**：`VERSION` 仍为 0.9.6，默认构建仍是 ABI 0；preview
+XPack 也使用独立的 `prod-c-logger-v1-abi-preview-...` 名称，不能被正式 release asset
+检查接受。最终把 ABI 1 切为默认值必须与正式 v1 版本迁移一起完成。
+
 ## Shared build
 
 ```sh

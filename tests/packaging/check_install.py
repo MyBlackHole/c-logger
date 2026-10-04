@@ -28,10 +28,17 @@ p.add_argument('--installed-prefix', type=Path,
 p.add_argument('--libdir', default='lib')
 p.add_argument('--includedir', default='include')
 p.add_argument('--legacy', action='store_true')
+p.add_argument('--abi-version', default='0')
+p.add_argument('--symbol-version', default='LOGGER_0.9')
+p.add_argument('--abi-manifest', default='abi/logger.symbols')
 a = p.parse_args()
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
 version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
 assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), version
+assert re.fullmatch(r'[0-9]+', a.abi_version), a.abi_version
+assert re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version), a.symbol_version
+abi_manifest = a.source / a.abi_manifest
+assert abi_manifest.is_file(), abi_manifest
 version_major, version_minor, version_patch = map(int, version.split('.'))
 next_patch = f'{version_major}.{version_minor}.{version_patch + 1}'
 next_major = f'{version_major + 1}.0.0'
@@ -65,7 +72,7 @@ try:
             if m:
                 assert line.startswith('LOGGER_API '), line
                 declared.add(m.group(1))
-    manifest = {n for n in (a.source/'abi/logger.symbols').read_text().splitlines()
+    manifest = {n for n in abi_manifest.read_text().splitlines()
                 if n and not n.startswith('#')}
     assert declared == manifest
     stage = work / 'destdir'
@@ -93,6 +100,8 @@ try:
     expected_headers = {'logger.h','audit.h','console.h','logger_export.h','logger_version.h'}
     if a.legacy: expected_headers.add('logger_fork_compat.h')
     assert {x.name for x in include.iterdir()} == expected_headers
+    version_header = (include / 'logger_version.h').read_text()
+    assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*$', version_header, re.M)
     for x in prefix.rglob('*'):
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()
@@ -168,19 +177,24 @@ try:
     (work/'public-layout.txt').write_text(layouts[0])
     if a.kind=='shared':
         dso=lib/'liblogger.so'
-        assert dso.is_symlink() and (lib/'liblogger.so.0').is_symlink()
+        soname_link = lib / ('liblogger.so.' + a.abi_version)
+        assert dso.is_symlink() and soname_link.is_symlink()
         assert dso.resolve().name=='liblogger.so.'+version
-        argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso]
+        assert Path(os.readlink(dso)).name == soname_link.name
+        argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
+              '--manifest',abi_manifest,
+              '--abi-version',a.abi_version,
+              '--symbol-version',a.symbol_version]
         if a.legacy: argv.append('--legacy-fork')
         run(argv)
         # A deliberately impossible GLIBC ceiling must cause a failing gate.
         run(argv+['--max-glibc','2.0'],expected=1)
-        names=[n for n in (a.source/'abi/logger.symbols').read_text().splitlines()
+        names=[n for n in abi_manifest.read_text().splitlines()
                if n and not n.startswith('#')]
         if a.legacy: names.append('logger_fork_reinit')
         loader=work/'abi-loader'
         run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
-        run([loader,dso]+names)
+        run([loader,dso,a.symbol_version]+names)
     artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
     iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
     if a.legacy: iso.append('--legacy-fork')
@@ -189,7 +203,9 @@ try:
         install_check = 'preinstalled package tree'
     else:
         install_check = 'Xmake staged install'
-    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'install_driver':'xmake',
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'abi_version':a.abi_version,
+            'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
+            'install_driver':'xmake',
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
