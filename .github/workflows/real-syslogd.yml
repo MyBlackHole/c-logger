@@ -1,0 +1,90 @@
+name: real-syslogd
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/real-syslogd.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/logger_syslog.c"
+      - "src/logger_syslog.h"
+      - "src/logger.c"
+      - "src/logger_worker.c"
+      - "include/logger.h"
+      - "tests/integration/test_real_syslogd.c"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/real-syslogd.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/logger_syslog.c"
+      - "src/logger_syslog.h"
+      - "src/logger.c"
+      - "src/logger_worker.c"
+      - "include/logger.h"
+      - "tests/integration/test_real_syslogd.c"
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install real syslog daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rsyslog
+          echo "/usr/sbin" >> "$GITHUB_PATH"
+          /usr/sbin/rsyslogd -v
+
+          # Ubuntu attaches an AppArmor profile to /usr/sbin/rsyslogd that can
+          # reject this test's private /tmp config/socket paths before rsyslog
+          # itself is exercised. The hosted runner is disposable; remove only
+          # that daemon profile so this job measures the local AF_UNIX Syslog
+          # contract rather than host AppArmor policy.
+          if command -v apparmor_parser >/dev/null 2>&1 &&
+             [ -f /etc/apparmor.d/usr.sbin.rsyslogd ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.rsyslogd
+          fi
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure production-linked integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.kind }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          xmake f -m release -o real-syslog-build --build_shared="$shared"
+
+      - name: Build integration executable
+        run: xmake -j2 real_syslogd_integration
+
+      - name: Run against real rsyslogd
+        run: xmake run real_syslogd_integration
