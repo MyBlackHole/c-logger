@@ -150,13 +150,15 @@ xmake test 'fork_reinit_regression/*' -j1
 - [可观测性与问题发现](docs/OBSERVABILITY.md)
 - [内置摘要契约](docs/BUILTIN_CRYPTO.md)
 - [平台基线](docs/PLATFORM_BASELINE.md)
+- [Production v1 支持范围与发布准入](docs/V1_RELEASE_CRITERIA.md)
 - [已知限制](docs/KNOWN_ISSUES.md)
 - [变更清单](CHANGELOG.md)
 
 Audit 是独立安全审计子系统；普通日志 callback 返回不是 Audit 持久化回执。
 当前 QEMU/raw-disk ext4 + XFS power-cut、sanitizer、ABI、packaging 和 benchmark 门禁不能替代
-真实服务器、RAID/HBA/NVMe/SATA volatile cache、实际目标存储栈以及最低支持 kernel/glibc
-的部署验收。
+真实服务器、RAID/HBA/NVMe/SATA volatile cache、实际目标存储栈以及最低支持 kernel 的部署验收。
+Production v1 的支持/不支持范围与剩余硬门禁见
+[docs/V1_RELEASE_CRITERIA.md](docs/V1_RELEASE_CRITERIA.md)。
 
 ## 许可证
 
