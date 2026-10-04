@@ -330,12 +330,18 @@ if has_config("legacy_fork") then
 end
 
 local package_kind = has_config("build_shared") and "shared" or "static"
+local package_basename = v1_abi_preview
+    and ("prod-c-logger-v1-abi-preview-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+    or ("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+local package_title = v1_abi_preview
+    and ("c-logger " .. project_version .. " Production v1 ABI preview")
+    or ("c-logger " .. project_version .. " controlled production candidate")
 xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
-    set_title("c-logger " .. project_version .. " controlled production candidate")
+    set_title(package_title)
     set_description("Host-owned C Logger and Audit, builtin SHA-256")
-    set_basename("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
+    set_basename(package_basename)
     add_targets("logger")
     after_package(function (package)
         local output = package:outputfile()
