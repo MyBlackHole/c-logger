@@ -159,7 +159,8 @@ library。不能把 static wrapper test 误称为 DSO 内部拦截。
 ## QEMU power-cut
 
 `.github/workflows/vm-powercut.yml` 构建 static test-only `vm_powercut_guest`，对 10 个 cut
-point 执行真实 QEMU SIGKILL、raw ext4 同盘重启、恢复、追加与 Audit chain verify。
+point 在 ext4 与 XFS 两种 raw filesystem image 上执行真实 QEMU SIGKILL、同盘重启、恢复、
+追加与 Audit chain verify。
 
 覆盖：
 
@@ -169,8 +170,9 @@ point 执行真实 QEMU SIGKILL、raw ext4 同盘重启、恢复、追加与 Aud
 - `file_after_archive_rename` / `file_after_archive_dirsync`；
 - `file_after_active_open` / `file_after_active_dirsync`。
 
-这证明 GitHub runner 上 virtual x86_64 + raw ext4 + QEMU 存储路径的恢复行为，不替代真实
-服务器断电、RAID/HBA/NVMe/SATA volatile cache 或 XFS 验收。
+这证明 GitHub runner 上 virtual x86_64 + raw ext4/XFS + QEMU 存储路径的恢复行为，不替代
+真实服务器断电、RAID/HBA/NVMe/SATA volatile cache、实际目标 mount/storage stack 或最低
+支持 kernel 的验收。
 
 ## Queue benchmark
 

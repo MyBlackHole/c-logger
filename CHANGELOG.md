@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.9.6 — 2026-10-04
+
+受控生产发布候选的可观测性收敛版本。保持 ABI major `0`、SONAME
+`liblogger.so.0`、`LOGGER_0.9` symbol version 以及既有 public 函数签名和旧 metrics
+结构布局不变；public C symbol set 从 0.9.5 的 62 项 additive 增至 66 项。
+
+新增统一 runtime diagnostics：显式实例与 global facade 均可读取 queue depth/capacity、
+high watermark、completion backlog、queue storage、spill 使用/耗尽、worker wait/wakeup、
+drop/sync-fallback、output accounting、sticky first error 及 lifetime observation flags。
+统一 diagnostics 不执行 backend I/O、flush 或 reconnect，供宿主采样并接入现有监控系统。
+
+新增 File backend metrics：区分顶层 write operation 与 write/writev syscall，保留 terminal
+error 前 partial bytes，分别统计 EINTR retry、data/dir fsync、rotation、reopen、retention，
+并暴露 latest top-level result 与 sticky write/sync/rotation/reopen errno。快照只在读取一致
+File sink 状态时取得现有 `emit_mu`，不会触发 I/O 或状态修复。
+
+发布文档同时统一 ext4 + XFS QEMU/raw-disk power-cut 边界：两种文件系统均执行同一组 10
+个 cut point；该证据仍不替代真实服务器、电源、controller/device volatile cache、实际目标
+mount/storage stack 或最低 kernel/glibc 验收。
+
+项目分发许可正式明确为 Apache License 2.0；根目录与 XPack/install tree 均携带权威
+`LICENSE`，packaging gate 对许可文件存在性和版本文本做 fail-closed 验证。
+
 ## 0.9.5 — 2026-09-28
 
 受控生产发布候选的平台验证与发布恢复收敛版本。相对 0.9.4 **没有 `src/` / `include/`

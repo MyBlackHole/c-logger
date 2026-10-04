@@ -242,7 +242,7 @@ target("logger")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
-        target:add("installfiles", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
+        target:add("installfiles", "LICENSE", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
                    {prefixdir = "share/doc/prod_c_logger"})
         for _, doc in ipairs(os.files(path.join(os.projectdir(), "docs", "*.md"))) do
             if path.filename(doc):sub(1, 7) ~= "HISTORY" then

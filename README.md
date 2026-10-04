@@ -154,5 +154,10 @@ xmake test 'fork_reinit_regression/*' -j1
 - [变更清单](CHANGELOG.md)
 
 Audit 是独立安全审计子系统；普通日志 callback 返回不是 Audit 持久化回执。
-当前 QEMU/ext4 power-cut、sanitizer、ABI、packaging 和 benchmark 门禁不能替代真实服务器、
-RAID/HBA/NVMe cache、XFS 以及目标 kernel/glibc 的部署验收。
+当前 QEMU/raw-disk ext4 + XFS power-cut、sanitizer、ABI、packaging 和 benchmark 门禁不能替代
+真实服务器、RAID/HBA/NVMe/SATA volatile cache、实际目标存储栈以及最低支持 kernel/glibc
+的部署验收。
+
+## 许可证
+
+本项目采用 Apache License 2.0。源码与发布包的完整许可条款见 [LICENSE](LICENSE)。
