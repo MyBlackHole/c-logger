@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     kmod xfsprogs linux-image-generic initramfs-tools systemd-sysv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch "v${XMAKE_VERSION}" https://github.com/xmake-io/xmake.git /tmp/xmake \
+RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
+        --branch "v${XMAKE_VERSION}" https://github.com/xmake-io/xmake.git /tmp/xmake \
     && cd /tmp/xmake \
     && ./configure --prefix=/usr/local \
     && make -j2 \
