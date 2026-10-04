@@ -1,0 +1,131 @@
+name: audit-recovery-capacity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/audit-recovery-capacity.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/audit_recovery.c"
+      - "src/audit_record.c"
+      - "src/audit_record.h"
+      - "src/audit_integrity.c"
+      - "src/audit_internal.h"
+      - "tests/regression/test_audit_recovery_capacity.c"
+      - "tests/regression/record_support.h"
+      - "tests/regression/crypto_support.h"
+      - "tests/regression/audit_support.h"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/audit-recovery-capacity.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/audit_recovery.c"
+      - "src/audit_record.c"
+      - "src/audit_record.h"
+      - "src/audit_integrity.c"
+      - "src/audit_internal.h"
+      - "tests/regression/test_audit_recovery_capacity.c"
+      - "tests/regression/record_support.h"
+      - "tests/regression/crypto_support.h"
+      - "tests/regression/audit_support.h"
+
+permissions:
+  contents: read
+
+jobs:
+  archive-limit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: Configure capacity benchmark
+        run: >-
+          xmake f -m release -o capacity-build
+          --build_shared=n
+          --build_regression_tests=y
+
+      - name: Build capacity benchmark
+        run: xmake -j2 audit_recovery_capacity
+
+      - name: Run 4096-archive characterization
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$(find capacity-build -type f -name audit_recovery_capacity -print -quit)"
+          test -n "$binary"
+          for i in 1 2 3; do
+            "$binary" 4096 | tee "audit-recovery-capacity-${i}.json"
+          done
+
+          python3 - <<'PY'
+          import json
+          import statistics
+          from pathlib import Path
+
+          runs = [json.loads(Path(f"audit-recovery-capacity-{i}.json").read_text())
+                  for i in range(1, 4)]
+          valid = [r["valid_recovery_ms"] for r in runs]
+          maxrss = [r["maxrss_kb"] for r in runs]
+          failures = {
+              key: [r[key] for r in runs]
+              for key in ("missing_recovery_ms", "corrupt_recovery_ms",
+                          "truncated_recovery_ms")
+          }
+
+          summary = {
+              "archives": 4096,
+              "samples": len(runs),
+              "valid_recovery_ms_median": round(statistics.median(valid), 3),
+              "valid_recovery_ms_max": round(max(valid), 3),
+              "maxrss_kb_max": max(maxrss),
+              "missing_recovery_ms_max": round(max(failures["missing_recovery_ms"]), 3),
+              "corrupt_recovery_ms_max": round(max(failures["corrupt_recovery_ms"]), 3),
+              "truncated_recovery_ms_max": round(max(failures["truncated_recovery_ms"]), 3),
+              "ci_guard_valid_ms": 10000,
+              "ci_guard_maxrss_kb": 65536,
+          }
+          Path("audit-recovery-capacity-summary.json").write_text(
+              json.dumps(summary, indent=2) + "\n")
+
+          if max(valid) > summary["ci_guard_valid_ms"]:
+              raise SystemExit("4096-archive valid recovery exceeded 10s CI guard")
+          if max(maxrss) > summary["ci_guard_maxrss_kb"]:
+              raise SystemExit("4096-archive recovery exceeded 64MiB RSS CI guard")
+          PY
+
+          {
+            echo '## Audit recovery capacity'
+            echo
+            echo 'Three repeated 4096-archive runs; limits are CI regression guards, not target-server SLAs.'
+            echo
+            echo '~~~json'
+            cat audit-recovery-capacity-summary.json
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: audit-recovery-capacity
+          path: |
+            audit-recovery-capacity-*.json
+            audit-recovery-capacity-summary.json
+          if-no-files-found: error
+          retention-days: 30

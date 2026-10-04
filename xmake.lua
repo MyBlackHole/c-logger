@@ -566,6 +566,7 @@ if has_config("build_regression_tests") then
         {"crypto_chain_tool", "tests/regression/crypto_chain_tool.c"},
         {"audit_record_regression", "tests/regression/test_audit_record.c"},
         {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
+        {"audit_recovery_capacity", "tests/regression/test_audit_recovery_capacity.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
         {"sha256_only_regression", "tests/regression/test_sha256_only.c"},
 
