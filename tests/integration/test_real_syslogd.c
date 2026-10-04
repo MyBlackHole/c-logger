@@ -17,6 +17,7 @@
 typedef struct {
 	char dir[256];
 	char socket_path[320];
+	char socket_dir[320];
 	char output_path[320];
 	char config_path[320];
 	char pid_path[320];
@@ -318,7 +319,8 @@ int main(void)
 	char temp[] = "/tmp/c-logger-rsyslog-XXXXXX";
 	CHECK(mkdtemp(temp) != NULL);
 	CHECK(snprintf(f.dir, sizeof(f.dir), "%s", temp) > 0);
-	CHECK(snprintf(f.socket_path, sizeof(f.socket_path), "%s/dev/log", temp) > 0);
+	CHECK(snprintf(f.socket_dir, sizeof(f.socket_dir), "%s/dev", temp) > 0);
+	CHECK(snprintf(f.socket_path, sizeof(f.socket_path), "%s/log", f.socket_dir) > 0);
 	CHECK(snprintf(f.output_path, sizeof(f.output_path), "%s/received.log", temp) > 0);
 	CHECK(snprintf(f.config_path, sizeof(f.config_path), "%s/rsyslog.conf", temp) > 0);
 	CHECK(snprintf(f.pid_path, sizeof(f.pid_path), "%s/rsyslog.pid", temp) > 0);
@@ -334,6 +336,7 @@ int main(void)
 
 	stop_daemon(&f);
 	(void)unlink(f.socket_path);
+	CHECK(rmdir(f.socket_dir) == 0);
 	(void)unlink(f.output_path);
 	(void)unlink(f.config_path);
 	(void)unlink(f.pid_path);
