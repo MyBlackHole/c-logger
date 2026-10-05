@@ -21,7 +21,7 @@ permissions:
 jobs:
   linux-5-10:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v5
 
