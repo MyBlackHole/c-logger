@@ -45,6 +45,7 @@ jobs:
           path: |
             min-kernel-evidence/platform-evidence.txt
             min-kernel-evidence/kernel-compiler.txt
+            min-kernel-evidence/kernel-release.txt
             min-kernel-evidence/serial.log
             min-kernel-evidence/qemu-debug.log
           if-no-files-found: warn
