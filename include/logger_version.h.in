@@ -1,6 +1,6 @@
 #ifndef LOGGER_VERSION_H
 #define LOGGER_VERSION_H
-/* Compile-time package identity, not a runtime health/certification assertion. */
+/* 编译期软件包身份信息，不代表运行时健康状态或认证结论。 */
 #define LOGGER_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
 #define LOGGER_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define LOGGER_VERSION_PATCH @PROJECT_VERSION_PATCH@

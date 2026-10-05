@@ -1,52 +1,43 @@
-# Logging and audit data security
+# 日志与审计数据安全
 
-## Secret policy
+## 敏感信息策略
 
-The logging library does not attempt to parse arbitrary printf text and guess
-which substrings are passwords or keys. Such heuristics are incomplete and can
-create a false security boundary.
+日志库不会尝试解析任意 printf 文本并猜测哪些子串属于密码或密钥。这类启发式方法并不完整，
+反而可能形成虚假的安全边界。
 
-Callers must not log plaintext passwords, encryption keys, private keys, access
-key secrets, bearer tokens, session tokens, recovery codes, or equivalent
-authentication material.
+调用方不得记录明文密码、加密密钥、私钥、访问密钥秘密值、Bearer Token、会话令牌、
+恢复码或同等性质的认证材料。
 
-For values that must be referenced, prefer a stable non-secret identifier. If a
-value must be partially recognizable, use `logger_mask_secret()`. To suppress a
-value entirely, use `logger_redact()` or `AUDIT_DETAIL_REDACTED`.
+对于必须引用的值，优先使用稳定且不包含秘密的标识符。如果某个值必须保留部分可识别信息，
+使用 `logger_mask_secret()`。如果必须完全隐藏某个值，使用 `logger_redact()` 或
+`AUDIT_DETAIL_REDACTED`。
 
-## Audit fields
+## 审计字段
 
-`actor`, `source`, `resource`, `operation`, and `detail` are audit metadata, not
-secret containers. Key IDs, user IDs, object IDs, operation names, result codes
-and similar identifiers are appropriate. Key material and authentication
-secrets are not.
+`actor`、`source`、`resource`、`operation` 和 `detail` 是审计元数据，不是秘密信息容器。
+密钥 ID、用户 ID、对象 ID、操作名称、结果码及类似标识符可以记录；密钥材料和认证秘密不得记录。
 
-## Limitations
+## 限制
 
-Redaction helpers only protect values passed through them. They cannot prevent a
-caller from directly writing a secret with `LOG_INFO("%s", secret)`. Preventing
-that requires application policy, code review, static analysis, and tests at the
-call sites.
+脱敏辅助函数只能保护通过这些函数传入的值。它们无法阻止调用方直接执行
+`LOG_INFO("%s", secret)` 写出秘密信息。防止这种情况需要在调用点落实应用策略、代码审查、
+静态分析和测试。
 
-## Crypto engine failures
+## 密码计算引擎故障
 
-Round 3 makes digest errors explicit and refuses further Audit writes after a
-runtime CRYPTO_FAILED state. Engine failures are not all-zero digests. A crypto failure does not silently reopen the old session; investigate,
-then shut down/reinitialize explicitly. This is not FIPS/GM/T certification or malicious-provider validation.
-An unkeyed chain is still not authenticated tamper prevention. Previously written
-zero-digest or otherwise suspect files require preservation and investigation,
-not automatic rehashing. See docs/ROUND3_CRYPTO.md and docs/KNOWN_ISSUES.md.
+第 3 轮将摘要计算错误显式化，并在运行时进入 `CRYPTO_FAILED` 状态后拒绝继续写入 Audit。
+引擎故障不会被伪装成全零摘要。发生密码计算故障后不会静默重新打开旧会话；应先调查原因，
+再显式关闭并重新初始化。这不代表通过 FIPS/GM/T 认证，也不代表完成了对恶意密码提供方的验证。
 
-## Builtin-only implementation
+未加密钥的哈希链仍不具备经过认证的防篡改能力。此前已经写入的全零摘要文件或其他可疑文件应保留并调查，
+不得自动重新哈希。详见 `docs/ROUND3_CRYPTO.md` 和 `docs/KNOWN_ISSUES.md`。
 
-Only the self-contained SHA-256 implementation is compiled. No
-external provider policy, external crypto configuration, or dynamic crypto
-engine is used. This intentionally gives up the option of routing digests
-through an externally certified module. Algorithm correctness tests are not
-FIPS, GM/T or cryptographic-module certification. Users that require such a
-module must not assume this build satisfies that requirement.
+## 仅内置实现
 
-The SHA-256 fail-closed error path remains. Retired algorithm ID 2 is rejected;
-old SM3 history is not automatically rewritten or accepted as SHA-256. Removing an
-unused external-library path is not a diagnosis or fix of the earlier external
-library TSan reports; those observations are preserved as historical evidence.
+当前只编译自包含的 SHA-256 实现。不使用外部提供方策略、外部密码配置或动态密码计算引擎。
+这意味着明确放弃把摘要计算路由到外部认证模块的能力。算法正确性测试不等同于 FIPS、GM/T 或
+密码模块认证。需要这类认证模块的用户不得假定当前构建已经满足该要求。
+
+SHA-256 的失败关闭错误路径继续保留。已退役的算法 ID 2 会被拒绝；旧 SM3 历史不会被自动重写，
+也不会被当作 SHA-256 接受。移除未使用的外部库路径，并不等同于诊断或修复此前外部库相关的
+TSan 报告；这些观察结果继续作为历史证据保留。

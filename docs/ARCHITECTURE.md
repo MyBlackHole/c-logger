@@ -3,8 +3,8 @@
 > 本文是 c-logger 的**顶层架构入口**。
 > 它回答“系统由什么组成、数据怎么流、谁拥有资源、线程如何协作、哪些边界不能被破坏”。
 >
-> 严格 review gate 见 `ARCHITECTURE_INVARIANTS.md`；
-> backend、locking、Audit 等实现细节继续以专项文档为准。
+> 严格 评审门禁 见 `ARCHITECTURE_INVARIANTS.md`；
+> 后端、锁机制、Audit 等实现细节继续以专项文档为准。
 
 ## 1. 定位
 
@@ -12,50 +12,50 @@ c-logger 是面向 Linux/ELF 的 C 日志库，主要嵌入宿主应用或第三
 
 当前定位：
 
-- public API 是 plain C ABI；
-- C11 language baseline + GNU C extensions；
+- 公开 API 是 纯 C ABI；
+- C11 语言基线 + GNU C extensions；
 - 宿主显式拥有 `logger_t`；
-- SDK 默认 borrow Logger 或使用宿主 callback；
+- SDK 默认 借用 Logger 或使用宿主 回调；
 - 支持 sync / async 普通日志；
 - 支持 stderr、普通文件、本地 datagram Syslog；
 - 提供独立 Console；
 - 提供独立 Audit 子系统；
-- bounded memory；
-- overflow、I/O、durability failure 显式可见；
-- 不接管宿主 process/thread/fork model。
+- 有界内存；
+- 溢出、I/O、持久性 故障 显式可见；
+- 不接管宿主 进程/线程/fork 模型。
 
 当前版本仍是发布工程候选，不等于 Production v1 已完成目标平台和掉电语义验收。
 
-## 2. Architecture Goals
+## 2. 架构目标
 
 架构优先保证：
 
 1. **Host-neutral**：库不接管宿主业务线程、进程创建和 fork 策略；
-2. **明确 ownership**：创建、borrow、move、最终 release 可追踪；
-3. **Bounded resources**：queue、spill、workspace 有明确上界；
-4. **Failure visibility**：不能静默隐藏 overflow、I/O、durability 或平台能力失败；
-5. **Deterministic lifecycle**：worker 必须 cooperative stop + join；
-6. **Correct concurrency**：lock、atomic、lifetime pin、join 各司其职；
-7. **Caller lifetime isolation**：async enqueue 后不再依赖 SDK source pointer；
-8. **Performance with evidence**：性能修改必须通过 benchmark 和 sanitizer/TSan 验证。
+2. **明确 所有权**：创建、借用、移交、最终 release 可追踪；
+3. **有界资源**：队列、溢出区、工作区 有明确上界；
+4. **故障可见性**：不能静默隐藏 溢出、I/O、持久性 或平台能力失败；
+5. **确定性生命周期**：工作线程 必须 协作式停止并等待退出；
+6. **正确并发**：lock、atomic、生命周期固定、join 各司其职；
+7. **调用方生命周期隔离**：异步入队 后不再依赖 SDK 源指针；
+8. **有证据支撑的性能**：性能修改必须通过 benchmark 和 sanitizer/TSan 验证。
 
-## 3. Non-Goals
+## 3. 非目标
 
 当前不承诺：
 
 - NanoLog 类极限 binary/deferred logging latency；
-- 任意多线程 raw fork 后继续使用继承 runtime；
-- 无限 queue 或“永不丢日志”；
+- 任意多线程 raw fork 后继续使用继承 运行时；
+- 无限 队列 或“永不丢日志”；
 - remote Syslog durable acknowledgement/replay；
-- 多 consumer 并发写同一普通文件；
-- signal-safe 普通日志；
+- 多 消费者 并发写同一普通文件；
+- 唤醒信号-safe 普通日志；
 - 通用 async-cancel-safe；
 - io_uring 作为 Linux 3.10+ 基础依赖；
 - 自动管理第三方 SDK 生命周期。
 
-未来可以增加 fast structured/binary API，但不能偷偷改变现有 printf-compatible API 的语义。
+未来可以增加 快速结构化/二进制 API，但不能偷偷改变现有 兼容 printf 的 API 的语义。
 
-## 4. System Context
+## 4. 系统上下文
 
 ```mermaid
 flowchart LR
@@ -107,9 +107,9 @@ SDK borrower owns
     neither logger_t nor Logger worker/backend
 ```
 
-## 5. Public API Layers
+## 5. 公开 API 分层
 
-### Explicit instance
+### 显式实例
 
 第三方集成的推荐入口：
 
@@ -123,13 +123,13 @@ logger_flush_instance_status()
 logger_destroy_status()
 ```
 
-宿主是 structural owner。
+宿主是 结构性所有者。
 
-多个 caller/SDK 可以 borrow 同一实例，但 owner 必须在 destroy 前停止并 join 所有 borrower。
+多个 caller/SDK 可以 借用 同一实例，但 所有者 必须在 销毁 前停止并 join 所有 借用方。
 
-当前没有 generic `logger_get()/logger_put()`；并发 destroy/use 属于 caller 违反生命周期契约。
+当前没有 generic `logger_get()/logger_put()`；并发 销毁/use 属于 caller 违反生命周期契约。
 
-### Global facade
+### 全局门面
 
 `logger_init()/LOG_*/logger_shutdown_status()` 是应用 convenience layer。
 
@@ -137,10 +137,10 @@ logger_destroy_status()
 
 - generation + phase atomic ticket；
 - controller mutex；
-- lifetime rwlock；
+- 生命周期 rwlock；
 - hidden `g_logger`。
 
-Global caller 只能 lifetime-pinned borrow，不能取得 owning pointer。
+Global caller 只能 生命周期-pinned 借用，不能取得 owning 指针。
 
 ### Console
 
@@ -148,18 +148,18 @@ Global caller 只能 lifetime-pinned borrow，不能取得 owning pointer。
 
 - process-static atomic config；
 - 独立 output mutex；
-- 不使用 Logger queue/backend；
+- 不使用 Logger 队列/后端；
 - 不作为 SDK 隐式输出通道。
 
 ### Audit
 
 独立 process-global security subsystem：
 
-- single writer；
+- single 写入器；
 - 自己的 state machine；
 - private synchronous Logger；
 - SHA-256 chain；
-- checkpoint/recovery；
+- 检查点/recovery；
 - fail-closed error state。
 
 普通 Logger 的成功返回不能解释为 Audit commit receipt。
@@ -220,9 +220,9 @@ flowchart TB
 
 ## 7. Thread Model
 
-### Sync instance
+### Sync 实例
 
-不创建 Logger worker：
+不创建 Logger 工作线程：
 
 ```text
 caller
@@ -233,9 +233,9 @@ caller
   -> return
 ```
 
-### Async instance
+### Async 实例
 
-当前每个 async `logger_t` 创建一个 private worker：
+当前每个 async `logger_t` 创建一个 private 工作线程：
 
 ```text
 Producer 1 ─┐
@@ -243,10 +243,10 @@ Producer 2 ─┼─> bounded shared MPSC ─> single worker ─> sinks
 Producer N ─┘
 ```
 
-single worker 和 shared MPSC 是**当前实现选择**，不是永久 architecture invariant。
+single 工作线程 和 shared MPSC 是**当前实现选择**，不是永久 architecture invariant。
 
 如果未来改成 per-thread SPSC/sharding，必须重新处理 TLS registration、dead-thread reclaim、
-fork/dlclose、destroy、fairness 和 flush aggregation。
+fork/dlclose、销毁、fairness 和 刷新 aggregation。
 
 ## 8. Sync Data Path
 
@@ -268,8 +268,8 @@ public API
 
 - caller input 只需在本次调用期间有效；
 - I/O 在 caller thread；
-- 没有 queue buffering；
-- status API 可以直接观察 backend error。
+- 没有 队列 buffering；
+- status API 可以直接观察 后端 error。
 
 ## 9. Async Data Path
 
@@ -307,17 +307,17 @@ printf args -> vsnprintf -> queue text
 
 ## 10. Queue / Spill Architecture
 
-当前 queue：
+当前 队列：
 
 - bounded shared MPSC；
 - per-slot sequence generation；
-- release/acquire publication；
+- release/acquire 发布；
 - compact metadata/source/context；
 - text <= 512B inline；
-- text > 512B 使用预分配 spill block；
-- spill ownership 使用 atomic bitmap；
+- text > 512B 使用预分配 溢出区 block；
+- 溢出区 所有权 使用 atomic bitmap；
 - no per-record malloc/free；
-- worker batch 最大 256。
+- 工作线程 batch 最大 256。
 
 ### Publication
 
@@ -335,30 +335,30 @@ consumer
   -> advance dequeue_pos
 ```
 
-`slot.seq` 承担 payload publication；
+`slot.seq` 承担 payload 发布；
 `enqueue_pos/dequeue_pos` 主要承担 reservation/accounting。
 
-### Source lifetime
+### Source 生命周期
 
-只有最终 detail/config 真正会输出的 metadata 才在 producer 采集并进入 queue：
+只有最终 detail/config 真正会输出的 metadata 才在 生产者 采集并进入 队列：
 
 - `NORMAL+`：module；
 - `VERBOSE+`：按 `include_pid/include_tid` 采集 pid/tid；
 - `DEBUG`：context；
 - `DEBUG + include_source`：file/function/line。
 
-需要进入 async queue 的 module/source 仍做 bounded snapshot，因此 SDK/caller 返回甚至
-DSO 合法卸载后，已经入队且未来会被格式化的字段不再依赖原 source pointer。
+需要进入 async 队列 的 module/source 仍做 bounded snapshot，因此 SDK/caller 返回甚至
+DSO 合法卸载后，已经入队且未来会被格式化的字段不再依赖原 源指针。
 
 ### Spill
 
 默认最多 1024 blocks。
 
-spill 是 long-message burst capacity，不是 durable queue，也不是持续 overload 的解决方案。
+溢出区 是 long-message burst capacity，不是 durable 队列，也不是持续 overload 的解决方案。
 
 ## 11. Backpressure
 
-queue/spill 无资源时：
+队列/溢出区 无资源时：
 
 ```text
 unavailable
@@ -380,11 +380,11 @@ burst capacity
 ≈ peak producer rate × tolerated consumer stall
 ```
 
-而不是让持续 producer rate > consumer rate 永久成立。
+而不是让持续 生产者 rate > 消费者 rate 永久成立。
 
 ## 12. Worker / Batch / Sinks
 
-worker 当前：
+工作线程 当前：
 
 ```text
 drain <= 256 records
@@ -405,21 +405,21 @@ sink 当前行为：
 | file | `writev` |
 | Syslog | per-record `send` |
 
-当前 wakeup 已改为 self-paced：worker 只有在 queue 空并准备进入 cond_wait 时才
-publish `consumer_waiting=1`；producer 只有观察到该状态才进入
-`wait_mu + cond_signal` slow path。shutdown 使用独立 force wake。
+当前 wakeup 已改为 self-paced：工作线程 只有在 队列 空并准备进入 cond_wait 时才
+发布 `consumer_waiting=1`；生产者 只有观察到该状态才进入
+`wait_mu + cond_signal` slow path。shutdown 使用独立 强制唤醒。
 
 因此当前明确的未来候选包括：
 
-- consumer-stage profiling；
+- 消费者-stage profiling；
 - Syslog `sendmmsg()`；
 - adaptive batch/backpressure。
 
-## 13. Completion / Flush
+## 13. 完成 / 刷新
 
 最重要的 invariant：
 
-> **queue empty / dequeue != backend completion。**
+> **队列为空 / 出队 != 后端完成。**
 
 三个状态：
 
@@ -434,7 +434,7 @@ completed_pos
     = flush/wait 使用的 watermark
 ```
 
-flush：
+刷新：
 
 ```text
 snapshot reservation target
@@ -442,7 +442,7 @@ snapshot reservation target
   -> backend sync if required
 ```
 
-不能把“queue 空了”解释成“已经 write/fsync”。
+不能把“队列 空了”解释成“已经 write/fsync”。
 
 ## 14. Backend Model
 
@@ -450,12 +450,12 @@ snapshot reservation target
 
 - sync path 单 record；
 - async path batch `writev`；
-- SIGPIPE 使用 thread-local mask guard；
-- 不改变 process-global signal disposition。
+- SIGPIPE 使用 线程本地 mask guard；
+- 不改变 process-global 唤醒信号 disposition。
 
 ### File
 
-一个 file backend structural owner 持有：
+一个 file 后端 结构性所有者 持有：
 
 ```text
 dir_fd
@@ -466,12 +466,12 @@ rotation/reopen state
 
 关键规则：
 
-- regular target 单协作 owner；
+- regular target 单协作 所有者；
 - bind 后通过 dirfd 操作；
 - no-clobber rotation；
-- replacement 完成验证后再切换；
+- 替代对象 完成验证后再切换；
 - fsync/dir fsync error 可观察；
-- coordination lock 是 ownership/exclusivity，不是安全防篡改边界。
+- coordination lock 是 所有权/exclusivity，不是安全防篡改边界。
 
 细节见 `FILE_BACKEND.md`。
 
@@ -479,11 +479,11 @@ rotation/reopen state
 
 当前是 local UNIX datagram：
 
-- nonblocking；
+- nonb锁机制；
 - bounded send attempts；
 - monotonic reconnect cooldown；
 - future-record-triggered reconnect；
-- no replay queue；
+- no replay 队列；
 - backpressure 作为 failed record 可见。
 
 细节见 `SYSLOG_BACKEND.md`。
@@ -518,11 +518,11 @@ flowchart LR
     A --> I --> W --> R --> S --> J --> D --> F
 ```
 
-successful constructor 只在 return boundary 把 ownership 交给 caller。
+successful constructor 只在 return boundary 把 所有权 交给 caller。
 
-destroy consumes ownership；final I/O error 不代表旧 pointer 可重试。
+销毁 消费s 所有权；final I/O error 不代表旧 指针 可重试。
 
-### Worker/queue release order
+### Worker/队列 release order
 
 ```text
 stop admission/running
@@ -533,13 +533,13 @@ stop admission/running
   -> destroy queue
 ```
 
-### Global lifetime
+### Global 生命周期
 
-Global reader 持 lifetime rwlock pin 时 borrow hidden `g_logger`。
+Global reader 持 生命周期 rwlock pin 时 借用 hidden `g_logger`。
 
 该 pin 不是 refcount。
 
-详细规则见 ownership/lifecycle 专项文档。
+详细规则见 所有权/lifecycle 专项文档。
 
 ## 16. Lock / Atomic Model
 
@@ -612,7 +612,7 @@ POSIX-style public status API 通常：
 核心原则：
 
 - preserve first meaningful error；
-- backend first I/O error sticky；
+- 后端 first I/O error sticky；
 - partial write 不静默 success；
 - error-bearing finalization 保持显式；
 - unsupported capability 返回错误，不做危险降级。
@@ -625,7 +625,7 @@ enqueue success
   != fsync durability
 ```
 
-Audit durability 是独立契约，不能从普通 Logger 推导。
+Audit 持久性 是独立契约，不能从普通 Logger 推导。
 
 ## 18. Process / Fork / Cancellation
 
@@ -635,8 +635,8 @@ Logger 不拥有宿主 process model。
 
 - 不调用 fork；
 - 不扫描宿主线程决定 fork safety；
-- raw multi-threaded fork child 在触碰继承锁前 ECHILD；
-- 推荐 fork-before-runtime-use 或 fork+exec；
+- raw multi-threaded fork 子进程 在触碰继承锁前 ECHILD；
+- 推荐 fork-before-运行时-use 或 fork+exec；
 - legacy controlled helper 仅 opt-in。
 
 普通 Logger/Console resource path：
@@ -666,16 +666,16 @@ flowchart LR
 
 关键边界：
 
-- process-global single writer；
+- process-global single 写入器；
 - private Logger 使用 sync mode；
-- crypto failure fail closed；
+- crypto 故障 fail closed；
 - unsupported algorithm 不自动映射；
-- committed log 与 checkpoint 是不同状态；
-- uncertain I/O/crypto 进入显式 failure state；
+- committed log 与 检查点 是不同状态；
+- uncertain I/O/crypto 进入显式 故障 state；
 - recovery 不静默改写历史证据；
-- recovery 前先建立 writer ownership。
+- recovery 前先建立 写入器 所有权。
 
-Audit security/durability 优先级高于普通日志 throughput。
+Audit security/持久性 优先级高于普通日志 throughput。
 
 ## 20. Performance Architecture
 
@@ -683,13 +683,13 @@ Audit security/durability 优先级高于普通日志 throughput。
 
 - bounded preallocation；
 - no per-record heap allocation；
-- compact queue；
+- compact 队列；
 - short text inline；
 - batch format/writev；
-- producer/worker concurrency；
+- 生产者/工作线程 concurrency；
 - benchmark-backed tuning。
 
-已完成的 queue 优化结果见：
+已完成的 队列 优化结果见：
 
 - `../validation/QUEUE_BENCHMARK.md`
 - `../validation/QUEUE_HOTPATH.md`
@@ -697,59 +697,59 @@ Audit security/durability 优先级高于普通日志 throughput。
 ### Current implementation，允许演进
 
 - shared MPSC；
-- single worker；
+- single 工作线程；
 - 512B inline；
-- 1024 spill blocks；
-- atomic spill bitmap；
+- 1024 溢出区 blocks；
+- atomic 溢出区 bitmap；
 - BATCH_MAX=256；
 - eager `vsnprintf`；
 - demand-driven metadata capture；
-- self-paced worker wakeup policy；
+- self-paced 工作线程 wakeup policy；
 - sink batching。
 
 ### Architecture invariant，不得用性能优化破坏
 
-- bounded memory；
+- 有界内存；
 - no per-record async malloc in compatibility path；
-- explicit overflow policy；
-- no silent overflow truncation；
-- source lifetime detached after enqueue；
-- flush != queue empty；
-- backend error visible；
-- owner controls worker lifetime；
-- join-before-free；
-- file ordering/ownership；
+- explicit 溢出 policy；
+- no silent 溢出 truncation；
+- source 生命周期 detached after en队列；
+- 刷新 != 队列为空；
+- 后端 error visible；
+- 所有者 controls 工作线程 生命周期；
+- 释放前等待退出；
+- file ordering/所有权；
 - host-neutral process/thread boundary。
 
 完整规则见 `ARCHITECTURE_INVARIANTS.md`。
 
 ## 21. Extension Boundaries
 
-### 新 backend
+### 新 后端
 
 至少必须定义：
 
-- structural owner；
+- 结构性所有者；
 - init/close；
-- locking；
+- 锁机制；
 - batching；
 - backpressure；
 - retry/reconnect；
 - error metrics；
-- durability；
+- 持久性；
 - fork/dlclose boundary。
 
-### 新 queue topology
+### 新 队列拓扑
 
-SPSC shard/per-thread queue 必须重新证明：
+SPSC shard/per-thread 队列 必须重新证明：
 
 - bounded total memory；
-- TLS lifetime/reclaim；
-- logger destroy；
+- TLS 生命周期/reclaim；
+- logger 销毁；
 - fork/dlclose；
 - fairness/order；
-- flush completion aggregation；
-- source ownership；
+- 刷新 completion aggregation；
+- source 所有权；
 - backpressure。
 
 ### 新 fast logging API
@@ -785,7 +785,7 @@ optional binary structured fast API
 
 每轮必须：
 
-- 保留 Architecture Invariants；
+- 保留 架构不变量；
 - 更新专项文档；
 - 增加 correctness regression；
 - 通过 Release/Debug/ASan/UBSan/TSan；
@@ -796,15 +796,15 @@ optional binary structured fast API
 | 主题 | 权威文档 |
 |---|---|
 | 总体组件 / 数据流 / 边界 | **ARCHITECTURE.md** |
-| 不可破坏 review gate | **ARCHITECTURE_INVARIANTS.md** |
-| public API / integration | `../API.md`, `HOST_OWNED.md` |
+| 不可破坏 评审门禁 | **ARCHITECTURE_INVARIANTS.md** |
+| 公开 API / integration | `../API.md`, `HOST_OWNED.md` |
 | lifecycle | `LIFECYCLE.md`, `GLOBAL_LIFECYCLE.md` |
-| ownership | `RESOURCE_OWNERSHIP.md`, `RESOURCE_OWNERSHIP_MATRIX.md` |
+| 所有权 | `RESOURCE_OWNERSHIP.md`, `RESOURCE_OWNERSHIP_MATRIX.md` |
 | refcount | `REFCOUNTING.md` |
 | cleanup | `RESOURCE_CLEANUP.md` |
 | lock hierarchy | `LOCKING.md`, `LOCK_MATRIX.md` |
-| atomic/publication | `CONCURRENCY.md` |
-| queue | `QUEUE_STORAGE.md` |
+| atomic/发布 | `CONCURRENCY.md` |
+| 队列 | `QUEUE_STORAGE.md` |
 | errors | `ERROR_HANDLING.md` |
 | file | `FILE_BACKEND.md` |
 | syslog | `SYSLOG_BACKEND.md` |
@@ -817,4 +817,4 @@ optional binary structured fast API
 
 1. 先判断是否属于 architecture change；
 2. architecture change 必须同一 PR 更新顶层文档和专项文档；
-3. 单纯实现细节以专项文档为准，但不能违反 Architecture Invariants。
+3. 单纯实现细节以专项文档为准，但不能违反 架构不变量。
