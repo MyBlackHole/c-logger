@@ -404,18 +404,13 @@ LOGGER_API int logger_flush_status(void);
 LOGGER_API void logger_flush(void); /* compatibility wrapper; no error return */
 LOGGER_API int logger_reopen(void);
 /* Raw fork contract (library does not manage the host process):
- * - fork before any library runtime use while truly single-threaded, OR
- *   fork+exec. After async initialization the process is already multithreaded.
- * - raw-fork inherited Logger/Console/Audit runtimes require exec to reinitialize.
- *   Constructors/status APIs reject with ECHILD (sync_status returns -ECHILD);
- *   void logging/destruction/controls no-op and set errno; metrics return zero,
- *   get_state returns STOPPED with errno=ECHILD, not a disposal acknowledgement.
- * - prepare/parent are compatibility markers only: no lock held across fork,
- *   no queue flush/freeze. Child helper only invalidates, never resets locks or
- *   frees/closes inherited state. Calling it does NOT enable reinitialization.
- * - do not use these helpers with vfork, in signal handlers or to make arbitrary
- *   post-fork calls safe. Arguments to LOG_* are evaluated before rejection.
- * Parent descriptors/queues remain unchanged; child fds live until exec/_exit.
+ * - fork before any library runtime use while truly single-threaded, OR fork+exec.
+ *   After async initialization the process is already multithreaded.
+ * - pthread_atfork installs an internal child invalidation guard. Inherited
+ *   Logger/Console/Audit runtimes are never repaired in place: constructors and
+ *   status APIs reject with ECHILD until exec; void operations no-op/set errno.
+ * - do not use vfork, signal handlers or arbitrary post-fork library calls.
+ *   Parent descriptors/queues remain unchanged; child fds live until exec/_exit.
  */
 /* Optional legacy application helper is declared only by logger_fork_compat.h.
  * The normal library never calls fork or scans the host's thread list. */
@@ -424,9 +419,6 @@ LOGGER_API int logger_reopen(void);
 #include "logger_fork_compat.h"
 #endif
 
-LOGGER_API int logger_prepare_fork(void);
-LOGGER_API void logger_after_fork_parent(void);
-LOGGER_API void logger_after_fork_child(void);
 LOGGER_API void logger_set_level(logger_level_t);
 LOGGER_API uint64_t logger_global_dropped(void);
 LOGGER_API void logger_get_global_metrics(logger_metrics_t *);
