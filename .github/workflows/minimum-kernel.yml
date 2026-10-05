@@ -44,6 +44,8 @@ jobs:
           name: minimum-kernel-linux-3.17
           path: |
             min-kernel-evidence/platform-evidence.txt
+            min-kernel-evidence/kernel-compiler.txt
             min-kernel-evidence/serial.log
+            min-kernel-evidence/qemu-debug.log
           if-no-files-found: warn
           retention-days: 30
