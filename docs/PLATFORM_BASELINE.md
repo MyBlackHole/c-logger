@@ -69,7 +69,13 @@ compiler/toolchain/sysroot，并在 Xmake 配置中显式选择；不要把 `/` 
 旧系统 sysroot 来制造“交叉兼容成功”。工具链路径、版本、sysroot 来源和 checksum 都应进入
 发布证据。
 
-已知需平台验证/兼容设计的功能：`getrandom` wrapper/系统调用，`RENAME_NOREPLACE` 的内核和
+Production v1 的最低 upstream kernel 候选为 **Linux 3.17 / x86_64**。选择依据是能力闭包而不是
+版本号偏好：getrandom() 从 3.17 提供；renameat2() 和 ext4 RENAME_NOREPLACE 从 3.15 提供。
+XFS 的 RENAME_NOREPLACE 直到 Linux 4.0 才提供，因此 Linux 3.17–3.x 上 XFS 仍可用于
+NONE/非内部轮换路径，但内部 SIZE/DAILY/SIZE_DAILY 必须明确 ENOTSUP。不得用普通 rename()
+或 link/unlink 模拟无覆盖原子 rename。
+
+已知需平台验证/兼容设计的功能：`getrandom` 系统调用、`RENAME_NOREPLACE` 的内核和
 文件系统支持，Audit 的 procfd 路径，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
 没有能力时沿用既有明确错误，不降级为覆盖式 rename、不切换算法或隐藏 I/O 失败。
 
