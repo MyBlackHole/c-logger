@@ -34,7 +34,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 所有者 管理，不允许另一个 active 故意占用归档名。Production v1 明确不支持 NFS/SMB/其他网络文件系统 |
 | 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；Production v1 明确不支持初始化后导致 procfs 不可访问的 chroot/命名空间/procfs-unmount 场景 |
 | 持久化验证 | 已增加 Release 共享库/静态库 进程 crash 恢复矩阵，以及 QEMU + raw ext4/XFS 同盘重启的 10 个 断电 点（已确认记录、Audit fsync 前后、检查点 rename 前后/commit 后、文件轮换 4 个阶段）。串口证据记录 来宾内核/文件系统。这些 CI 证据验证当前虚拟 QEMU 文件系统路径，但仍不等于物理断电、控制器/磁盘 易失缓存 或实际目标存储栈验收；输出错误后的业务重试仍可能重复 |
-| API/ABI | 0.9.6 固定 66 项 公开符号；相对 0.9.5 的 62 项，在不修改旧 metrics 布局/旧函数签名的前提下新增 diagnostics 与 文件指标 共 4 个 增量式 访问接口。Production v1 平台支持范围已经定义，但稳定 ABI identity 尚未冻结；v1 前仍需完成 SONAME 1 / LOGGER_1.0 / ABI 快照 的独立迁移与 旧/新消费方 验证 |
+| API/ABI | 已发布 0.9.6 曾有 66 项公开符号；pre-v1 cleanup 删除 4 个仅做 marker/invalidation、不能修复 raw-fork runtime 的公开接口，目标 v1 surface 收敛为 62 项。稳定 ABI identity 尚未切换；v1 前仍需完成 SONAME 1 / LOGGER_1.0 的最终默认迁移 |
 | 平台基线 | Production v1 范围固定为 Linux/ELF x86_64 + glibc >= 2.31；32-bit、非 x86_64、musl/非 glibc 明确 不支持。Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）已有 共享库/静态库 core、installed C/C++ 消费方 与 pkg-config CI；最低 Linux 内核 仍是独立 v1 阻断项，不能由共享 运行器 内核 的 container matrix 推断 |
 | 显式 / Console 取消与重入 | 本轮补齐 延迟取消 下资源入口的取消延期和同线程重入拒绝，但不是 信号安全 / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 构造函数 明确返回 ENOTSUP。若 调用方 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 清理，先停止/join 所有借用者；不得并发 destroy 或取消私有 工作线程。禁用取消期间 I/O 仍可能阻塞 |
 | Audit 事务 | ATTEMPT/RESULT 不是跨业务操作原子事务，也不能跨 shutdown 用旧事务结束新生命周期。API 不是信号处理接口 |
@@ -47,7 +47,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 
 ## 发布工程候选
 
-0.9.6 候选固定 66 项公开动态符号，其中相对 0.9.5 新增 2 个 诊断访问接口 与 2 个 文件指标 访问接口。SONAME 0、可重定位 CMake/pkg-config 下游安装契约和
+0.9.6 发布候选历史上包含 66 项公开动态符号；当前 pre-v1 hardening 目标 surface 为 62 项。SONAME 0、可重定位 CMake/pkg-config 下游安装契约和
 XPack TGZ。没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机
 布局/旧头兼容有独立测试。内部符号不再动态导出，白盒测试转用同源私有静态库。
 见 RELEASE_ENGINEERING.md、PLATFORM_BASELINE.md 和 validation/PACKAGING_RESULTS.md。
