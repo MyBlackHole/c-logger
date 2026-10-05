@@ -1,4 +1,4 @@
-# Explicit public C ABI allowlist. Additive names only; do not use globs.
+# Explicit pre-v1 public C ABI allowlist. Reviewed cleanup may remove legacy names before 1.0; do not use globs.
 audit_begin
 audit_crypto_backend
 audit_end
