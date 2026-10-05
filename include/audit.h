@@ -80,7 +80,10 @@ static inline audit_config_t audit_defaults_cpp(void)
 #endif
 /* audit_init/audit_write/audit_begin/audit_end/audit_flush use POSIX-style
  * 0 success, -1 failure with errno. Audit is a single-writer process-global
- * subsystem; do not initialize two processes on the same chain destination. */
+ * subsystem. The writer lease uses Linux OFD locking; kernels without that
+ * capability fail initialization with ENOTSUP rather than falling back to
+ * process-associated F_SETLK. Do not initialize two processes on the same
+ * chain destination. */
 LOGGER_API int audit_init(const audit_config_t *);
 /* Always releases the local runtime. Returns -1/errno if STOP, its checkpoint,
  * or an earlier uncertain log/crypto operation failed. The void API is a wrapper. */

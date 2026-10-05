@@ -90,7 +90,11 @@ Audit 先 reserve active 的普通 所有者，然后才读取、核验或修复
 不存在 发布/reacquire 的 writer 窗口。
 
 检查点 目标也有独立 `.logger.lock` 预留；不同名字共享一个显式 state
-路径时会冲突。原 `.audit.lock` 的 POSIX 协作锁保留，与既有部署/测试兼容。
+路径时会冲突。`.audit.lock` 的单写者租约使用 Linux open-file-description（OFD）
+`F_OFD_SETLK` 排他锁，而不是传统进程关联 `F_SETLK`。因此同一进程后来对该
+lock inode 打开并关闭另一个 fd，不会把 Audit 正在持有的 writer ownership 一并释放。
+OFD 锁与传统 POSIX record lock 彼此冲突，旧协作 writer 仍不能与新实例同时获得锁。
+运行内核不支持 OFD 锁时初始化返回 `ENOTSUP`，不做不安全降级。
 
 本轮保留恢复/检查点 的 path 接口，以 `/proc/self/fd/<owned-dirfd>/...` 连接到
 持有的目录。默认 state 和自定义 state 都在本生命周期内绑定。**Audit 现在需要可用的

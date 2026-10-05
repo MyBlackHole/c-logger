@@ -238,3 +238,12 @@ public API 修改还必须遵守：
 不在支持契约内。支持边界是 延迟取消，或调用前已禁用 cancellation。
 restore-policy regression 会验证原先 disabled 的 调用方 仍保持 disabled 且 cancellation type
 不被破坏；构造函数 契约 会拒绝 enabled asynchronous cancellation。
+
+
+## Audit OFD 单写者锁回归
+
+`audit_ofd_close_isolation` 验证同进程对 `.audit.lock` 的无关
+`open()/close()` 不会释放 Audit 正在持有的租约；
+`audit_ofd_posix_conflict` 验证旧 POSIX `F_SETLK` writer 与新的 OFD writer
+仍然互斥；`audit_ofd_unsupported` 对私有 writer-lock helper 注入
+`EINVAL`，要求转换为 `ENOTSUP`，禁止回退到进程关联锁。
