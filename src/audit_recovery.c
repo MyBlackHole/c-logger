@@ -189,6 +189,145 @@ typedef struct {
 	int visited;
 } segment_t;
 
+typedef struct {
+	unsigned char hash[32];
+	size_t index;
+} segment_edge_t;
+
+static int segment_edge_compare(const void *left_, const void *right_)
+{
+	const segment_edge_t *left = left_;
+	const segment_edge_t *right = right_;
+
+	return memcmp(left->hash, right->hash, sizeof(left->hash));
+}
+
+/* Return the number of exact digest matches in a sorted edge index.
+ * The first matching segment index is returned when requested. */
+static size_t segment_edge_matches(const segment_edge_t *edges, size_t count,
+				   const unsigned char hash[32], size_t *index)
+{
+	size_t low = 0, high = count;
+	while (low < high) {
+		size_t mid = low + (high - low) / 2u;
+		int cmp = memcmp(edges[mid].hash, hash, sizeof(edges[mid].hash));
+		if (cmp < 0)
+			low = mid + 1u;
+		else
+			high = mid;
+	}
+	size_t first = low;
+	high = count;
+	while (low < high) {
+		size_t mid = low + (high - low) / 2u;
+		int cmp = memcmp(edges[mid].hash, hash, sizeof(edges[mid].hash));
+		if (cmp <= 0)
+			low = mid + 1u;
+		else
+			high = mid;
+	}
+	if (index && first < low)
+		*index = edges[first].index;
+	return low - first;
+}
+
+static int validate_segment_chain(segment_t *files, size_t count,
+				  size_t active_index, size_t nonempty,
+				  int genesis, size_t *last_out)
+{
+	const unsigned char zero[32] = { 0 };
+	segment_edge_t *first_edges = NULL, *last_edges = NULL;
+	int rc = 0;
+
+	*last_out = count;
+	if (!nonempty)
+		return 0;
+
+	first_edges = calloc(nonempty, sizeof(*first_edges));
+	last_edges = calloc(nonempty, sizeof(*last_edges));
+	if (!first_edges || !last_edges) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	size_t edge = 0;
+	for (size_t i = 0; i < count; ++i) {
+		if (!files[i].has_records)
+			continue;
+		memcpy(first_edges[edge].hash, files[i].first_prev,
+		       sizeof(first_edges[edge].hash));
+		first_edges[edge].index = i;
+		memcpy(last_edges[edge].hash, files[i].last_hash,
+		       sizeof(last_edges[edge].hash));
+		last_edges[edge].index = i;
+		++edge;
+	}
+	if (edge != nonempty) {
+		rc = -EIO;
+		goto out;
+	}
+
+	qsort(first_edges, nonempty, sizeof(*first_edges), segment_edge_compare);
+	qsort(last_edges, nonempty, sizeof(*last_edges), segment_edge_compare);
+
+	size_t root = count, roots = 0;
+	for (size_t i = 0; i < count; ++i) {
+		if (!files[i].has_records)
+			continue;
+		size_t predecessors =
+			segment_edge_matches(last_edges, nonempty,
+					     files[i].first_prev, NULL);
+		if (predecessors > 1u) {
+			rc = -EBADMSG;
+			goto out;
+		}
+		if (!predecessors) {
+			root = i;
+			++roots;
+		}
+	}
+	if (roots != 1u) {
+		rc = -EBADMSG;
+		goto out;
+	}
+	if (genesis && memcmp(files[root].first_prev, zero, sizeof(zero))) {
+		rc = -EBADMSG;
+		goto out;
+	}
+
+	size_t visited = 0, last = count;
+	while (root < count) {
+		if (files[root].visited) {
+			rc = -EBADMSG;
+			goto out;
+		}
+		files[root].visited = 1;
+		++visited;
+		last = root;
+
+		size_t follow = count;
+		size_t successors =
+			segment_edge_matches(first_edges, nonempty,
+					     files[root].last_hash, &follow);
+		if (successors > 1u || (successors && root == active_index)) {
+			rc = -EBADMSG;
+			goto out;
+		}
+		root = successors ? follow : count;
+	}
+	if (visited != nonempty ||
+	    (files[active_index].has_records && last != active_index)) {
+		rc = -EBADMSG;
+		goto out;
+	}
+
+	*last_out = last;
+out:
+	free(first_edges);
+	free(last_edges);
+	return rc;
+}
+
 static int timestamp_name(const char *s, size_t n)
 {
 	if (n != 23 || s[8] != 'T' || s[15] != '.' || s[22] != 'Z')
@@ -508,64 +647,13 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 	}
 	/* Form a UNIQUE chain of all retained nonempty segments by their verified
      * digest edges. UTC filenames are hints only (clock can move backwards).
-     * Missing/duplicated/branched segments fail closed instead of being skipped. */
-	size_t root = count, roots = 0;
-	for (size_t i = 0; i < count; ++i) {
-		if (!files[i].has_records)
-			continue;
-		unsigned predecessors = 0;
-		for (size_t j = 0; j < count; ++j)
-			if (files[j].has_records &&
-			    !memcmp(files[j].last_hash, files[i].first_prev,
-				    32))
-				++predecessors;
-		if (predecessors > 1) {
-			rc = -EBADMSG;
-			goto done;
-		}
-		if (!predecessors) {
-			root = i;
-			++roots;
-		}
-	}
-	if (nonempty && roots != 1) {
-		rc = -EBADMSG;
+     * Edge indexes are sorted once, so predecessor/successor lookups are
+     * O(log N) instead of rescanning every retained segment. */
+	size_t last = count;
+	rc = validate_segment_chain(files, count, active_index, nonempty, genesis,
+				    &last);
+	if (rc)
 		goto done;
-	}
-	if (genesis && nonempty && memcmp(files[root].first_prev, zero, 32)) {
-		rc = -EBADMSG;
-		goto done;
-	}
-	size_t visited = 0, last = count;
-	while (root < count) {
-		if (files[root].visited) {
-			rc = -EBADMSG;
-			goto done;
-		}
-		files[root].visited = 1;
-		++visited;
-		last = root;
-		unsigned successors = 0;
-		size_t follow = count;
-		for (size_t i = 0; i < count; ++i) {
-			if (files[i].has_records &&
-			    !memcmp(files[root].last_hash, files[i].first_prev,
-				    32)) {
-				++successors;
-				follow = i;
-			}
-		}
-		if (successors > 1 || (successors && root == active_index)) {
-			rc = -EBADMSG;
-			goto done;
-		}
-		root = follow;
-	}
-	if (visited != nonempty ||
-	    (files[active_index].has_records && last != active_index)) {
-		rc = -EBADMSG;
-		goto done;
-	}
 	if (last < count) {
 		memcpy(next.hash, files[last].last_hash, 32);
 		next.seq = files[last].seq;
