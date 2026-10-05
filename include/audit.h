@@ -11,18 +11,16 @@ typedef enum {
 	AUDIT_FAIL_REPORT = 0,
 	AUDIT_FAIL_DENY = 1
 } audit_failure_policy_t;
-/* SHA-256 is the only digest algorithm. NONE explicitly disables integrity;
- * it is not an alternative digest. Retired numeric ID 2 is reserved forever
- * and rejected, not remapped. Source callers using the removed algorithm must
- * update their configuration; an existing chain must never be rehashed in place. */
+/* SHA-256 是唯一摘要算法。NONE 表示显式关闭完整性，并不是另一种摘要算法。
+ * 已退役的数值 ID 2 永久保留并直接拒绝，绝不会重新映射。
+ * 仍在源码中使用已移除算法的调用方必须更新配置；已有链绝不能原地重新计算摘要。 */
 typedef enum {
 	AUDIT_INTEGRITY_NONE = 0,
 	AUDIT_INTEGRITY_SHA256 = 1
 } audit_integrity_t;
 #define AUDIT_DETAIL_REDACTED "[REDACTED]"
-/* Audit fields are non-secret identifiers/metadata only. Never place
- * passwords, plaintext keys, private keys, access secrets or bearer/session
- * tokens in actor/source/resource/operation/detail. */
+/* Audit 字段只允许承载非敏感标识符/元数据。绝不能把密码、明文密钥、私钥、访问秘密值，
+ * 或 bearer/session token 放入 actor/source/resource/operation/detail。 */
 typedef struct {
 	audit_phase_t phase;
 	uint64_t transaction_id;
@@ -40,8 +38,8 @@ typedef struct {
 	uint32_t struct_size;
 	uint32_t version;
 	const char *log_dir;
-	const char *name; /* xxx -> xxx.audit.log */
-	const char *chain_state_path; /* NULL -> <log_dir>/<name>.audit.state */
+	const char *name; /* xxx 对应 xxx.audit.log。 */
+	const char *chain_state_path; /* NULL 表示 <log_dir>/<name>.audit.state。 */
 	logger_rotation_config_t rotation;
 	audit_failure_policy_t failure_policy;
 	audit_integrity_t integrity;
@@ -78,12 +76,12 @@ static inline audit_config_t audit_defaults_cpp(void)
 		.integrity = AUDIT_INTEGRITY_SHA256,                 \
 		.fsync_each_record = 1 })
 #endif
-/* audit_init/audit_write/audit_begin/audit_end/audit_flush use POSIX-style
- * 0 success, -1 failure with errno. Audit is a single-writer process-global
- * subsystem; do not initialize two processes on the same chain destination. */
+/* audit_init/audit_write/audit_begin/audit_end/audit_flush 使用 POSIX 风格：
+ * 成功返回 0，失败返回 -1 并设置 errno。Audit 是进程全局的单写者子系统；
+ * 不得让两个进程针对同一条链目标同时初始化。 */
 LOGGER_API int audit_init(const audit_config_t *);
-/* Always releases the local runtime. Returns -1/errno if STOP, its checkpoint,
- * or an earlier uncertain log/crypto operation failed. The void API is a wrapper. */
+/* 无论结果如何都会释放本地运行时。如果 STOP、对应 checkpoint，或者更早出现结果不确定的
+ * log/crypto 操作失败，则返回 -1/errno。void 版本只是兼容包装接口。 */
 LOGGER_API int audit_shutdown_status(void);
 LOGGER_API void audit_shutdown(void);
 
@@ -95,13 +93,13 @@ typedef enum {
 	AUDIT_STATE_IO_FAILED,
 	AUDIT_STATE_STOPPING,
 	AUDIT_STATE_FORKED,
-	AUDIT_STATE_CRYPTO_FAILED /* appended: previous enum values unchanged */
+	AUDIT_STATE_CRYPTO_FAILED /* 追加在末尾：此前 enum 数值保持不变。 */
 } audit_state_t;
-/* Snapshot only, not a transaction receipt. STARTING/STOPPING/FORKED expose no
- * session counters. In IDLE the most recent shutdown/init-failure is retained.
- * committed_seq means confirmed strict-log commit, NOT checkpoint success.
- * An IO_FAILED operation may still have written/persisted bytes.
- * CRYPTO_FAILED precedes output for that record and does not advance its seq. */
+/* 这里只是快照，不是事务回执。STARTING/STOPPING/FORKED 不暴露会话计数器。
+ * IDLE 状态会保留最近一次关闭/初始化失败信息。
+ * committed_seq 表示已经确认的严格日志提交，**不**代表 checkpoint 成功。
+ * IO_FAILED 操作仍可能已经写出/持久化部分字节。
+ * CRYPTO_FAILED 发生在对应记录输出之前，因此不会推进该记录的 seq。 */
 typedef struct {
 	audit_state_t state;
 	int error_code;
@@ -111,39 +109,36 @@ typedef struct {
 	char instance_id[33];
 } audit_status_t;
 LOGGER_API int audit_get_status(audit_status_t *);
-/* Invalidation only. Does NOT reset inherited locks, destroy runtime, or emit
- * STOP. Reinitialization in a forked child returns ECHILD until exec. Prefer
- * fork-before-any-library-runtime-use (single-threaded) or fork+exec. The
- * process guard is shared with Logger/Console; see API.md. */
-/* With logger_fork_reinit, Audit must be shut down before entry and may be
- * initialized normally after return. Do not call this invalidation helper on
- * that clean path. */
+/* 仅做失效标记。**不会**重置继承锁、销毁运行时或写出 STOP。
+ * fork 子进程在 exec 前重新初始化会返回 ECHILD。优先使用“任何库运行时使用之前的单线程 fork”
+ * 或 fork+exec。进程防护与 Logger/Console 共享；见 API.md。 */
+/* 使用 logger_fork_reinit 时，进入前必须先关闭 Audit；函数返回后可以正常重新初始化。
+ * 在这条干净路径上不要调用本失效辅助接口。 */
 LOGGER_API void audit_after_fork_child(void);
 LOGGER_API int audit_write(const audit_event_t *);
 LOGGER_API int audit_begin(audit_event_t *event);
 LOGGER_API int audit_end(audit_event_t *event, audit_result_t result,
 			 int error_code);
-/* Repairs a pending checkpoint without duplicating its committed log record.
- * IO_FAILED / CRYPTO_FAILED are not cleared by flush; fix the cause, shut down
- * and reinitialize. IO_FAILED additionally requires reconciliation. */
+/* 修复待处理 checkpoint，但不会重复写入已经提交的日志记录。
+ * flush 不会清除 IO_FAILED / CRYPTO_FAILED；应先修复原因，再关闭并重新初始化。
+ * IO_FAILED 还需要额外执行数据协调。 */
 LOGGER_API int audit_flush(void);
 LOGGER_API audit_failure_policy_t audit_failure_policy(void);
-/* Returns a thread-local snapshot (empty on error), replaced by the next call
- * in this thread. Prefer the error-reporting copy API. */
+/* 返回线程本地快照（出错时为空），同一线程下一次调用会覆盖。
+ * 优先使用能够报告错误的复制 API。 */
 LOGGER_API const char *audit_instance_id(void);
 LOGGER_API int audit_instance_id_copy(char out[33]);
-/* Verification returns -1/errno on digest engine failure as well as corrupt
- * input. No zero-digest substitution or backend fallback. See API.md. */
-/* Strict current KV record format, final LF required. No repair in verifier.
- * 0 / -1 + errno; EBADMSG for malformed/broken chains, EOVERFLOW for oversized
- * records. The historical presentation prefix is NOT cryptographically covered.
- * *_from() leaves final_hash_hex unchanged on any failure. */
+/* 摘要引擎失败和输入损坏都会使验证返回 -1/errno。
+ * 不允许全零摘要替代，也不存在后端回退。见 API.md。 */
+/* 严格使用当前 KV 记录格式，并要求最终 LF。验证器不执行修复。
+ * 返回 0 / -1 + errno；格式非法/链损坏返回 EBADMSG，记录过大返回 EOVERFLOW。
+ * 历史展示前缀**不**在密码学覆盖范围内。任何失败都会让 *_from() 保持 final_hash_hex 不变。 */
 LOGGER_API int audit_verify_file(const char *path);
-/* Compatibility entry point: only SHA256 is accepted; NONE and unsupported
- * IDs return EPROTONOSUPPORT. audit_verify_file() is the default SHA-256 API. */
+/* 兼容入口：只接受 SHA256；NONE 和不支持的 ID 返回 EPROTONOSUPPORT。
+ * audit_verify_file() 是默认 SHA-256 API。 */
 LOGGER_API int audit_verify_file_with(const char *path,
 				      audit_integrity_t algorithm);
-/* Compatibility/diagnostic accessor: always returns the static string "builtin". */
+/* 兼容/诊断访问接口：固定返回静态字符串 "builtin"。 */
 LOGGER_API const char *audit_crypto_backend(void);
 LOGGER_API int audit_verify_file_from(const char *path,
 				      const char *expected_prev_hex,

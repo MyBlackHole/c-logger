@@ -12,7 +12,7 @@ int logger_scope_busy(void)
 
 int logger_scope_begin(logger_scope_t *scope)
 {
-	/* No inherited lock, instance pointer or registration state touched first. */
+	/* 首先不接触任何继承锁、实例指针或注册状态。 */
 	if (logger_process_is_child()) {
 		errno = ECHILD;
 		return -ECHILD;
@@ -37,9 +37,9 @@ int logger_scope_begin(logger_scope_t *scope)
 
 int logger_scope_end(logger_scope_t *scope, int rc)
 {
-	/* Must follow va_end, mutex release, publication and all resource cleanup.
-     * No logger dereference may occur after this function: caller cancellation
-     * cleanup can free its owned instance as soon as cancellation resumes. */
+	/* 必须在 va_end、互斥锁释放、发布以及全部资源清理之后调用。
+     * 该函数之后不得再解引用 Logger：取消恢复后，调用方的取消清理处理器
+     * 可能立即释放其拥有的实例。 */
 	int error = rc < 0 ? -rc : scope->saved_errno;
 	in_runtime = 0;
 	errno = error;

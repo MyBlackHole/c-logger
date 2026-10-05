@@ -70,8 +70,8 @@ int logger_file_close_status(logger_file_t *f)
 		return -EINVAL;
 	int error = 0;
 	int *fds[] = { &f->fd, &f->lock_fd, &f->dir_fd };
-	/* Keep ownership through data-fd close. No explicit LOCK_UN: fork/dup
-     * references share a flock; close only this owner's references. */
+	/* 在关闭数据 fd 的整个过程中保持所有权。不显式执行 LOCK_UN：fork/dup
+     * 得到的引用共享同一个 flock；这里只关闭当前所有者自己的引用。 */
 	for (unsigned i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
 		int fd = *fds[i];
 		*fds[i] = -1;
@@ -178,7 +178,7 @@ static int bind_path(logger_file_t *f, const char *path)
 		if (S_ISCHR(st.st_mode) &&
 		    f->rotation.mode == LOGGER_ROTATE_NONE) {
 			f->managed =
-				0; /* /dev/null and /dev/full for plumbing, NOT durability */
+				0; /* /dev/null 和 /dev/full 仅用于通路测试，不代表持久性语义。 */
 			return 0;
 		}
 		int rc = regular_single_link(&st);
@@ -253,8 +253,8 @@ int logger_file_reserve(logger_file_t *f, const char *path,
 	return 0;
 }
 
-/* No file is truncated. O_NONBLOCK makes a substituted FIFO fail validation
- * rather than hanging open(). Directory ancestors must be trusted. */
+/* 不截断任何文件。O_NONBLOCK 可让被替换成 FIFO 的路径在校验时失败，
+ * 而不是让 open() 永久阻塞。目录祖先必须属于可信边界。 */
 static int open_candidate(logger_file_t *f, int exclusive, int *out,
 			  struct stat *st)
 {
@@ -280,8 +280,8 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 	/* Ownership transfer: lexical candidate -> caller. The caller either
 	 * installs it into logger_file_t or explicitly closes it on failure. */
 	*out = take_fd(fd);
-	/* A previously absent active may have been created. Conservatively sync
-     * the bound directory even if it existed; this never depends on cwd. */
+	/* 原先不存在的活动文件可能已经被创建。即使目录之前已存在，也保守地同步
+     * 已绑定目录；整个过程不依赖当前工作目录。 */
 	if (f->managed)
 		f->dir_dirty = 1;
 	return 0;
@@ -351,8 +351,8 @@ static int file_reopen_impl(logger_file_t *f)
 	int rc = wall_day(time(NULL), &day);
 	if (!rc)
 		rc = open_candidate(f, 0, &fd, &st);
-	/* Candidate errors do not retire the working fd. Sync the old segment
-     * before switching; neither an open error nor fsync error erases it. */
+	/* 候选文件出错不会使当前工作 fd 失效。切换前先同步旧分段；
+     * 无论 open 还是 fsync 失败，都不会抹除旧分段。 */
 	if (!rc && f->managed)
 		rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
@@ -366,7 +366,7 @@ static int file_reopen_impl(logger_file_t *f)
 	int old_fd = f->fd;
 	install_fd(f, fd, &st, day);
 	if (close(old_fd) < 0)
-		return -1; /* new fd installed; do not retry close */
+		return -1; /* 新 fd 已安装，不要重试 close。 */
 	return 0;
 }
 
@@ -416,7 +416,7 @@ static int advance_microsecond(struct timespec *t)
 	if (t->tv_nsec < 999999000L)
 		t->tv_nsec += 1000;
 	else {
-		/* Do not overflow time_t on 32-bit targets. */
+		/* 在 32 位目标上避免 time_t 溢出。 */
 		if ((intmax_t)t->tv_sec == INTMAX_MAX ||
 		    (sizeof(time_t) == 4 && t->tv_sec == (time_t)INT32_MAX))
 			return -EOVERFLOW;
@@ -467,8 +467,7 @@ static int retention(logger_file_t *f, time_t now)
 {
 	if (!f->rotation.retention_days)
 		return 0;
-	/* A separate directory description avoids sharing readdir's offset with
-     * the bound directory or an Audit scanner. */
+	/* 使用独立的目录描述符，避免与绑定目录或 Audit 扫描器共享 readdir 偏移。 */
 	int fd __free(close_fd) =
 		openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0)
@@ -500,7 +499,7 @@ static int retention(logger_file_t *f, time_t now)
 		if (!S_ISREG(st.st_mode) || st.st_nlink != 1 ||
 		    (st.st_dev == f->device && st.st_ino == f->inode))
 			continue;
-		/* difftime avoids signed time_t subtraction overflow. */
+		/* 使用 difftime 避免有符号 time_t 相减溢出。 */
 		if (difftime(now, st.st_mtime) <= (double)seconds)
 			continue;
 		if (unlinkat(f->dir_fd, entry->d_name, 0)) {
@@ -561,8 +560,8 @@ static int rotate_impl(logger_file_t *f)
 	}
 	if (attempt == LOGGER_ARCHIVE_ATTEMPTS)
 		return -EEXIST;
-	/* The old fd now belongs to an archive. Never append to it, even if
-     * opening/syncing the new active fails. Only explicit reopen may recover. */
+	/* 旧 fd 此时已经属于归档文件。即使打开或同步新的活动文件失败，也绝不能
+     * 再向旧 fd 追加；只有显式重新打开才允许恢复。 */
 	f->detached = 1;
 	f->switch_error = EIO;
 	f->dir_dirty = 1;
@@ -582,7 +581,7 @@ static int rotate_impl(logger_file_t *f)
 		logger_fault_crash_if_requested("file_after_active_open");
 	if (!rc)
 		rc = sync_data(f,
-			candidate); /* persist the new empty inode first */
+			candidate); /* 先持久化新的空 inode。 */
 	if (!rc)
 		rc = sync_directory(f);
 	if (!rc)

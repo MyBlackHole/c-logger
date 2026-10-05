@@ -26,5 +26,5 @@ int logger_process_thread_count(unsigned *out); /* Linux /proc，实现返回 0 
 int logger_process_arm_clean_fork(void);
 int logger_process_finish_clean_fork(void);
 
-#endif /* legacy helper */
+#endif /* 旧版辅助接口。 */
 #endif

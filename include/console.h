@@ -42,35 +42,29 @@ static inline console_config_t console_defaults_cpp(void)
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
 #endif
-/* Console shares the Logger/Audit process guard. Inherited child output returns
- * -1/ECHILD before stdio or mutex use; setters are no-ops with errno=ECHILD.
- * TTY predicates return 0 with errno=ECHILD. Exec before using a new runtime.
- * These are defensive errors, not a general async-signal-safe console API.
- * Console setters/init are process-global configuration operations.
- * Print functions return 0 on success, -1 on stdio failure with errno set by
- * the underlying libc operation where available. */
-/* Console operations defer cancellation while formatting/holding internal
- * mutexes and FILE operations, restore the caller's policy after release, and
- * reject same-thread Logger/Console callback recursion with EDEADLK. Not a
- * signal-handler API or a bounded-time I/O interface. The host must not change
- * cancellation policy, pthread_exit/longjmp, or unload code inside a callback.
- * Whole init is an atomic config snapshot; invalid config/setter values set
- * EINVAL without changing it. debug_source returns EOVERFLOW instead of silently
- * truncating its bounded source/message buffers. NULL fmt is always EINVAL,
- * even when diagnostics would otherwise be filtered out.
- */
+/* Console 与 Logger/Audit 共享进程防护。继承子进程中的输出会在使用 stdio 或 mutex 之前
+ * 返回 -1/ECHILD；设置接口直接空操作并设置 errno=ECHILD。TTY 判断返回 0 并设置 errno=ECHILD。
+ * 必须先 exec，才能使用新的运行时。这些是防御性错误，并不代表提供通用异步信号安全 Console API。
+ * Console 设置/初始化属于进程全局配置操作。打印函数成功返回 0；stdio 失败返回 -1，
+ * 在底层 libc 能提供错误信息时沿用其 errno。 */
+/* Console 在格式化、持有内部 mutex 以及执行 FILE 操作期间会延迟取消，
+ * 释放资源后恢复调用方策略；同一线程 Logger/Console 回调递归会以 EDEADLK 拒绝。
+ * 这不是信号处理器 API，也不是有界时延 I/O 接口。宿主不得在回调内修改取消策略、
+ * 调用 pthread_exit/longjmp 或卸载代码。整个初始化视为原子配置快照；非法配置/设置值返回 EINVAL，
+ * 并保持原配置不变。debug_source 在有界源信息/消息缓冲区容量不足时返回 EOVERFLOW，
+ * 而不是静默截断。fmt 为 NULL 时始终返回 EINVAL，即使该诊断本来会因为过滤规则而不输出。 */
 LOGGER_API void console_init(const console_config_t *);
 LOGGER_API void console_set_verbosity(console_verbosity_t);
 LOGGER_API void console_set_color(console_color_mode_t);
 LOGGER_API int console_stdout_is_tty(void);
 LOGGER_API int console_stderr_is_tty(void);
-/* Stable result/data channel: always stdout, no label/color. */
+/* 稳定结果/数据通道：始终写 stdout，不添加标签/颜色。 */
 LOGGER_API int console_print(const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 1, 2)))
 #endif
 	;
-/* Human-facing diagnostics: stderr. INFO is hidden in QUIET; verbose/debug are gated. */
+/* 面向人的诊断：写 stderr。QUIET 下隐藏 INFO；详细/调试输出受级别门控。 */
 LOGGER_API int console_info(const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 1, 2)))

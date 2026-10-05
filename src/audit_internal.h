@@ -14,12 +14,12 @@ typedef struct {
 	audit_integrity_t algorithm;
 	const char *name;
 	size_t digest_size;
-	/* 0 / -errno. Output remains unchanged on error. NULL input requires len=0. */
+	/* 返回 0 / -errno。失败时输出保持不变；输入为 NULL 时要求 len=0。 */
 	int (*hash)(const void *, size_t, unsigned char[32]);
 } audit_digest_ops_t;
 const audit_digest_ops_t *audit_digest_provider(audit_integrity_t);
 void audit_digest_hex(const unsigned char *, size_t, char *);
-/* Digest preflight; no zero-digest fallback and no file effects. */
+/* 摘要预检；不存在全零摘要回退，也不会产生文件副作用。 */
 int audit_digest_check(const audit_digest_ops_t *);
 void audit_hash_hex(const unsigned char *, char[65]);
 uint32_t audit_crc32(const void *, size_t);

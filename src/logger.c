@@ -65,7 +65,7 @@ void logger_context_set(const logger_context_t *c)
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return;
-	/* Stage all fields, allowing set(get()) and overlapping/swapped TLS input. */
+	/* 先暂存所有字段，以支持 set(get()) 以及重叠或交换的 TLS 输入。 */
 	char request[64] = { 0 }, session[64] = { 0 }, trace[64] = { 0 };
 	copy_ctx(request, sizeof(request), c ? c->request_id : NULL);
 	copy_ctx(session, sizeof(session), c ? c->session_id : NULL);
@@ -218,15 +218,15 @@ static int normalize_logger_config(const logger_config_t *in,
 		errno = EINVAL;
 		return -1;
 	}
-	/* The versioned ABI requires the readable 8-byte header. memcpy avoids
-     * typed reads of appended fields in a caller built with the old header. */
+	/* 版本化 ABI 要求前 8 字节头部可读。使用 memcpy 可避免对旧头文件编译的
+     * 调用方所不存在的追加字段执行类型化读取。 */
 	uint32_t size, version;
 	memcpy(&size, (const unsigned char *)in, sizeof(size));
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));
 	*out = LOGGER_DEFAULT_CONFIG();
 	if (size == 0 && version == 0) {
-		/* Source-only legacy zero-init: fixed old prefix, never assume tail. */
+		/* 仅源码兼容的旧式零初始化：只依赖固定的旧前缀，绝不假定尾部字段存在。 */
 		memcpy(out, in, LOGGER_CONFIG_V1_PREFIX_SIZE);
 	} else {
 		if (version != LOGGER_CONFIG_VERSION) {
@@ -338,7 +338,7 @@ static logger_t *create_logger(const logger_config_t *input,
 		}
 		l->file_backend = *reserved;
 		*reserved =
-			LOGGER_FILE_EMPTY; /* move, never unlock a shared lease */
+			LOGGER_FILE_EMPTY; /* 转移所有权，绝不解锁共享租约。 */
 	} else if ((l->outputs & LOGGER_OUT_FILE) &&
 		   logger_file_init(&l->file_backend, cfg.file_path,
 				    cfg.rotation, l->file_mode)) {
@@ -351,7 +351,7 @@ static logger_t *create_logger(const logger_config_t *input,
 		rc = errno;
 		goto fail_backends;
 	}
-	/* Deferred startup is explicit, not a claim that the sink is healthy. */
+	/* 延迟启动是显式状态，并不表示输出端当前健康。 */
 	if (l->outputs & LOGGER_OUT_SYSLOG)
 		logger_note_io_error(l, l->syslog_backend.metrics.last_error);
 	if (l->async_mode) {
@@ -401,13 +401,13 @@ fail_alloc:
 static void cancel_unreturned_logger(void *arg)
 {
 	logger_t *l = arg;
-	/* scope_end cleared the TLS marker before cancellation became effective.
-     * Dispose an object that never transferred to the caller. */
+	/* scope_end 在取消生效前已经清除了 TLS 标记。
+     * 释放这个尚未移交给调用方的对象。 */
 	(void)logger_dispose_internal(l);
 }
 
-/* Keep the ownership handoff separate from construction: cleanup macros may
- * implement setjmp scopes, whereas construction has many mutable resources. */
+/* 所有权移交与构造过程保持分离：清理宏可能使用 setjmp 作用域，
+ * 而构造过程包含多个可变资源。 */
 static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
 {
 	pthread_cleanup_push(cancel_unreturned_logger, l);
@@ -424,9 +424,9 @@ static logger_t *create_entry(const logger_config_t *input,
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return NULL;
-	/* Returning an owned pointer cannot be made an atomic handoff under
-     * enabled asynchronous cancellation. Reject BEFORE acquiring resources.
-     * Global/Audit callers enter with cancellation already disabled. */
+	/* 启用异步取消时，返回拥有所有权的指针无法实现原子移交。
+     * 因此必须在获取资源之前拒绝该调用。
+     * Global/Audit 调用方进入这里时已经禁用了取消。 */
 	int old_type;
 	int rc = pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &old_type);
 	if (!rc)
@@ -438,9 +438,9 @@ static logger_t *create_entry(const logger_config_t *input,
 	}
 	logger_t *l = create_logger(input, reserved);
 	int error = l ? 0 : -(errno ? errno : EIO);
-	/* Resolve a pending deferred cancellation before ownership handoff. The
-     * cleanup is registered while disabled; no API CP remains after pop/return.
-     * Callers still must install their own cleanup for later cancellation. */
+	/* 在所有权移交前先处理待决的延迟取消。清理处理器在取消禁用期间注册；
+     * pop/return 之后不再保留本 API 的取消点。
+     * 调用方仍需为后续取消安装自己的清理处理器。 */
 	return finish_create(&scope, l, error);
 }
 
@@ -463,8 +463,9 @@ static int dispose_body(logger_t *l)
 {
 	if (!l)
 		return 0;
-	/* Explicit users must be joined before entry. An in-object counter cannot
-     * make a freed raw C pointer safe. The global facade pins its own users. */
+	/* 显式实例的使用者必须在进入前完成外部生命周期协同。
+     * 对象内部计数器无法让已经释放的原始 C 指针重新变得安全。
+     * 全局门面会自行固定其使用者生命周期。 */
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
 	if (l->async_mode) {
@@ -501,7 +502,7 @@ static int dispose_body(logger_t *l)
 
 int logger_dispose_internal(logger_t *l)
 {
-	/* NULL destruction retains its no-registration/no-resource behavior. */
+	/* 销毁 NULL 时继续保持“不注册、不占用资源”的行为。 */
 	if (!l)
 		return reject_access() ? -errno : 0;
 	logger_scope_t scope;

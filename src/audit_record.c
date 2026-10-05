@@ -97,8 +97,8 @@ static int quoted(cursor_t *c, int nonempty)
 				unsigned char byte;
 				if (hex(c, &byte, 1))
 					return -EBADMSG;
-				/* Exactly the extra control-byte escapes emitted by writer.
-                 * \0 is not representable in a C string input. */
+				/* 只接受 writer 实际输出的额外控制字节转义。
+                 * C 字符串输入无法表示 \0。 */
 				if (!byte || byte == '\n' || byte == '\r' ||
 				    byte == '\t' ||
 				    (byte >= 0x20 && byte != 0x7f))
@@ -181,9 +181,8 @@ static int decimal_fixed(const char *s, size_t n)
 
 static int envelope(cursor_t *c)
 {
-	/* Ordinary Audit has this fixed presentation envelope. It is syntactically
-     * checked but intentionally remains OUTSIDE the historical digest domain.
-     * Also accept a bare canonical record for exported/offline verification. */
+	/* 普通 Audit 使用固定展示包络。它会接受语法检查，但有意保持在历史摘要域**之外**。
+     * 导出/离线验证时也接受不带包络的规范记录。 */
 	if ((size_t)(c->end - c->p) >= 9 && !memcmp(c->p, "instance=", 9))
 		return 0;
 	if (c->end - c->p < 31)

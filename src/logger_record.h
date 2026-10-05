@@ -28,8 +28,8 @@ typedef struct logger_message {
 	char text[LOGGER_MESSAGE_MAX];
 	char module_storage[128], file_storage[256], function_storage[128];
 } logger_message_t;
-/* Only a queue owns these fixed-size snapshots. Sync records need no retained
- * source lifetime. This bounded copy adds no per-record heap allocation. */
+/* 这些定长快照只由队列持有。同步记录无需延长源对象生命周期。
+ * 这种有界复制不会为每条记录增加堆分配。 */
 static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 {
 	size_t n = 0;
