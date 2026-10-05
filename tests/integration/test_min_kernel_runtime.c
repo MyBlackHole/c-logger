@@ -34,7 +34,7 @@ static int procfd_check(const char *dir)
 	return 0;
 }
 
-static int rotation_check(const char *path)
+static int rotation_check(const char *path, int expect_supported)
 {
 	(void)unlink(path);
 	char lock[4096];
@@ -54,17 +54,26 @@ static int rotation_check(const char *path)
 	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
 				     __FILE__, __LINE__, __func__,
 				     "first") == 0);
-	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
-				     __FILE__, __LINE__, __func__,
-				     "second") == 0);
+	int rc = logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
+					__FILE__, __LINE__, __func__,
+					"second");
 	logger_file_metrics_t m;
 	CHECK(logger_get_file_metrics(log, &m) == 0);
-	CHECK(m.rotation_attempts >= 1 && m.rotation_successes >= 1);
-	CHECK(m.rotation_failures == 0);
-	CHECK(logger_destroy_status(log) == 0);
-	printf("rotation path=%s attempts=%llu successes=%llu\n", path,
+	if (expect_supported) {
+		CHECK(rc == 0);
+		CHECK(m.rotation_attempts >= 1 && m.rotation_successes >= 1);
+		CHECK(m.rotation_failures == 0);
+	} else {
+		CHECK(rc == -ENOTSUP);
+		CHECK(m.rotation_attempts >= 1 && m.rotation_successes == 0);
+		CHECK(m.rotation_failures >= 1);
+	}
+	(void)logger_destroy_status(log);
+	printf("rotation path=%s supported=%d attempts=%llu successes=%llu failures=%llu\n",
+	       path, expect_supported,
 	       (unsigned long long)m.rotation_attempts,
-	       (unsigned long long)m.rotation_successes);
+	       (unsigned long long)m.rotation_successes,
+	       (unsigned long long)m.rotation_failures);
 	return 0;
 }
 
@@ -109,8 +118,11 @@ int main(int argc, char **argv)
 	CHECK(getrandom(random, sizeof(random), 0) == (ssize_t)sizeof(random));
 	CHECK(procfd_check(argv[3]) == 0);
 	CHECK(procfd_check(argv[4]) == 0);
-	CHECK(rotation_check(argv[1]) == 0);
-	CHECK(rotation_check(argv[2]) == 0);
+	CHECK(rotation_check(argv[1], 1) == 0);
+	/* Upstream XFS gained RENAME_NOREPLACE in Linux 4.0. Linux 3.17 is
+	 * supported for XFS only when internal rotation is not requested; the
+	 * backend must fail closed with ENOTSUP rather than overwrite an archive. */
+	CHECK(rotation_check(argv[2], 0) == 0);
 	CHECK(audit_check(argv[3], "min-kernel-ext4") == 0);
 	CHECK(audit_check(argv[4], "min-kernel-xfs") == 0);
 	puts("MIN_KERNEL_RUNTIME_PROBE_OK");
