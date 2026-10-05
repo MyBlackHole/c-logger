@@ -61,9 +61,14 @@ docker cp "$out/src-static/." "$cid:/opt/src-static"
 docker cp "$root/scripts/min-kernel/guest-init.sh" \
   "$cid:/usr/local/sbin/c-logger-min-kernel-init"
 
-kernel_release="3.17.8-c-logger"
 docker cp "$cid:/opt/min-kernel/bzImage" "$out/guest-vmlinuz"
 docker cp "$cid:/opt/min-kernel/compiler.txt" "$out/kernel-compiler.txt"
+docker cp "$cid:/opt/min-kernel/kernel-release.txt" "$out/kernel-release.txt"
+kernel_release="$(tr -d '\r\n' < "$out/kernel-release.txt")"
+case "$kernel_release" in
+  3.17.*) ;;
+  *) echo "unexpected built kernel release: $kernel_release" >&2; exit 1 ;;
+esac
 docker export "$cid" -o "$out/focal-rootfs.tar"
 
 root_disk="$out/focal-root.raw"
