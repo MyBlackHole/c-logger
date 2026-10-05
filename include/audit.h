@@ -114,14 +114,8 @@ typedef struct {
 	char instance_id[33];
 } audit_status_t;
 LOGGER_API int audit_get_status(audit_status_t *);
-/* Invalidation only. Does NOT reset inherited locks, destroy runtime, or emit
- * STOP. Reinitialization in a forked child returns ECHILD until exec. Prefer
- * fork-before-any-library-runtime-use (single-threaded) or fork+exec. The
- * process guard is shared with Logger/Console; see API.md. */
-/* With logger_fork_reinit, Audit must be shut down before entry and may be
- * initialized normally after return. Do not call this invalidation helper on
- * that clean path. */
-LOGGER_API void audit_after_fork_child(void);
+/* Raw-fork inherited Audit state is invalidated internally by the shared
+ * process guard. Reinitialization in the child returns ECHILD until exec. */
 LOGGER_API int audit_write(const audit_event_t *);
 LOGGER_API int audit_begin(audit_event_t *event);
 LOGGER_API int audit_end(audit_event_t *event, audit_result_t result,
