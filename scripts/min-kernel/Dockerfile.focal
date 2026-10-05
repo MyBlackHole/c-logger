@@ -2,10 +2,11 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ARG XMAKE_VERSION=3.1.1
+ARG KERNEL_VERSION=3.17.8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake curl file git pkg-config python3 binutils \
-    kmod xfsprogs linux-image-generic initramfs-tools systemd-sysv \
+    bc bison flex libssl-dev libelf-dev xz-utils util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
@@ -16,6 +17,31 @@ RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
     && make install \
     && rm -rf /tmp/xmake
 
+RUN mkdir -p /opt/min-kernel \
+    && curl -fsSL "https://cdn.kernel.org/pub/linux/kernel/v3.x/linux-${KERNEL_VERSION}.tar.xz" \
+         -o /tmp/linux.tar.xz \
+    && tar -C /tmp -xf /tmp/linux.tar.xz \
+    && cd "/tmp/linux-${KERNEL_VERSION}" \
+    && make x86_64_defconfig \
+    && scripts/config --disable MODULES \
+         --enable DEVTMPFS \
+         --enable DEVTMPFS_MOUNT \
+         --enable PROC_FS \
+         --enable SYSFS \
+         --enable TMPFS \
+         --enable UNIX \
+         --enable PCI \
+         --enable VIRTIO \
+         --enable VIRTIO_PCI \
+         --enable VIRTIO_BLK \
+         --enable EXT4_FS \
+         --enable XFS_FS \
+         --enable SERIAL_8250 \
+         --enable SERIAL_8250_CONSOLE \
+    && make olddefconfig \
+    && make -j2 bzImage \
+    && cp arch/x86/boot/bzImage /opt/min-kernel/bzImage \
+    && rm -rf "/tmp/linux-${KERNEL_VERSION}" /tmp/linux.tar.xz
+
 RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.31" \
-    && kernel="$(ls /boot/vmlinuz-5.4.* 2>/dev/null | sort -V | tail -n 1)" \
-    && test -n "$kernel"
+    && test -s /opt/min-kernel/bzImage
