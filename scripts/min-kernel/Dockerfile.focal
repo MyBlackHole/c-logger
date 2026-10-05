@@ -22,6 +22,7 @@ RUN mkdir -p /opt/min-kernel \
          -o /tmp/linux.tar.xz \
     && tar -C /tmp -xf /tmp/linux.tar.xz \
     && cd "/tmp/linux-${KERNEL_VERSION}" \
+    && for v in 5 6 7 8 9 10; do ln -sf compiler-gcc4.h "include/linux/compiler-gcc${v}.h"; done \
     && make x86_64_defconfig \
     && scripts/config --disable MODULES \
          --enable DEVTMPFS \
@@ -39,7 +40,7 @@ RUN mkdir -p /opt/min-kernel \
          --enable SERIAL_8250 \
          --enable SERIAL_8250_CONSOLE \
     && make olddefconfig \
-    && make -j2 bzImage \
+    && make -j2 KCFLAGS="-fno-pie -fno-PIE" bzImage \
     && cp arch/x86/boot/bzImage /opt/min-kernel/bzImage \
     && rm -rf "/tmp/linux-${KERNEL_VERSION}" /tmp/linux.tar.xz
 
