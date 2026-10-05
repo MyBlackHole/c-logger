@@ -1,3 +1,4 @@
+#include <limits.h>
 #define _GNU_SOURCE
 #include "crypto_support.h"
 #include "audit_record.h"

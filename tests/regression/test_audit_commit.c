@@ -136,7 +136,6 @@ static void checkpoint_persistent(void)
 	CHECK(status().state == AUDIT_STATE_IDLE &&
 	      status().error_code == ENOSPC);
 	CHECK(!count_event("AUDIT_STOP"));
-	check_process_lock("free");
 	atomic_store(&cp_failures, 0);
 	audit_config_t c = audit_test_config();
 	CHECK(audit_init(&c) == 0);
@@ -172,7 +171,6 @@ static void uncertain(const char *mode)
 	CHECK(file_size("app.audit.log") == size);
 	CHECK(audit_shutdown_status() == -1 && errno == expected);
 	CHECK(!count_event("AUDIT_STOP") && !count_event("FORBIDDEN"));
-	check_process_lock("free");
 	audit_config_t c = audit_test_config();
 	CHECK(audit_init(&c) ==
 	      0); /* controlled current-file recovery, not arbitrary history */
@@ -215,7 +213,6 @@ static void stop_error(void)
 	CHECK(st.state == AUDIT_STATE_IDLE && st.checkpoint_dirty &&
 	      st.committed_seq == 2);
 	CHECK(count_event("AUDIT_STOP") == 1);
-	check_process_lock("free");
 	audit_config_t c = audit_test_config();
 	CHECK(audit_init(&c) == 0);
 	CHECK(audit_shutdown_status() == 0);
@@ -233,7 +230,6 @@ static void start_error(void)
 	audit_event_t e = audit_test_event("NO_SESSION");
 	CHECK(audit_write(&e) == -1 && errno == ENODEV);
 	CHECK(!count_event("AUDIT_STOP"));
-	check_process_lock("free");
 	CHECK(audit_init(&c) == 0);
 	CHECK(audit_shutdown_status() == 0);
 	CHECK(audit_verify_file("app.audit.log") == 0);
@@ -242,8 +238,6 @@ static void start_error(void)
 
 int main(int argc, char **argv)
 {
-	if (argc == 3 && !strcmp(argv[1], "--probe-lock"))
-		return audit_probe_lock(argv[2]);
 	CHECK(argc == 2);
 	char dir[] = "/tmp/audit-commit-XXXXXX";
 	enter_temp(dir);

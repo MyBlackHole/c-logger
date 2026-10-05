@@ -1,5 +1,7 @@
+#include <limits.h>
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <sys/wait.h>
 
 static int crash_armed;
 void __real_logger_fault_crash_if_requested(const char *);

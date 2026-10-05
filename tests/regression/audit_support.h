@@ -3,9 +3,6 @@
 #include "audit.h"
 #include "support.h"
 #include <dirent.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <sys/wait.h>
 
 static inline audit_config_t audit_test_config(void)
 {
@@ -59,38 +56,4 @@ static inline unsigned count_event(const char *name)
 	return count;
 }
 
-/* This executable must dispatch --probe-lock before its ordinary test body.
- * Lock attempts run after exec, never by continuing an inherited Audit runtime. */
-static inline int audit_probe_lock(const char *expect)
-{
-	int fd = open("app.audit.lock", O_RDWR | O_CLOEXEC);
-	CHECK(fd >= 0);
-	struct flock lk = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
-	int rc = fcntl(fd, F_SETLK, &lk);
-	int error = errno;
-	CHECK(close(fd) == 0);
-	if (!strcmp(expect, "busy"))
-		CHECK(rc == -1 && (error == EAGAIN || error == EACCES));
-	else
-		CHECK(rc == 0);
-	return 0;
-}
-
-static inline void check_process_lock(const char *expect)
-{
-	char exe[PATH_MAX];
-	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-	CHECK(n > 0 && (size_t)n < sizeof(exe) - 1);
-	exe[n] = '\0';
-	char *argv[] = { exe, "--probe-lock", (char *)expect, NULL };
-	pid_t child = fork();
-	CHECK(child >= 0);
-	if (!child) {
-		execv(exe, argv);
-		_exit(127);
-	}
-	int st;
-	CHECK(waitpid(child, &st, 0) == child);
-	CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0);
-}
 #endif

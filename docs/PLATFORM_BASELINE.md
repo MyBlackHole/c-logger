@@ -72,7 +72,7 @@ readelf -h -d -V build/liblogger.so
 Production v1 的最低 upstream kernel baseline 收敛为 **Linux 5.10 / x86_64**，
 与最低 userland Ubuntu 20.04 / glibc 2.31 组合做真实 QEMU 运行验证。选择 5.10 的理由不是
 “某个 syscall 最早在哪个版本出现”，而是它仍属于 upstream longterm 维护线，并且完整覆盖
-当前 runtime 已实际依赖的 getrandom、OFD locking、renameat2/RENAME_NOREPLACE、procfs/procfd
+当前 runtime 已实际依赖的 getrandom、renameat2/RENAME_NOREPLACE、procfs/procfd
 以及 ext4/XFS 本地文件系统能力。更老的 3.x/4.x 不进入 v1 默认支持合同；若未来存在明确客户
 需求，按具体发行版/backport 作为独立 compatibility tier 验证，而不是扩大通用 v1 baseline。
 
