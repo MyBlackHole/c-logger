@@ -31,7 +31,7 @@ for kind in shared static; do
   prefix="$src/min-kernel-prefix"
   cd "$src"
   echo "MIN_KERNEL_EVIDENCE core-tests kind=$kind"
-  xmake test --root -j1
+  xmake test --root -g production-core -j1
 
   version="$(cat VERSION)"
   if [ "$kind" = shared ]; then
