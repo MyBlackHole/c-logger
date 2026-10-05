@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  linux-5-4:
+  linux-3-17:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -33,7 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 e2fsprogs xfsprogs
 
-      - name: Validate Ubuntu 20.04 on Linux 5.4 guest
+      - name: Validate Ubuntu 20.04 on Linux 3.17 guest
         shell: bash
         run: bash scripts/run_min_kernel_vm.sh min-kernel-evidence
 
@@ -41,7 +41,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: minimum-kernel-linux-5.4
+          name: minimum-kernel-linux-3.17
           path: |
             min-kernel-evidence/platform-evidence.txt
             min-kernel-evidence/serial.log
