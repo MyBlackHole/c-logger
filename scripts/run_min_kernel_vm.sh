@@ -112,9 +112,9 @@ timeout 10m qemu-system-x86_64 \
 qemu_rc=${PIPESTATUS[0]}
 set -e
 
-grep -q '^MIN_KERNEL_EVIDENCE random_ready=1$' "$out/serial.log"
-grep -q '^MIN_KERNEL_RUNTIME_PROBE_OK$' "$out/serial.log"
-grep -q '^MIN_KERNEL_OK kernel=5\.10\.' "$out/serial.log"
+grep -Fq 'MIN_KERNEL_EVIDENCE random_ready=1' "$out/serial.log"
+grep -Fq 'MIN_KERNEL_RUNTIME_PROBE_OK' "$out/serial.log"
+grep -Fq 'MIN_KERNEL_OK kernel=5.10.' "$out/serial.log"
 
 # With -no-reboot, QEMU may return a non-zero status after a guest poweroff
 # even though the guest completed validation. The serial success markers above
