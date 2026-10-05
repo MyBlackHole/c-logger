@@ -1,3 +1,4 @@
+#include <limits.h>
 #define _GNU_SOURCE
 #include "record_support.h"
 #include <sys/wait.h>
