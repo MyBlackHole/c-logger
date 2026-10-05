@@ -3,6 +3,7 @@
 #include "audit_internal.h"
 #include "logger_internal.h"
 #include <signal.h>
+#include <sys/wait.h>
 
 static char exe[4096];
 static audit_config_t cfg(const char *name, audit_integrity_t alg)
