@@ -9,8 +9,42 @@ on:
       - "tests/vm_powercut.c"
       - "xmake.lua"
       - "VERSION"
-      - "src/**"
-      - "include/**"
+      - "src/audit.c"
+      - "src/audit_integrity.c"
+      - "src/audit_record.c"
+      - "src/audit_record.h"
+      - "src/audit_recovery.c"
+      - "src/audit_internal.h"
+      - "src/logger.c"
+      - "src/logger_file.c"
+      - "src/logger_file.h"
+      - "src/logger_file_rename.c"
+      - "src/logger_fault.c"
+      - "src/logger_fault.h"
+      - "include/audit.h"
+      - "include/logger.h"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/vm-powercut.yml"
+      - "scripts/run_vm_powercut.py"
+      - "tests/vm_powercut.c"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/audit.c"
+      - "src/audit_integrity.c"
+      - "src/audit_record.c"
+      - "src/audit_record.h"
+      - "src/audit_recovery.c"
+      - "src/audit_internal.h"
+      - "src/logger.c"
+      - "src/logger_file.c"
+      - "src/logger_file.h"
+      - "src/logger_file_rename.c"
+      - "src/logger_fault.c"
+      - "src/logger_fault.h"
+      - "include/audit.h"
+      - "include/logger.h"
 
 permissions:
   contents: read
@@ -22,19 +56,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        filesystem: [ext4, xfs]
-        point:
-          - acknowledged
-          - before_audit_fsync
-          - after_audit_fsync
-          - before_state_rename
-          - after_state_rename
-          - after_checkpoint_commit
-          - file_after_archive_rename
-          - file_after_archive_dirsync
-          - file_after_active_open
-          - file_after_active_dirsync
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"filesystem":["ext4","xfs"],"point":["after_checkpoint_commit","file_after_archive_dirsync"]}' || '{"filesystem":["ext4","xfs"],"point":["acknowledged","before_audit_fsync","after_audit_fsync","before_state_rename","after_state_rename","after_checkpoint_commit","file_after_archive_rename","file_after_archive_dirsync","file_after_active_open","file_after_active_dirsync"]}') }}
     steps:
       - uses: actions/checkout@v5
 
