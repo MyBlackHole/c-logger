@@ -1,4 +1,4 @@
-# Explicit public C ABI allowlist. Additive names only; do not use globs.
+# Frozen Production v1 public C ABI allowlist. After 1.0, additions require ABI review; do not use globs.
 audit_begin
 audit_crypto_backend
 audit_end
