@@ -32,8 +32,12 @@ v1 只支持：
 - Ubuntu 22.04 / glibc 2.35；
 - Ubuntu 24.04 / glibc 2.39。
 
-因此 v1 的 **userland baseline 固定为 glibc >= 2.31**。这只描述 libc/userland，不代表最低
-Linux kernel 已经确定。最低 kernel 是独立的 v1 blocker。
+因此 v1 的 **userland baseline 固定为 glibc >= 2.31**。
+
+最低 upstream kernel 目标改为 **Linux >= 3.17（x86_64）**。这是按实际运行能力选择，
+不是因为“3.x”这个版本标签本身：getrandom() 从 3.17 提供；renameat2() 与 ext4 的
+RENAME_NOREPLACE 从 3.15 提供。Linux 3.17 guest 必须用 glibc 2.31 userland 实际验证，
+不能由 syscall 首次出现版本代替运行证据。
 
 ### 文件系统与目录信任模型
 
@@ -43,8 +47,16 @@ v1 的持久文件/Audit 支持范围限定为：
 - 本地 XFS；
 - 受信任的本地目录；
 - 单目标 cooperative owner；
-- 支持 `RENAME_NOREPLACE` 的实际 kernel/filesystem 组合；
 - Audit 使用场景必须保持可访问 procfs，使 owned procfd 路径绑定语义成立。
+
+文件系统能力按 kernel/filesystem 组合分层，而不是只按“Linux 3.x/4.x”判断：
+
+- **Linux 3.17+ / ext4**：支持内部 SIZE/DAILY/SIZE_DAILY 轮换，要求 RENAME_NOREPLACE；
+- **Linux 3.17–3.x / XFS**：支持普通写入、NONE 模式和不触发内部 rename 的 Audit；
+  内部轮换明确返回 ENOTSUP，不做覆盖式 rename/link-unlink 降级；
+- **Linux 4.0+ / XFS**：支持 RENAME_NOREPLACE 后，进入完整内部轮换支持范围。
+
+因此“支持 Linux 3.x”不意味着 3.x 上 ext4/XFS 的全部可选能力完全相同。
 
 这里的“支持 ext4/XFS”要求正式 v1 前补齐真实目标存储栈证据。现有 QEMU/raw-disk ext4 +
 XFS × 10 cut-point matrix 是必要 CI gate，但不是物理断电认证。
@@ -129,7 +141,8 @@ Global facade 继续作为宿主便利 API，但不改变显式 owner 模型。
 不能用“某 syscall 在 Linux X.Y 首次出现”代替运行验证，也不能用共享 runner kernel 的
 container matrix 宣称最低 kernel。
 
-最低 kernel 在证据完成前保持 **TBD**。
+最低 kernel 候选固定为 **Linux 3.17**。正式 v1 只有在 3.17 QEMU/target gate 完成后
+才能把候选改成已验证 baseline；XFS 内部轮换的独立能力下限保持 Linux 4.0。
 
 ### 2. 真实存储栈掉电验证
 
