@@ -4,7 +4,7 @@ set -euo pipefail
 fail() {
   echo "MIN_KERNEL_FAIL: $*" >&2
   sync || true
-  poweroff -f || true
+  /bin/busybox poweroff -f || true
   exit 1
 }
 
@@ -72,4 +72,4 @@ mkdir -p /tmp/min-kernel-ext4
 echo "MIN_KERNEL_OK kernel=$kernel userland=$glibc ext4_internal_rotation=1 xfs_internal_rotation=0"
 sync
 umount /mnt/xfs
-poweroff -f
+/bin/busybox poweroff -f
