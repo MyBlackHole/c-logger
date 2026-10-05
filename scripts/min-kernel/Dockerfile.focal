@@ -6,7 +6,7 @@ ARG KERNEL_VERSION=3.17.8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake curl file git pkg-config python3 binutils \
-    bc bison flex libssl-dev libelf-dev xz-utils util-linux \
+    bc bison flex libssl-dev libelf-dev xz-utils util-linux busybox-static \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
