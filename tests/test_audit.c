@@ -11,7 +11,6 @@ int main(void)
 	c.name = "auditcase";
 	c.rotation.mode = LOGGER_ROTATE_SIZE;
 	c.rotation.max_file_size = 1024 * 1024;
-	c.fsync_each_record = 1;
 	if (audit_init(&c)) {
 		perror("audit_init");
 		return 1;
