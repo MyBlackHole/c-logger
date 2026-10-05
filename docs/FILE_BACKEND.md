@@ -17,9 +17,9 @@
 - active 和协调文件最终路径不允许符号链接或硬链接（`ELOOP` / `EMLINK`）；目录
   祖先可在初始化时经过 symlink 解析，之后绑定到实际目录 fd。同一个目录的不同
   路径写法 不会创建不同 所有者。
-- 普通 active basename 不得以 `.logger.lock` 或 `.audit.lock` 结尾。这两个后缀属于
-  库内部协调命名空间，拒绝它们可防止另一个合法 Logger 把正在持有 flock/fcntl 锁的
-  协调 inode 当成日志 active 并在轮换时替换路径。
+- 普通 active basename 不得以 `.logger.lock` 结尾。该后缀属于文件后端内部协调
+  命名空间，拒绝它可防止另一个合法 Logger 把正在持有 flock 的协调 inode 当成日志
+  active 并在轮换时替换路径。
 - 内部轮换仅支持普通文件。FIFO、socket、目录等拒绝；字符设备仅 NONE 模式接受，
   用于如 `/dev/null`、`/dev/full` 管线测试，不是持久化保证，fsync 仍可能返回 EINVAL。
 - 空路径、末尾 slash / `.` / `..`、过长路径/文件名返回错误，绝不截断再打开。
@@ -89,12 +89,11 @@ Audit 先 reserve active 的普通 所有者，然后才读取、核验或修复
 算法失败不被提前的 active 创建掩盖。恢复成功后把 预留 移进同步 Logger，
 不存在 发布/reacquire 的 writer 窗口。
 
-检查点 目标也有独立 `.logger.lock` 预留；不同名字共享一个显式 state
-路径时会冲突。`.audit.lock` 的单写者租约使用 Linux open-file-description（OFD）
-`F_OFD_SETLK` 排他锁，而不是传统进程关联 `F_SETLK`。因此同一进程后来对该
-lock inode 打开并关闭另一个 fd，不会把 Audit 正在持有的 writer ownership 一并释放。
-OFD 锁与传统 POSIX record lock 彼此冲突，旧协作 writer 仍不能与新实例同时获得锁。
-运行内核不支持 OFD 锁时初始化返回 `ENOTSUP`，不做不安全降级。
+检查点目标也有独立 `.logger.lock` 预留；不同名字共享一个显式 state 路径时会冲突。
+Audit 不再维护第二套 `.audit.lock` 协议：active 日志在 recovery 前取得的 file-backend
+ownership 本身就是 writer lease，恢复成功后该 reservation 直接 move 给同步 Logger，
+因此从恢复开始到 shutdown 始终不存在第二个协作 writer 可以取得同一 active target 的窗口。
+这也避免在同一对象上长期维护 flock 与 fcntl/OFD 两套所有权协议。
 
 本轮保留恢复/检查点 的 path 接口，以 `/proc/self/fd/<owned-dirfd>/...` 连接到
 持有的目录。默认 state 和自定义 state 都在本生命周期内绑定。**Audit 现在需要可用的
@@ -103,7 +102,7 @@ Linux procfs fd 遍历**；不可用时初始化明确失败，不回退到可�
 普通 Logger 文件后端自身不依赖 procfs。
 
 普通文件实例常驻 3 个 fd（data、dir、所有者），比之前增加 2 个。启用完整性保护的
-Audit 常驻约 7 个文件/目录/锁 fd（此前约 2 个）；检查点 临时 I/O 另计。没有
+Audit 常驻约 6 个文件/目录/锁 fd（此前约 2 个）；检查点 临时 I/O 另计。没有
 每条日志新增长期资源或新 工作线程。本轮没有重新测量吞吐，更多轮换同步可能增加延迟。
 
 ## 全局便利层的联动修复

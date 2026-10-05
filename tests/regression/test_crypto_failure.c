@@ -1,10 +1,26 @@
 #define _GNU_SOURCE
 #include "crypto_support.h"
+#include <fcntl.h>
+#include <sys/file.h>
 
 /* Failure providers are supplied only by this test's link-time wrapper.
  * Production code has no new env switch, callback setter, or fault hook. */
 const audit_digest_ops_t *__real_audit_digest_provider(audit_integrity_t);
 static const audit_digest_ops_t *real_sha;
+
+static void check_writer_owner(const char *expect)
+{
+	int fd = open("app.audit.log.logger.lock", O_RDWR | O_CLOEXEC);
+	CHECK(fd >= 0);
+	int rc = flock(fd, LOCK_EX | LOCK_NB);
+	int error = errno;
+	if (!strcmp(expect, "busy"))
+		CHECK(rc == -1 && (error == EAGAIN || error == EWOULDBLOCK));
+	else
+		CHECK(rc == 0);
+	CHECK(close(fd) == 0);
+}
+
 static audit_digest_ops_t sha;
 static const char *wanted;
 static int probe_failure;
@@ -75,10 +91,10 @@ static void init_failure(audit_config_t *config, int preflight)
 	if (preflight) {
 		CHECK(access("app.audit.log", F_OK) == -1 && errno == ENOENT);
 		CHECK(access("app.audit.state", F_OK) == -1 && errno == ENOENT);
-		CHECK(access("app.audit.lock", F_OK) == -1 && errno == ENOENT);
+		CHECK(access("app.audit.log.logger.lock", F_OK) == -1 && errno == ENOENT);
 	} else {
 		CHECK(file_size("app.audit.log") == 0);
-		check_process_lock("free");
+		check_writer_owner("free");
 	}
 	disarm();
 	CHECK(audit_init(config) == 0);
@@ -136,7 +152,7 @@ static void runtime_failure(audit_config_t *config, const char *mode)
 	}
 	crypto_same_file("app.audit.log", &log);
 	crypto_same_file("app.audit.state", &state);
-	check_process_lock("free");
+	check_writer_owner("free");
 	CHECK(audit_init(config) == 0);
 	CHECK(audit_write(&e) == 0);
 	CHECK(audit_shutdown_status() == 0);
@@ -211,7 +227,7 @@ static void recovery_failure(audit_config_t *config, const char *mode)
 		arm_record("instance=", 2);
 	if (!strcmp(mode, "recover-init")) {
 		crypto_expect_error(audit_init(config), EIO);
-		check_process_lock("free");
+		check_writer_owner("free");
 	} else {
 		crypto_expect_error(audit_recover_set(".", "app",
 						      "app.audit.log",
@@ -236,8 +252,6 @@ static void recovery_failure(audit_config_t *config, const char *mode)
 
 int main(int argc, char **argv)
 {
-	if (argc == 3 && !strcmp(argv[1], "--probe-lock"))
-		return audit_probe_lock(argv[2]);
 	CHECK(argc == 3);
 	real_sha = __real_audit_digest_provider(AUDIT_INTEGRITY_SHA256);
 	CHECK(real_sha);

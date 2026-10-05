@@ -106,13 +106,9 @@ static int regular_single_link(const struct stat *st)
 
 static int reserved_basename(const char *name, size_t length)
 {
-	static const char *const suffixes[] = { ".logger.lock", ".audit.lock" };
-	for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i) {
-		size_t n = strlen(suffixes[i]);
-		if (length >= n && !memcmp(name + length - n, suffixes[i], n))
-			return 1;
-	}
-	return 0;
+	static const char suffix[] = ".logger.lock";
+	size_t n = sizeof(suffix) - 1u;
+	return length >= n && !memcmp(name + length - n, suffix, n);
 }
 
 static int check_named_fd(int dirfd, const char *name, int fd, struct stat *st)

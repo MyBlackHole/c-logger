@@ -69,6 +69,18 @@ readelf -h -d -V build/liblogger.so
 旧系统 sysroot 来制造“交叉兼容成功”。工具链路径、版本、sysroot 来源和 checksum 都应进入
 发布证据。
 
+Production v1 的最低 upstream kernel baseline 收敛为 **Linux 5.10 / x86_64**，
+与最低 userland Ubuntu 20.04 / glibc 2.31 组合做真实 QEMU 运行验证。选择 5.10 的理由不是
+“某个 syscall 最早在哪个版本出现”，而是它仍属于 upstream longterm 维护线，并且完整覆盖
+当前 runtime 已实际依赖的 getrandom、renameat2/RENAME_NOREPLACE、procfs/procfd
+以及 ext4/XFS 本地文件系统能力。更老的 3.x/4.x 不进入 v1 默认支持合同；若未来存在明确客户
+需求，按具体发行版/backport 作为独立 compatibility tier 验证，而不是扩大通用 v1 baseline。
+
+最低内核 gate 只验证内核相关 runtime 能力：一个 authoritative shared production candidate
+在 Linux 5.10 + glibc 2.31 guest 中执行 getrandom、ext4/XFS rotation 和 Audit write/recovery
+smoke。shared/static packaging、完整 consumer、process-crash 和 sanitizer 已有独立门禁，
+不在 minimum-kernel workflow 中重复执行。
+
 已知需平台验证/兼容设计的功能：`getrandom` wrapper/系统调用，`RENAME_NOREPLACE` 的内核和
 文件系统支持，Audit 的 procfd 路径，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
 没有能力时沿用既有明确错误，不降级为覆盖式 rename、不切换算法或隐藏 I/O 失败。

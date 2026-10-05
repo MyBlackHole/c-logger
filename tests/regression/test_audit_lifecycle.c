@@ -1,6 +1,9 @@
 #define _GNU_SOURCE
 #include "audit_support.h"
+#include <fcntl.h>
 #include <stdarg.h>
+#include <sys/file.h>
+#include <sys/wait.h>
 
 static _Atomic int pause_start, pause_stop, pause_destroy, pause_write;
 static _Atomic int entered, release_point, init_attempted, delayed_entered,
@@ -8,6 +11,19 @@ static _Atomic int entered, release_point, init_attempted, delayed_entered,
 static _Thread_local int delay_operation;
 static _Thread_local int mark_initializer;
 static _Atomic int initializer_at_lock;
+
+static void check_writer_owner(const char *expect)
+{
+	int fd = open("app.audit.log.logger.lock", O_RDWR | O_CLOEXEC);
+	CHECK(fd >= 0);
+	int rc = flock(fd, LOCK_EX | LOCK_NB);
+	int error = errno;
+	if (!strcmp(expect, "busy"))
+		CHECK(rc == -1 && (error == EAGAIN || error == EWOULDBLOCK));
+	else
+		CHECK(rc == 0);
+	CHECK(close(fd) == 0);
+}
 
 int __real_logger_destroy_status(logger_t *);
 int __real_pthread_mutex_lock(pthread_mutex_t *);
@@ -155,7 +171,7 @@ static void teardown_race(void)
 	wait_flag(&entered);
 	CHECK(!pthread_create(&fresh, NULL, initializer, &init));
 	wait_flag(&initializer_at_lock);
-	check_process_lock("busy");
+	check_writer_owner("busy");
 	for (int i = 0; i < 100 && !atomic_load(&init.done); ++i)
 		nap_ms();
 	int too_early = atomic_load(&init.done);
@@ -164,10 +180,10 @@ static void teardown_race(void)
 	CHECK(!pthread_join(fresh, NULL));
 	CHECK(stop.rc == 0 && init.rc == 0);
 	/* Old shutdown must never release the new session's writer ownership. */
-	check_process_lock("busy");
+	check_writer_owner("busy");
 	audit_shutdown();
 	CHECK(!too_early);
-	check_process_lock("free");
+	check_writer_owner("free");
 	CHECK(audit_verify_file("app.audit.log") == 0);
 }
 
@@ -248,15 +264,13 @@ static void guard(void)
 	int status;
 	CHECK(waitpid(child, &status, 0) == child);
 	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-	check_process_lock("busy");
+	check_writer_owner("busy");
 	CHECK(audit_shutdown_status() == 0);
 }
 #endif
 
 int main(int argc, char **argv)
 {
-	if (argc == 3 && !strcmp(argv[1], "--probe-lock"))
-		return audit_probe_lock(argv[2]);
 	CHECK(argc == 2);
 	char dir[] = "/tmp/audit-lifecycle-XXXXXX";
 	enter_temp(dir);

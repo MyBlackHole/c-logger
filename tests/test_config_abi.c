@@ -72,14 +72,12 @@ int main(void)
 	a.rotation.mode = LOGGER_ROTATE_NONE;
 	a.integrity = AUDIT_INTEGRITY_NONE;
 	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.lock");
 	unlink("./config_abi_tail.audit.log.logger.lock");
 	if (audit_init(&a))
 		return 12;
 	if (audit_shutdown_status())
 		return 13;
 	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.lock");
 	unlink("./config_abi_tail.audit.log.logger.lock");
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();

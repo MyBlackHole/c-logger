@@ -1,0 +1,49 @@
+name: minimum-kernel
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/minimum-kernel.yml"
+      - "scripts/run_min_kernel_vm.sh"
+      - "scripts/min-kernel/**"
+      - "tests/integration/test_min_kernel_runtime.c"
+      - "src/audit.c"
+      - "src/logger_file.c"
+      - "src/logger_file_rename.c"
+      - "src/logger_process.c"
+      - "include/audit.h"
+      - "include/logger.h"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-5-10:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install VM and filesystem tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 e2fsprogs xfsprogs
+
+      - name: Validate Ubuntu 20.04 on Linux 5.10 guest
+        shell: bash
+        run: bash scripts/run_min_kernel_vm.sh min-kernel-evidence
+
+      - name: Upload minimum-kernel evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimum-kernel-linux-5.10
+          path: |
+            min-kernel-evidence/platform-evidence.txt
+            min-kernel-evidence/kernel-compiler.txt
+            min-kernel-evidence/kernel-release.txt
+            min-kernel-evidence/serial.log
+            min-kernel-evidence/qemu-debug.log
+          if-no-files-found: warn
+          retention-days: 30

@@ -627,9 +627,6 @@ if has_config("build_regression_tests") then
             {"audit_digest_provider"}},
         {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
             {"write", "fsync", "ftruncate"}},
-        {"audit_ofd_lock_regression", "tests/regression/test_audit_ofd_lock.c"},
-        {"audit_ofd_platform_regression", "tests/regression/test_audit_ofd_platform.c",
-            {"fcntl"}},
 
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
@@ -801,17 +798,6 @@ if has_config("build_regression_tests") then
             add_tests("tail_io_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
-    target_end()
-
-    target("audit_ofd_lock_regression")
-        for _, scenario in ipairs({"close-isolation", "posix-conflict"}) do
-            add_tests("audit_ofd_" .. scenario:gsub("-", "_"),
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_ofd_platform_regression")
-        add_tests("audit_ofd_unsupported", {timeout = 20})
     target_end()
 
     target("audit_record_regression")
@@ -1354,7 +1340,7 @@ if has_config("build_regression_tests") then
             "owner-alias", "owner-close-other", "path-empty", "path-long",
             "name-long", "path-directory", "path-fifo", "path-symlink",
             "path-dangling", "path-hardlink", "path-reserved-logger-lock",
-            "path-reserved-audit-lock", "lock-symlink", "lock-hardlink",
+            "lock-symlink", "lock-hardlink",
             "lock-fifo", "device-rotate", "device-shared", "init-cleanup",
             "reopen-ok", "reopen-permission", "reopen-space", "reopen-emfile",
             "reopen-directory", "reopen-symlink", "reopen-sync",

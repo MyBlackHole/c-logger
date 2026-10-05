@@ -32,8 +32,9 @@ v1 只支持：
 - Ubuntu 22.04 / glibc 2.35；
 - Ubuntu 24.04 / glibc 2.39。
 
-因此 v1 的 **userland baseline 固定为 glibc >= 2.31**。这只描述 libc/userland，不代表最低
-Linux kernel 已经确定。最低 kernel 是独立的 v1 blocker。
+因此 v1 的 **userland baseline 固定为 glibc >= 2.31**，最低 upstream kernel baseline
+固定为 **Linux >= 5.10 / x86_64**。5.10 作为仍受 upstream longterm 维护的老 LTS，
+避免为了理论最老 syscall 版本长期维护 3.x/4.x 的文件系统和早期启动特例。
 
 ### 文件系统与目录信任模型
 
@@ -43,8 +44,9 @@ v1 的持久文件/Audit 支持范围限定为：
 - 本地 XFS；
 - 受信任的本地目录；
 - 单目标 cooperative owner；
-- 支持 `RENAME_NOREPLACE` 的实际 kernel/filesystem 组合；
-- Audit 使用场景必须保持可访问 procfs，使 owned procfd 路径绑定语义成立。
+- Linux 5.10+ 上 ext4/XFS 的 `RENAME_NOREPLACE` 路径；
+- 当前 Audit 使用场景必须保持可访问 procfs，使 owned procfd 路径绑定语义成立
+  （该实现依赖计划在 ABI freeze 前用原生 dirfd API 消除）。
 
 这里的“支持 ext4/XFS”要求正式 v1 前补齐真实目标存储栈证据。现有 QEMU/raw-disk ext4 +
 XFS × 10 cut-point matrix 是必要 CI gate，但不是物理断电认证。
@@ -115,21 +117,18 @@ Global facade 继续作为宿主便利 API，但不改变显式 owner 模型。
 
 ### 1. 最低 Linux kernel
 
-必须选择一个明确的最低 kernel baseline，并在**实际该 kernel 或等价可追溯 VM/target**上验证：
+最低 kernel baseline 固定为 **Linux 5.10**，并在 Ubuntu 20.04 / glibc 2.31 rootfs 的
+真实 QEMU guest 中验证当前 production shared runtime：
 
-- shared/static production artifact；
-- production-linked core tests；
-- installed C/C++ consumer；
-- pkg-config consumer；
-- `getrandom` 路径；
-- `RENAME_NOREPLACE` 路径；
-- procfs/procfd Audit 路径；
-- process crash recovery。
+- guest `uname` 必须为 5.10.x，glibc 必须为 2.31；
+- kernel CRNG ready 后实际执行 `getrandom`；
+- ext4 与 XFS 的 `RENAME_NOREPLACE` internal rotation；
+- Audit 在 ext4/XFS 上的 init/write/shutdown/verify；
+- 当前 procfs/procfd Audit 路径。
 
-不能用“某 syscall 在 Linux X.Y 首次出现”代替运行验证，也不能用共享 runner kernel 的
-container matrix 宣称最低 kernel。
-
-最低 kernel 在证据完成前保持 **TBD**。
+minimum-kernel gate 不再重复 shared/static packaging、完整 consumer、process-crash、
+sanitizer 等已有独立 workflow 的证明。更老 kernel 只在出现真实部署需求时建立单独
+compatibility tier，不进入通用 Production v1 支持范围。
 
 ### 2. 真实存储栈掉电验证
 
