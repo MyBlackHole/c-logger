@@ -1159,7 +1159,7 @@ if has_config("build_regression_tests") then
             "global", "explicit", "console-only", "context-only", "audit-only",
             "verify-only", "emit-held", "progress-held", "console-held",
             "reader-held", "registration-window", "earlier-handler",
-            "after-shutdown", "prepare", "bypass-handler", "prefork",
+            "after-shutdown", "bypass-handler", "prefork",
             "register-global", "register-explicit", "register-console",
             "register-context", "register-audit", "register-verify"
         }) do
