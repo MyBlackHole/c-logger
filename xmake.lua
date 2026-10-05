@@ -413,7 +413,7 @@ if has_config("build_tests") then
             add_files(spec[2])
             add_deps("logger")
             add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-            add_tests("default", {timeout = spec[3]})
+            add_tests("default", {group = "production-core", timeout = spec[3]})
         target_end()
     end
 end
