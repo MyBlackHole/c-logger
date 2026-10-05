@@ -30,6 +30,7 @@ for kind in shared static; do
   src="/opt/src-$kind"
   prefix="$src/min-kernel-prefix"
   cd "$src"
+  export LOGGER_PROJECT_VERSION="$(cat VERSION)"
   echo "MIN_KERNEL_EVIDENCE core-tests kind=$kind"
   xmake test --root -g production-core -j1
 
