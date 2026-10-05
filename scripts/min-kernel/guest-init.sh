@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# The kernel executes this script directly as PID 1; no login/profile startup
+# is guaranteed to populate PATH. GCC collect2 relies on the environment PATH
+# to locate ld even when bash can still resolve commands through its defaults.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 fail() {
   echo "MIN_KERNEL_FAIL: $*" >&2
   sync || true
@@ -13,6 +18,11 @@ mountpoint -q /sys || mount -t sysfs sysfs /sys
 mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
 mkdir -p /dev/pts /mnt/xfs
 mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts
+
+for tool in cc c++ ld ar ranlib cmake pkg-config python3 xmake; do
+  command -v "$tool" >/dev/null 2>&1 || fail "missing tool $tool PATH=$PATH"
+done
+echo "MIN_KERNEL_EVIDENCE toolchain cc=$(command -v cc) cxx=$(command -v c++) ld=$(command -v ld) xmake=$(command -v xmake)"
 
 kernel="$(uname -r)"
 glibc="$(getconf GNU_LIBC_VERSION)"
