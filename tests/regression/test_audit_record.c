@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <limits.h>
 
 static void roundtrip(audit_integrity_t alg)
 {
