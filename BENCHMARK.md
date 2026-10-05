@@ -1,25 +1,24 @@
 > 注意：历史性能数字不再作为有效发布基线。本轮修复丢失唤醒及输出完成口径；此前将所有超时归于 CPU throttling 没有充分依据。新版 `bench_matrix` 等待实际输出水位，并使用 emitted 而不是 attempted 计算有效端到端吞吐；本轮不据此宣称性能收益。
 
-# Benchmark methodology
+# 基准测试方法
 
-`bench_matrix` measures the asynchronous producer path and complete drain time.
-The default backend is `/dev/null` so the benchmark measures logger formatting,
-MPSC contention and consumer/backend plumbing rather than storage hardware.
+`bench_matrix` 测量异步生产者路径以及完整排空耗时。默认后端为 `/dev/null`，因此该基准主要衡量
+Logger 格式化、MPSC 竞争以及消费者/后端数据路径，而不是存储硬件性能。
 
-Matrix:
+测试矩阵：
 
-- producer threads: 1, 2, 4, 8, 16, 32, 64
-- message bytes: 64, 256, 1024, 4000
-- default records per producer: 10,000
-- queue capacity: 65,536
+- 生产者线程数：1、2、4、8、16、32、64
+- 消息字节数：64、256、1024、4000
+- 每个生产者默认记录数：10,000
+- 队列容量：65,536
 
-Metrics:
+指标：
 
-- producer throughput: attempted records / producer completion time
-- end-to-end throughput: attempted records / final drain+destroy time
-- enqueued and dropped records
-- queue high-water mark
-- consumer records and batches
+- 生产者吞吐：尝试写入记录数 / 生产者完成时间
+- 端到端吞吐：尝试写入记录数 / 最终排空与销毁时间
+- 入队与丢弃记录数
+- 队列高水位
+- 消费者处理记录数与批次数
 
 Run:
 
@@ -28,35 +27,26 @@ cmake --build build --target bench_matrix
 BENCH_RECORDS=10000 scripts/benchmark.sh
 ```
 
-Results are emitted as CSV and JSONL. Performance gates should compare results
-from the same machine, compiler, optimization level, CPU affinity and backend.
-Do not treat numbers from different hosts as regressions.
+结果以 CSV 和 JSONL 输出。性能门禁应比较来自同一机器、同一编译器、同一优化级别、同一 CPU 亲和性和同一后端的结果。
+不要把不同主机上的数字直接判定为性能回归。
 
-This benchmark intentionally does not claim percentile latency yet; accurate
-P50/P95/P99 requires per-record timestamp sampling with controlled measurement
-overhead and is a separate benchmark.
+当前基准刻意不声明百分位延迟；准确的 P50/P95/P99 需要对每条记录进行时间戳采样并控制测量开销，
+应作为独立基准实现。
 
-## Timestamp cache optimization
+## 时间戳缓存优化
 
-`logger_format_line()` caches the local-time date/time and UTC offset per thread
-for the current `time_t` second. The async design has one consumer, so almost all
-records in a busy second reuse the cache. Synchronous callers receive independent
-thread-local caches and require no shared formatting lock. Microseconds and all
-per-record metadata remain uncached.
+`logger_format_line()` 会为每个线程缓存当前 `time_t` 秒对应的本地日期/时间和 UTC 偏移。
+异步设计只有一个消费者，因此繁忙秒内几乎所有记录都会复用缓存。同步调用方各自使用独立的线程本地缓存，
+不需要共享格式化锁。微秒以及所有逐记录元数据仍不缓存。
 
-## Metadata fast formatter
+## 元数据快速格式化
 
-After timestamp caching, fixed logger metadata no longer uses repeated
-`snprintf()` calls. Bounded append helpers write literals and integer PID/TID/
-line fields directly. User-provided printf formatting is unchanged and still
-uses `vsnprintf()` during record capture. This keeps printf semantics out of the
-custom formatter while reducing consumer-side metadata overhead.
+启用时间戳缓存后，固定 Logger 元数据不再重复调用 `snprintf()`。有界追加辅助函数会直接写入字面量以及
+整数 PID/TID/行号字段。用户提供的 printf 格式化语义保持不变，记录采集时仍使用 `vsnprintf()`。
+这样既不会把 printf 语义引入自定义格式化器，又能降低消费者侧的元数据处理开销。
 
-## Fixed batch-size A/B
+## 固定批大小 A/B 测试
 
-The consumer batch was tested at 64, 128, 256 and 512 records using repeated
-representative loads. Selection uses the geometric mean of end-to-end
-throughput ratios versus batch 64, rather than choosing a single favorable
-case. The retained fixed batch size is `256`. Adaptive batching is deferred
-until a fixed-size comparison demonstrates that workload-dependent switching is
-worth its complexity.
+消费者批大小分别以 64、128、256 和 512 条记录进行重复代表性负载测试。选择依据是相对批大小 64 的
+端到端吞吐比几何平均值，而不是挑选单个有利场景。最终保留的固定批大小为 `256`。
+自适应批处理暂缓，直到固定大小对比能够证明按负载切换值得引入额外复杂度。

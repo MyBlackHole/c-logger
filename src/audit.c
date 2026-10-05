@@ -18,6 +18,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifndef F_OFD_SETLK
+#define F_OFD_SETLK 37
+#endif
+
 /* Audit already serializes every durable record. One operation mutex protects
  * the published session, including its sequence and hash. The control mutex
  * serializes init, shutdown and disposal, but is NOT acquired by writers.
@@ -148,6 +152,25 @@ static int generate_instance_id(char out[33])
 	return 0;
 }
 
+int audit_writer_lock_fd(int fd)
+{
+	struct flock lock = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
+	if (fcntl(fd, F_OFD_SETLK, &lock) == 0)
+		return 0;
+
+	switch (errno) {
+	case EACCES:
+	case EAGAIN:
+		return -EBUSY;
+	case EINVAL:
+	case EOPNOTSUPP:
+	case ENOSYS:
+		return -ENOTSUP;
+	default:
+		return -errno;
+	}
+}
+
 static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
 			       const char *name)
 {
@@ -166,10 +189,9 @@ static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
 	else if (!S_ISREG(st.st_mode))
 		error = EINVAL;
 	if (!error) {
-		struct flock lock = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
-		if (fcntl(fd, F_SETLK, &lock) < 0)
-			error = (errno == EACCES || errno == EAGAIN) ? EBUSY :
-								       errno;
+		int rc = audit_writer_lock_fd(fd);
+		if (rc)
+			error = -rc;
 	}
 	if (error)
 		return -error;

@@ -1,67 +1,95 @@
-# Audit Recovery Capacity Validation
+# Audit 恢复容量验证
 
-Production v1 hardening tracks the current Audit retained-history recovery limit before deciding whether the
-O(N²) segment-connection algorithm needs redesign.
+生产版 v1 加固阶段先量化 Audit 保留历史的恢复上限，再用实测数据决定是否优化段连接；当前实现已经在不改变磁盘格式的前提下，将纯内存段连接从 O(N²) 收敛为 O(N log N)。
 
-## Scope
+## 范围
 
-The dedicated `audit-recovery-capacity` workflow builds a non-installed regression executable and creates:
+专用 `audit-recovery-capacity` 工作流会构建一个不安装的回归测试可执行文件，并创建：
 
-- 4096 valid archive files, matching the production archive-name grammar;
-- one valid active Audit file;
-- one chained SHA-256 record per archive plus one active record.
+- 4096 个合法归档文件，名称符合生产归档命名语法；
+- 一个合法的活动 Audit 文件；
+- 每个归档一个通过 SHA-256 链接的记录，活动文件再包含一个记录。
 
-The benchmark calls the real `audit_recover_set()` implementation. Setup time is reported separately and is
-not counted as recovery time.
+基准测试调用真实 `audit_recover_set()` 实现。
+固定数据准备耗时单独报告，不计入恢复耗时。
 
-## Measurements
+## 测量项
 
-The workflow records:
+工作流记录：
 
-- valid 4096-archive recovery wall time;
-- missing-middle recovery wall time and required `EBADMSG`;
-- corrupt-middle recovery wall time and required `EBADMSG`;
-- truncated-middle recovery wall time and required `EBADMSG`;
-- process `ru_maxrss`;
-- fixture setup time.
+- 4096 个合法归档的恢复墙钟时间；
+- 中间缺失场景的恢复墙钟时间，并要求返回 `EBADMSG`；
+- 中间损坏场景的恢复墙钟时间，并要求返回 `EBADMSG`；
+- 中间截断场景的恢复墙钟时间，并要求返回 `EBADMSG`；
+- 进程 `ru_maxrss`；
+- 固定数据准备时间。
 
-The missing/corrupt/truncated cases reuse the same 4096-archive fixture so the failure semantics are exercised
-at the supported archive-count boundary rather than only on small unit fixtures.
+缺失/损坏/截断场景复用同一套 4096 归档固定数据，
+从而在支持的归档数量边界验证失败语义，而不只是验证小型单元测试固定数据。
 
-## Interpretation
+## 结果解释
 
-This is initially a **characterization gate**, not a latency SLA. It fails on correctness/fail-closed regressions
-but does not yet reject a particular recovery duration.
+当前首先把它作为**特征刻画门禁**，而不是延迟 SLA。
+它会在正确性/失败关闭语义回归时失败，但暂时不会因为恢复时间超过某个很小阈值而判定失败。
 
-After the first stable CI measurements are collected, v1 hardening must explicitly decide one of:
+收集到第一批稳定 CI 数据后，v1 加固必须显式选择以下一种结论：
 
-1. current worst-case recovery cost is acceptable and becomes the documented 4096-archive capacity contract; or
-2. the measured cost is unacceptable and a follow-up optimization is required with a numeric target.
+1. 当前最坏恢复成本可以接受，并把它记录为 4096 归档容量契约；或
+2. 实测成本不可接受，需要后续优化，并给出数值目标。
 
-Do not introduce a persistent recovery index or segment-ID format solely from asymptotic complexity; use the
-measured upper-bound behavior to justify any format/algorithm change.
+不能只因为渐进复杂度看起来更差，就直接引入持久恢复索引或段 ID 格式；
+本轮只增加恢复期间的临时排序 digest-edge 索引，不改变 record/checkpoint 格式，
+也不跳过任何保留文件内容验证。持久格式/可信索引变化仍必须由新的实测瓶颈提供依据。
 
-## Non-claims
+## 不作出的承诺
 
-GitHub-hosted timing is useful for regression comparison but is not a target-server latency guarantee.
-Physical storage characteristics, controller caches and power-loss behavior remain covered by the separate
-Production v1 storage-validation gate.
+GitHub 托管运行器上的时间数据适合做回归比较，但不是目标服务器延迟保证。
+物理存储特性、控制器缓存以及掉电行为继续由独立的生产版 v1 存储验证门禁覆盖。
 
-## Initial CI observation
+## 首次 CI 观测
 
-The first successful Ubuntu 24.04 GitHub-hosted run observed:
+第一次成功的 Ubuntu 24.04 GitHub 托管运行记录：
 
-- 4096 archives + 1 active record;
-- valid recovery: 1426.317 ms;
-- missing-middle failure: 163.836 ms;
-- corrupt-middle failure: 56.037 ms;
-- truncated-middle failure: 55.813 ms;
-- max RSS: 2248 KiB;
-- fixture setup: 166.811 ms.
+- 4096 个归档 + 1 个活动记录；
+- 合法恢复：1426.317 ms；
+- 中间缺失失败：163.836 ms；
+- 中间损坏失败：56.037 ms；
+- 中间截断失败：55.813 ms；
+- 最大 RSS：2248 KiB；
+- 固定数据准备：166.811 ms。
 
-This does not justify a recovery-index redesign by itself. The dedicated workflow now repeats the 4096-archive run three times and applies deliberately broad engineering regression guards:
+仅凭这些数据不足以证明需要重新设计恢复索引。
+专用工作流现在会把 4096 归档场景重复执行三次，并设置刻意宽松的工程回归保护线：
 
-- valid recovery must remain <= 10 seconds on the Ubuntu 24.04 hosted runner;
-- process max RSS must remain <= 64 MiB.
+- 在 Ubuntu 24.04 托管运行器上，合法恢复必须保持在 10 秒以内；
+- 进程最大 RSS 必须保持在 64 MiB 以内。
 
-These are CI regression guards with substantial headroom over the initial observation, not target-server latency or memory SLAs. If either guard becomes too tight because of runner variability, adjust only with recorded evidence; if the implementation approaches the guard on stable runners, open an optimization task with measured targets before changing the on-disk format.
+这些只是相对首次观测留有较大余量的 CI 回归保护线，不是目标服务器的延迟或内存 SLA。
+如果运行器波动使门槛显得过紧，只能在保留测量证据后调整；
+如果稳定运行器上的实现开始逼近保护线，则应在改变磁盘格式之前，先建立带有实测目标的优化任务。
+
+
+## O(N log N) 段连接优化观测
+
+2026-10-05 在相邻 PR 的同一 Ubuntu 24.04 托管运行环境中，对原 O(N²) 版本和
+排序 digest-edge 索引版本分别运行现有 4096-archive 三次 capacity workflow。
+这些不是同一物理 runner 上的严格配对微基准，因此只作为工程证据，不作为性能 SLA。
+
+旧 O(N²) 实现（未修改 recovery 的对照运行）：
+
+- 合法恢复中位数：1411.047 ms；
+- 合法恢复最大值：1418.298 ms；
+- 缺中段失败最大值：163.268 ms；
+- 最大 RSS：2344 KiB。
+
+O(N log N) 实现：
+
+- 合法恢复中位数：1281.821 ms；
+- 合法恢复最大值：1360.879 ms；
+- 缺中段失败最大值：76.832 ms；
+- 最大 RSS：2724 KiB。
+
+因此在当前 4096 上限下，合法恢复墙钟中位数约下降 9%，而缺中段后进入拓扑判定的
+失败路径下降约 53%；额外 RSS 约 380 KiB。正常合法路径仍明显包含逐文件打开、完整记录
+验证及同步成本，所以本轮不声称“整体恢复复杂度”已经变为 O(N log N)：只有扫描后的
+segment 拓扑连接阶段从 O(N²) 降为 O(N log N)，内容扫描仍是 O(保留日志字节数)。

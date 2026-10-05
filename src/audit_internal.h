@@ -27,4 +27,7 @@ int audit_checkpoint_load(const char *, audit_ckpt_t *);
 int audit_checkpoint_persist(const char *, const audit_ckpt_t *);
 int audit_recover_set(const char *dir, const char *name, const char *active,
 		      audit_ckpt_t *);
+/* Acquire the Audit single-writer lease with Linux OFD locking.
+ * 0 / -errno; conflicts map to EBUSY and unsupported kernels to ENOTSUP. */
+int audit_writer_lock_fd(int fd);
 #endif

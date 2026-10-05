@@ -1,132 +1,110 @@
-> Historical revision record, not the current crypto backend contract.
-> The external backend has since been removed; see [BUILTIN_CRYPTO.md](BUILTIN_CRYPTO.md).
-> Original test evidence and failure reports are preserved, not retroactively changed to pass.
+> 这是历史修订记录，不代表当前密码后端契约。
+> 外部后端后来已经移除；当前契约见 [BUILTIN_CRYPTO.md](BUILTIN_CRYPTO.md)。
+> 原始测试证据和失败报告继续保留，不会为了“变成通过”而回溯修改历史结果。
 
-# Round 3 — Crypto fail-closed and SM3 undefined behavior
+# 第 3 轮——密码失败关闭与 SM3 未定义行为修复
 
-This revision builds on the Round 2 Audit lifecycle/commit fixes. It does not
-change the audit line format, the checkpoint v2 format, or the numeric values
-of SHA-256/SM3. It is not a Production v1 release.
+本次修订建立在第 2 轮 Audit 生命周期/提交修复之上。它不改变 Audit 行格式、检查点 v2 格式，
+也不改变 SHA-256/SM3 的数值标识。这不是生产版 v1 发布版本。
 
-## Internal digest contract
+## 内部摘要契约
 
-`audit_digest_ops_t.hash()` returns **0 or negative errno**. Callers must check
-it before using the output. Both compiled backends enforce these rules:
+`audit_digest_ops_t.hash()` 返回 **0 或负 errno**。调用方必须先检查返回值，才能使用输出。
+当时编译的两种后端都强制遵守以下规则：
 
-* A successful result is exactly 32 digest bytes.
-* On any error, the caller's output buffer is unchanged. No error is encoded as
-  a zero digest or a seemingly valid hexadecimal string.
-* A NULL input with length 0 hashes the empty byte string. NULL with positive
-  length and NULL output are EINVAL. Sizes above UINT64_MAX / 8 are rejected
-  before reading input (SHA-256/SM3 have a 64-bit bit-length field).
-* Registry presence does not establish runtime EVP availability. The internal
-  `audit_digest_check()` hashes an empty message at initialization/recovery/
-  verification entry, including paths with no records to replay.
+* 成功结果严格为 32 字节摘要。
+* 发生任何错误时，调用方输出缓冲区保持不变。错误绝不会被编码成全零摘要，
+  也不会伪装成看起来合法的十六进制字符串。
+* 输入指针为 NULL 且长度为 0 时，对空字节串计算摘要。NULL 配合正长度，或者输出为 NULL，
+  返回 EINVAL。大于 `UINT64_MAX / 8` 的输入大小会在读取输入前被拒绝，因为 SHA-256/SM3
+  都使用 64 位 bit-length 字段。
+* 提供方已注册并不代表运行时 EVP 一定可用。内部 `audit_digest_check()` 会在初始化、恢复、
+  验证入口处对空消息执行一次摘要计算，包括没有任何记录需要 replay 的路径。
 
-Public Audit APIs retain 0 / -1 + errno. Error mapping:
+公开 Audit API 继续使用 `0 / -1 + errno`。错误映射如下：
 
-| Failure | Error |
+| 失败情况 | 错误 |
 | --- | --- |
-| Invalid arguments | EINVAL |
-| Input length cannot be represented | EOVERFLOW |
-| Unknown algorithm / invalid internal provider shape | EPROTONOSUPPORT |
-| Selected EVP method unavailable at compile-time or getter returns NULL | ENOTSUP |
-| EVP_MD_CTX_new returns NULL | ENOMEM |
-| EVP init/update/final returns failure, or final length is not 32 | EIO |
+| 参数非法 | EINVAL |
+| 输入长度无法表示 | EOVERFLOW |
+| 未知算法/内部提供方结构非法 | EPROTONOSUPPORT |
+| 所选 EVP 方法在编译期不可用，或 getter 返回 NULL | ENOTSUP |
+| `EVP_MD_CTX_new` 返回 NULL | ENOMEM |
+| EVP 初始化/update/final 失败，或最终长度不是 32 | EIO |
 
-`EIO` here can indicate a digest-engine error, not disk I/O; Audit state
-separates CRYPTO_FAILED from IO_FAILED. OpenSSL's error queue is not cleared or
-drained by this helper. The caller may inspect its thread-local OpenSSL errors.
-The helper returns the first local failure even if cleanup changes errno.
+这里的 `EIO` 可能表示摘要引擎错误，而不是磁盘 I/O。Audit 状态会把 `CRYPTO_FAILED`
+与 `IO_FAILED` 分开。该辅助接口不会清空或排空 OpenSSL 错误队列；调用方可以检查自身线程本地的
+OpenSSL 错误。即使清理过程改变了 errno，辅助接口也返回第一个本地失败。
 
-## EVP behavior
+## EVP 行为
 
-The EVP context is local to each hash call and is freed on every post-allocation
-exit. Init failure does not call Update/Final. Update failure does not call
-Final. Final writes only to private temporary storage; publication occurs only
-after success and an exact-length check.
+EVP 上下文只属于单次 hash 调用，并且在任何已经完成分配后的退出路径中都会释放。
+初始化失败后不会继续调用 Update/Final；Update 失败后不会继续调用 Final。
+Final 只写入私有临时缓冲区；只有成功并且长度严格匹配后，结果才会发布给调用方。
 
-OpenSSL 1.1.1-compatible EVP APIs are retained; OpenSSL >= 1.1.1 is required by
-CMake for that build option. Only the selected implementation is compiled:
-there is **no fallback from EVP to builtin**, no implicit switch of algorithm,
-and no implicit switch to AUDIT_INTEGRITY_NONE. The latter remains an explicit
-configuration for a destination that intentionally has no hash chain.
+保留兼容 OpenSSL 1.1.1 的 EVP API；启用该构建选项时 CMake 要求 OpenSSL >= 1.1.1。
+只编译所选实现：**不会从 EVP 回退到内置实现**，不会隐式切换算法，也不会隐式切换到
+`AUDIT_INTEGRITY_NONE`。后者仍然是面向“明确不需要哈希链的目标”的显式配置。
 
-Runtime policy failure was tested with an actual OpenSSL 3 default-property
-query naming a nonexistent provider, not only with mocked return values. Tests
-change this policy sequentially in dedicated processes. Applications must not
-copy that fault-test procedure as a concurrent runtime reconfiguration API:
-EVP_set_default_properties is not thread-safe and is intended for libctx setup.
+运行时策略故障不仅通过 mock 返回值测试，还使用 OpenSSL 3 的真实默认属性查询，
+指定一个不存在的提供方进行验证。测试在独立进程中顺序修改该策略。
+应用不得把这种故障测试方法复制成并发运行时重配置 API：`EVP_set_default_properties`
+并非线程安全，设计用途是 libctx 初始化阶段配置。
 
-Reference: OpenSSL manual EVP_DigestInit (Return Values / Notes),
-EVP_set_default_properties (Notes). Both were checked during this revision.
+参考资料：OpenSSL 手册中的 `EVP_DigestInit`（返回值/说明）以及
+`EVP_set_default_properties`（说明）。本轮修订过程中已经逐项核对。
 
-## Audit state
+## Audit 状态
 
-`AUDIT_STATE_CRYPTO_FAILED` is appended to the public enum; previous enum values
-and status-struct layout are unchanged.
+公开 enum 末尾新增 `AUDIT_STATE_CRYPTO_FAILED`；此前 enum 数值以及状态结构布局保持不变。
 
-For a detected digest failure while constructing a record:
+构造一条记录过程中如果检测到摘要失败：
 
-1. No logger write is issued for this record. No sequence, chain head, or
-   checkpoint for it is advanced. A failing audit_begin may still have reserved
-   a transaction ID; that is not a committed record or permission to run work.
-2. The runtime latches CRYPTO_FAILED and its error.
-3. New write/begin/end calls fail; audit_flush does not clear this state.
-4. audit_shutdown_status releases resources, reports the error, and does not
-   append a normal AUDIT_STOP. The void shutdown is still a compatibility wrapper.
-5. After correcting the engine/policy problem, explicitly shut down/reinitialize.
-   Reinitialization remains subject to the still-documented recovery limits.
+1. 这条记录不会触发任何 Logger 写入；对应 sequence、链头和检查点都不会推进。
+   失败的 `audit_begin` 仍可能已经预留 transaction ID，但这不代表记录已提交，也不代表允许执行业务操作。
+2. 运行时锁存 `CRYPTO_FAILED` 以及对应错误。
+3. 后续 write/begin/end 调用全部失败；`audit_flush` 不能清除该状态。
+4. `audit_shutdown_status` 释放资源并报告错误，不追加正常 `AUDIT_STOP`；void 版关闭仍只是兼容包装器。
+5. 修复引擎/策略问题后，需要显式关闭并重新初始化；重新初始化仍受已有恢复限制约束。
 
-Input/encoding-size errors remain ordinary pre-output errors and do not latch
-CRYPTO_FAILED. IO_FAILED continues to mean the write/sync outcome may be
-uncertain; the new crypto behavior does not weaken Round 2's handling of it.
-AUDIT_FAIL_REPORT versus AUDIT_FAIL_DENY is still a business-callsite policy;
-the library cannot automatically roll back the caller's protected operation.
+输入/编码长度错误仍然属于普通的输出前错误，不会锁存 `CRYPTO_FAILED`。
+`IO_FAILED` 继续表示 write/同步结果可能不确定；新的密码行为不会削弱第 2 轮对此状态的处理。
+`AUDIT_FAIL_REPORT` 与 `AUDIT_FAIL_DENY` 仍然只是业务调用点策略；库无法自动回滚调用方已经执行的受保护操作。
 
-If preflight fails during init, no lock/log/checkpoint file is created and no
-recovery modification is attempted. If the engine fails later during START,
-the candidate is not published and no fake STOP is written. At that later point
-initialization may already have created an empty log/derived checkpoint.
+如果初始化阶段预检查失败，不会创建 lock/日志/检查点文件，也不会尝试修改恢复数据。
+如果引擎稍后在 START 阶段失败，候选运行时不会发布，也不会伪造 STOP。
+但到了这个阶段，初始化过程可能已经创建空日志或派生检查点。
 
-## Recovery and verification
+## 恢复与验证
 
-Every actual hash return is checked. Recovery carries a private candidate
-checkpoint and publishes it to the caller only after successful processing.
-Crypto failure preserves errno through stream/resource cleanup and does not
-advance that result. Preflight failure does not trigger EOF-tail repair.
-Verification returns engine errors rather than treating them as a computed
-hash; the optional final-hash buffer is unchanged on failure. In particular,
-an old all-zero forged record does not verify when EVP is unavailable.
+每一次真实 hash 调用的返回值都会检查。恢复过程维护私有 candidate 检查点，
+只有全部处理成功后才把结果发布给调用方。密码失败在 stream/resource 清理过程中保持 errno，
+也不会推进恢复结果。预检查失败不会触发 EOF-tail 修复。
+验证路径返回引擎错误，而不是把失败结果当成“已经计算出的 hash”；失败时可选 final-hash 缓冲区保持不变。
+特别是 EVP 不可用时，历史上的全零伪造记录不会被错误验证为成功。
 
-This does NOT finish the parser/recovery repair. Quoted marker parsing, strict
-line suffixes, archive identity, long-line/partial-EOF distinction, historical
-checkpoint verification and cross-archive ordering remain release blockers.
-A current checkpoint can still bypass validation of historical bytes. Previously
-written zero-digest/broken history must be preserved and investigated, not
-silently rehashed or declared repaired by the new implementation.
+这**并没有**完成解析器/恢复的全部修复。带引号标记解析、严格行尾、归档身份、
+长行与 partial-EOF 区分、历史检查点验证和跨归档排序当时仍然是发布阻断项。
+当前检查点仍可能绕过对历史字节的验证。此前已经写入的全零摘要/损坏历史必须保留并调查，
+不能被静默重新计算摘要，也不能因为新实现上线就声明为“已修复”。
 
-## Builtin SM3
+## 内置 SM3
 
-Rotation count 0 (also 32 after modulo reduction) now returns the original
-32-bit word. The undefined right shift by 32 is removed. Shared one-shot padding
-handles empty input without memcpy(NULL, 0), both padding-block cases, and big-
-endian bit length. Builtin SHA-256/SM3 are not compiled in an EVP build.
+轮转 count 为 0（以及 modulo 归约后的 32）时，现在直接返回原 32 位 word，
+从而消除右移 32 位的未定义行为。共享一次性填充可以在不执行 `memcpy(NULL, 0)` 的情况下处理
+空输入，同时覆盖两种填充 block 场景和大端 bit length。EVP 构建中不会编译内置 SHA-256/SM3。
 
-Known-answer tests include empty input, abc, standard multi-block inputs, one
-million 'a' bytes, plus 148 deterministic binary lengths per algorithm. Binary
-reference fixtures are checked in and regenerate through Python hashlib, not
-through the implementation under test. OpenSSL's official EVP SHA/SM3 test data
-was used to cross-check the abc and standard multi-block expected values.
-Eight-thread per-operation hashing and both directions of cross-backend chain
-continuation are also tested. These checks are not a cryptographic certification.
+已知答案测试包括空输入、`abc`、标准多 block 输入、一百万个 `a` 字节，以及每种算法 148 个
+确定性二进制长度。二进制参考固定测试数据提交到仓库中，并通过 Python hashlib 重新生成，
+不会通过被测实现生成。还使用 OpenSSL 官方 EVP SHA/SM3 测试数据交叉核对 `abc` 和标准多 block
+期望值。测试还覆盖 8 线程逐操作哈希，以及跨后端链连续性的两个方向。
+这些检查不构成密码学认证。
 
-## Validation limitations
+## 验证限制
 
-Release suites and the scoped crypto sanitizer suites passed. Full
-ASan/UBSan validation is **not stable/green**: the existing ordinary Logger
-fork+continue test timed out with both backends (builtin passed once, then
-failed on the next full run; OpenSSL failed its full run). This also reproduced against the unmodified Round
-2 input (after one successful isolated run). Root cause is not attributed to
-CPU throttling or to a specific library here. It remains tracked with the
-ordinary Logger fork contract; no test was removed or disabled to hide it.
+发布测试套件以及本轮限定范围内的 crypto sanitizer 测试通过。
+完整 ASan/UBSan 验证当时**并不稳定，也不能视为全绿**：已有普通 Logger fork 后继续执行测试
+在两个后端都出现超时（内置实现曾单独通过一次，但下一次完整运行失败；OpenSSL 完整运行也失败）。
+相同问题也能在未修改的第 2 轮输入上复现（先单独成功一次，随后复现失败）。
+这里没有把根因归因于 CPU 节流，也没有归因于某个特定库；问题继续归入普通 Logger fork 契约跟踪。
+没有为了隐藏该问题而删除或禁用测试。

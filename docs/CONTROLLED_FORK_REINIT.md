@@ -6,21 +6,21 @@
 
 ## 能力
 
-新增 `pid_t logger_fork_reinit(void)`。面向 CLI、daemon、prefork worker：程序
+新增 `pid_t logger_fork_reinit(void)`。面向 CLI、守护进程、预派生工作进程：程序
 已经用过同步/异步默认 Logger，但需要不 exec 的子进程业务流程。默认 Logger
-可以仍处于 RUNNING；wrapper 在父进程正常环境中排空、同步、join worker、关闭
+可以仍处于 RUNNING；wrapper 在父进程正常环境中排空、同步、join 工作线程、关闭
 后端并释放对象，然后才进行 fork。两条返回路径均主动调用 `logger_init()`。
 
 这里不是从子进程“抢救”一份继承的并发运行时，而是 fork 时已经没有该运行时。
-不重置 pthread mutex/rwlock，不泄漏旧 logger 对象，不保留旧 worker/queue/fd。
+不重置 pthread mutex/rwlock，不泄漏旧 logger 对象，不保留旧 工作线程/队列/fd。
 
 ## 调用前置条件
 
 1. 停止并 join 所有业务线程；不能只暂停持锁线程。确保没有第三方后台线程；
    其他依赖也必须允许其单线程状态下 fork/continue。
 2. 检查 `audit_shutdown_status()`，按业务策略处理失败。不要跨 fork 保留未完成
-   ATTEMPT/RESULT 事务。显式 `logger_t*` 由 owner 检查 flush 后 destroy 并置空。
-3. 只剩一个调用线程以及可选默认 Logger worker。不得在本函数调用期间从信号
+   ATTEMPT/RESULT 事务。显式 `logger_t*` 由 所有者 检查 刷新 后 销毁 并置空。
+3. 只剩一个调用线程以及可选默认 Logger 工作线程。不得在本函数调用期间从信号
    或 atfork handler 使用本库、创建线程。它不是信号处理 API。
 4. Linux `/proc/self/task` 可读。计数是额外防御，不是并发应用的同步方法，更不
    是证明所有外部 mutex 一定可用的安全判定。
@@ -67,20 +67,20 @@ process ensure / 禁止取消
 
 实例计数包含初始化中/失败清理中的 logger，也包含 Audit 的内部 logger。
 有未关闭的显式实例或Audit时预检查返回EBUSY，不偷偷替它们做销毁。
-库注册handler失败则直接传播错误。token存在期间，父进程atfork handler中的新
-runtime调用返回EBUSY；子进程仍返回ECHILD。正常调用不需要知道token。
+库注册handler失败则直接传播错误。令牌存在期间，父进程atfork handler中的新
+运行时调用返回EBUSY；子进程仍返回ECHILD。正常调用不需要知道令牌。
 
 ## 错误与副作用
 
 - 预检查EBUSY、/proc读取失败：默认Logger未改变。
 - 默认输出/同步/关闭失败：停止并清理默认Logger，返回错误，不fork。
-- teardown之后发现额外task或fork返回EAGAIN：默认Logger已停止，返回错误；
+- teardown之后发现额外任务或fork返回EAGAIN：默认Logger已停止，返回错误；
   调用者决定是否显式重新初始化。不会自动恢复配置，也不伪造一次成功fork。
 - 阻塞文件/管道/syslog仍可使排空延迟；本轮没有增加通用I/O deadline。
 - 父子取消请求不是对已经发生fork或已提交日志的回滚。
-- 文件/队列/worker均不跨界继承；进程其他非本库fd由应用自行管理。
-- Console配置保留，child request/session/trace context清空，parent context保留。
-- Audit重建新instance ID。允许父子各有Audit，但同一chain仍只能一个writer；
+- 文件/队列/工作线程均不跨界继承；进程其他非本库fd由应用自行管理。
+- Console配置保留，子进程 请求/会话/追踪上下文清空，父进程 context保留。
+- Audit重建新实例 ID。允许父子各有Audit，但同一chain仍只能一个写入器；
   冲突返回EBUSY。这不是对过去故障状态或可疑历史的自动解除。
 
 ## 不能扩大成什么承诺

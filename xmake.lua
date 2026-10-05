@@ -627,6 +627,9 @@ if has_config("build_regression_tests") then
             {"audit_digest_provider"}},
         {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
             {"write", "fsync", "ftruncate"}},
+        {"audit_ofd_lock_regression", "tests/regression/test_audit_ofd_lock.c"},
+        {"audit_ofd_platform_regression", "tests/regression/test_audit_ofd_platform.c",
+            {"fcntl"}},
 
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
@@ -798,6 +801,17 @@ if has_config("build_regression_tests") then
             add_tests("tail_io_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
+    target_end()
+
+    target("audit_ofd_lock_regression")
+        for _, scenario in ipairs({"close-isolation", "posix-conflict"}) do
+            add_tests("audit_ofd_" .. scenario:gsub("-", "_"),
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("audit_ofd_platform_regression")
+        add_tests("audit_ofd_unsupported", {timeout = 20})
     target_end()
 
     target("audit_record_regression")

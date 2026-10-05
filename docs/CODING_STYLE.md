@@ -9,7 +9,7 @@ c-logger 的源码注释、内部设计说明和工程文档以**中文为主**�
 - C/POSIX/Linux API 和函数名，例如 `pthread_join`、`fdopen`；
 - 代码标识符，例如 `emit_mu`、`g_lifetime_lock`；
 - 标准内存序，例如 `memory_order_acquire`；
-- ownership/lifetime 约定词，例如 `OWNED`、`BORROWED`、`MOVED`、
+- 所有权/生命周期 约定词，例如 `OWNED`、`BORROWED`、`MOVED`、
   `SHARED`、`REFCOUNTED`；
 - 标准错误码，例如 `EINVAL`、`EPIPE`；
 - Linux/POSIX 原生术语、协议名称和外部引用标题。
@@ -26,12 +26,12 @@ c-logger 的源码注释、内部设计说明和工程文档以**中文为主**�
 
 优先解释代码无法直接表达的约束：
 
-1. **ownership**：谁拥有资源、何时转移、最终谁释放；
-2. **lifetime**：对象何时开始可见、何时允许销毁；
-3. **locking**：哪把锁保护什么，固定 lock order 是什么；
-4. **concurrency**：publish/consume、atomic memory order、join/pin/refcount 关系；
+1. **所有权**：谁拥有资源、何时转移、最终谁释放；
+2. **生命周期**：对象何时开始可见、何时允许销毁；
+3. **锁机制**：哪把锁保护什么，固定 lock order 是什么；
+4. **concurrency**：发布/消费、atomic memory order、join/pin/refcount 关系；
 5. **error semantics**：哪些错误必须向上返回，哪些 cleanup error 可以忽略；
-6. **durability**：fsync/rename/dir fsync 的顺序为什么不能变化；
+6. **持久性**：fsync/rename/dir fsync 的顺序为什么不能变化；
 7. **平台约束**：Linux/ELF、GNU C 扩展、fork/cancellation 等边界。
 
 不要写只重复代码表面的注释，例如：
@@ -40,7 +40,7 @@ c-logger 的源码注释、内部设计说明和工程文档以**中文为主**�
 i++; /* i 加 1 */
 ```
 
-## ownership 注释格式
+## 所有权 注释格式
 
 复杂资源建议在创建、转移和最终释放位置分别写清楚：
 
@@ -65,12 +65,12 @@ logger_worker_workspace_t *worker_workspace;
 /* q.wait_mu 只负责 sleep/wakeup，不负责 slot payload publication。 */
 ```
 
-涉及 atomic 时，说明它承担的是 reservation、publication、completion 还是
-lifetime；禁止用“原子所以线程安全”这种模糊表述。
+涉及 atomic 时，说明它承担的是 reservation、发布、completion 还是
+生命周期；禁止用“原子所以线程安全”这种模糊表述。
 
 使用 `guard()/ACQUIRE()` 前必须先确认 lock hierarchy。单锁、lexical scope、
 unlock error 无业务语义的路径优先 guard；多锁、cancellation-aware、跨 scope
-ownership 或错误承载型 unlock 保持显式。完整规则见 `LOCKING.md` 与
+所有权 或错误承载型 unlock 保持显式。完整规则见 `LOCKING.md` 与
 `LOCK_MATRIX.md`。
 
 ## 错误与 cleanup 注释
