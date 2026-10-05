@@ -63,6 +63,7 @@ docker cp "$root/scripts/min-kernel/guest-init.sh" \
 
 kernel_release="3.17.8-c-logger"
 docker cp "$cid:/opt/min-kernel/bzImage" "$out/guest-vmlinuz"
+docker cp "$cid:/opt/min-kernel/compiler.txt" "$out/kernel-compiler.txt"
 docker export "$cid" -o "$out/focal-rootfs.tar"
 
 root_disk="$out/focal-root.raw"
@@ -85,6 +86,8 @@ sudo mkfs.xfs -q -f -m crc=0 "$xfs_disk"
   echo "glibc=2.31"
   echo "xmake=3.1.1"
   echo "source_commit=$(git -C "$root" rev-parse HEAD)"
+  echo "kernel_compiler:"
+  sed 's/^/  /' "$out/kernel-compiler.txt"
   sha256sum "$out/guest-vmlinuz"
 } | tee "$out/platform-evidence.txt"
 
@@ -96,7 +99,9 @@ timeout 20m qemu-system-x86_64 \
   -nographic \
   -no-reboot \
   -kernel "$out/guest-vmlinuz" \
-  -append "root=/dev/vda rw console=ttyS0 loglevel=4 init=/usr/local/sbin/c-logger-min-kernel-init" \
+  -append "root=/dev/vda rw console=ttyS0,115200 earlyprintk=serial,ttyS0,115200 loglevel=7 init=/usr/local/sbin/c-logger-min-kernel-init" \
+  -d guest_errors,cpu_reset \
+  -D "$out/qemu-debug.log" \
   -drive "file=$root_disk,format=raw,if=virtio" \
   -drive "file=$xfs_disk,format=raw,if=virtio" \
   2>&1 | tee "$out/serial.log"
