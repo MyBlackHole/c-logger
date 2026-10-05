@@ -21,7 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "building Ubuntu 20.04 / Linux 5.4 guest image"
+echo "building Ubuntu 20.04 / Linux 3.17 guest image"
 docker build \
   --build-arg XMAKE_VERSION=3.1.1 \
   -t "$image" \
@@ -61,16 +61,8 @@ docker cp "$out/src-static/." "$cid:/opt/src-static"
 docker cp "$root/scripts/min-kernel/guest-init.sh" \
   "$cid:/usr/local/sbin/c-logger-min-kernel-init"
 
-kernel_path="$(docker run --rm "$image" bash -lc   'ls /boot/vmlinuz-5.4.* 2>/dev/null | sort -V | tail -n 1')"
-test -n "$kernel_path"
-kernel_release="${kernel_path##*/vmlinuz-}"
-case "$kernel_release" in
-  5.4.*) ;;
-  *) echo "unexpected focal GA kernel: $kernel_release" >&2; exit 1 ;;
-esac
-initrd_path="/boot/initrd.img-$kernel_release"
-docker cp "$cid:$kernel_path" "$out/guest-vmlinuz"
-docker cp "$cid:$initrd_path" "$out/guest-initrd"
+kernel_release="3.17.8-c-logger"
+docker cp "$cid:/opt/min-kernel/bzImage" "$out/guest-vmlinuz"
 docker export "$cid" -o "$out/focal-rootfs.tar"
 
 root_disk="$out/focal-root.raw"
@@ -84,16 +76,16 @@ sudo chmod 0755 "$out/root-mnt/usr/local/sbin/c-logger-min-kernel-init"
 sudo umount "$out/root-mnt"
 
 truncate -s 1G "$xfs_disk"
-sudo mkfs.xfs -q -f -m reflink=0,bigtime=0,inobtcount=0 "$xfs_disk"
+sudo mkfs.xfs -q -f -m crc=0 "$xfs_disk"
 
 {
-  echo "candidate_kernel=Linux 5.4"
+  echo "candidate_kernel=Linux 3.17"
   echo "guest_kernel_release=$kernel_release"
   echo "userland=Ubuntu 20.04"
   echo "glibc=2.31"
   echo "xmake=3.1.1"
   echo "source_commit=$(git -C "$root" rev-parse HEAD)"
-  sha256sum "$out/guest-vmlinuz" "$out/guest-initrd"
+  sha256sum "$out/guest-vmlinuz"
 } | tee "$out/platform-evidence.txt"
 
 set +e
@@ -104,7 +96,6 @@ timeout 20m qemu-system-x86_64 \
   -nographic \
   -no-reboot \
   -kernel "$out/guest-vmlinuz" \
-  -initrd "$out/guest-initrd" \
   -append "root=/dev/vda rw console=ttyS0 loglevel=4 init=/usr/local/sbin/c-logger-min-kernel-init" \
   -drive "file=$root_disk,format=raw,if=virtio" \
   -drive "file=$xfs_disk,format=raw,if=virtio" \
@@ -116,7 +107,8 @@ if [ "$qemu_rc" -ne 0 ]; then
   echo "QEMU exited with rc=$qemu_rc" >&2
   exit "$qemu_rc"
 fi
-grep -q '^MIN_KERNEL_OK kernel=5\.4\.' "$out/serial.log"
+grep -q '^MIN_KERNEL_OK kernel=3\.17\.' "$out/serial.log"
 grep -q 'userland=glibc 2\.31' "$out/serial.log"
 
+grep -q 'ext4_internal_rotation=1 xfs_internal_rotation=0' "$out/serial.log"
 echo "minimum-kernel candidate validation passed"
