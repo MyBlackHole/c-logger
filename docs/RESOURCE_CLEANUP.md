@@ -1,17 +1,13 @@
-# Linux-style internal resource management
+# Linux 风格的内部资源管理
 
-c-logger uses an internal user-space implementation of Linux's scope-based
-resource ownership model. The API shape and coding rules intentionally follow
-Linux cleanup conventions, while implementation details that depend on kernel
-ERR_PTR, lockdep, compiler annotations, or kernel-only resource types are not
-copied.
+c-logger 在用户态内部实现了一套参考 Linux 作用域资源所有权模型的机制。API 形态和编码规则有意遵循
+Linux 的清理约定，但不会照搬依赖内核 `ERR_PTR`、lockdep、编译器注解或仅内核资源类型的实现细节。
 
-This facility is private. It is not installed and does not change the public
-Logger ABI.
+该机制完全属于私有实现，不会被安装，也不会改变公开 Logger ABI。
 
-## Supported primitives
+## 支持的基础机制
 
-The internal header `src/logger_cleanup.h` provides:
+内部头文件 `src/logger_cleanup.h` 提供：
 
 - `DEFINE_FREE(name, type, release)`
 - `__free(name)`
@@ -24,77 +20,70 @@ The internal header `src/logger_cleanup.h` provides:
 - `guard / scoped_guard / scoped_cond_guard`
 - `ACQUIRE / ACQUIRE_ERR`
 
-Common user-space definitions are included for heap pointers, POSIX file
-descriptors and `FILE *`.
+另外提供堆指针、POSIX 文件描述符和 `FILE *` 的常用用户态定义。
 
-## Ownership comes before cleanup
+## 所有权先于自动清理
 
-Automatic cleanup is an implementation mechanism, not the ownership model
-itself. Before adding `__free()`, `CLASS()`, `guard()`, or any destructor,
-the code review must answer four questions for every resource:
+自动清理只是实现机制，不是所有权模型本身。在加入 `__free()`、`CLASS()`、`guard()`
+或任意析构器之前，代码评审必须针对每个资源回答四个问题：
 
-1. **Who creates/acquires it?**
-2. **Who owns it right now?**
-3. **At exactly what operation does ownership move?**
-4. **Who performs the final release?**
+1. **谁创建/获取它？**
+2. **当前谁拥有它？**
+3. **究竟在哪一个操作上发生所有权转移？**
+4. **最终由谁释放？**
 
-If any answer is ambiguous, the resource is not ready to be converted to
-automatic cleanup.
+只要其中任何一个答案不明确，该资源就不适合转换为自动清理。
 
-The expected lifetime is:
+预期生命周期为：
 
 ```text
-creator/acquirer
+创建者/获取者
       |
       v
-lexical owner (__free / CLASS / guard)
+词法作用域所有者（__free / CLASS / guard）
       |
-      +---- no transfer ----> scope destructor ----> released
+      +---- 未发生转移 ----> 作用域析构器 ----> 释放
       |
-      +---- transfer -------> persistent/new owner
+      +---- 发生转移 ------> 持久/新所有者
                                   |
                                   v
-                           explicit final releaser
+                              显式最终释放方
 ```
 
-Cleanup helpers must make this ownership graph more visible, never hide it.
+清理辅助机制必须让这张所有权图更清晰，而不是把它隐藏起来。
 
-### Ownership states
+### 所有权状态
 
-Every non-trivial resource is treated as one of four states:
+每个非平凡资源都按以下四种状态之一处理：
 
-- **OWNED**: this variable/object is responsible for release.
-- **BORROWED**: usable for a bounded lifetime, but must never release it.
-- **MOVED**: ownership has been transferred; the old owner is invalidated
-  (NULL, -1, or an equivalent empty state) and must not be dereferenced.
-- **SHARED**: lifetime is governed by an explicit shared protocol such as a
-  refcount, generation pin, worker join, or another synchronization contract.
+- **OWNED**：当前变量/对象负责释放。
+- **BORROWED**：在受限生命周期内可使用，但绝不能释放。
+- **MOVED**：所有权已经转移；旧所有者必须失效（NULL、-1 或等效空状态），并且不得再解引用。
+- **SHARED**：生命周期由明确的共享协议管理，例如引用计数、代次固定、工作线程等待退出或其他同步契约。
 
-Only OWNED lexical resources use `__free()`/CLASS destructors. BORROWED
-references must not carry automatic cleanup. MOVED variables must be empty
-after transfer. SHARED resources are not reduced to lexical cleanup.
+只有 OWNED 的词法作用域资源使用 `__free()`/CLASS 析构器。
+BORROWED 引用不得携带自动清理。MOVED 变量在转移后必须为空。
+SHARED 资源不能被简化为词法作用域清理。
 
-### One resource, one owner
+### 一个资源只能有一个明确所有者
 
-At every point a resource must have one clear owner. An `__free()` or
-`CLASS()` variable owns its resource until ownership is explicitly transferred.
+在任意时刻，一个资源都必须有且只有一个明确所有者。
+`__free()` 或 `CLASS()` 变量在发生显式所有权转移前一直拥有其资源。
 
-Do not copy an owning variable and then treat both copies as owners.
+禁止复制一个拥有资源的变量，然后把两个副本都当作所有者。
 
-For long-lived struct fields, the owning type must document the final releaser
-near the field or constructor/destructor pair. For ownership transfer, the
-transfer operation should be visible at the assignment site, for example:
+对于长期存在的结构体字段，拥有该资源的类型必须在字段附近或构造/析构接口附近记录最终释放方。
+所有权转移应在赋值位置清晰可见，例如：
 
 ```c
 object->buffer = no_free_ptr(buffer);  /* local owner -> object */
 ```
 
-After that statement `buffer` is MOVED and `object` is the new owner.
+执行后 `buffer` 进入 MOVED 状态，`object` 成为新的所有者。
 
-### Declare and initialize together
+### 声明与初始化放在一起
 
-A cleanup-managed resource must normally be declared at the point it is
-acquired:
+由自动清理管理的资源通常应在获取资源的位置直接声明：
 
 ```c
 void *buffer __free(free) = malloc(size);
@@ -102,36 +91,32 @@ if (!buffer)
     return -ENOMEM;
 ```
 
-Do not group cleanup variables at the top of a function and assign them much
-later. Declaration order determines unwind order.
+不要把清理变量统一堆在函数开头，然后很久以后才赋值。
+声明顺序决定回退清理顺序。
 
-### LIFO is part of correctness
+### LIFO 顺序属于正确性的一部分
 
-Cleanup runs in reverse declaration order. If B depends on A during teardown,
-acquire/declare A before B.
+自动清理按声明顺序的逆序执行。如果销毁 B 时依赖 A，则必须先获取/声明 A，再获取/声明 B。
 
-This applies especially when guards and resource destructors interact. A
-destructor that requires a lock must be declared after the guard so the
-destructor runs before the guard unlocks.
+守卫与资源析构器相互作用时尤其要遵守这一点。
+如果某个析构器要求锁仍被持有，则该析构资源必须在守卫之后声明，
+从而保证析构器先执行、守卫后解锁。
 
-### Do not mix goto-unwind with scope-unwind
+### 不要混用 goto 回退与作用域回退
 
-For one function, either:
+同一个函数应二选一：
 
-- keep the existing explicit `goto fail_*` resource-unwind model; or
-- migrate the complete related unwind set to scope cleanup.
+- 保留现有显式 `goto fail_*` 资源回退模型；或
+- 将完整的一组相关回退路径整体迁移为作用域清理。
 
-Do not partially convert a goto-based ownership graph. Goto can jump between
-lexical scopes and makes cleanup ordering harder to review.
+不要只转换 goto 所有权图的一部分。goto 可以跨词法作用域跳转，会让清理顺序更难评审。
 
-### Transfer ownership explicitly
+### 显式转移所有权
 
-Ownership transfer is a state transition, not just pointer assignment. The old
-owner must be invalidated in the same expression that publishes the resource to
-the new owner.
+所有权转移是一种状态转换，而不只是指针赋值。
+旧所有者必须在资源发布给新所有者的同一个表达式中失效。
 
-Returning or publishing a cleanup-managed resource requires an explicit
-ownership operation:
+返回或发布由自动清理管理的资源时，必须显式执行所有权操作：
 
 ```c
 struct item *item __free(free) = item_alloc();
@@ -141,102 +126,94 @@ if (!item)
 return_ptr(item);
 ```
 
-Use `no_free_ptr()` when assigning the resource to a new owner, and
-`retain_and_null_ptr()` only when another operation has consumed the resource
-on success.
+把资源交给新所有者时使用 `no_free_ptr()`；
+只有在被调用操作成功后已经消费所有权时才使用 `retain_and_null_ptr()`。
 
-For POSIX descriptors, `take_fd()` moves ownership and sets the source to -1.
+对于 POSIX 文件描述符，`take_fd()` 会转移所有权，并把源值设置为 -1。
 
-Use these operations according to intent:
+按语义选择这些操作：
 
-- `no_free_ptr(x)`: local lexical owner -> another owner.
-- `return_ptr(x)`: local lexical owner -> caller.
-- `retain_and_null_ptr(x)`: a called operation consumed ownership on success.
-- `take_fd(fd)`: fd owner -> another owner/caller.
+- `no_free_ptr(x)`：本地词法作用域所有者 -> 另一个所有者。
+- `return_ptr(x)`：本地词法作用域所有者 -> 调用方。
+- `retain_and_null_ptr(x)`：被调用操作成功后已经消费所有权。
+- `take_fd(fd)`：文件描述符所有者 -> 另一个所有者/调用方。
 
-Plain assignment of an OWNED resource to a new long-lived owner without one of
-these explicit transfer operations is a review failure.
+如果一个 OWNED 资源仅通过普通赋值被交给长期存在的新所有者，
+却没有使用这类显式转移操作，应视为代码评审失败。
 
-## Guards
+## 守卫
 
-`guard()` binds an unconditional lock/resource guard to the current lexical
-scope. Prefer a nested block or `scoped_guard()` so the protected region is as
-small as possible.
+`guard()` 把无条件锁/资源守卫绑定到当前词法作用域。
+优先使用嵌套代码块或 `scoped_guard()`，尽可能缩小受保护区域。
 
-Conditional acquisition must expose failure. Use `ACQUIRE()` +
-`ACQUIRE_ERR()`, or `scoped_cond_guard()`. c-logger's user-space conditional
-guard normalizes positive pthread-style errno results to negative errno values.
+条件式获取必须暴露失败。
+使用 `ACQUIRE()` + `ACQUIRE_ERR()`，或者 `scoped_cond_guard()`。
+c-logger 的用户态条件守卫会把 pthread 风格的正 errno 结果统一转换为负 errno。
 
-Complex global lock ordering remains explicit until each function can be
-converted as one ownership graph. Do not mechanically replace lock/unlock pairs.
+复杂的全局锁顺序在每个函数能够作为完整所有权图迁移之前继续保持显式。
+不要机械地把 lock/unlock 成对调用替换成守卫。
 
-## User-space differences from Linux
+## 与 Linux 内核实现的用户态差异
 
-The model follows Linux, but a few representation details intentionally differ:
+模型参考 Linux，但部分表示方式有意不同：
 
-- ordinary POSIX fds use -1 as the invalid sentinel for `take_fd()`;
-- conditional guards store error state explicitly instead of using ERR_PTR;
-- kernel-only lockdep/context-analysis annotations are not reproduced;
-- cleanup close/fclose preserves the incoming `errno`.
+- 普通 POSIX 文件描述符使用 -1 作为 `take_fd()` 的无效哨兵值；
+- 条件守卫显式保存错误状态，而不使用 `ERR_PTR`；
+- 不复制仅内核可用的 lockdep/上下文分析注解；
+- 自动清理中的 close/fclose 会保留进入清理前的 `errno`。
 
-These differences preserve user-space API semantics while retaining the same
-ownership discipline.
+这些差异用于保持用户态 API 语义，同时保留相同的所有权纪律。
 
-## What scope cleanup does not solve
+## 作用域清理不能解决的问题
 
-Scope cleanup is not a general shared-lifetime mechanism. It does not make these
-safe:
+作用域清理不是通用的共享生命周期机制。它不能让以下行为自动变得安全：
 
-- asynchronous pthread cancellation;
-- `longjmp`, `pthread_exit`, `_exit`, or signal-handler escape;
-- cross-thread raw-pointer ownership;
-- concurrent Logger destroy;
-- worker lifetime and join ordering;
-- MPSC slot ownership;
-- global generation/lifetime pinning.
+- pthread 异步取消；
+- `longjmp`、`pthread_exit`、`_exit` 或从信号处理器逃逸；
+- 跨线程裸指针所有权；
+- 并发销毁 Logger；
+- 工作线程生命周期和等待退出顺序；
+- MPSC 槽位所有权；
+- 全局代次/生命周期固定。
 
-Those continue to use explicit state machines, cancellation cleanup, joins,
-pins, locks, or reference ownership as appropriate.
+这些问题继续根据具体场景使用显式状态机、取消清理、join、pin、锁或引用所有权。
 
-## Error-bearing cleanup stays explicit
+## 会产生错误的清理保持显式
 
-Automatic fd/FILE cleanup is for temporary ownership and rollback. Its
-destructor intentionally ignores close/fclose failures while preserving the
-previous `errno`.
+自动 fd/FILE 清理只用于临时所有权和回滚。
+其析构器会在保留原有 `errno` 的同时忽略 close/fclose 失败。
 
-If `close`, `fsync`, `closedir`, owner release, or another destructor
-failure is part of an API result or durability decision, keep the operation
-explicit. File-backend and Audit recovery finalization are examples.
+如果 `close`、`fsync`、`closedir`、所有者释放或其他析构失败属于 API 返回结果或持久性决策的一部分，
+则必须保留显式操作。文件后端和 Audit 恢复的最终处置就是典型例子。
 
-## Review checklist
+## 评审核对清单
 
-Every resource-affecting change must be reviewable with this checklist:
+每个会影响资源的修改，都必须能够用下表进行评审：
 
-| Question | Required answer |
+| 问题 | 必须给出的答案 |
 |---|---|
-| Who creates/acquires it? | exact function/expression |
-| Who owns it now? | lexical variable, struct field, subsystem, or shared protocol |
-| When does ownership move? | exact statement/API and source invalidation |
-| Who finally releases it? | exact destructor/destroy/close/join/ref-drop path |
-| Is it borrowed instead? | if yes, no cleanup annotation is allowed |
-| Can release fail meaningfully? | if yes, keep the error-bearing finalization explicit |
-| Does teardown depend on another resource? | declaration order must encode correct LIFO |
-| Is the lifetime cross-thread/shared? | use the explicit shared protocol, not lexical cleanup |
+| 谁创建/获取它？ | 精确函数/表达式 |
+| 当前谁拥有它？ | 词法变量、结构字段、子系统或共享协议 |
+| 所有权何时转移？ | 精确语句/API，以及源所有者如何失效 |
+| 最终由谁释放？ | 精确析构/销毁/close/join/引用释放路径 |
+| 它其实只是借用吗？ | 如果是，不允许使用清理注解 |
+| 释放是否可能产生有业务意义的失败？ | 如果是，带错误的最终处置保持显式 |
+| 销毁是否依赖另一个资源？ | 声明顺序必须编码正确的 LIFO |
+| 生命周期是否跨线程/共享？ | 使用明确的共享协议，而不是词法作用域清理 |
 
-## Initial production migrations
+## 第一批生产路径迁移
 
-The first migrated production paths are intentionally simple:
+第一批生产迁移刻意选择简单路径：
 
-- async worker workspace allocation rollback:
-  creator = `calloc/malloc`; current owner = local `__free` variable;
-  transfer = `no_free_ptr()/return_ptr()`; persistent owner =
-  `logger_worker_workspace_t` / `logger_t`; final releaser =
-  `logger_worker_workspace_destroy()`.
-- MPSC queue storage allocation rollback:
-  creator = 两次 `calloc`；current owner = local `slots/spills __free(free)`；
-  transfer = `no_free_ptr()` 交给 `logger_queue_t`；persistent owner =
-  `logger_queue_t`；final releaser = `logger_queue_destroy()`。
+- 异步工作线程工作区分配回滚：
+  创建者 = `calloc/malloc`；当前所有者 = 本地 `__free` 变量；
+  转移 = `no_free_ptr()/return_ptr()`；持久所有者 =
+  `logger_worker_workspace_t` / `logger_t`；最终释放方 =
+  `logger_worker_workspace_destroy()`。
+- MPSC 队列存储分配回滚：
+  创建者 = 两次 `calloc`；当前所有者 = 本地 `slots/spills __free(free)`；
+  转移 = `no_free_ptr()` 交给 `logger_queue_t`；持久所有者 =
+  `logger_queue_t`；最终释放方 = `logger_queue_destroy()`。
 
-They have single-threaded construction ownership and no error-bearing close
-semantics. More complex file, Audit, and global-lock paths should be converted
-only when their complete ownership graph is reviewed.
+这些路径的构造所有权都是单线程的，并且不存在会影响返回语义的 close 错误。
+更复杂的文件、Audit 和全局锁路径，只有在完整所有权图经过评审后才应迁移。

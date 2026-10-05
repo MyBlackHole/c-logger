@@ -1,117 +1,108 @@
-# Error handling
+# 错误处理
 
-Error handling is part of the resource and durability contract. Cleanup must
-not accidentally replace the error that explains the failed operation.
+错误处理是资源与持久性契约的一部分。清理过程不得意外覆盖真正解释操作失败原因的错误。
 
-## Internal versus public return conventions
+## 内部与公开返回值约定
 
-Internal helpers generally use:
+内部辅助函数通常采用：
 
 ```text
-0        success
+0        成功
 -negative errno
 ```
 
-Public status APIs that follow the POSIX style use:
+遵循 POSIX 风格的公开状态 API 使用：
 
 ```text
-0        success
--1       failure, errno = positive error
+0        成功
+-1       失败，errno = 正错误码
 ```
 
-Do not mix the two conventions inside one function without an explicit
-translation point.
+除非存在明确的转换点，否则不要在同一个函数内部混用两种约定。
 
-## Preserve the first meaningful error
+## 保留第一个有意义的错误
 
-When work fails and cleanup also fails, decide which error is semantically
-primary.
+当主体操作失败，同时清理也失败时，需要明确哪个错误在语义上具有更高优先级。
 
-For ordinary rollback cleanup, preserve the work error:
+对于普通回滚清理，应保留主体操作错误：
 
 ```text
-operation error
+操作错误
     |
-best-effort cleanup
+尽力清理
     |
-return original error
+返回原始错误
 ```
 
-This is why automatic free/close helpers preserve the incoming `errno`.
+因此自动 free/close 辅助接口会保存进入清理前的 `errno`。
 
-## Error-bearing finalization stays explicit
+## 能产生错误的最终处置必须保持显式
 
-Some release operations are not "mere cleanup". Their failure is part of the
-API/durability result, including cases such as:
+某些释放操作并不只是“普通清理”。它们的失败本身就是 API/持久性结果的一部分，例如：
 
-- `fsync()`;
-- directory sync after namespace changes;
-- rotation/reopen transitions;
-- final close when close error is intentionally observable;
-- Audit checkpoint/state persistence.
+- `fsync()`；
+- 命名空间变化后的目录同步；
+- 轮转/重新打开状态切换；
+- 明确要求可观察 close 错误时的最终关闭；
+- Audit 检查点/状态持久化。
 
-Do not hide these behind a destructor that discards the result.
+不要把这些操作隐藏在会丢弃结果的析构路径中。
 
-## Sticky backend errors
+## 粘滞后端错误
 
-A logger instance records its first backend I/O error. Later success does not
-erase evidence that earlier output failed.
+Logger 实例会记录第一次后端 I/O 错误。后续成功不能抹掉此前输出已经失败的证据。
 
-Metrics distinguish:
+指标会区分：
 
-- attempted/completed records;
-- emitted records;
-- failed records;
-- first sticky error.
+- 已尝试/已完成记录；
+- 成功输出记录；
+- 失败记录；
+- 第一个粘滞错误。
 
-A flush may therefore complete current work yet still report the earlier sticky
-error.
+因此，一次刷新即使完成了当前工作，仍可能继续报告更早发生的粘滞错误。
 
-## Partial writes
+## 部分写入
 
-A short/partial backend write is not silently promoted to success. Where
-per-record acknowledgement cannot be reconstructed for a partial batch, the
-implementation classifies the affected batch conservatively as unconfirmed.
+后端短写/部分写入不会被静默提升为成功。如果部分批处理无法重建逐记录确认状态，
+实现会保守地把受影响批次归类为“未确认”。
 
-## Validation errors
+## 验证错误
 
-Reject invalid configuration before acquiring expensive or externally visible
-resources whenever possible.
+应尽可能在获取高成本资源或产生外部可见副作用之前拒绝非法配置。
 
-Do not silently mask:
+不得静默掩盖：
 
-- unknown output bits;
-- invalid enums;
-- invalid file modes;
-- impossible queue capacities;
-- unsupported platform/backend semantics.
+- 未知输出位；
+- 非法枚举；
+- 非法文件模式；
+- 不可能满足的队列容量；
+- 不受支持的平台/后端语义。
 
-## Cleanup and errno
+## 清理与 errno
 
-Automatic cleanup for temporary fd/FILE ownership saves and restores `errno`.
-Destructors must not accidentally turn:
+临时 fd/FILE 所有权的自动清理会保存并恢复 `errno`。
+析构路径不得意外把：
 
 ```text
 ENOMEM
 ```
 
-into:
+变成：
 
 ```text
 EBADF from rollback close
 ```
 
-unless the close itself is explicitly the operation being reported.
+除非 close 本身就是当前需要报告的操作。
 
-## Error-path tests
+## 错误路径测试
 
-Constructor/error-path tests should cover failure after each meaningful
-acquisition boundary and verify:
+构造函数/错误路径测试应覆盖每个有意义的资源获取边界之后的失败，并验证：
 
-- no resource leak;
-- no double release;
-- no stale owner;
-- no abandoned lock;
-- correct object/thread count;
-- correct returned error/errno;
-- next-generation/retry behavior where supported.
+- 无资源泄漏；
+- 无重复释放；
+- 无陈旧所有者；
+- 无遗留锁；
+- 对象/线程数量正确；
+- 返回错误/`errno` 正确；
+- 在受支持场景中，下一代次/重试行为正确。

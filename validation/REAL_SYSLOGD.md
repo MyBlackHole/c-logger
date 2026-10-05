@@ -1,59 +1,50 @@
-# Real local syslogd validation
+# 真实本地 syslogd 验证
 
-Production v1 supports the existing local Unix-datagram Syslog backend only. This
-validation closes the gap between mock/socket-level regression tests and an
-actual syslog daemon.
+生产版 v1 只支持现有的本地 Unix 数据报 Syslog 后端。
+该验证用于补齐 mock/套接字级回归测试与真实 Syslog 守护进程之间的证据缺口。
 
-## Environment
+## 环境
 
-The dedicated `real-syslogd` workflow runs on Ubuntu 24.04 and installs the
-distribution `rsyslog` package. The test launches `rsyslogd -n` directly
-with a private configuration and private Unix socket; it does not depend on
-systemd or the host `/dev/log`.
+专用 `real-syslogd` 工作流运行在 Ubuntu 24.04，并安装发行版 `rsyslog` 软件包。
+测试使用私有配置和私有 Unix 套接字直接启动 `rsyslogd -n`，
+不依赖 systemd，也不依赖宿主 `/dev/log`。
 
-The daemon configuration:
+守护进程配置：
 
-- disables the system socket;
-- loads a dedicated `imuxsock` input on a temporary pathname;
-- disables per-input rate limiting;
-- writes the raw received message to a temporary omfile destination;
-- flushes file output at transaction end.
+- 禁用系统套接字；
+- 在临时路径加载专用 `imuxsock` 输入；
+- 禁用该输入的速率限制；
+- 把收到的原始消息写入临时 omfile 目标；
+- 在事务结束时刷新文件输出。
 
-## Production-linked scenarios
+## 链接生产库的场景
 
-The integration executable links the normal production `logger` target in both
-shared and static builds. It does not link fault-injection or white-box support.
+集成测试可执行文件在共享库和静态库两种构建中都链接正常生产 `logger` 目标。
+它不会链接故障注入或白盒测试支持。
 
-It validates:
+验证内容：
 
-1. REQUIRED startup rejects a missing endpoint;
-2. REQUIRED startup with a live daemon delivers a real datagram and reports
-   connected/sent metrics;
-3. daemon shutdown breaks the existing association and the failed record is not
-   replayed;
-4. the reconnect cooldown prevents an immediate reconnect storm;
-5. after a real daemon restart and cooldown expiry, a future record reconnects
-   and is delivered;
-6. DEFERRED startup accepts an unavailable endpoint, exposes the connect failure,
-   and later recovers on a future record;
-7. stopping a real daemon with SIGSTOP fills the real Unix-datagram receive
-   queue until the nonblocking logger observes EAGAIN/ENOBUFS/ENOMEM
-   backpressure;
-8. metrics and diagnostics expose output failure and reconnect facts;
-9. sticky output failure remains visible through flush/destroy even after a
-   later successful reconnect.
+1. REQUIRED 启动策略在端点不存在时必须拒绝启动；
+2. REQUIRED 启动策略连接真实守护进程时，能够投递真实数据报，并报告已连接/已发送指标；
+3. 守护进程停止后，已有连接关系失效，失败记录不会被重放；
+4. 重连冷却机制能够阻止立即发生重连风暴；
+5. 真实守护进程重启且冷却期结束后，后续记录能够重新连接并投递；
+6. DEFERRED 启动策略允许端点暂时不可用，暴露连接失败，并能在未来记录触发时恢复；
+7. 对真实守护进程发送 SIGSTOP 会填满真实 Unix 数据报接收队列，
+   直到非阻塞 Logger 观察到 EAGAIN/ENOBUFS/ENOMEM 背压；
+8. 指标和诊断能够暴露输出失败与重连事实；
+9. 即使后续重新连接成功，粘滞输出失败仍会通过刷新/销毁保持可见。
 
-## Boundary
+## 边界
 
-This validates the supported local Unix-domain datagram contract against
-rsyslogd. It does not add or claim:
+该验证只证明受支持的本地 Unix 域数据报契约能够和 rsyslogd 配合工作。
+它没有增加或承诺：
 
-- network Syslog over UDP/TCP/TLS;
-- durable remote acknowledgement;
-- failed-record replay;
-- disk-backed spool ownership by c-logger;
-- a hard real-time latency guarantee.
+- 基于 UDP/TCP/TLS 的网络 Syslog；
+- 远端持久化确认；
+- 失败记录重放；
+- 由 c-logger 拥有的磁盘后备队列；
+- 硬实时延迟保证。
 
-The existing syscall/fault regressions remain necessary for deterministic rare
-errno coverage. This real-daemon workflow is complementary evidence rather than
-a replacement for those tests.
+现有系统调用/故障回归测试仍然需要保留，以确定性覆盖罕见 errno。
+真实守护进程工作流提供的是互补证据，而不是这些测试的替代品。
