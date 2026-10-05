@@ -262,11 +262,6 @@ static int validate_segment_chain(segment_t *files, size_t count,
 		last_edges[edge].index = i;
 		++edge;
 	}
-	if (edge != nonempty) {
-		rc = -EIO;
-		goto out;
-	}
-
 	qsort(first_edges, nonempty, sizeof(*first_edges), segment_edge_compare);
 	qsort(last_edges, nonempty, sizeof(*last_edges), segment_edge_compare);
 
