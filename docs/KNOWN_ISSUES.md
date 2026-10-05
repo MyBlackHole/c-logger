@@ -38,7 +38,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | 平台基线 | Production v1 范围固定为 Linux/ELF x86_64 + glibc >= 2.31；32-bit、非 x86_64、musl/非 glibc 明确 不支持。Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）已有 共享库/静态库 core、installed C/C++ 消费方 与 pkg-config CI；最低 Linux 内核 仍是独立 v1 阻断项，不能由共享 运行器 内核 的 container matrix 推断 |
 | 显式 / Console 取消与重入 | 本轮补齐 延迟取消 下资源入口的取消延期和同线程重入拒绝，但不是 信号安全 / 通用 AC-safe / 任意 pthread_exit、longjmp 或回调改变取消策略的保证。调用者以 ASYNCHRONOUS+ENABLE 进入普通 Logger/Console API 不受支持；直接 构造函数 明确返回 ENOTSUP。若 调用方 保留 ASYNCHRONOUS type，需先 DISABLE cancellation，库保持该 state/type。宿主仍需管理返回后的指针 清理，先停止/join 所有借用者；不得并发 destroy 或取消私有 工作线程。禁用取消期间 I/O 仍可能阻塞 |
 | Audit 事务 | ATTEMPT/RESULT 不是跨业务操作原子事务，也不能跨 shutdown 用旧事务结束新生命周期。API 不是信号处理接口 |
-| Audit 恢复规模 | 完整扫描保留集合、段连接 O(N²)、4096 归档上限；暂无持久 segment ID/可信恢复索引/检查点 v1 自动迁移/公开恢复告警字段 |
+| Audit 恢复规模 | 仍会完整扫描并验证保留集合；内存态段连接已由 O(N²) 改为排序 digest-edge 索引的 O(N log N)，4096 归档上限不变。暂无持久 segment ID/可信恢复索引/检查点 v1 自动迁移/公开恢复告警字段 |
 | 完整性信任 | 无外部可信签名、锚点或 WORM 认证；本地无密钥链不能排除整体重算、截尾或回滚。旧全零或非规范历史不自动改写 |
 | Fork | raw fork 继承运行时仍拒绝。可选旧 辅助接口 仅适用于其受控单线程前置条件，不代替宿主进程管理；默认第三方集成由宿主在合适阶段创建实例 |
 | 可选 fork 辅助接口 的 TSan | 历史上 TSan 残留后台 task 导致正向场景 EBUSY；本轮只复跑兼容 Release 651/651，没有宣称这些兼容场景的 TSan 全部通过 |
