@@ -24,9 +24,8 @@ pid_t logger_fork_reinit(void)
 	if (rc)
 		goto done;
 
-	/* pthread_join may observe the cleared TID just before the kernel removes
-     * an exiting task from procfs. Allow that bounded cleanup delay only. This
-     * is not an attempt to shut down arbitrary application/library threads. */
+	/* pthread_join 可能在内核从 procfs 移除退出任务前观察到已清零的 TID。
+     * 这里只允许这种有界的清理延迟，并不尝试关闭任意应用或库线程。 */
 	for (unsigned retry = 0;; ++retry) {
 		unsigned threads;
 		rc = logger_process_thread_count(&threads);
@@ -44,14 +43,14 @@ pid_t logger_fork_reinit(void)
 	rc = logger_process_arm_clean_fork();
 	if (rc)
 		goto done;
-	/* All application atfork handlers must preserve the quiescent boundary:
-     * no thread creation or logger/audit/console reinitialization inside them. */
+	/* 所有应用侧 atfork 处理器都必须保持静默边界：其中不得创建线程，
+     * 也不得重新初始化 Logger/Audit/Console。 */
 	pid = fork();
 	int fork_error = pid < 0 ? errno : 0;
 	rc = logger_process_finish_clean_fork();
 	if (rc) {
-		/* An invalid child must not return into the application as though it
-         * had a clean runtime. This path is only reachable on a broken contract. */
+		/* 非法子进程不能像拥有干净运行时一样返回应用层。
+         * 只有调用约定被破坏时才会到达这条路径。 */
 		if (pid == 0)
 			_exit(127);
 		goto done;

@@ -41,7 +41,7 @@ int logger_file_open_reserved(logger_file_t *);
 int logger_file_close_status(logger_file_t *); /* 0 / -errno；释放全部 fd */
 void logger_file_close(logger_file_t *);
 int logger_file_sync(logger_file_t *); /* 0 / -errno；调用者必须持有 emit_mu */
-int logger_file_reopen(logger_file_t *); /* 0 / -1 + errno */
+int logger_file_reopen(logger_file_t *); /* 返回 0 / -1，并设置 errno。 */
 int logger_file_write(logger_file_t *, const char *, size_t,
 		      const struct timespec *, int);
 int logger_file_writev(logger_file_t *, struct iovec *, int, size_t,

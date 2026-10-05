@@ -24,7 +24,7 @@ static _Atomic unsigned live_objects;
 static _Atomic int clean_fork_owner;
 #endif
 static pthread_once_t register_once = PTHREAD_ONCE_INIT;
-static int registration_error; /* published by pthread_once */
+static int registration_error; /* 由 pthread_once 发布。 */
 
 void logger_process_invalidate_child(void)
 {

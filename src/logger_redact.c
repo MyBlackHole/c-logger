@@ -25,7 +25,7 @@ int logger_mask_secret(const char *v, char *out, size_t cap, size_t pre,
 		pre = n;
 	if (suf > n - pre)
 		suf = n - pre;
-	/* Never reveal the whole value through this helper. */
+	/* 该辅助函数绝不能暴露完整值。 */
 	if (pre + suf >= n) {
 		pre = 0;
 		suf = 0;

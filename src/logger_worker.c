@@ -57,7 +57,7 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	workspace->lines = no_free_ptr(lines);
 	workspace->lens = no_free_ptr(lens);
 	workspace->failed = no_free_ptr(failed);
-	/* ownership transfer：workspace constructor -> caller/logger instance。 */
+	/* 所有权转移：工作区构造函数 -> 调用方/Logger 实例。 */
 	return_ptr(workspace);
 }
 

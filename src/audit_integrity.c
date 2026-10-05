@@ -4,18 +4,16 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Self-contained SHA-256. No external crypto dependency or runtime
- * backend selection. Each call owns its state on the stack; constants are
- * immutable. The common output contract is 0 / -errno, with the caller's
- * 32-byte output unchanged on error. A digest is never an error sentinel.
- * Inputs are byte strings; NULL is allowed only for a zero-length message.
- */
+/* 自包含 SHA-256。不依赖外部密码库，也不存在运行时后端选择。
+ * 每次调用都在栈上独占自身状态；常量不可变。统一输出契约为 0 / -errno，
+ * 失败时调用方的 32 字节输出保持不变。摘要绝不会被用作错误哨兵值。
+ * 输入按字节串处理；只有消息长度为 0 时才允许 NULL。 */
 static int validate_input(const void *data, size_t size,
 			  const unsigned char *out)
 {
 	if (!out || (!data && size))
 		return -EINVAL;
-	/* SHA-256 encodes a 64-bit bit length. Check before reading input. */
+	/* SHA-256 编码 64 位比特长度；读取输入之前必须先检查长度。 */
 #if SIZE_MAX > UINT64_MAX / 8u
 	if (size > UINT64_MAX / 8u)
 		return -EOVERFLOW;
@@ -97,7 +95,7 @@ static void sha256_block(uint32_t h[8], const unsigned char p[64])
 	h[7] += x;
 }
 
-/* SHA-256 uses 512-bit blocks and a big-endian 64-bit bit length. */
+/* SHA-256 使用 512 位数据块和大端 64 位比特长度。 */
 static int builtin_sha256(const void *data, size_t size, unsigned char out[32])
 {
 	int rc = validate_input(data, size, out);
@@ -114,7 +112,7 @@ static int builtin_sha256(const void *data, size_t size, unsigned char out[32])
 	}
 	unsigned char tail[128] = { 0 };
 	if (remaining)
-		memcpy(tail, p, remaining); /* no memcpy(NULL, 0) */
+		memcpy(tail, p, remaining); /* 避免 memcpy(NULL, 0)。 */
 	tail[remaining] = 0x80;
 	size_t padded = remaining < 56 ? 64 : 128;
 	uint64_t bits = (uint64_t)size * 8u;
@@ -148,8 +146,8 @@ const audit_digest_ops_t *audit_digest_provider(audit_integrity_t algorithm)
 	static const audit_digest_ops_t sha = { AUDIT_INTEGRITY_SHA256,
 						"SHA-256/builtin", 32,
 						builtin_sha256 };
-	/* Keep the private adapter so writer/recovery/verifier share the same
-     * checked contract. Unsupported on-disk or API IDs never select a fallback. */
+	/* 保留私有适配器，使写入/恢复/验证路径共用同一套已检查契约。
+     * 不支持的磁盘/API ID 永远不会选择回退实现。 */
 	return algorithm == AUDIT_INTEGRITY_SHA256 ? &sha : NULL;
 }
 
@@ -158,8 +156,8 @@ int audit_digest_check(const audit_digest_ops_t *digest)
 	if (!digest || !digest->hash || digest->digest_size != 32)
 		return -EPROTONOSUPPORT;
 	unsigned char probe[32];
-	/* Check the digest contract even for empty/no-replay streams, before any
-     * repair or append. Keep failure propagation consistent across all paths. */
+	/* 即使流为空或无需重放，也要在任何修复/追加之前检查摘要契约，
+     * 保证所有路径的失败传播语义一致。 */
 	return digest->hash(NULL, 0, probe);
 }
 

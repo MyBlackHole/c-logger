@@ -64,10 +64,9 @@ int audit_checkpoint_load(const char *path, audit_ckpt_t *out)
 	*out = parsed;
 	return 0;
 }
-/* Persist derived state without leaking a descriptor on an earlier error.
- * A rename followed by failed directory fsync is still a failed checkpoint:
- * the destination may have changed, so callers retry the SAME committed head.
- */
+/* 持久化派生状态时，即使前序步骤失败也不能泄漏描述符。
+ * rename 完成后如果目录 fsync 失败，检查点仍视为失败：
+ * 目标可能已经改变，因此调用方必须重试**同一个**已提交链头。 */
 int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 {
 	if (!path || !cp || cp->offset > INT64_MAX ||
@@ -108,7 +107,7 @@ int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 	int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (dfd < 0)
 		return -1;
-	int fd = mkostemp(tmp, O_CLOEXEC); /* private unique 0600 inode */
+	int fd = mkostemp(tmp, O_CLOEXEC); /* 私有且唯一的 0600 inode。 */
 	int error = 0;
 	int owns_tmp = fd >= 0;
 	if (fd < 0) {
@@ -147,7 +146,7 @@ int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 	}
 	if (close(fd)) {
 		error = errno;
-		fd = -1; /* Linux close errors do not license retry of this fd number */
+		fd = -1; /* Linux close 返回错误也不允许重试同一个 fd 数值。 */
 		goto out;
 	}
 	fd = -1;
@@ -202,8 +201,8 @@ static int timestamp_name(const char *s, size_t n)
 	return 1;
 }
 
-/* Recognize exactly both archive layouts. Current writer uses the first one;
- * old documented/exported layout uses the second. Names do NOT order the chain. */
+/* 精确识别两种归档布局。当前写入器使用第一种；旧文档/导出布局使用第二种。
+ * 文件名**不能**决定链顺序。 */
 static int archive_name(const char *name, const char *base)
 {
 	size_t n = strlen(name), b = strlen(base);
@@ -250,8 +249,8 @@ static int open_regular(const char *path, int writable, FILE **out,
 	if (!f)
 		return -errno;
 
-	/* fdopen() consumed descriptor ownership; callers own FILE * and must
-	 * explicitly fclose() because close errors participate in recovery. */
+	/* fdopen() 已消费描述符所有权；调用方拥有 FILE *，并且必须显式 fclose()，
+	 * 因为关闭错误属于恢复结果的一部分。 */
 	(void)take_fd(fd);
 	*out = f;
 	return 0;
@@ -266,9 +265,8 @@ static int sync_fd(int fd)
 	return 0;
 }
 
-/* Scan without modifying files. Every complete record, even before a checkpoint,
- * is parsed and self-verified. Checkpoint offset is matched to an actual verified
- * record, NEVER accepted simply because a file is large enough. */
+/* 扫描过程中不修改文件。每一条完整记录，即使位于检查点之前，也会解析并执行自校验。
+ * 检查点偏移必须匹配真实已验证记录，绝不能仅因为文件足够大就直接接受。 */
 static int scan_segment(FILE *f, segment_t *file, const audit_ckpt_t *cp,
 			const audit_digest_ops_t *digest, unsigned *anchors,
 			char *partial, size_t *partial_length)
@@ -283,11 +281,10 @@ static int scan_segment(FILE *f, segment_t *file, const audit_ckpt_t *cp,
 			break;
 		if (kind == AUDIT_LINE_PARTIAL) {
 			if (!partial)
-				return -EBADMSG; /* archives are never repaired */
+				return -EBADMSG; /* 归档永远不自动修复。 */
 			audit_record_view_t complete;
 			line[length] = '\n';
-			/* Missing LF alone is not sufficient reason to erase a complete
-             * record (even one with a wrong hash). Require operator review. */
+			/* 仅仅缺少 LF 不能成为删除完整记录的理由，即使它的哈希错误；必须由操作人员复核。 */
 			if (!audit_record_parse_line(line, length + 1u,
 						     &complete))
 				return -EBADMSG;
@@ -316,8 +313,7 @@ static int scan_segment(FILE *f, segment_t *file, const audit_ckpt_t *cp,
 		    !memcmp(cp->hash, record.hash, 32))
 			++*anchors;
 	}
-	/* offset=0/nonzero hash represents the boundary after an archived segment
-     * when the active path had not yet been created at the last recovery. */
+	/* 当上一次恢复时活动路径尚未创建，offset=0/nonzero hash 表示某个已归档分段之后的边界。 */
 	if (!cp->offset && file->has_records && cp->seq == file->seq &&
 	    !memcmp(cp->hash, file->last_hash, 32))
 		++*anchors;
@@ -334,9 +330,8 @@ static int same_stat(const struct stat *a, const struct stat *b)
 	       a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
 }
 
-/* Persist exact evidence before modifying a true EOF fragment. This is not a
- * diagnosis of a crash: manual truncation/tampering can produce the same bytes.
- * Never repair an archive, oversized input or a complete malformed line. */
+/* 修改真实 EOF 残片之前先持久化精确证据。这不能直接诊断为崩溃：
+ * 人工截断/篡改也可能产生相同字节。绝不修复归档、超长输入或完整但格式非法的行。 */
 static int preserve_and_trim(FILE *f, const char *active, const char *tail,
 			     size_t length, uint64_t last,
 			     const struct stat *scanned)
@@ -383,10 +378,10 @@ static int preserve_and_trim(FILE *f, const char *active, const char *tail,
 			rc = -errno;
 		if (rc)
 			(void)unlink(
-				path); /* incomplete evidence; original untouched */
+				path); /* 证据写入不完整；原始数据保持不动。 */
 		else
 			rc = sync_fd(
-				dfd); /* preserve evidence path before truncation */
+				dfd); /* 截断之前先保留证据路径。 */
 	}
 	if (close(dfd) && !rc)
 		rc = -errno;
@@ -492,8 +487,8 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 			rc = -errno;
 		if (!rc && !same_stat(&st, &after))
 			rc = -ESTALE;
-		/* Valid bytes recovered beyond an old checkpoint must be synced before
-         * a new checkpoint can acknowledge them. No application data rewrite. */
+		/* 超出旧检查点恢复出的有效字节，必须先完成同步，新的检查点才可以确认它们。
+         * 不重写应用数据。 */
 		if (!rc && !is_active)
 			rc = sync_fd(fileno(f));
 		if (!is_active && fclose(f) && !rc)
@@ -506,9 +501,8 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		rc = -EBADMSG;
 		goto done;
 	}
-	/* Form a UNIQUE chain of all retained nonempty segments by their verified
-     * digest edges. UTC filenames are hints only (clock can move backwards).
-     * Missing/duplicated/branched segments fail closed instead of being skipped. */
+	/* 根据已验证摘要边，把所有保留的非空分段组成**唯一**链。
+     * UTC 文件名只能作为提示（时钟可能倒退）。缺失、重复或分叉分段都失败关闭，绝不会跳过。 */
 	size_t root = count, roots = 0;
 	for (size_t i = 0; i < count; ++i) {
 		if (!files[i].has_records)

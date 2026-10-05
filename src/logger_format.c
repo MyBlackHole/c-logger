@@ -17,8 +17,8 @@ const char *logger_basename(const char *path)
 	return slash ? slash + 1 : (path ? path : "?");
 }
 
-/* libc printf still formats metadata. cap reserves space for the caller's LF;
- * used is bytes stored, NOT printf's would-have-written count. */
+/* 元数据仍由 libc printf 格式化。cap 会为调用方的换行符预留空间；
+ * used 表示实际存储的字节数，而不是 printf “本应写入”的字节数。 */
 static void append(char *, size_t, size_t *, const char *, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 4, 5)))
@@ -63,7 +63,7 @@ size_t logger_format_line(const logger_t *l, const logger_message_t *m,
 		    !strftime(cache.date, sizeof(cache.date),
 			      "%Y-%m-%dT%H:%M:%S", &tm) ||
 		    !strftime(cache.zone, sizeof(cache.zone), "%z", &tm)) {
-			/* Visible failure, not a made-up timestamp or uninitialized tm. */
+			/* 让失败显式可见，不伪造时间戳，也不使用未初始化的 tm。 */
 			strcpy(cache.date, "time-unavailable");
 			cache.zone[0] = 0;
 			cache.valid = 0;

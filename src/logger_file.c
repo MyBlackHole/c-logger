@@ -277,8 +277,8 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 	if (rc)
 		return rc;
 
-	/* Ownership transfer: lexical candidate -> caller. The caller either
-	 * installs it into logger_file_t or explicitly closes it on failure. */
+	/* 所有权转移：词法作用域候选对象 -> 调用方。调用方要么把它安装进 logger_file_t，
+	 * 要么在失败路径上显式关闭。 */
 	*out = take_fd(fd);
 	/* 原先不存在的活动文件可能已经被创建。即使目录之前已存在，也保守地同步
      * 已绑定目录；整个过程不依赖当前工作目录。 */
@@ -475,8 +475,8 @@ static int retention(logger_file_t *f, time_t now)
 	DIR *d = fdopendir(fd);
 	if (!d)
 		return -errno;
-	/* fdopendir() consumed descriptor ownership; closedir() below remains
-	 * explicit because its failure contributes to the retention result. */
+	/* fdopendir() 已消费描述符所有权；下面的 closedir() 仍保持显式调用，
+	 * 因为它的失败会影响保留策略的最终结果。 */
 	(void)take_fd(fd);
 	int rc = 0, changed = 0;
 	uintmax_t seconds = (uintmax_t)f->rotation.retention_days * 86400u;

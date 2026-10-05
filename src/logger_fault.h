@@ -11,10 +11,9 @@ enum logger_fault_point {
 	LOGGER_FAULT_STATE_FSYNC,
 	LOGGER_FAULT_STATE_RENAME
 };
-/* Only the deliberately separate logger_test_support target has hooks.
- * Production macros erase call arguments too (including crash-point strings).
- * There is no runtime environment switch that enables production fault hooks.
- */
+/* 只有刻意独立出的 logger_test_support 目标包含故障注入钩子。
+ * 生产宏会连同调用参数一起消除（包括崩溃点字符串）。
+ * 不存在可在运行时通过环境变量启用生产故障钩子的开关。 */
 #if defined(LOGGER_ENABLE_FAULT_INJECTION) && LOGGER_ENABLE_FAULT_INJECTION
 int logger_fault_should_fail(enum logger_fault_point);
 ssize_t logger_fault_short_write(size_t requested);

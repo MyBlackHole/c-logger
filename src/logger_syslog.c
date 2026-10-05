@@ -11,16 +11,16 @@
 #include <stdlib.h>
 #endif
 
-/* Local datagrams preserve record boundaries. Never emulate write_all() on a
- * short send: the delivery result is uncertain, and a suffix is a new record.
- * No wait/poll/sleep and no unbounded EINTR loop in this backend. */
+/* 本地数据报保持记录边界。发生短发送时绝不能模拟 write_all()：此时投递结果
+ * 不确定，而继续发送后缀会形成一条新的记录。该后端不执行 wait/poll/sleep，
+ * 也不存在无界 EINTR 重试循环。 */
 #define SYSLOG_SEND_ATTEMPTS 4u
 #define SYSLOG_PACKET_MAX 8192u
 
 static unsigned priority(logger_level_t level)
 {
 	static const unsigned values[] = { 7, 7, 6, 4, 3, 2 };
-	return values[level]; /* caller validates level */
+	return values[level]; /* 日志级别由调用方校验。 */
 }
 
 static int fail(int error)
@@ -65,7 +65,7 @@ static int broken_association(int error)
 
 static void close_fd(logger_syslog_t *s, int fd)
 {
-	/* Linux close releases fd even on EINTR. Retrying can close a reused fd. */
+	/* Linux 上即使 close 返回 EINTR，fd 也已释放；重试可能误关已复用的 fd。 */
 	if (close(fd) != 0) {
 		++s->metrics.close_failures;
 		s->metrics.last_close_error = errno ? errno : EIO;
@@ -97,8 +97,8 @@ static int copy_path(logger_syslog_t *s, const char *path)
 		memcpy(s->path, path, n + 1);
 		return 0;
 	}
-	/* Freeze relative path meaning across a later host chdir(). No procfs,
-     * socket bind, environment mutation, directory creation or symlink rewrite. */
+	/* 固定相对路径的含义，使其不受宿主后续 chdir() 影响。不使用 procfs，
+     * 不执行套接字 bind、环境修改、目录创建或符号链接改写。 */
 	char cwd[sizeof(s->path)];
 	if (!getcwd(cwd, sizeof(cwd))) {
 		if (errno == ERANGE)
@@ -116,8 +116,8 @@ static int copy_path(logger_syslog_t *s, const char *path)
 	return 0;
 }
 
-/* Exactly one new socket and one connect call. On ANY connect failure discard
- * the candidate; no assumption that an EINTR/EAGAIN socket is usable. */
+/* 每次候选只创建一个新套接字，并只执行一次 connect。任何 connect 失败都
+ * 丢弃候选；绝不假定返回 EINTR/EAGAIN 后该套接字仍然可用。 */
 static int connect_once(logger_syslog_t *s, int *deferable)
 {
 	*deferable = 0;
@@ -174,8 +174,8 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	size_t n = strnlen(ident, sizeof(s->ident));
 	if (n >= sizeof(s->ident))
 		return fail(ENAMETOOLONG);
-	/* Keep a parseable local tag, rather than silently truncating identifiers
-     * or allowing a caller-provided newline/delimiter to forge the envelope. */
+	/* 保持本地标签可解析；既不静默截断标识符，也不允许调用方提供的换行符或
+     * 分隔符伪造消息封装。 */
 	for (size_t i = 0; i < n; ++i) {
 		unsigned char c = (unsigned char)ident[i];
 		if (c < 33 || c > 126 || c == ':' || c == '[' || c == ']')
@@ -185,8 +185,8 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	if (copy_path(s, config->path) != 0)
 		return -1;
 #if defined(LOGGER_ENABLE_FAULT_INJECTION) && LOGGER_ENABLE_FAULT_INJECTION
-	/* Old test fixtures only. Production does not contain this string or getenv.
-     * An explicit application setting always wins. */
+	/* 仅供旧测试固定数据使用。生产构建不包含该字符串，也不调用 getenv。
+     * 应用显式配置始终优先。 */
 	const char *override = getenv("LOGGER_SYSLOG_PATH");
 	if (!config->path && override && *override) {
 		n = strnlen(override, sizeof(s->path));
@@ -201,7 +201,7 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	if (connect_once(s, &deferable) == 0)
 		return 0;
 	if (config->startup == LOGGER_SYSLOG_START_DEFERRED && deferable)
-		return 0; /* explicit degraded startup; metrics and sticky I/O expose it */
+		return 0; /* 显式的降级启动；通过指标和粘滞 I/O 状态对外暴露。 */
 	return -1;
 }
 
@@ -224,8 +224,8 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 	++s->metrics.submitted_records;
 	if (!line || (unsigned)level >= LOGGER_OFF)
 		return record_failure(s, EINVAL);
-	/* Validate size BEFORE indexing line[n-1]. No silent truncation; no splitting
-     * of one record into datagrams. The ordinary logger record is smaller. */
+	/* 在访问 line[n-1] 之前先校验大小。不允许静默截断，也不把一条记录拆成
+     * 多个数据报。普通 Logger 记录的上限更小。 */
 	if (n > SYSLOG_PACKET_MAX)
 		return record_failure(s, EMSGSIZE);
 	char packet[SYSLOG_PACKET_MAX];
@@ -246,8 +246,8 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 		if (monotonic_ms(&now) != 0)
 			return record_failure(s, errno);
 		if (s->retry_clock_pending || now < s->retry_from_ms) {
-			/* Clock failure at disconnect, or an anomalous backwards reading:
-             * establish a fresh cooldown rather than opening a reconnect storm. */
+			/* 断连时读取时钟失败，或时钟出现异常倒退时，重新建立完整冷却周期，
+             * 而不是触发重连风暴。 */
 			s->retry_from_ms = now;
 			s->retry_clock_pending = 0;
 		}
@@ -288,7 +288,7 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 		if (monotonic_ms(&s->retry_from_ms) != 0)
 			s->retry_clock_pending = 1;
 	}
-	/* No retry/replay of this record after connection loss; only future records
-     * may reconnect. This cannot duplicate a successful file/stderr emission. */
+	/* 连接丢失后不重试或重放当前记录；只有后续记录可以尝试重连。
+     * 因此不会重复已经成功写入 file/stderr 的记录。 */
 	return record_failure(s, error);
 }

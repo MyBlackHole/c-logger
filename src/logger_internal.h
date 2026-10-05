@@ -92,8 +92,8 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t);
 void logger_worker_workspace_destroy(logger_worker_workspace_t *);
 void *logger_worker_main(void *);
 void logger_note_io_error(logger_t *, int);
-/* Caller already owns an explicit/global cancellation+lifetime scope.
- * Returns 0/-errno and only writes out after acquiring emit_mu. */
+/* 调用方已经持有显式/全局的取消与生命周期作用域。
+ * 返回 0/-errno，并且只有在获取 emit_mu 后才写入输出参数。 */
 int logger_file_metrics_snapshot(logger_t *, logger_file_metrics_t *);
 /* 内部：等待已排队的 backend 输出完成，但不执行 fsync。返回 0 / -errno。 */
 int logger_wait_for_output(logger_t *);

@@ -18,13 +18,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Audit already serializes every durable record. One operation mutex protects
- * the published session, including its sequence and hash. The control mutex
- * serializes init, shutdown and disposal, but is NOT acquired by writers.
- * Lock order: control -> operation. No internal helper calls public APIs.
- * Admission closes before shutdown waits for operation, preventing new work
- * from extending the old session. Blocked calls recheck admission under lock.
- */
+/* Audit 已经串行化每一条持久记录。一个操作互斥锁保护已经发布的会话，
+ * 包括序号和哈希。控制互斥锁串行化初始化、关闭和处置，但写入方**不会**获取它。
+ * 锁顺序：control -> operation。内部辅助函数不调用公开 API。
+ * 关闭流程会在等待操作互斥锁之前先关闭新请求准入，避免新工作继续延长旧会话。
+ * 已阻塞调用获得锁后会重新检查准入状态。 */
 typedef struct {
 	logger_t *logger;
 	int writer_lock_fd;
@@ -48,10 +46,10 @@ typedef struct {
 
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_operation_mu = PTHREAD_MUTEX_INITIALIZER;
-static audit_runtime_t *g_runtime; /* operation mutex; never exposed to callers */
+static audit_runtime_t *g_runtime; /* 操作互斥锁；绝不暴露给调用方。 */
 static audit_status_t g_last_status;
 static _Atomic int g_phase = AUDIT_STATE_IDLE;
-/* Reject a call delayed across shutdown/reinit, not merely while STOPPING. */
+/* 拒绝跨越关闭/重新初始化而延迟到来的调用，而不只是在 STOPPING 期间拒绝。 */
 static _Atomic uint64_t g_generation;
 static _Atomic int g_policy = AUDIT_FAIL_REPORT;
 static int result(int rc)
@@ -63,8 +61,8 @@ static int result(int rc)
 	return 0;
 }
 
-/* Cancellation is deferred until all owned locks/resources have been released.
- * Cancellation is not an application-level rollback of a committed record. */
+/* 取消会延迟到所有已拥有的锁/资源都释放之后执行。
+ * 取消不代表对已提交记录执行应用层回滚。 */
 static int lock_scope(pthread_mutex_t *mu, int *old_cancel)
 {
 	if (logger_scope_busy())
@@ -174,8 +172,8 @@ static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
 	if (error)
 		return -error;
 
-	/* Ownership transfer: lexical candidate -> audit_runtime_t.
-	 * dispose_runtime() performs the final close after logger teardown. */
+	/* 所有权转移：词法作用域候选对象 -> audit_runtime_t。
+	 * Logger 拆除完成后，由 dispose_runtime() 执行最终关闭。 */
 	s->writer_lock_fd = take_fd(fd);
 	return 0;
 }
@@ -184,8 +182,8 @@ static int dispose_runtime(audit_runtime_t *s)
 {
 	if (!s)
 		return 0;
-	/* The session retains writer ownership until all output teardown finishes.
-     * Do not unlink the lock file: other processes coordinate on this inode. */
+	/* 会话会持续持有写入方所有权，直到所有输出拆除完成。
+     * 不要 unlink 锁文件：其他进程通过这个 inode 协调。 */
 	int rc = logger_destroy_status(s->logger) ? -errno : 0;
 	int other = logger_file_close_status(&s->reserved_log);
 	if (!rc)
@@ -239,7 +237,7 @@ static int validate_event(const audit_event_t *e)
 	    (e->phase == AUDIT_PHASE_RESULT &&
 	     (unsigned)e->result > AUDIT_FAILURE))
 		return -EINVAL;
-	/* These lifecycle markers must not be forgeable through the public API. */
+	/* 这些生命周期标记不能通过公开 API 被伪造。 */
 	if (!strcmp(e->event, "AUDIT_START") || !strcmp(e->event, "AUDIT_STOP"))
 		return -EINVAL;
 	return 0;
@@ -251,8 +249,8 @@ static int encode_event(audit_runtime_t *s, const audit_event_t *e,
 			uint64_t seq, char *out, size_t cap,
 			unsigned char hash[32])
 {
-	/* Reserve both chain fields BEFORE hashing so overflow is an input error,
-     * never a crypto/backend failure. Encoder/parser share one KV grammar. */
+	/* 在计算哈希**之前**先预留两个链字段，使溢出始终归类为输入错误，
+     * 而不是密码计算/后端失败。编码器与解析器共用同一套 KV 语法。 */
 	size_t suffix = s->digest ? 140u : 0u;
 	if (cap <= suffix)
 		return -EOVERFLOW;
@@ -307,11 +305,10 @@ static int checkpoint_runtime(audit_runtime_t *s)
 	return 0;
 }
 
-/* Called either on a hidden candidate owned by init, or under operation_mu.
- * Validation/capacity failures have no output effects and do not poison the
- * session. Crypto failure also precedes output, but latches CRYPTO_FAILED until
- * shutdown/reinit: it is not a business input error. Backend errors are uncertain.
- */
+/* 要么在初始化流程拥有的隐藏候选实例上调用，要么在 operation_mu 保护下调用。
+ * 校验/容量失败不会产生输出副作用，也不会污染会话。
+ * 密码计算失败同样发生在输出之前，但会一直锁存 CRYPTO_FAILED，直到关闭/重新初始化；
+ * 它不是业务输入错误。后端错误的结果状态可能不确定。 */
 static int write_runtime(audit_runtime_t *s, const audit_event_t *event)
 {
 	if (s->health != AUDIT_STATE_RUNNING)
@@ -331,8 +328,8 @@ static int write_runtime(audit_runtime_t *s, const audit_event_t *event)
 	if (rc)
 		return fail_runtime(s, AUDIT_STATE_IO_FAILED, rc);
 
-	/* Record commit precedes checkpoint commit. Never leave the in-memory head
-     * behind a confirmed log append, even when offset/checkpoint work fails. */
+	/* 记录提交先于检查点提交。即使偏移/检查点操作失败，也绝不能让
+     * 内存链头落后于已经确认成功的日志追加。 */
 	s->seq = next;
 	if (s->digest) {
 		memcpy(s->head, hash, sizeof(s->head));
@@ -362,7 +359,7 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	audit_runtime_t *s = calloc(1, sizeof(*s));
 	if (!s)
 		return -ENOMEM;
-	*out = s; /* caller owns cleanup on every subsequent error */
+	*out = s; /* 后续任意错误都由调用方负责清理。 */
 	s->writer_lock_fd = -1;
 	s->log_dir_fd = -1;
 	s->reserved_log = LOGGER_FILE_EMPTY;
@@ -372,7 +369,7 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	s->health = AUDIT_STATE_RUNNING;
 	int rc = s->digest ? audit_digest_check(s->digest) : 0;
 	if (rc)
-		return rc; /* before lock creation, recovery, checkpoint or logger open */
+		return rc; /* 必须发生在创建锁、恢复、检查点或打开 Logger 之前。 */
 	rc = generate_instance_id(s->instance_id);
 	if (rc)
 		return rc;
@@ -389,10 +386,9 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 			     "%s/%s.audit.state", c->log_dir, c->name);
 	if (n < 0 || (size_t)n >= sizeof(s->state_path))
 		return -ENAMETOOLONG;
-	/* Lock the ordinary file target BEFORE any recovery can inspect or
-     * truncate it. Recovery keeps its path API, anchored via Linux procfd
-     * names to directory descriptors we own for the session lifetime. This
-     * adds no process scanning or fork policy. */
+	/* 在任何恢复流程检查或截断普通文件目标**之前**先获取其锁。
+     * 恢复逻辑继续使用路径 API，但通过 Linux procfd 名称锚定到当前会话生命周期内
+     * 由我们持有的目录描述符。这里不会增加进程扫描，也不会引入新的 fork 策略。 */
 	if (logger_file_reserve(&s->reserved_log, path, c->rotation, 0600))
 		return -errno;
 	if (!s->reserved_log.managed)
@@ -405,7 +401,7 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 		     s->log_dir_fd);
 	if (n < 0 || (size_t)n >= sizeof(directory))
 		return -ENAMETOOLONG;
-	/* Fail before recovery if procfs fd traversal is unavailable. */
+	/* 如果无法通过 procfs 遍历 fd，则在进入恢复流程之前直接失败。 */
 	struct stat bound;
 	if (stat(directory, &bound))
 		return -errno;
@@ -455,7 +451,7 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	lc.async_mode = 0;
 	lc.include_source = 0;
 	lc.ident = "audit";
-	/* Strict audit always uses the synchronous, forced-sync backend API. */
+	/* 严格 Audit 始终使用同步、强制同步落盘的后端 API。 */
 	s->logger = logger_create_reserved_file(&lc, &s->reserved_log);
 	if (!s->logger)
 		return -errno;
@@ -504,7 +500,7 @@ int audit_init(const audit_config_t *c)
 	if (!rc) {
 		pthread_mutex_lock(&g_operation_mu);
 		g_runtime =
-			candidate; /* START and its checkpoint have succeeded */
+			candidate; /* START 及其检查点已经成功。 */
 		atomic_store_explicit(&g_policy, c->failure_policy,
 				      memory_order_relaxed);
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
@@ -514,8 +510,7 @@ int audit_init(const audit_config_t *c)
 		audit_status_t failed = { 0 };
 		if (candidate)
 			snapshot_runtime(candidate, &failed);
-		/* Failed initialization never emits a fake STOP. Keep the original
-         * failure even if cleanup hits another error. */
+		/* 初始化失败绝不会写出伪造 STOP。即使清理又遇到错误，也必须保留原始失败。 */
 		(void)dispose_runtime(candidate);
 		failed.state = AUDIT_STATE_IDLE;
 		failed.error_code = -rc;
@@ -531,9 +526,8 @@ int audit_init(const audit_config_t *c)
 
 void audit_after_fork_child(void)
 {
-	/* Compatibility entry point, now invalidation only. A forked child must
-     * exec before reinitializing Audit. CLOEXEC descriptors close on exec;
-     * do not reset inherited mutexes, free runtime, or attempt an AUDIT_STOP. */
+	/* 兼容入口，现在只做失效标记。fork 子进程必须先 exec 才能重新初始化 Audit。
+     * CLOEXEC 描述符会在 exec 时关闭；不要重置继承互斥锁、释放运行时，也不要尝试写 AUDIT_STOP。 */
 	logger_process_invalidate_child();
 }
 
@@ -549,7 +543,7 @@ int audit_shutdown_status(void)
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
 			      memory_order_release);
 	pthread_mutex_lock(
-		&g_operation_mu); /* drains the in-flight operation */
+		&g_operation_mu); /* 排空当前正在执行的操作。 */
 	audit_runtime_t *s = g_runtime;
 	g_runtime = NULL;
 	audit_status_t final = g_last_status;
@@ -557,7 +551,7 @@ int audit_shutdown_status(void)
 	if (s) {
 		if (s->health == AUDIT_STATE_IO_FAILED ||
 		    s->health == AUDIT_STATE_CRYPTO_FAILED)
-			rc = -s->error; /* uncertain I/O or failed crypto: no fake STOP/resume */
+			rc = -s->error; /* I/O 结果不确定或密码计算失败：不伪造 STOP，也不恢复运行。 */
 		else
 			rc = checkpoint_runtime(s);
 		if (!rc) {
@@ -573,7 +567,7 @@ int audit_shutdown_status(void)
 		snapshot_runtime(s, &final);
 	}
 	pthread_mutex_unlock(&g_operation_mu);
-	int close_rc = dispose_runtime(s); /* still holding the control mutex */
+	int close_rc = dispose_runtime(s); /* 此处仍持有控制互斥锁。 */
 	if (!rc)
 		rc = close_rc;
 	final.state = AUDIT_STATE_IDLE;
@@ -679,7 +673,7 @@ int audit_flush(void)
 		rc = -s->error;
 	else if (s->checkpoint_dirty)
 		rc = checkpoint_runtime(
-			s); /* no re-append; repair the committed head */
+			s); /* 不重新追加；只修复已经提交的链头。 */
 	else if (logger_flush_instance_status(s->logger))
 		rc = fail_runtime(s, AUDIT_STATE_IO_FAILED, -errno);
 	unlock_scope(&g_operation_mu, old_cancel);
@@ -702,7 +696,7 @@ int audit_get_status(audit_status_t *out)
 	int phase = atomic_load_explicit(&g_phase, memory_order_acquire);
 	if (phase == AUDIT_STATE_STARTING || phase == AUDIT_STATE_STOPPING) {
 		out->state = (audit_state_t)phase;
-		return 0; /* no partial candidate/session data is exposed */
+		return 0; /* 不暴露任何不完整候选实例/会话数据。 */
 	}
 	int old_cancel;
 	int rc = lock_scope(&g_operation_mu, &old_cancel);

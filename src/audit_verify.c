@@ -76,7 +76,7 @@ static int verify_from(const char *path, const char *anchor, char final_hex[65],
 	if (fclose(f) && !error)
 		error = errno ? errno : EIO;
 	if (error) {
-		errno = error; /* cleanup must not replace a crypto failure */
+		errno = error; /* 清理不能覆盖密码计算失败。 */
 		return -1;
 	}
 	if (final_hex)
