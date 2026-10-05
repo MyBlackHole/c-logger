@@ -61,8 +61,28 @@ int main(void)
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EPROTONOSUPPORT)
 		return 11;
+
+	/* A pre-1.0 caller may still advertise the historical 72-byte config.
+	 * The current library consumes only the known prefix and ignores the tail. */
+	a = AUDIT_DEFAULT_CONFIG();
+	a.struct_size = sizeof(a) + 8u;
+	a.log_dir = ".";
+	a.name = "config_abi_tail";
+	a.rotation.mode = LOGGER_ROTATE_NONE;
+	a.integrity = AUDIT_INTEGRITY_NONE;
+	unlink("./config_abi_tail.audit.log");
+	unlink("./config_abi_tail.audit.lock");
+	unlink("./config_abi_tail.audit.log.logger.lock");
+	if (audit_init(&a))
+		return 12;
+	if (audit_shutdown_status())
+		return 13;
+	unlink("./config_abi_tail.audit.log");
+	unlink("./config_abi_tail.audit.lock");
+	unlink("./config_abi_tail.audit.log.logger.lock");
+
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
-		return 12;
+		return 14;
 	return 0;
 }
