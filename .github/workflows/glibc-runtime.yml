@@ -15,6 +15,20 @@ on:
       - "scripts/check_production_artifact.py"
       - "tests/packaging/**"
       - "examples/installed_consumer/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/glibc-runtime.yml"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/**"
+      - "include/**"
+      - "abi/logger.symbols"
+      - "scripts/check.sh"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - "tests/packaging/**"
+      - "examples/installed_consumer/**"
 
 permissions:
   contents: read
@@ -27,9 +41,7 @@ jobs:
       image: ubuntu:${{ matrix.userland }}
     strategy:
       fail-fast: false
-      matrix:
-        userland: ["20.04", "22.04", "24.04"]
-        kind: [shared, static]
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"userland":"20.04","kind":"shared"}]}' || '{"include":[{"userland":"20.04","kind":"shared"},{"userland":"20.04","kind":"static"},{"userland":"22.04","kind":"shared"},{"userland":"22.04","kind":"static"},{"userland":"24.04","kind":"shared"},{"userland":"24.04","kind":"static"}]}') }}
 
     steps:
       - uses: actions/checkout@v5
