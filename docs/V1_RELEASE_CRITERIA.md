@@ -193,18 +193,35 @@ v1 发布时应把 ABI identity 从 candidate 契约切到稳定契约。当前�
 
 只有其余 v1 hard gate 关闭并准备正式 1.0 release 时，才把 ABI 1 从 preview 切为默认。
 
-### 5. Audit recovery 容量契约
+### 5. Audit recovery 容量契约（实现级阻断已关闭）
 
-当前 recovery 对 retained segment 扫描/连接存在 O(N²) 路径，archive 上限为 4096。
+当前 archive 上限保持 4096。恢复仍会完整扫描并验证 retained log bytes，但扫描完成后的
+segment 拓扑连接已经从 O(N²) 全表查找改为临时排序 digest-edge 索引的 O(N log N)；
+没有新增 persistent segment ID/index，也没有改变 record/checkpoint 磁盘格式或降低
+fail-closed 校验。
 
-v1 前必须：
+现有 4096-archive capacity gate 已覆盖：
 
-- 构造 4096 archive worst-case recovery 数据集；
-- 测量恢复时间与峰值资源；
-- 验证 corrupt/truncated/missing segment 场景；
-- 明确发布支持上限和可接受恢复时间边界。
+- 合法完整链恢复；
+- missing middle segment；
+- corrupt segment；
+- truncated segment；
+- 峰值 RSS；
+- 三次重复测量与宽松 CI regression guard。
 
-如果结果不可接受，再决定优化 persistent segment ID/index；不能在没有数据时先做大规模重写。
+2026-10-05 的相邻 Ubuntu 24.04 托管运行证据中，旧 O(N²) 对照合法恢复中位数为
+1411.047 ms；O(N log N) 版本的保守候选观测为 1281.821 ms，中间缺段失败最大值由
+163.268 ms 降至 76.832 ms，最大 RSS 由 2344 KiB 增至 2724 KiB。后续最终 head 的
+重复运行还观测到 1058.108 ms 合法恢复中位数，但托管 runner 波动不作为目标服务器 SLA。
+
+因此 v1 不再把“segment 连接 O(N²)”视为实现级发布阻断。仍保留以下边界：
+
+- 内容扫描复杂度仍是 O(保留日志字节数)；
+- 4096 archive 是当前发布支持上限；
+- CI 时间/RSS 阈值是回归保护线，不是目标服务器 SLA；
+- persistent segment ID/可信恢复索引仅在新的实测瓶颈出现后再设计，不能替代内容验证。
+
+详细证据见 `validation/AUDIT_RECOVERY_CAPACITY.md`。
 
 ## 已完成且继续保持的门禁
 
