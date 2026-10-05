@@ -18,10 +18,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#ifndef F_OFD_SETLK
-#define F_OFD_SETLK 37
-#endif
-
 /* Audit already serializes every durable record. One operation mutex protects
  * the published session, including its sequence and hash. The control mutex
  * serializes init, shutdown and disposal, but is NOT acquired by writers.
@@ -31,7 +27,6 @@
  */
 typedef struct {
 	logger_t *logger;
-	int writer_lock_fd;
 	int log_dir_fd;
 	logger_file_t reserved_log;
 	logger_file_t checkpoint_owner;
@@ -152,62 +147,12 @@ static int generate_instance_id(char out[33])
 	return 0;
 }
 
-int audit_writer_lock_fd(int fd)
-{
-	struct flock lock = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
-	if (fcntl(fd, F_OFD_SETLK, &lock) == 0)
-		return 0;
-
-	switch (errno) {
-	case EACCES:
-	case EAGAIN:
-		return -EBUSY;
-	case EINVAL:
-	case EOPNOTSUPP:
-	case ENOSYS:
-		return -ENOTSUP;
-	default:
-		return -errno;
-	}
-}
-
-static int acquire_writer_lock(audit_runtime_t *s, const char *dir,
-			       const char *name)
-{
-	char path[AUDIT_PATH_MAX];
-	int n = snprintf(path, sizeof(path), "%s/%s.audit.lock", dir, name);
-	if (n < 0 || (size_t)n >= sizeof(path))
-		return -ENAMETOOLONG;
-	int fd __free(close_fd) =
-		open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
-	if (fd < 0)
-		return -errno;
-	struct stat st;
-	int error = 0;
-	if (fstat(fd, &st))
-		error = errno;
-	else if (!S_ISREG(st.st_mode))
-		error = EINVAL;
-	if (!error) {
-		int rc = audit_writer_lock_fd(fd);
-		if (rc)
-			error = -rc;
-	}
-	if (error)
-		return -error;
-
-	/* Ownership transfer: lexical candidate -> audit_runtime_t.
-	 * dispose_runtime() performs the final close after logger teardown. */
-	s->writer_lock_fd = take_fd(fd);
-	return 0;
-}
-
 static int dispose_runtime(audit_runtime_t *s)
 {
 	if (!s)
 		return 0;
-	/* The session retains writer ownership until all output teardown finishes.
-     * Do not unlink the lock file: other processes coordinate on this inode. */
+	/* The active/state logger_file reservations retain cooperative ownership
+     * until all output teardown finishes. */
 	int rc = logger_destroy_status(s->logger) ? -errno : 0;
 	int other = logger_file_close_status(&s->reserved_log);
 	if (!rc)
@@ -215,8 +160,6 @@ static int dispose_runtime(audit_runtime_t *s)
 	other = logger_file_close_status(&s->checkpoint_owner);
 	if (!rc)
 		rc = other;
-	if (s->writer_lock_fd >= 0 && close(s->writer_lock_fd) < 0 && !rc)
-		rc = -errno;
 	if (s->log_dir_fd >= 0 && close(s->log_dir_fd) < 0 && !rc)
 		rc = -errno;
 	free(s);
@@ -385,7 +328,6 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	if (!s)
 		return -ENOMEM;
 	*out = s; /* caller owns cleanup on every subsequent error */
-	s->writer_lock_fd = -1;
 	s->log_dir_fd = -1;
 	s->reserved_log = LOGGER_FILE_EMPTY;
 	s->checkpoint_owner = LOGGER_FILE_EMPTY;
@@ -431,9 +373,6 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	struct stat bound;
 	if (stat(directory, &bound))
 		return -errno;
-	rc = acquire_writer_lock(s, directory, c->name);
-	if (rc)
-		return rc;
 	n = snprintf(path, sizeof(path), "%s/%s", directory,
 		     s->reserved_log.name);
 	if (n < 0 || (size_t)n >= sizeof(path))
