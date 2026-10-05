@@ -1,68 +1,62 @@
-# Object and subsystem lifecycle
+# 对象与子系统生命周期
 
-Lifecycle defines legal state transitions, publication points and final
-destruction. Ownership and cleanup are subordinate to this model.
+生命周期定义合法的状态转换、发布点以及最终销毁。所有权和清理都必须服从这一模型。
 
-## Logger instance lifecycle
+## Logger 实例生命周期
 
-Conceptually:
+概念流程如下：
 
 ```text
-allocate
+分配
   ->
-initialize mutex/cond/backends
+初始化 mutex/cond/后端
   ->
-initialize queue/workspace if async
+如果是异步实例，初始化队列/工作区
   ->
-start worker if async
+如果是异步实例，启动工作线程
   ->
 RUNNING
   ->
 STOPPING
   ->
-stop + join worker
+停止并等待退出工作线程
   ->
-sync/close/release owned resources
+同步/关闭/释放已拥有资源
   ->
-STOPPED + free object
+STOPPED + 释放对象
 ```
 
-A `logger_t` must not become externally usable until construction is complete.
+`logger_t` 在构造完整结束之前不得对外可用。
 
-## Construct before publish
+## 先构造，后发布
 
-The general rule is:
+通用规则是：
 
 ```text
-allocate privately
-initialize completely
-validate invariants
-publish
+私有分配
+完整初始化
+验证不变量
+发布
 ```
 
-Do not publish a pointer and then continue construction in a way that lets
-another thread observe a partially initialized object.
+不要先发布指针，再继续执行可能让其他线程观察到“部分初始化对象”的构造步骤。
 
-## Ownership handoff
+## 所有权移交
 
-A successful constructor transfers ownership to the caller only at the return
-boundary. Pending deferred cancellation is resolved before the raw pointer is
-handed to the application.
+成功的构造函数只有在返回边界才把所有权转移给调用方。待处理的延迟取消必须在裸指针交给应用之前完成处理。
 
-After return, the host owns the explicit instance and is responsible for
-stopping/joining all borrowers before destroy.
+函数成功返回后，宿主持有显式实例，并负责在销毁之前停止并等待退出所有借用者。
 
-## Destruction consumes ownership
+## 销毁会消费所有权
 
-`logger_destroy_status()` consumes the owner's instance. Failure during final
-I/O does not make the pointer retryable; the object is still destroyed according
-to the documented contract.
+`logger_destroy_status()` 会消费所有者持有的实例。最终 I/O 过程中即使发生失败，
+也不会让该指针变成“可以重试”的对象；实例仍按照文档契约完成销毁。
 
-Do not treat a STOPPED state observation as permission to reuse a freed pointer.
+不得把观察到 STOPPED 状态理解成“已经释放的指针可以重新使用”。
 
-## Global lifecycle
+## 全局生命周期
 
-Global phases are:
+全局阶段为：
 
 ```text
 IDLE
@@ -72,42 +66,37 @@ IDLE
   -> STOPPED
 ```
 
-A generation is consumed for a real initialization attempt. Delayed operations
-are tied to the generation they observed and must not silently attach to a new
-generation.
+一次真实初始化尝试会消费一个代次。被延迟的操作绑定到其进入时观察到的代次，
+不得静默转而附着到新的代次。
 
-The default/global logger is never returned as an owned pointer to the caller;
-global operations only borrow it while holding the lifetime admission/pin.
+默认/全局 Logger 从不以“调用方拥有的指针”形式返回；全局操作只会在持有生命周期准入/固定机制期间借用它。
 
-## Worker lifecycle
+## 工作线程生命周期
 
-The worker is owned by its `logger_t`.
+工作线程归所属 `logger_t` 所有。
 
-It is created only for async instances and stopped cooperatively. Resources that
-the worker may access, including its workspace and queue storage, are released
-only after `pthread_join()`.
+只有异步实例才会创建工作线程，并通过协作方式停止。
+工作线程可能访问的资源——包括工作区和队列存储——只有在 `pthread_join()` 之后才能释放。
 
-## Backend lifecycle
+## 后端生命周期
 
-File/syslog backends are fully initialized before the instance enters RUNNING.
-Reopen/rotation may replace internal descriptors, but ownership transfer must be
-transactional: the old usable state is not released before the replacement is
-ready according to the backend contract.
+文件/Syslog 后端必须在实例进入 RUNNING 前完成初始化。
+重新打开/轮转可能替换内部文件描述符，但所有权转移必须具备事务性：
+在替代对象按照后端契约准备就绪之前，不得释放旧的可用状态。
 
-## Audit lifecycle
+## Audit 生命周期
 
-Audit has its own subsystem state and single-writer ownership. Its state machine,
-checkpoint/recovery and persistent writer lock are not folded into Logger
-lexical cleanup. Audit transition errors and persistent-state writes remain
-explicit.
+Audit 拥有独立的子系统状态和单写入器所有权。
+它的状态机、检查点/恢复以及持久写入器锁不会折叠进 Logger 的词法作用域清理。
+Audit 状态转换错误和持久状态写入必须保持显式处理。
 
-## Illegal lifecycle shortcuts
+## 非法的生命周期捷径
 
-Do not:
+禁止：
 
-- free an object while borrowers may still execute;
-- reuse memory merely because state says STOPPED;
-- detach a worker without an explicit ownership handoff;
-- publish half-initialized objects;
-- reset pthread objects with memset as a substitute for destruction;
-- use cleanup attributes as a substitute for join/refcount/pinning.
+- 在借用者仍可能执行时释放对象；
+- 仅因为状态显示 STOPPED 就复用内存；
+- 在没有显式所有权移交的情况下分离工作线程；
+- 发布半初始化对象；
+- 用 memset 重置 pthread 对象来替代正常销毁；
+- 用 cleanup 属性替代 join/refcount/生命周期固定机制。

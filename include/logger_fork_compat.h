@@ -5,27 +5,22 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* Application helper only. Not part of the default library. Existing users
- * must configure LOGGER_ENABLE_LEGACY_FORK_HELPER=ON (same old semantics).
- * Prefer host-owned process creation and explicit instance lifetimes. */
-/* Controlled fork without exec, for a quiescent Linux application.
- * Before entry: stop/join every application thread that can use the library;
- * destroy ALL explicit logger_t instances and shut down Audit. Only the optional
- * default logger and its worker may remain. Do not create threads/use this
- * library in signal/atfork handlers during this call. Other libraries must also
- * be quiescent and permit single-threaded fork/continue.
+/* 仅供应用使用的辅助接口，不属于默认库。已有使用方必须配置
+ * LOGGER_ENABLE_LEGACY_FORK_HELPER=ON（保留原有语义）。
+ * 优先采用宿主负责进程创建、显式管理实例生命周期的模型。 */
+/* 面向已经静默的 Linux 应用执行不带 exec 的受控 fork。
+ * 进入前：停止/等待退出每一个可能使用本库的应用线程；销毁**全部**显式 logger_t 实例并关闭 Audit。
+ * 只允许可选默认 Logger 及其工作线程仍然存在。本调用期间，不得在线程/信号/atfork 处理器中
+ * 创建线程或使用本库。其他库也必须静默，并允许单线程 fork/继续执行。
  *
- * This function drains/syncs/destroys the default logger BEFORE fork, checks
- * /proc/self/task for a single-threaded boundary, then calls fork(). Both
- * return branches may call logger_init/create, console_init and audit_init.
- * Parent and child must reinitialize explicitly; old instances are not reused.
- * Runtime counters/locks are never reset in the child. Child request context
- * is cleared; parent request context and console settings are retained.
+ * 本函数会在 fork **之前**排空/同步/销毁默认 Logger，检查 /proc/self/task 是否已经达到单线程边界，
+ * 然后调用 fork()。父、子返回分支都可以调用 logger_init/create、console_init 和 audit_init。
+ * 父子必须分别显式重新初始化；旧实例不会复用。子进程中绝不会重置运行时计数器/锁。
+ * 子进程请求上下文会清空；父进程请求上下文和 Console 配置保留。
  *
- * Return: >0 child PID in parent, 0 in child, -1 + errno on failure. EBUSY
- * means another thread/instance remains. /proc must be available. Failure
- * after teardown (including fork failure) leaves the default logger shut down;
- * it is NOT automatically restored. Raw fork keeps the inherited-state guard.
+ * 返回值：父进程中返回 >0 的子 PID，子进程返回 0，失败返回 -1 + errno。
+ * EBUSY 表示仍有其他线程/实例存在；要求 /proc 可用。拆除之后的失败（包括 fork 失败）
+ * 会让默认 Logger 保持关闭，**不会**自动恢复。原始 fork 仍保留继承状态防护。
  */
 LOGGER_API pid_t logger_fork_reinit(void);
 

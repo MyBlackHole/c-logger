@@ -1,84 +1,73 @@
-# LOGGER_1.0 Semantic ABI Contract
+# LOGGER_1.0 语义 ABI 契约
 
-This document accompanies `abi/logger-1.0.symbols` and
-`tests/packaging/v1_abi_contract.c`.
+本文档与 `abi/logger-1.0.symbols` 和
+`tests/packaging/v1_abi_contract.c` 配套使用。
 
-The executable contract is authoritative for the initial Production v1 public
-surface on Linux/ELF x86_64.
+对于 Linux/ELF x86_64 上最初的生产版 v1 公开接口面，以可执行契约为权威依据。
 
-## Frozen compatibility surface
+## 冻结的兼容接口面
 
-For every public type that exists at the 1.0 freeze point, the following are
-stable across compatible 1.x releases:
+对于在 1.0 冻结点已经存在的每一种公开类型，以下内容在兼容的 1.x 版本之间保持稳定：
 
-- aggregate size and alignment;
-- offsets of existing public fields;
-- numeric values of existing enum constants and public numeric macros;
-- public function names and exact C function types;
-- configuration version numbers;
-- existing default configuration values and meanings.
+- 聚合类型的大小与对齐；
+- 已有公开字段的偏移；
+- 已有枚举常量与公开数值宏的数值；
+- 公开函数名称以及精确的 C 函数类型；
+- 配置版本号；
+- 已有默认配置值及其语义。
 
-The initial frozen dynamic symbol surface contains 66 default production
-exports and is listed in `abi/logger-1.0.symbols`.
+最初冻结的动态符号接口面包含 66 个默认生产导出符号，列表见
+`abi/logger-1.0.symbols`。
 
-## Additive 1.x changes
+## 1.x 的增量式变更
 
-A later 1.x release may add a new API only when it does not invalidate the
-existing contract. Examples include:
+后续 1.x 版本只有在不破坏既有契约时，才可以新增 API。例如：
 
-- a new function with a new symbol;
-- a new opaque type;
-- a new standalone metrics/config structure;
-- an appended enum value when no existing numeric value changes.
+- 新增带有新符号的函数；
+- 新增不透明类型；
+- 新增独立的指标/配置结构；
+- 在不改变任何已有数值的前提下追加枚举值。
 
-An additive public symbol requires explicit ABI review and corresponding
-updates to the active allowlist and v1 snapshot policy. It must not silently
-reuse a retired numeric ID.
+新增公开符号必须经过显式 ABI 评审，并同步更新当前允许列表与 v1 快照策略。
+不得静默复用已经废弃的数值 ID。
 
-## Incompatible changes
+## 不兼容变更
 
-The following require a new ABI major rather than an ordinary 1.x update:
+以下变更需要提升 ABI 主版本，而不能作为普通 1.x 更新处理：
 
-- removing or changing the type of an existing public function;
-- changing an existing struct field type, offset, size or alignment;
-- inserting fields into an existing frozen structure in a way that changes the
-  layout seen by existing binaries;
-- renumbering an existing enum or public numeric constant;
-- changing ownership/lifetime or error conventions in a way that makes a
-  previously valid binary caller unsafe;
-- changing the meaning of an existing config version without an explicit
-  compatibility mechanism.
+- 删除已有公开函数，或修改其类型；
+- 修改已有结构字段的类型、偏移、大小或对齐；
+- 向已有冻结结构中插入字段，导致既有二进制观察到的布局发生变化；
+- 重新编号已有枚举或公开数值常量；
+- 修改所有权/生命周期或错误约定，使此前有效的二进制调用方变得不安全；
+- 在没有显式兼容机制的情况下改变已有配置版本的含义。
 
-## Semantic rules not encoded by ELF metadata
+## ELF 元数据无法编码的语义规则
 
-The binary checker cannot express ownership and lifecycle semantics. The
-following remain part of the v1 contract and are documented in the public
-headers/API docs:
+二进制检查器无法表达所有权和生命周期语义。以下规则仍属于 v1 契约的一部分，
+并记录在公开头文件和 API 文档中：
 
-- host-owned explicit `logger_t` is the primary ownership model;
-- callers stop/join borrowers before destroy/unload;
-- status APIs use the documented 0/-1+errno convention except the explicitly
-  retained `logger_log_sync_status()` negative-errno convention;
-- ordinary Logger/Console entry is not signal-safe or hard-real-time;
-- Audit remains process-global single-writer state;
-- local Syslog success is not durable remote acknowledgement;
-- the local SHA-256 Audit chain is integrity evidence, not a trusted external
-  anti-rollback/WORM mechanism.
+- 由宿主持有的显式 `logger_t` 是主要所有权模型；
+- 销毁/卸载前，调用方必须停止并等待退出所有借用者；
+- 状态 API 使用文档规定的 `0/-1+errno` 约定，明确保留
+  `logger_log_sync_status()` 的负 errno 约定除外；
+- 普通 Logger/Console 入口不具备信号安全或硬实时保证；
+- Audit 继续采用进程全局单写入器状态；
+- 本地 Syslog 成功不等于远端持久化确认；
+- 本地 SHA-256 Audit 链属于完整性证据，不是受信任的外部防回滚/WORM 机制。
 
-Any change to these semantics requires the same compatibility review as a
-binary ABI change, even when symbol names and layouts remain identical.
+即使符号名和布局完全没有变化，只要修改上述语义，也必须接受与二进制 ABI 变更相同等级的兼容性评审。
 
-## Enforcement
+## 强制验证
 
-`v1_abi_contract.c` is compiled and run as both C11 and C++11. It freezes:
+`v1_abi_contract.c` 会分别以 C11 和 C++11 编译并运行，用于冻结：
 
-- all current public aggregate layouts;
-- public enum/macro numeric values;
-- all 66 default-production function types;
-- Logger/Audit/Console default configuration values.
+- 当前全部公开聚合类型布局；
+- 公开枚举/宏的数值；
+- 默认生产构建的全部 66 个函数类型；
+- Logger/Audit/Console 默认配置值。
 
-`release-validation` runs this contract for both shared and static release
-profiles. `xmake-parity` also has a dedicated semantic-ABI job.
+`release-validation` 会对共享库与静态库发布配置运行该契约。
+`xmake-parity` 也包含独立的语义 ABI 验证任务。
 
-The separate ELF gate continues to verify SONAME, symbol version, visibility and
-the public symbol allowlist.
+独立的 ELF 门禁继续验证 SONAME、符号版本、可见性以及公开符号允许列表。
