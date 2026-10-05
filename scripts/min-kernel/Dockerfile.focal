@@ -44,7 +44,7 @@ RUN mkdir -p /opt/min-kernel \
          --enable SERIAL_8250_CONSOLE \
     && make olddefconfig \
     && make -s kernelrelease > /opt/min-kernel/kernel-release.txt \
-    && make -j2 bzImage \
+    && make -j"$(nproc)" bzImage \
     && gcc -v > /opt/min-kernel/compiler.txt 2>&1 \
     && cp arch/x86/boot/bzImage /opt/min-kernel/bzImage \
     && rm -rf "/tmp/linux-${KERNEL_VERSION}" /tmp/linux.tar.xz
