@@ -83,7 +83,7 @@ xmake -j4 logger fork_reinit_example
 
 兼容产物仍含原来的 /proc 检查、clean token 和 fork 操作，旧限制不变。
 默认核心产物没有这些函数/字符串；PID/atfork 的防御性拒绝仍保留。
-`logger_prepare_fork/after_fork_*` 旧 marker 暂时保留，不是新的推荐流程。
+默认核心产物不再导出 prepare/after-fork marker；内部 atfork/PID guard 直接拒绝继承运行时，child 需要 exec。
 
 ## ABI/构建
 
