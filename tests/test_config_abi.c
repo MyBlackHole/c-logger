@@ -2,6 +2,7 @@
 #include "console.h"
 #include "logger.h"
 #include <errno.h>
+#include <unistd.h>
 
 static int rejects_invalid(logger_config_t *c)
 {
