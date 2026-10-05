@@ -18,12 +18,11 @@ kernel="$(uname -r)"
 glibc="$(getconf GNU_LIBC_VERSION)"
 echo "MIN_KERNEL_EVIDENCE kernel=$kernel userland=$glibc"
 case "$kernel" in
-  5.4.*) ;;
-  *) fail "expected Linux 5.4.x, got $kernel" ;;
+  3.17.*) ;;
+  *) fail "expected Linux 3.17.x, got $kernel" ;;
 esac
 [ "$glibc" = "glibc 2.31" ] || fail "expected glibc 2.31, got $glibc"
 
-modprobe xfs
 mount -t xfs /dev/vdb /mnt/xfs
 echo "MIN_KERNEL_EVIDENCE xfs=$(findmnt -n -o FSTYPE /mnt/xfs) ext4=$(findmnt -n -o FSTYPE /)"
 
@@ -70,7 +69,7 @@ mkdir -p /tmp/min-kernel-ext4
   /tmp/min-kernel-ext4 \
   /mnt/xfs
 
-echo "MIN_KERNEL_OK kernel=$kernel userland=$glibc"
+echo "MIN_KERNEL_OK kernel=$kernel userland=$glibc ext4_internal_rotation=1 xfs_internal_rotation=0"
 sync
 umount /mnt/xfs
 poweroff -f
