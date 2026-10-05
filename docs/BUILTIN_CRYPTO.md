@@ -52,8 +52,8 @@ python3 scripts/check_production_artifact.py "$artifact"
 
 - SHA-256 = 1 和 NONE = 0 编号不变，原编号 2 永久保留，不复用。
 - 旧 SHA-256 日志和 检查点 v2 无需重写；双方版本可验证和接续。
-- API 显式传原算法编号 2：初始化/with-verifier 拒绝 EPROTONOSUPPORT，不计算其他算法。
-- 检查点 v2 alg=2：load 按原严格 解析器 约定返回 EBADMSG、输出不变；audit_init
+- API 显式传原算法编号 2：初始化/带验证器 拒绝 EPROTONOSUPPORT，不计算其他算法。
+- 检查点 v2 alg=2：加载 按原严格 解析器 约定返回 EBADMSG、输出不变；audit_init
   停止，已有日志/state 字节不变。失败的 init 可能创建正常协调锁文件，但不发布新实例。
 - 没有 检查点 的 SM3 记录也不作为 SHA-256 继续写；默认 SHA-256 全链验证拒绝。
 - 即使把旧 state 的算法 ID 改成 1 并重算 CRC，真实记录摘要仍会在恢复时验证失败。

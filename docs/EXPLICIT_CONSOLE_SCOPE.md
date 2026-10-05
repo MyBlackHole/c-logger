@@ -6,7 +6,7 @@
 ## 私有 scope 的目的和限制
 
 `logger_scope.c/.h` 使用每线程标记与取消状态保存，不使用全局执行锁或实例引用计数。
-构造函数、日志格式化/提交、同步回退、flush、重新打开、Syslog metrics、最终处置和 Console I/O
+构造函数、日志格式化/提交、同步回退、刷新、重新打开、Syslog metrics、最终处置和 Console I/O
 在接触资源前禁用取消；资源清理、va_end、解锁后清除标记，再恢复原取消状态。
 有效的延迟取消请求会保留，取消不回滚已输出的记录、配置更新或已经完成的销毁。
 
@@ -17,7 +17,7 @@ Logger 工作线程 由 running/notify/join 协作关闭；宿主不得取消私
 所有普通 API 都不是信号安全接口，也不承诺异步取消从任意指令发生时的通用安全。
 调用者不得在 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 状态下把 Logger/Console
 API 当作 AC-Safe 函数使用；POSIX 并不要求这些普通库函数具备该性质。若宿主必须保留
-ASYNCHRONOUS type，应先把 cancellation state 设为 DISABLE，再调用 Logger，并由宿主在自己的
+ASYNCHRONOUS type，应先把 取消 state 设为 DISABLE，再调用 Logger，并由宿主在自己的
 安全边界决定何时恢复 ENABLE。库必须保持这种 调用方-disabled 状态和原 type，不得擅自启用。
 不得从 printf 扩展、FILE 回调/拦截函数中重新启用取消、pthread_exit、longjmp 或抛出穿越 C 边界的异常。
 
@@ -68,7 +68,7 @@ NULL destroy 不注册新运行时。ECHILD / EDEADLK 是处置前拒绝；正�
 它不阻止正常先后使用 A/B，不阻止不同线程使用不同或同一个活跃实例，也不妨碍 SDK → 宿主日志
 适配器 → Logger 这一普通顶层调用；SDK 回调尚未执行在 Logger 内部。
 
-工作线程 也设置本线程标记，避免 回调 → flush 等待自身完成、回调 → destroy join 自身。
+工作线程 也设置本线程标记，避免 回调 → 刷新 等待自身完成、回调 → destroy join 自身。
 Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Logger 的回调反向取得生命周期锁。
 这不是通用死锁检测：跨线程 回调 等待环、宿主持有 flockfile 再逆序调用 Console 等不受保证。
 纯字符串 redaction 辅助接口 不是资源 scope，不带隐式递归检测。
@@ -81,7 +81,7 @@ Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Lo
 - console_print 仍是 标准输出、无标签、不自动追加换行；诊断仍到 标准错误。
 - 所有 fmt=NULL 返回 EINVAL，包括被级别过滤的消息。
 - 非法配置/枚举不改变已有配置，void 设置接口/init 通过 errno 报告 EINVAL。
-- stdio 输出失败后即使后续 fflush 也失败，保留第一次错误。
+- stdio 输出失败后即使后续 f刷新 也失败，保留第一次错误。
 - console_debug_源信息 消息 3072 字节（含 NUL）、合成字段 4096 字节（含 NUL）；超限返回
   EOVERFLOW，在写出诊断前拒绝，而不静默截断。
 - TTY 自动探测不覆盖供 printf `%m` 使用的 errno；成功操作恢复入口 errno。
@@ -92,6 +92,6 @@ TLS 上下文 set/get 的自赋值与 请求/会话 等交换使用临时快照�
 
 ## 验证与生产范围
 
-回归通过链接器 --wrap 安排真实资源持有窗口，另用无 wrapper 的 fopencookie 宿主回调测试实际
-共享产物。wrapper 不编译进生产库，未增加环境控制故障点或进程管理功能。
+回归通过链接器 --wrap 安排真实资源持有窗口，另用无 包装器 的 fopencookie 宿主回调测试实际
+共享产物。包装器 不编译进生产库，未增加环境控制故障点或进程管理功能。
 详见 validation/EXPLICIT_CONSOLE_RESULTS.md；新增测试通过不代表已验收所有部署平台和存储掉电。

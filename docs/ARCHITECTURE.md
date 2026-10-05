@@ -13,11 +13,11 @@ c-logger 是面向 Linux/ELF 的 C 日志库，主要嵌入宿主应用或第三
 当前定位：
 
 - 公开 API 是 纯 C ABI；
-- C11 语言基线 + GNU C extensions；
+- C11 语言基线 + GNU C 扩展；
 - 宿主显式拥有 `logger_t`；
 - SDK 默认 借用 Logger 或使用宿主 回调；
-- 支持 sync / async 普通日志；
-- 支持 stderr、普通文件、本地 datagram Syslog；
+- 支持 同步 / 异步 普通日志；
+- 支持 stderr、普通文件、本地 数据报 Syslog；
 - 提供独立 Console；
 - 提供独立 Audit 子系统；
 - 有界内存；
@@ -35,18 +35,18 @@ c-logger 是面向 Linux/ELF 的 C 日志库，主要嵌入宿主应用或第三
 3. **有界资源**：队列、溢出区、工作区 有明确上界；
 4. **故障可见性**：不能静默隐藏 溢出、I/O、持久性 或平台能力失败；
 5. **确定性生命周期**：工作线程 必须 协作式停止并等待退出；
-6. **正确并发**：lock、atomic、生命周期固定、join 各司其职；
+6. **正确并发**：锁、原子变量、生命周期固定、join 各司其职；
 7. **调用方生命周期隔离**：异步入队 后不再依赖 SDK 源指针；
-8. **有证据支撑的性能**：性能修改必须通过 benchmark 和 sanitizer/TSan 验证。
+8. **有证据支撑的性能**：性能修改必须通过 基准测试 和 Sanitizer/TSan 验证。
 
 ## 3. 非目标
 
 当前不承诺：
 
-- NanoLog 类极限 binary/deferred logging latency；
-- 任意多线程 raw fork 后继续使用继承 运行时；
+- NanoLog 类极限 二进制/延迟日志时延；
+- 任意多线程 原始 fork 后继续使用继承 运行时；
 - 无限 队列 或“永不丢日志”；
-- remote Syslog durable acknowledgement/replay；
+- 远端 Syslog 持久确认/重放；
 - 多 消费者 并发写同一普通文件；
 - 唤醒信号-safe 普通日志；
 - 通用 async-cancel-safe；
@@ -140,13 +140,13 @@ logger_destroy_status()
 - 生命周期 rwlock；
 - hidden `g_logger`。
 
-Global caller 只能 生命周期-pinned 借用，不能取得 owning 指针。
+Global caller 只能 生命周期-固定ned 借用，不能取得 owning 指针。
 
 ### Console
 
 独立终端工具：
 
-- process-static atomic config；
+- process-static atomic 配置；
 - 独立 output mutex；
 - 不使用 Logger 队列/后端；
 - 不作为 SDK 隐式输出通道。
@@ -309,13 +309,13 @@ printf args -> vsnprintf -> queue text
 
 当前 队列：
 
-- bounded shared MPSC；
-- per-slot sequence generation；
+- 有界 shared MPSC；
+- per-槽位 sequence generation；
 - release/acquire 发布；
 - compact metadata/source/context；
 - text <= 512B inline；
-- text > 512B 使用预分配 溢出区 block；
-- 溢出区 所有权 使用 atomic bitmap；
+- text > 512B 使用预分配 溢出区 块；
+- 溢出区 所有权 使用 原子位图；
 - no per-record malloc/free；
 - 工作线程 batch 最大 256。
 
@@ -335,26 +335,26 @@ consumer
   -> advance dequeue_pos
 ```
 
-`slot.seq` 承担 payload 发布；
-`enqueue_pos/dequeue_pos` 主要承担 reservation/accounting。
+`slot.seq` 承担 载荷 发布；
+`enqueue_pos/dequeue_pos` 主要承担 预留/accounting。
 
 ### Source 生命周期
 
-只有最终 detail/config 真正会输出的 metadata 才在 生产者 采集并进入 队列：
+只有最终 detail/配置 真正会输出的 metadata 才在 生产者 采集并进入 队列：
 
 - `NORMAL+`：module；
 - `VERBOSE+`：按 `include_pid/include_tid` 采集 pid/tid；
 - `DEBUG`：context；
 - `DEBUG + include_source`：file/function/line。
 
-需要进入 async 队列 的 module/source 仍做 bounded snapshot，因此 SDK/caller 返回甚至
+需要进入 async 队列 的 module/source 仍做 有界 snapshot，因此 SDK/调用方 返回甚至
 DSO 合法卸载后，已经入队且未来会被格式化的字段不再依赖原 源指针。
 
 ### Spill
 
-默认最多 1024 blocks。
+默认最多 1024 块s。
 
-溢出区 是 long-message burst capacity，不是 durable 队列，也不是持续 overload 的解决方案。
+溢出区 是 long-message burst capacity，不是 durable 队列，也不是持续 over加载 的解决方案。
 
 ## 11. Backpressure
 
@@ -371,7 +371,7 @@ unavailable
          -> sync_fallbacks++
 ```
 
-默认 ERROR/FATAL 使用 SYNC fallback，其余级别默认 DROP。
+默认 ERROR/FATAL 使用 SYNC 回退，其余级别默认 DROP。
 
 buffer sizing 应理解为：
 
@@ -477,12 +477,12 @@ rotation/reopen state
 
 ### Syslog
 
-当前是 local UNIX datagram：
+当前是 local UNIX 数据报：
 
 - nonb锁机制；
-- bounded send attempts；
-- monotonic reconnect cooldown；
-- future-record-triggered reconnect；
+- 有界 send attempts；
+- monotonic 重连 cooldown；
+- future-record-triggered 重连；
 - no replay 队列；
 - backpressure 作为 failed record 可见。
 
@@ -500,7 +500,7 @@ SHARED
 REFCOUNTED
 ```
 
-当前 production 没有 generic REFCOUNTED object。
+当前 生产 没有 generic REFCOUNTED object。
 
 ### Logger lifecycle
 
@@ -535,9 +535,9 @@ stop admission/running
 
 ### Global 生命周期
 
-Global reader 持 生命周期 rwlock pin 时 借用 hidden `g_logger`。
+Global reader 持 生命周期 rwlock 固定 时 借用 hidden `g_logger`。
 
-该 pin 不是 refcount。
+该 固定 不是 refcount。
 
 详细规则见 所有权/lifecycle 专项文档。
 
@@ -597,7 +597,7 @@ running         worker stop state
 
 ## 17. Error / Durability
 
-内部 helper 通常：
+内部 辅助接口 通常：
 
 ```text
 0 / -errno
@@ -611,7 +611,7 @@ POSIX-style public status API 通常：
 
 核心原则：
 
-- preserve first meaningful error；
+- p预留 first meaningful error；
 - 后端 first I/O error sticky；
 - partial write 不静默 success；
 - error-bearing finalization 保持显式；
@@ -637,11 +637,11 @@ Logger 不拥有宿主 process model。
 - 不扫描宿主线程决定 fork safety；
 - raw multi-threaded fork 子进程 在触碰继承锁前 ECHILD；
 - 推荐 fork-before-运行时-use 或 fork+exec；
-- legacy controlled helper 仅 opt-in。
+- legacy controlled 辅助接口 仅 opt-in。
 
 普通 Logger/Console resource path：
 
-- deferred cancellation 在关键区间暂时禁用；
+- deferred 取消 在关键区间暂时禁用；
 - cleanup/lock release 后恢复 caller state；
 - same-thread resource reentry 在拿锁前拒绝；
 - 不宣称通用 async-cancel-safe；
@@ -681,13 +681,13 @@ Audit security/持久性 优先级高于普通日志 throughput。
 
 当前 async compatibility path 的性能原则：
 
-- bounded preallocation；
-- no per-record heap allocation；
+- 有界 preallocation；
+- no 逐记录堆分配；
 - compact 队列；
 - short text inline；
 - batch format/writev；
-- 生产者/工作线程 concurrency；
-- benchmark-backed tuning。
+- 生产者/工作线程 并发；
+- 基准测试-backed tuning。
 
 已完成的 队列 优化结果见：
 
@@ -699,7 +699,7 @@ Audit security/持久性 优先级高于普通日志 throughput。
 - shared MPSC；
 - single 工作线程；
 - 512B inline；
-- 1024 溢出区 blocks；
+- 1024 溢出区 块s；
 - atomic 溢出区 bitmap；
 - BATCH_MAX=256；
 - eager `vsnprintf`；
@@ -734,7 +734,7 @@ Audit security/持久性 优先级高于普通日志 throughput。
 - 锁机制；
 - batching；
 - backpressure；
-- retry/reconnect；
+- retry/重连；
 - error metrics；
 - 持久性；
 - fork/dlclose boundary。
@@ -743,12 +743,12 @@ Audit security/持久性 优先级高于普通日志 throughput。
 
 SPSC shard/per-thread 队列 必须重新证明：
 
-- bounded total memory；
+- 有界 total memory；
 - TLS 生命周期/reclaim；
 - logger 销毁；
 - fork/dlclose；
 - fairness/order；
-- 刷新 completion aggregation；
+- 刷新 完成 aggregation；
 - source 所有权；
 - backpressure。
 
@@ -787,9 +787,9 @@ optional binary structured fast API
 
 - 保留 架构不变量；
 - 更新专项文档；
-- 增加 correctness regression；
+- 增加 correctness 回归；
 - 通过 Release/Debug/ASan/UBSan/TSan；
-- 性能使用同 runner before/after benchmark。
+- 性能使用同 runner before/after 基准测试。
 
 ## 23. Documentation Authority
 

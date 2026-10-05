@@ -12,12 +12,12 @@ Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` �
 export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 ```
 
-默认测试构建使用 Linux/ELF、GNU C11、`-Wall -Wextra -Wpedantic -Werror`。production、
-fault/crash 和 白盒回归 分离：
+默认测试构建使用 Linux/ELF、GNU C11、`-Wall -Wextra -Wpedantic -Werror`。生产、
+故障/崩溃 和 白盒回归 分离：
 
 - `logger`：真实 生产产物，故障注入 关闭；
 - `logger_test_support`：仅测试使用，包含 `src/logger_fault.c`；
-- `logger_regression_support`：同源 white-box archive，用于 GNU ld `--wrap`
+- `logger_regression_support`：同源 白盒归档，用于 GNU ld `--wrap`
   与内部 确定性回归。
 
 后两者永不安装，也不进入 XPack。
@@ -26,7 +26,7 @@ fault/crash 和 白盒回归 分离：
 
 ### Fast
 
-仅运行直接链接 production `logger` 的 核心测试：
+仅运行直接链接 生产 `logger` 的 核心测试：
 
 ```sh
 scripts/check.sh fast
@@ -45,7 +45,7 @@ xmake test -j4
 
 ### 生产构建
 
-运行当前 静态库/完整测试面，包括 core、private 故障/崩溃支持 与全部 regression：
+运行当前 静态库/完整测试面，包括 core、private 故障/崩溃支持 与全部 回归：
 
 ```sh
 scripts/check.sh production
@@ -128,7 +128,7 @@ xmake f -m debug -o build-tsan \
 xmake test -j1
 ```
 
-Sanitizer 后仍对生成的 production `liblogger.a` 运行
+Sanitizer 后仍对生成的 生产 `liblogger.a` 运行
 `scripts/check_production_artifact.py`，确保 test hook 没有进入生产产物。
 
 ## 共享库集成
@@ -152,9 +152,9 @@ xmake f -m release -o build-shared-tests \
 xmake test -j1
 ```
 
-white-box `--wrap` regression 即使在 共享库配置 中也链接 同源 static
-`logger_regression_support`；只有需要验证真实 DSO 观察面的 case 才直接链接 production shared
-library。不能把 static wrapper test 误称为 DSO 内部拦截。
+white-box `--wrap` 回归 即使在 共享库配置 中也链接 同源 static
+`logger_regression_support`；只有需要验证真实 DSO 观察面的 case 才直接链接 生产 shared
+library。不能把 static 包装器 test 误称为 DSO 内部拦截。
 
 ## QEMU 断电
 
@@ -187,13 +187,13 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 发布验证 对 共享库/静态库 两种 XPack 都执行：
 
 1. 完整 Xmake suite；
-2. 生产产物 isolation；
-3. shared ELF ABI / SONAME / 符号版本 检查；
+2. 生产产物 隔离；
+3. 共享 ELF ABI / SONAME / 符号版本 检查；
 4. XPack TGZ + SHA-256；
 5. 解包后的 relocation；
 6. 独立 C/C++11 CMake 消费方；
 7. PIC SDK 模块；
-8. pkg-config 消费方；
+8. pkg-配置 消费方；
 9. 精确版本/组件s 失败关闭；
 10. frozen 旧头文件 与 public layout/default 兼容。
 
@@ -203,19 +203,19 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 ## 工程 gate
 
 测试通过不是唯一准入条件。较大的 queue、工作线程、backend、lifecycle、所有者ship、locking 或
-## Observability regression
+## Observability 回归
 
-统一 diagnostics 通过现有真实故障场景验证，而不是单独伪造计数：
+统一 诊断 通过现有真实故障场景验证，而不是单独伪造计数：
 
 - queue full：检查 current depth/capacity、完成积压 与 saturation；
-- DROP / SYNC fallback：检查独立 lifetime observation flag；
+- DROP / SYNC 回退：检查独立 lifetime observation flag；
 - long-message spill exhaustion：检查 in-use/capacity/exhaustion；
 - backend write/fsync failure：检查 failed_records 与 sticky first_error；
-- File sink：检查 write/writev 系统调用、部分字节、data/dir fsync、轮转、重新打开 分类计数；
-- flush 后：queue depth、spill in-use、完成积压 回到 0；
-- global generation：diagnostics 与 metrics 一样受 pin/stale-generation gate 保护；
+- File sink：检查 write/writev 系统调用、部分字节、数据/目录 fsync、轮转、重新打开 分类计数；
+- 刷新 后：queue depth、spill in-use、完成积压 回到 0；
+- global generation：诊断 与 metrics 一样受 固定/stale-generation gate 保护；
 - explicit reentry：同线程嵌套读取被 EDEADLK 拒绝并清零输出；
-- installed 消费方：使用安装后的 公开头文件/library 实际调用 diagnostics。
+- installed 消费方：使用安装后的 公开头文件/library 实际调用 诊断。
 
 public API 修改还必须遵守：
 
@@ -235,6 +235,6 @@ public API 修改还必须遵守：
 ## Cancellation 边界
 
 调用方处于 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 时进入 Logger/Console
-不在支持契约内。支持边界是 延迟取消，或调用前已禁用 cancellation。
-restore-policy regression 会验证原先 disabled 的 调用方 仍保持 disabled 且 cancellation type
-不被破坏；构造函数 契约 会拒绝 enabled asynchronous cancellation。
+不在支持契约内。支持边界是 延迟取消，或调用前已禁用 取消。
+restore-policy 回归 会验证原先 disabled 的 调用方 仍保持 disabled 且 取消 type
+不被破坏；构造函数 契约 会拒绝 enabled asynchronous 取消。

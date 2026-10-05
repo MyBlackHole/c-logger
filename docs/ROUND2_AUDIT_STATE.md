@@ -35,7 +35,7 @@ STOPPING 先关闭准入，再等待操作，等待中的写入进锁后再次�
 
 | 状态 | 新记录 | audit_flush | shutdown_status |
 |---|---|---|---|
-| RUNNING | 同步 write + file/directory 同步，再提交检查点 | 同步并检查错误 | 正常 STOP、检查点、清理 |
+| RUNNING | 同步 写入 + 文件/目录同步，再提交检查点 | 同步并检查错误 | 正常 STOP、检查点、清理 |
 | CHECKPOINT_FAILED | 拒绝，返回保存的检查点错误 | 只重试已确认记录的检查点；成功后恢复 RUNNING | 尝试修检查点，成功再 STOP；仍失败则不追加 STOP、清理并报错 |
 | IO_FAILED | 拒绝，返回保存的 I/O 错误 | 报错，不清除故障或自动恢复写入 | 不追加 STOP，清理并报原错误 |
 
@@ -61,9 +61,9 @@ int audit_get_status(audit_status_t *out);
 int audit_shutdown_status(void);  /* 0 / -1 + errno */
 ```
 
-`audit_status_t` 提供状态、error_code、checkpoint_dirty、committed_seq、checkpoint_seq、instance_id。
-committed_seq 是本实例已确认严格日志提交的序号，不等于检查点已追上，也不是对摘要实现正确性的认证。
-STARTING/STOPPING/FORKED 快照不暴露 candidate/session 的部分字段。
+`audit_status_t` 提供状态、错误码、检查点脏状态、已提交序号、检查点序号、实例 ID。
+已提交序号 是本实例已确认严格日志提交的序号，不等于检查点已追上，也不是对摘要实现正确性的认证。
+STARTING/STOPPING/FORKED 快照不暴露 候选实例/会话 的部分字段。
 IDLE 保留最近一次关闭/初始化失败快照；重复关闭为幂等空操作，不抹除这一诊断记录。
 
 状态查询是瞬时诊断，不是某条并发调用的提交回执。不能因为随后看到了 RUNNING，就把此前返回错误的业务事件盲目重放。
@@ -93,7 +93,7 @@ ATTEMPT/RESULT 不是业务事务的原子提交；应避免跨关闭保留未�
 ## 检查点持久化修复
 
 `audit_checkpoint_persist()` 使用唯一 `mkostemp(..., O_CLOEXEC)` 的 0600 临时文件。
-流程仍为 write-all -> fsync(tmp) -> close -> rename -> fsync(父进程)，格式仍为检查点 v2，没有声明 v1 自动迁移。
+流程仍为 完整写入 -> fsync(tmp) -> close -> rename -> fsync(父进程)，格式仍为检查点 v2，没有声明 v1 自动迁移。
 短写继续；EINTR 重试；零字节写按 EIO 失败，不能无限循环。
 fsync/close/rename/目录 fsync 的错误都向上传播，错误路径必然执行所拥有 fd 的关闭，不再用 `fsync(fd) || close(fd)` 短路。
 Linux close 失败不按同一 fd 号重试；保存最初错误，清理不覆盖它。

@@ -29,10 +29,10 @@ c-logger 的源码注释、内部设计说明和工程文档以**中文为主**�
 1. **所有权**：谁拥有资源、何时转移、最终谁释放；
 2. **生命周期**：对象何时开始可见、何时允许销毁；
 3. **锁机制**：哪把锁保护什么，固定 lock order 是什么；
-4. **concurrency**：发布/消费、atomic memory order、join/pin/refcount 关系；
-5. **error semantics**：哪些错误必须向上返回，哪些 cleanup error 可以忽略；
+4. **并发**：发布/消费、原子内存序、join/固定/refcount 关系；
+5. **error semantics**：哪些错误必须向上返回，哪些 清理错误 可以忽略；
 6. **持久性**：fsync/rename/dir fsync 的顺序为什么不能变化；
-7. **平台约束**：Linux/ELF、GNU C 扩展、fork/cancellation 等边界。
+7. **平台约束**：Linux/ELF、GNU C 扩展、fork/取消 等边界。
 
 不要写只重复代码表面的注释，例如：
 
@@ -65,11 +65,11 @@ logger_worker_workspace_t *worker_workspace;
 /* q.wait_mu 只负责 sleep/wakeup，不负责 slot payload publication。 */
 ```
 
-涉及 atomic 时，说明它承担的是 reservation、发布、completion 还是
+涉及 atomic 时，说明它承担的是 预留、发布、完成 还是
 生命周期；禁止用“原子所以线程安全”这种模糊表述。
 
 使用 `guard()/ACQUIRE()` 前必须先确认 lock hierarchy。单锁、lexical scope、
-unlock error 无业务语义的路径优先 guard；多锁、cancellation-aware、跨 scope
+unlock error 无业务语义的路径优先 guard；多锁、取消-aware、跨 scope
 所有权 或错误承载型 unlock 保持显式。完整规则见 `LOCKING.md` 与
 `LOCK_MATRIX.md`。
 

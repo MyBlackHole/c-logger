@@ -5,14 +5,14 @@
 1. 保护哪些字段或状态；
 2. 谁可以获取；
 3. 与其他锁的固定顺序；
-4. 是否允许等待、I/O、callback 或 reentry；
+4. 是否允许等待、I/O、回调 或 重入；
 5. 是否适合用 `guard()/ACQUIRE()` 自动释放。
 
 完整清单见 `LOCK_MATRIX.md`。
 
-## Global lock hierarchy
+## 全局锁层级
 
-global logger 的固定顺序是：
+全局 Logger 的固定顺序是：
 
 ```text
 g_control_mu
@@ -22,18 +22,18 @@ g_lifetime_lock
 logger instance locks
 ```
 
-禁止在持有 global lifetime read pin 或 instance lock 时反向获取
+禁止在持有 global 生命周期读侧固定 或 实例锁 时反向获取
 `g_control_mu`。
 
 职责：
 
-- `g_control_mu`：串行化 init/shutdown 等 lifecycle controller；
+- `g_control_mu`：串行化 init/shutdown 等 生命周期控制器；
 - `g_lifetime_lock`：在 read-side borrower 使用 `g_logger` 时阻止 publish/destroy；
-- instance locks：保护单个 `logger_t` 内部状态。
+- 实例锁s：保护单个 `logger_t` 内部状态。
 
 generation ticket 只是 admission/version 机制，不能替代 lifetime lock。
 
-## Logger instance locks
+## Logger 实例锁s
 
 ### emit_mu
 
@@ -41,9 +41,9 @@ generation ticket 只是 admission/version 机制，不能替代 lifetime lock�
 
 主要保护：
 
-- `file_backend` 的 active fd / rotation / reopen 状态；
-- `syslog_backend` 的 connection 与 metrics；
-- backend write/sync/reopen 的顺序。
+- `file_backend` 的 活动文件 fd / rotation / reopen 状态；
+- `syslog_backend` 的 connection 与 指标；
+- backend 写入/同步/重新打开 的顺序。
 
 禁止在持有 `emit_mu` 时等待 worker progress。
 
@@ -57,12 +57,12 @@ generation ticket 只是 admission/version 机制，不能替代 lifetime lock�
 atomic completion counter 可按自己的 memory order 独立读取，但不能把
 `completed_pos` 当作 atomic predicate 的替代品。
 
-### spill bitmap
+### 溢出区 bitmap
 
-long-message spill block 不再由 mutex freelist 管理。`spill_used[]` 是 lock-free atomic
+long-message 溢出区 块 不再由 mutex 空闲链表 管理。`spill_used[]` 是 lock-free atomic
 ownership bitmap，不属于 mutex lock hierarchy。
 
-它只表示 block 是否被独占，不保护 queue payload publication；正文可见性仍由
+它只表示 块 是否被独占，不保护 queue payload publication；正文可见性仍由
 `slot.seq` release/acquire 建立。
 
 ### q.wait_mu
@@ -71,11 +71,11 @@ ownership bitmap，不属于 mutex lock hierarchy。
 
 它不保护 MPSC payload publication。producer 通过 slot sequence atomic publish。
 worker 在持锁状态 publish `consumer_waiting=1` 并重新检查 queue；普通 producer 只有
-观察到 waiting 才进入这把锁，因此 backlog/active-consumer 场景不再每条日志 lock/signal。
+观察到 waiting 才进入这把锁，因此 积压/活动文件-consumer 场景不再每条日志 lock/signal。
 
 shutdown 的 force wake 始终获取 `q.wait_mu` 并 signal，不依赖 waiting hint。
 
-### instance lock 之间的关系
+### 实例锁 之间的关系
 
 当前 `emit_mu`、`progress_mu`、`q.wait_mu` **不允许相互嵌套**。
 
@@ -100,7 +100,7 @@ sync backend
 `g_config` 使用 atomic snapshot，不依赖 `g_console_mu`。
 
 Console lock 与 Logger/Audit 锁没有允许的嵌套关系；不要在持有该锁时调用可能重入
-Logger/Console 的外部 callback。
+Logger/Console 的外部 回调。
 
 ## Audit locking
 
@@ -116,24 +116,24 @@ Audit private logger instance locks
 
 - Audit `g_control_mu`：init/shutdown/controller；
 - Audit `g_operation_mu`：已 publish runtime、sequence/hash、transaction 操作；
-- 持有 operation lock 的 Audit 路径可能调用 private logger，因此 instance lock 位于其后。
+- 持有 操作 lock 的 Audit 路径可能调用 private logger，因此 实例锁 位于其后。
 
 Audit 还存在 persistent writer-lock fd。它是跨进程 ownership/exclusivity 机制，
 **不是 pthread lock**，不能代替进程内 mutex。
 
-Audit lock 路径还包含 cancellation policy，因此本轮不机械迁移到 guard。
+Audit lock 路径还包含 cancellation policy，因此本轮不机械迁移到 守卫。
 
-## guard 使用规则
+## 守卫 使用规则
 
-### 适合 guard
+### 适合 守卫
 
 满足以下条件时优先使用：
 
 - 单锁；
-- lock lifetime 与 lexical scope 一致；
+- lock lifetime 与 词法作用域 一致；
 - unlock error 原本就不承担业务返回语义；
 - 不需要跨 scope transfer 锁 ownership；
-- 不涉及复杂 cancellation cleanup。
+- 不涉及复杂 cancellation 清理。
 
 示例：
 
@@ -155,22 +155,22 @@ if (rc)
     return rc;
 ```
 
-不能为了使用 guard 而吞掉 pthread 错误。
+不能为了使用 守卫 而吞掉 pthread 错误。
 
-### 不适合 guard
+### 不适合 守卫
 
 以下情况保持显式锁管理，直到整个协议一起重构：
 
 - global 多锁 hierarchy；
-- Audit control/operation 多锁；
+- Audit control/操作 多锁；
 - unlock error 会参与返回值；
-- 锁 ownership 需要跨 lexical scope；
+- 锁 ownership 需要跨 词法作用域；
 - pthread cancellation handler 需要显式参与；
 - lock/unlock 中间存在特殊 publish/rollback 阶段。
 
 ## Lock scope
 
-优先使用最小 lexical scope：
+优先使用最小 词法作用域：
 
 ```c
 {
@@ -180,7 +180,7 @@ if (rc)
 /* 独立慢路径放到锁外 */
 ```
 
-不要因为 guard 写起来方便，就把格式化、无关 I/O、等待或 callback 扩大到锁内。
+不要因为 守卫 写起来方便，就把格式化、无关 I/O、等待或 回调 扩大到锁内。
 
 ## locking 与 lifetime 的区别
 
@@ -200,9 +200,9 @@ unlock 后能否继续使用必须由 lifetime protocol 单独证明。
 2. caller 是否已经持有其他锁；
 3. 固定 hierarchy；
 4. 被调函数会不会再拿锁；
-5. callback 是否可能重入；
+5. 回调 是否可能重入；
 6. 临界区是否 sleep 或执行无界 I/O；
-7. cleanup/destructor 执行时是否仍依赖该锁；
-8. 是否真的适合 lexical guard。
+7. 清理/destructor 执行时是否仍依赖该锁；
+8. 是否真的适合 lexical 守卫。
 
 复杂多锁函数在完整 lock graph 没有明确之前保持显式。

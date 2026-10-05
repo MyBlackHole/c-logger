@@ -42,8 +42,8 @@ advance dequeue position
 
 ## 队列长消息溢出区协议
 
-队列 slot 可内嵌最多 512B 正文。更长消息先从预分配 溢出区 pool
-取得一个独占 block，再 reserve/发布 队列 slot。
+队列 槽位 可内嵌最多 512B 正文。更长消息先从预分配 溢出区 池
+取得一个独占 块，再 预留/发布 队列 槽位。
 
 发布 顺序为：
 
@@ -59,18 +59,18 @@ reserve queue position
 release-store slot.seq
 ```
 
-消费者 通过 acquire-load `slot.seq` 后读取 compact record 与 溢出区 text，
-复制到 工作线程 batch，然后在把 slot 标记为 reusable **之前**归还 溢出区 block。
+消费者 通过 获取语义加载 `slot.seq` 后读取 紧凑记录 与 溢出区 text，
+复制到 工作线程 batch，然后在把 槽位 标记为 reusable **之前**归还 溢出区 块。
 
-溢出区 block 所有权 由固定 atomic bitmap 管理：生产者 通过 0->1 CAS claim，
+溢出区 块 所有权 由固定 原子位图 管理：生产者 通过 0->1 CAS 获取，
 消费者 完成复制后通过 1->0 atomic clear release。这里不再存在共享 溢出区 mutex。
 
-溢出区 pool 暂时耗尽不允许截断 long message。队列 push 返回 unavailable，
+溢出区 池 暂时耗尽不允许截断 长消息。队列 push 返回 不可用，
 上层继续使用原有 DROP / SYNC 溢出 policy。
 
 ## 队列自节奏唤醒协议
 
-MPSC payload 发布 与 工作线程 sleep/wakeup 是两个独立协议。
+MPSC 载荷 发布 与 工作线程 休眠/唤醒 是两个独立协议。
 
 工作线程 只有在 drain 发现 队列 为空后才进入 wait protocol：
 
@@ -111,7 +111,7 @@ consumer_waiting == 1
 
 stop/shutdown 不依赖这个 hint，而是设置 `running=false` 后执行独立 强制唤醒。
 
-private diagnostics：
+private 诊断：
 
 - `wait_count`：实际进入 cond_wait 的次数；
 - `producer_wake_signals`：生产者 真正发送的 唤醒信号 次数；
@@ -126,7 +126,7 @@ private diagnostics：
 The 工作线程 may re移交 a record from the 队列 and still be formatting or writing
 it. Therefore:
 
-- `dequeue_pos` means slot consumption;
+- `dequeue_pos` means 槽位 consumption;
 - `async_completed` means 后端 attempt completed;
 - `completed_pos` is the condition-variable watermark used by 刷新/wait.
 
@@ -202,7 +202,7 @@ object it names or counts.
 
 ## Reference counting
 
-There is currently no generic per-object refcount in production code.
+There is currently no generic per-object refcount in 生产 code.
 
 In particular:
 
@@ -213,13 +213,13 @@ In particular:
   counted reference;
 - 工作线程 and 队列 生命周期 is owned by `logger_t` and ends through join.
 
-If independent 所有者s later need to retain an object beyond a lock/pin/所有者
+If independent 所有者s later need to retain an object beyond a lock/固定/所有者
 scope, follow `REFCOUNTING.md`; do not build a 生命周期 protocol directly from
 raw atomic increment/decrement operations.
 
-## Cancellation and concurrency
+## Cancellation and 并发
 
-Normal Logger/Console calls temporarily disable deferred cancellation around
+Normal Logger/Console calls temporarily disable deferred 取消 around
 resource-critical sections and restore the caller state after cleanup.
 
 This does not make arbitrary library code async-cancel-safe. Enabled
@@ -230,4 +230,4 @@ supported contract unless explicitly documented otherwise.
 
 Raw multi-threaded fork inherits synchronization state. The 子进程 guard rejects
 use before touching inherited locks. Scope cleanup and atomics do not make
-inherited pthread synchronization objects safe after raw fork.
+inherited pthread synchronization objects safe after 原始 fork.

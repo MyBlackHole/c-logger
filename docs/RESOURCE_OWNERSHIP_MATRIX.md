@@ -18,7 +18,7 @@
 | `logger_t` 堆对象 | `create_logger` 中的 `calloc` | 构造过程，随后为宿主/调用方 | 构造函数成功返回 | `logger_destroy_status/logger_dispose_internal` | EXPLICIT |
 | 进程活动对象令牌 | `logger_process_object_acquire` | 进程级对象计数/门控 | 与 Logger 构造/销毁配对 | `logger_process_object_release` | SHARED（不是 REFCOUNTED） |
 | `emit_mu` | `pthread_mutex_init` | `logger_t` | 无 | 后端/工作线程拆除后销毁 | EXPLICIT |
-| `progress_mu/progress_cv` | pthread 初始化 | `logger_t` | 无 | 工作线程 join 后销毁 | EXPLICIT |
+| `progress_mu/progress_cv` | pthread 初始化 | `logger_t` | 无 | 工作线程 等待工作线程退出后销毁 | EXPLICIT |
 | 紧凑队列存储 `q.slots` | `logger_queue_init` 中的 `calloc` | 词法所有者，随后为 `logger_queue_t` | `q->slots = no_free_ptr(slots)` | `logger_queue_destroy` | AUTO -> EXPLICIT |
 | 长消息溢出池 `q.spills` | `logger_queue_init` 中的 `calloc` | 词法所有者，随后为 `logger_queue_t` | `q->spills = no_free_ptr(spills)` | 生产者/工作线程静默后由 `logger_queue_destroy` 释放 | AUTO -> SHARED/EXPLICIT |
 | 工作线程工作区 | 工作区构造过程中的分配 | 工作区对象，随后为 `logger_t` | `no_free_ptr/return_ptr` | 工作线程 join 后由 `logger_worker_workspace_destroy` 释放 | AUTO -> EXPLICIT |
@@ -60,7 +60,7 @@
 | 资源 | 获取/创建 | 所有者 | 转移点 | 最终释放 | 模式 |
 |---|---|---|---|---|---|
 | 候选套接字 fd | `connect_once` 中的 `socket` | 本地连接事务 | connect 成功后才执行 `s->fd = fd` | 后端关闭/重连 | EXPLICIT |
-| 已安装套接字 fd | 成功的 `connect_once` | `logger_syslog_t` | connect 后赋值 | `logger_syslog_close` / 重连 | EXPLICIT |
+| 已安装套接字 fd | 成功的 `connect_once` | `logger_syslog_t` | 连接成功后赋值 | `logger_syslog_close` / 重连 | EXPLICIT |
 
 候选套接字清理有意保持显式，因为 close 失败需要更新 Syslog 指标。
 若替换为通用 `__free(close_fd)`，会丢失可观察的记账信息。

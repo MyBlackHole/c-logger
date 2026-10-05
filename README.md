@@ -31,7 +31,7 @@ ABI gate，不能用通配符导出。
 
 ## 下游接入
 
-Xmake 安装树同时提供 CMake config 与 pkg-config 元数据。这里的 CMake 是**下游消费兼容面**，
+Xmake 安装树同时提供 CMake 配置 与 pkg-配置 元数据。这里的 CMake 是**下游消费兼容面**，
 不是本项目的构建系统。
 
 CMake 消费方：
@@ -41,7 +41,7 @@ find_package(Logger CONFIG REQUIRED)
 target_link_libraries(host PRIVATE Logger::logger)
 ```
 
-pkg-config 消费方：
+pkg-配置 消费方：
 
 ```sh
 PKG_CONFIG_PATH=/opt/logger/current/lib/pkgconfig   pkg-config --cflags --libs logger
@@ -53,10 +53,10 @@ PKG_CONFIG_PATH=/opt/logger/current/lib/pkgconfig   pkg-config --cflags --libs l
 - `find_package(Logger ... EXACT CONFIG REQUIRED)`；
 - 共享库/静态库/legacy 组件 失败关闭；
 - PIC 静态库 嵌入 SDK 模块；
-- pkg-config；
+- pkg-配置；
 - frozen 旧头文件 消费方；
 - SONAME、ELF 符号版本 与 公开符号允许列表；
-- 生产产物 isolation。
+- 生产产物 隔离。
 
 `examples/installed_consumer/` 是独立下游 CMake 工程，用于验证发布包，不参与本项目自身构建。
 
@@ -76,7 +76,7 @@ scripts/check.sh crash
 
 - `logger`：真实 生产产物；
 - `logger_test_support`：仅测试使用，包含 故障/崩溃钩子；
-- `logger_regression_support`：同源 white-box archive，用于 `--wrap` regression。
+- `logger_regression_support`：同源 白盒归档，用于 `--wrap` 回归。
 
 测试 hook、故障注入器 和 回归支持 不安装、不进入 XPack。
 
@@ -143,7 +143,7 @@ xmake test 'fork_reinit_regression/*' -j1
 - [Architecture Invariants](docs/ARCHITECTURE_INVARIANTS.md)
 - [资源所有权](docs/RESOURCE_OWNERSHIP.md)
 - [锁与锁顺序](docs/LOCKING.md)
-- [并发与 publication](docs/CONCURRENCY.md)
+- [并发与 发布](docs/CONCURRENCY.md)
 - [生命周期](docs/LIFECYCLE.md)
 - [File backend](docs/FILE_BACKEND.md)
 - [Syslog backend](docs/SYSLOG_BACKEND.md)

@@ -17,7 +17,7 @@
   也不会伪装成看起来合法的十六进制字符串。
 * 输入指针为 NULL 且长度为 0 时，对空字节串计算摘要。NULL 配合正长度，或者输出为 NULL，
   返回 EINVAL。大于 `UINT64_MAX / 8` 的输入大小会在读取输入前被拒绝，因为 SHA-256/SM3
-  都使用 64 位 bit-length 字段。
+  都使用 64 位 位长度 字段。
 * 提供方已注册并不代表运行时 EVP 一定可用。内部 `audit_digest_check()` 会在初始化、恢复、
   验证入口处对空消息执行一次摘要计算，包括没有任何记录需要 replay 的路径。
 
@@ -28,9 +28,9 @@
 | 参数非法 | EINVAL |
 | 输入长度无法表示 | EOVERFLOW |
 | 未知算法/内部提供方结构非法 | EPROTONOSUPPORT |
-| 所选 EVP 方法在编译期不可用，或 getter 返回 NULL | ENOTSUP |
+| 所选 EVP 方法在编译期不可用，或 获取接口 返回 NULL | ENOTSUP |
 | `EVP_MD_CTX_new` 返回 NULL | ENOMEM |
-| EVP 初始化/update/final 失败，或最终长度不是 32 | EIO |
+| EVP 初始化/更新/完成 失败，或最终长度不是 32 | EIO |
 
 这里的 `EIO` 可能表示摘要引擎错误，而不是磁盘 I/O。Audit 状态会把 `CRYPTO_FAILED`
 与 `IO_FAILED` 分开。该辅助接口不会清空或排空 OpenSSL 错误队列；调用方可以检查自身线程本地的
@@ -77,7 +77,7 @@ Final 只写入私有临时缓冲区；只有成功并且长度严格匹配后�
 
 ## 恢复与验证
 
-每一次真实 hash 调用的返回值都会检查。恢复过程维护私有 candidate 检查点，
+每一次真实 hash 调用的返回值都会检查。恢复过程维护私有 候选版本 检查点，
 只有全部处理成功后才把结果发布给调用方。密码失败在 stream/resource 清理过程中保持 errno，
 也不会推进恢复结果。预检查失败不会触发 EOF-tail 修复。
 验证路径返回引擎错误，而不是把失败结果当成“已经计算出的 hash”；失败时可选 final-hash 缓冲区保持不变。

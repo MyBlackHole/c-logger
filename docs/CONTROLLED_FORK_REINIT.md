@@ -1,4 +1,4 @@
-> 本轮更新：此文描述 **opt-in 兼容 helper**，不再是第三方集成默认入口。
+> 本轮更新：此文描述 **opt-in 兼容 辅助接口**，不再是第三方集成默认入口。
 > 需要 Xmake `--legacy_fork=y`；默认产物不编译该函数。
 > 新集成参见 [HOST_OWNED.md](HOST_OWNED.md)。下文保留原兼容约束。
 
@@ -8,7 +8,7 @@
 
 新增 `pid_t logger_fork_reinit(void)`。面向 CLI、守护进程、预派生工作进程：程序
 已经用过同步/异步默认 Logger，但需要不 exec 的子进程业务流程。默认 Logger
-可以仍处于 RUNNING；wrapper 在父进程正常环境中排空、同步、join 工作线程、关闭
+可以仍处于 RUNNING；包装器 在父进程正常环境中排空、同步、join 工作线程、关闭
 后端并释放对象，然后才进行 fork。两条返回路径均主动调用 `logger_init()`。
 
 这里不是从子进程“抢救”一份继承的并发运行时，而是 fork 时已经没有该运行时。
@@ -74,7 +74,7 @@ process ensure / 禁止取消
 
 - 预检查EBUSY、/proc读取失败：默认Logger未改变。
 - 默认输出/同步/关闭失败：停止并清理默认Logger，返回错误，不fork。
-- teardown之后发现额外任务或fork返回EAGAIN：默认Logger已停止，返回错误；
+- 拆除之后发现额外任务或fork返回EAGAIN：默认Logger已停止，返回错误；
   调用者决定是否显式重新初始化。不会自动恢复配置，也不伪造一次成功fork。
 - 阻塞文件/管道/syslog仍可使排空延迟；本轮没有增加通用I/O deadline。
 - 父子取消请求不是对已经发生fork或已提交日志的回滚。
@@ -85,8 +85,8 @@ process ensure / 禁止取消
 
 ## 不能扩大成什么承诺
 
-`logger_init(); fork(); logger_init();` 使用的是 raw fork，仍会被拒绝。
-需要使用这个受控helper，或在真正单线程且尚未使用库运行时之前fork，或fork+exec。
+`logger_init(); fork(); logger_init();` 使用的是 原始 fork，仍会被拒绝。
+需要使用这个受控辅助接口，或在真正单线程且尚未使用库运行时之前fork，或fork+exec。
 不支持仍活跃的任意多线程应用 fork 后任意C库调用；不靠覆写继承mutex“修复”。
 
 TSan自身可能在创建过线程后留有后台线程。此时单线程检查会正确拒绝；不能忽略

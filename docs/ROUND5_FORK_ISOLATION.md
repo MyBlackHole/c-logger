@@ -42,8 +42,8 @@ pthread_atfork 的分配/注册错误向外传播，不能创建“看起来成�
 - `logger_log_sync_status()` 保留内部式 `-ECHILD`，没有偷改返回约定。
 - void 写入、控制、销毁/关闭无操作，并设置 errno=ECHILD。
 - 指标返回零；`logger_get_state()` 返回 STOPPED/ECHILD，这不是释放内存的证明。
-- 上下文 getter 返回空视图；TTY predicate 返回 false/ECHILD。
-- `audit_get_status()` 仍可返回 FORKED/错误=ECHILD；子进程的 audit failure policy 为 DENY。
+- 上下文 获取接口 返回空视图；TTY 判定接口 返回 false/ECHILD。
+- `audit_get_status()` 仍可返回 FORKED/错误=ECHILD；子进程的 audit 失败策略 为 DENY。
 - 纯 redaction/backend-name 等无运行时资源辅助接口不是子进程重新初始化操作。
 
 `logger_prepare_fork()` 保留符号，变成可选的兼容标记，不再跨 fork 持有全局 rwlock，也不刷新、冻结队列或暂停工作线程。嵌套标记返回 EALREADY。
@@ -83,7 +83,7 @@ ctest --test-dir build-test -L fork-isolation --repeat until-fail:20 --output-on
 ## 5. 检测与复现方式
 
 新增48个CTest场景：22个进程/处理器/注册失败场景，13对同源的生产/测试钩子场景。
-与改写后的 fork_test 共49项 fork-isolation。
+与改写后的 fork_test 共49项 fork 隔离。
 其他线程实际持有 emit/progress/console/全局读取器锁时进行 fork；测试包装器禁止拒绝分支触碰 pthread锁/once、分配器、格式化、I/O、线程创建等选定入口。
 不仅验证退出而不死锁，还断言不会被错误开放重新初始化。
 

@@ -9,10 +9,10 @@
 ## 队列协议
 
 保留有界 MPSC 序列环形队列 与单消费方。
-生产者在复制记录并发布发布 slot 后，取得 `wait_mu` 再发送通知。
+生产者在复制记录并发布发布 槽位 后，取得 `wait_mu` 再发送通知。
 消费方在同一个 `wait_mu` 下检查队列谓词，并用 while 循环调用条件变量等待。
 
-在“消费方已判空、尚未实际进入等待”的窗口里，生产者可以发布 slot，但不能越过这把 mutex 提前完成通知。
+在“消费方已判空、尚未实际进入等待”的窗口里，生产者可以发布 槽位，但不能越过这把 mutex 提前完成通知。
 消费方开始等待、原子释放 mutex 后，生产者才取得 mutex 并 signal，避免通知丢失。
 不使用定时轮询掩盖丢失唤醒，也不引入未经验证的 sleeping 标志快路径。
 
@@ -34,7 +34,7 @@
 - 失败必须留下粘滞错误，不能因推进水位而被当成成功。
 
 刷新捕获 `enqueue_pos` 的固定目标，而不是等待队列变空，也不轮询指标求和。
-先前已预留、还没发布的 slot 也包含在目标中；后续请求不能越过它完成这个水位。
+先前已预留、还没发布的 槽位 也包含在目标中；后续请求不能越过它完成这个水位。
 目标捕获后进入的并发日志不要求全部包含；同步日志中在刷新调用前已成功返回的输出同样会被随后的文件同步覆盖。
 
 锁顺序：队列等待 mutex 不跨格式化/I/O 持有；工作线程在释放 emit mutex 后才更新 progress；刷新在等待 progress 时不持有 emit mutex。
@@ -76,7 +76,7 @@ if (logger_flush_instance_status(log) != 0) {
 
 ## 错误和指标
 
-保留 `logger_metrics_t` 原有结构布局；新增独立 `logger_io_metrics_t` 与实例/全局 getter。
+保留 `logger_metrics_t` 原有结构布局；新增独立 `logger_io_metrics_t` 与实例/全局 获取接口。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -114,7 +114,7 @@ sync_completed = sync_fallbacks
 不再通过 `consumer_records + sync_fallbacks + dropped` 轮询完成。
 内部基准测试使用真正输出水位等待，再计算 `emitted_records / elapsed`。
 `/dev/null` 没有文件持久化契约，基准测试的等待不调用 fsync；输出标记明确为 `output_completion_not_durability`。
-它只是管线 smoke test，不是新性能收益结论。历史吞吐/formatter 对比因旧完成语义和已知丢失唤醒问题不作为发布基线。
+它只是管线 smoke test，不是新性能收益结论。历史吞吐/格式化器 对比因旧完成语义和已知丢失唤醒问题不作为发布基线。
 
 ## 测试与验收
 

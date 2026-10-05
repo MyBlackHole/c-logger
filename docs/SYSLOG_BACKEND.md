@@ -9,7 +9,7 @@ Logger 复用；没有接管宿主线程/进程、没有新 worker、没有新�
 Linux AF_UNIX / SOCK_DGRAM 本地端点。默认 `/dev/log`。线上报文保持本地
 syslogd 接收格式：`<PRI>ident[pid]: ` 后接既有 Logger 文本，去除最后的 LF，
 不附带 NUL；不是新实现的 RFC5424 网络协议。每个实例有独立 fd、目标、tag、
-facility、计数和重连冷却。没有 TCP、UDP、TLS 或 SOCK_STREAM 隐式切换。
+设施、计数和重连冷却。没有 TCP、UDP、TLS 或 SOCK_STREAM 隐式切换。
 同一个端点上的多个实例相互独立，但共享接收者本身的容量。
 
 宿主仍负责显式实例生命周期：销毁前停止/join 所有使用者；继承实例仍受已有
@@ -34,7 +34,7 @@ logger_t *log = logger_create(&cfg);
 |---|---|
 | 路径 | NULL 默认 /dev/log；空串拒绝；采用路径名类型，不支持抽象命名空间；创建时复制，相对路径转为当时工作目录的绝对字符串 |
 | 路径长度 | 完整路径含 NUL 必须放入 Linux sockaddr_un.sun_path（本机 108 字节）；不截断；cwd 太长无法转换也返回 ENAMETOOLONG |
-| 设施 | 标准 facility 编号乘 8，范围 0..23×8，低 3 位必须为 0；默认 USER=8；提供带命名空间的 USER/LOCAL0..7 常量，无需包含存在 LOG_* 名称冲突的 syslog.h |
+| 设施 | 标准 设施 编号乘 8，范围 0..23×8，低 3 位必须为 0；默认 USER=8；提供带命名空间的 USER/LOCAL0..7 常量，无需包含存在 LOG_* 名称冲突的 syslog.h |
 | interval | 单调时钟毫秒，0 使用 1000，显式支持 1..60000；不是睡眠时间或 I/O 超时 |
 | 启动策略 | REQUIRED 默认；DEFERRED 必须显式选择 |
 | ident | NULL/空串用 app；最多 127 字节；可打印 ASCII 非空白 token，拒绝冒号、方括号和控制字节；不再静默截断 |
@@ -45,7 +45,7 @@ logger_t *log = logger_create(&cfg);
 命名空间 变化后原地址仍可访问。生产不读取 LOGGER_SYSLOG_PATH；旧测试库
 仅在没有显式 path 时保留该环境覆盖。
 
-REQUIRED 连接失败即创建失败。DEFERRED 只允许 connect 返回 ENOENT、
+REQUIRED 连接失败即创建失败。DEFERRED 只允许 连接返回 ENOENT、
 ECONNREFUSED、ECONNRESET、ENOTCONN、EAGAIN/EWOULDBLOCK 或 EINTR 时创建
 离线实例。socket 创建失败、权限错误、端点类型错误或配置错误仍导致创建失败。
 DEFERRED 返回成功只表示离线状态被明确接受，不表示端点健康：初始化故障保存在
@@ -108,7 +108,7 @@ ECHILD；失败不修改输出。正常调用在 emit_mu 下取一致快照，�
 
 - submitted_records = sent_records + failed_records（快照时）；未计入过滤/入队丢弃。
 - sent_records 只表示 send 返回整个 数据报 长度，不证明 守护进程 收到或持久化。
-- backpressure_records、cooldown_records 是 failed_records 的子集，可能重叠，
+- 背压_records、cooldown_records 是 failed_records 的子集，可能重叠，
   不应相加当作总失败数。
 - connected 仅表示本地当前持有连接 fd，不是接收方活跃状态的探测。
 - last_error 是最近一次初始化/输出结果；成功发送后为 0。first_error 仍是全实例
@@ -124,7 +124,7 @@ ECHILD；失败不修改输出。正常调用在 emit_mu 下取一致快照，�
 偏移和 LOGGER_CONFIG_VERSION=1。不是简单要求旧客户端传新的 sizeof。
 
 - 原版 version-1 **完整前缀**（本机 120 字节；当前完整配置为 144 字节，具体以平台布局为准）由新库读取，
-  Syslog 使用默认设置；既有 logger_metrics_t/logger_io_metrics_t 不扩写。
+  Syslog 使用默认设置；既有 logger_指标_t/logger_io_指标_t 不扩写。
 - 新 default 宏填充完整尺寸和 syslog 默认值。新库只复制已知前缀与完整扩展。
 - 介于旧完整尺寸与新完整尺寸之间的部分尾部拒绝，未来更大尾部忽略未知部分。
 - size=0/version=0 仅为重编译源码的旧前缀兼容；不读取尾部。新配置必须使用默认

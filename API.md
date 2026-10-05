@@ -14,7 +14,7 @@
   排空、join、同步、关闭后端后释放内存；普通 I/O 失败仍释放实例，返回 -1 + errno，
   不能重试旧指针。NULL 在原进程中成功；ECHILD 拒绝继承状态，不碰旧资源。
   极少发生的 pthread 取消状态设置失败也会在处置前返回。
-- `logger_destroy()`、`logger_flush_instance()` 保留为丢弃状态的兼容 wrapper。
+- `logger_destroy()`、`logger_flush_instance()` 保留为丢弃状态的兼容 包装器。
 - `logger_log_sync_status()` 保留历史 `0/-errno` 约定，不能和 POSIX 风格状态接口混淆。
 - Live metrics 是并发近似快照，不是单笔业务提交证明。
 
@@ -60,8 +60,8 @@ Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。
 ## Fork 与兼容
 
 默认库保留 PID/atfork 误用防护，但不替宿主 fork 或检查全进程线程列表。
-一般 raw fork 的 ECHILD 契约不变。第三方选择 worker 内首次初始化或 exec 后初始化等合法生命周期。
-需要旧的受控 helper 时显式开启 `LOGGER_ENABLE_LEGACY_FORK_HELPER`，详细约束见兼容文档。
+一般 原始 fork 的 ECHILD 契约不变。第三方选择 worker 内首次初始化或 exec 后初始化等合法生命周期。
+需要旧的受控 辅助接口 时显式开启 `LOGGER_ENABLE_LEGACY_FORK_HELPER`，详细约束见兼容文档。
 
 ## 跨库句柄和配置
 
@@ -105,7 +105,7 @@ Audit 在恢复开始前会预留活动文件和检查点的所有权，并通�
 
 默认 Logger 仍仅用于宿主便利层。所有 global 数据/控制入口统一准入和 generation
 复核，旧调用不会操作新实例。`logger_shutdown_status()` 返回最终处置错误；原
-`logger_shutdown()` 保留兼容。拒绝状态、启动 fallback、取消延迟和重入边界见
+`logger_shutdown()` 保留兼容。拒绝状态、启动 回退、取消延迟和重入边界见
 [GLOBAL_LIFECYCLE.md](docs/GLOBAL_LIFECYCLE.md)。显式实例的全入口取消不在此保证内。
 
 ## 显式实例/Console 的取消与重入加固
@@ -123,10 +123,10 @@ Audit 在恢复开始前会预留活动文件和检查点的所有权，并通�
 现有开关，不是另一个算法，也绝不在计算错误时自动启用。
 
 公有函数签名和结构布局不变；删除 SM3 常量是明确的源码兼容性收紧，不宣称没有 API
-变化。旧二进制传入原编号 2 或其他不支持的算法，init/with-verifier 返回
+变化。旧二进制传入原编号 2 或其他不支持的算法，init/带验证器 返回
 `EPROTONOSUPPORT`，不得映射到 SHA-256。已活跃/继承/重入等现有状态检查优先级不变。
-私有 checkpoint parser 保留既有错误约定：不支持的算法号属于不可接收的 checkpoint，
-load 返回 `EBADMSG` 且输出不变。数字 2 永久保留，不重新分配。
+私有 checkpoint 解析器 保留既有错误约定：不支持的算法号属于不可接收的 checkpoint，
+加载 返回 `EBADMSG` 且输出不变。数字 2 永久保留，不重新分配。
 
 `audit_crypto_backend()` 为兼容诊断保留，固定返回静态字符串 `"builtin"`。
 `audit_verify_file()` / `audit_verify_file_from()` 默认只验证 SHA-256；保留

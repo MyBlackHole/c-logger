@@ -24,14 +24,14 @@ ELF 符号版本 script 或改文件名，都不能把这些调用变成旧 glib
 
 主线 `glibc-runtime` 现在在 x86_64 Ubuntu 20.04 / 22.04 / 24.04 容器中分别构建并运行
 共享库/静态库 生产产物，执行 生产库链接 核心测试、installed C/C++ 消费方
-和 pkg-config 消费方；shared 产物还用实际容器 glibc 作为 `--max-glibc` 上限。当前已验证
+和 pkg-config 消费方；共享库 产物还用实际容器 glibc 作为 `--max-glibc` 上限。当前已验证
 glibc 2.31、2.35、2.39 三个 用户态环境。0.9.4 的 Ubuntu 20.04 共享库构建 实际最高
 GLIBC symbol requirement 为 2.25，但这只是该次构建的观测值，不自动把 2.25 宣称成长期
 支持下限。容器共享 GitHub 运行器 内核，因此这些结果**不建立最低 Linux 内核**；
 32-bit 也仍未验收。
 
-当前主线另有两类 崩溃/持久性 证据：Release 共享库/静态库 的进程终止恢复矩阵，
-以及 Ubuntu 24.04 运行器 上 QEMU guest 使用 raw ext4/XFS 虚拟盘的 10 点强制断电矩阵。
+当前主线另有两类 崩溃/持久性 证据：发布构建 共享库/静态库 的进程终止恢复矩阵，
+以及 Ubuntu 24.04 运行器 上 QEMU 来宾系统 使用 原始 ext4/XFS 虚拟盘的 10 点强制断电矩阵。
 后者在写入阶段观察到指定 serial marker 后由 宿主 SIGKILL QEMU，再使用同一 原始磁盘
 启动恢复并验证 Audit chain；XFS guest 会把与所选 来宾内核 匹配的 XFS 模块/依赖
 打入最小 initramfs。串口证据显式记录 来宾内核 发布 和 已挂载文件系统，避免把
@@ -71,11 +71,11 @@ readelf -h -d -V build/liblogger.so
 
 已知需平台验证/兼容设计的功能：`getrandom` wrapper/系统调用，`RENAME_NOREPLACE` 的内核和
 文件系统支持，Audit 的 procfd 路径，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
-没有能力时沿用既有明确错误，不降级为覆盖式 rename、不切换算法或隐藏 I/O 失败。
+没有能力时沿用既有明确错误，不降级为覆盖式 re名称、不切换算法或隐藏 I/O 失败。
 
 ## 参考接口契约
 
-- Xmake target version/SONAME: https://xmake.io/api/description/project-target.html
+- Xmake 目标 version/SONAME: https://xmake.io/api/description/project-目标.html
 - Xmake 安装/打包接口: https://xmake.io/api/description/xpack-interfaces.html
 - GNU ld 符号版本: https://源信息ware.org/binutils/docs/ld/VERSION.html
 - getrandom 版本边界: https://man7.org/linux/man-pages/man2/getrandom.2.html

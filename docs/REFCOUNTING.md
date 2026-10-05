@@ -1,7 +1,7 @@
 # 引用计数使用规范
 
-c-logger 当前没有为 `logger_t`、Audit runtime、queue storage、worker state 或
-global logger 引入通用 per-object refcount。
+c-logger 当前没有为 `logger_t`、Audit 运行时、队列存储、工作线程状态 或
+全局 Logger 引入通用 逐对象引用计数。
 
 这是有意设计：refcount 只是生命周期机制之一，不是默认 ownership 模型。
 
@@ -10,14 +10,14 @@ global logger 引入通用 per-object refcount。
 只有同时满足以下条件时才考虑引用计数：
 
 1. 多个独立 owner 都可能延长同一个对象的生命周期；
-2. 这些 owner 可以逃逸出获得指针时的 lexical scope 或 lock；
+2. 这些 owner 可以逃逸出获得指针时的 词法作用域 或 lock；
 3. 没有更简单的 owner/join/lifetime-pin 协议能确定“最后一个使用者”；
 4. 对象确实需要一直存活到最后一个独立 owner 释放。
 
-如果一个 structural owner 可以 stop/join 全部使用者，或者 rwlock/pin 已经保证借用期间
+如果一个 结构性所有者 可以 停止/等待退出 全部使用者，或者 rwlock/pin 已经保证借用期间
 对象不会被销毁，则通常不需要再叠加 refcount。
 
-## REFCOUNTED 与 SHARED
+## 引用计数与共享
 
 - **SHARED**：存在多个使用者，但生命周期由 lock pin、join、generation gate 或
   owner/borrow contract 管理。
@@ -28,10 +28,10 @@ SHARED 资源不自动等于 REFCOUNTED。
 
 当前保持非 refcount 的例子：
 
-- explicit `logger_t *`：host owns，SDK/caller borrow；
-- global logger：generation/admission + lifetime rwlock pin；
+- explicit `logger_t *`：宿主 owns，SDK/caller borrow；
+- 全局 Logger：generation/admission + lifetime rwlock pin；
 - worker：logger owner + cooperative stop + join；
-- queue/workspace：单一 structural owner + join-before-free；
+- queue/workspace：单一 结构性所有者 + join-before-free；
 - `live_objects`：只是 process census/gate，不控制单个对象生命周期。
 
 ## 如果未来引入 refcount，必须满足的语义
@@ -90,12 +90,12 @@ void object_put(object_t *obj); /* 0 -> object_release(obj) */
 
 仍有 counted reference 时，调用者不能直接调用 `object_release()`。
 
-## 与 lexical cleanup 的关系
+## 与 lexical 清理 的关系
 
 一个 counted reference 本身可以是 lexical OWNED resource，例如 scope 退出自动调用
 `put()`。
 
-这只代表自动 cleanup 管理“一个 reference”，并不代表它管理整个 shared object 的
+这只代表自动 清理 管理“一个 reference”，并不代表它管理整个 共享库 object 的
 生命周期。
 
 ## 引入 refcount 前的 review checklist
