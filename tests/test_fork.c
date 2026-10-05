@@ -83,12 +83,9 @@ int main(int argc, char **argv)
 	CHECK(n > 0 && (size_t)n < sizeof(exe) - 1);
 	exe[n] = 0;
 	char *const args[] = { exe, "--child", NULL };
-	CHECK(logger_prepare_fork() == 0); /* optional compatibility marker */
 	pid_t p = fork();
-	if (p < 0) {
-		logger_after_fork_parent();
+	if (p < 0)
 		return 3;
-	}
 	if (!p) {
 		/* No malloc, stdio, logger reset/init or thread creation before exec. */
 		execve(exe, args, environ);
@@ -98,7 +95,6 @@ int main(int argc, char **argv)
 		(void)ignored;
 		_exit(127);
 	}
-	logger_after_fork_parent();
 	LOG_INFO("parent continues");
 	int status;
 	while (waitpid(p, &status, 0) < 0)
