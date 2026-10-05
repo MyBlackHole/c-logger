@@ -1,0 +1,54 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG KERNEL_VERSION=5.10.271
+ARG XMAKE_VERSION=3.1.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential bc bison flex ca-certificates curl xz-utils git cmake \
+    pkg-config python3 binutils util-linux busybox-static e2fsprogs xfsprogs \
+    libelf-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
+        --branch "v${XMAKE_VERSION}" https://github.com/xmake-io/xmake.git /tmp/xmake \
+    && cd /tmp/xmake \
+    && ./configure --prefix=/usr/local \
+    && make -j2 \
+    && make install \
+    && rm -rf /tmp/xmake
+
+RUN mkdir -p /opt/min-kernel \
+    && curl -fsSL "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNEL_VERSION}.tar.xz" \
+         -o /tmp/linux.tar.xz \
+    && tar -C /tmp -xf /tmp/linux.tar.xz \
+    && cd "/tmp/linux-${KERNEL_VERSION}" \
+    && make x86_64_defconfig \
+    && scripts/config --disable MODULES \
+         --disable RANDOMIZE_BASE \
+         --enable DEVTMPFS \
+         --enable DEVTMPFS_MOUNT \
+         --enable PROC_FS \
+         --enable SYSFS \
+         --enable TMPFS \
+         --enable UNIX \
+         --enable PCI \
+         --enable VIRTIO \
+         --enable VIRTIO_PCI \
+         --enable VIRTIO_BLK \
+         --enable HW_RANDOM \
+         --enable HW_RANDOM_VIRTIO \
+         --enable EXT4_FS \
+         --enable XFS_FS \
+         --enable SERIAL_8250 \
+         --enable SERIAL_8250_CONSOLE \
+    && make olddefconfig \
+    && make -s kernelrelease > /opt/min-kernel/kernel-release.txt \
+    && make -j2 bzImage \
+    && gcc -v > /opt/min-kernel/compiler.txt 2>&1 \
+    && cp arch/x86/boot/bzImage /opt/min-kernel/bzImage \
+    && rm -rf "/tmp/linux-${KERNEL_VERSION}" /tmp/linux.tar.xz
+
+RUN test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.31" \
+    && test -s /opt/min-kernel/bzImage \
+    && grep -q '^5\.10\.' /opt/min-kernel/kernel-release.txt
