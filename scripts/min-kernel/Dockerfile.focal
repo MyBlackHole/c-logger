@@ -40,7 +40,7 @@ RUN mkdir -p /opt/min-kernel \
          --enable SERIAL_8250 \
          --enable SERIAL_8250_CONSOLE \
     && make olddefconfig \
-    && make -j2 KCFLAGS="-fno-pie -fno-PIE" bzImage \
+    && make -j2 KCFLAGS="-std=gnu89 -fno-pie -fno-PIE -fno-stack-protector" bzImage \
     && cp arch/x86/boot/bzImage /opt/min-kernel/bzImage \
     && rm -rf "/tmp/linux-${KERNEL_VERSION}" /tmp/linux.tar.xz
 
