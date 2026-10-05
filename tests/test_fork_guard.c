@@ -20,7 +20,7 @@ int main(void)
 	a.rotation.mode = LOGGER_ROTATE_NONE;
 	if (audit_init(&a))
 		return 2;
-	/* Intentionally omit logger_prepare_fork(): this tests the safety net. */
+	/* Fork with a live runtime: the internal atfork/PID guard is the safety net. */
 	pid_t p = fork();
 	if (p < 0)
 		return 3;
