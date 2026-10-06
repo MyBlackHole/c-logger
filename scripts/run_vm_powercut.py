@@ -35,12 +35,9 @@ def _copy_module(stage, source):
         shutil.copy2(source, destination)
 
 
-def stage_filesystem_support(stage, kernel_release, filesystem):
-    if filesystem != "xfs":
-        return False
-
+def stage_module(stage, kernel_release, module):
     result = subprocess.run(
-        ["modprobe", "--show-depends", "-S", kernel_release, "xfs"],
+        ["modprobe", "--show-depends", "-S", kernel_release, module],
         check=True, text=True, stdout=subprocess.PIPE,
     )
     module_paths = []
@@ -58,7 +55,7 @@ def stage_filesystem_support(stage, kernel_release, filesystem):
     if not module_paths:
         if builtin:
             return False
-        raise RuntimeError(f"xfs module unavailable for kernel {kernel_release}")
+        raise RuntimeError(f"{module} module unavailable for kernel {kernel_release}")
 
     for source in module_paths:
         _copy_module(stage, source)
@@ -66,14 +63,21 @@ def stage_filesystem_support(stage, kernel_release, filesystem):
     return True
 
 
-def guest_init(phase, point, filesystem, load_xfs_module):
+def stage_filesystem_support(stage, kernel_release, filesystem):
+    if filesystem != "xfs":
+        return False
+    return stage_module(stage, kernel_release, "xfs")
+
+
+def guest_init(phase, point, filesystem, load_xfs_module, load_rng_module):
     load_module = "modprobe xfs || exit 90\n" if load_xfs_module else ""
+    load_rng = "modprobe virtio_rng || exit 91\n" if load_rng_module else ""
     return f"""#!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 echo VM_KERNEL_$(/bin/busybox uname -r)
-{load_module}mount -t {filesystem} /dev/vda /mnt || exec sh
+{load_rng}{load_module}mount -t {filesystem} /dev/vda /mnt || exec sh
 echo VM_FILESYSTEM_{filesystem}
 cd /mnt || exit 1
 /vm_powercut {phase} {point}
@@ -95,8 +99,10 @@ def boot(root, kernel, kernel_release, disk, binary, filesystem, phase, point, t
         (stage / "bin" / applet).symlink_to("busybox")
 
     load_xfs_module = stage_filesystem_support(stage, kernel_release, filesystem)
+    load_rng_module = stage_module(stage, kernel_release, "virtio_rng")
     init = stage / "init"
-    init.write_text(guest_init(phase, point, filesystem, load_xfs_module))
+    init.write_text(guest_init(phase, point, filesystem, load_xfs_module,
+                               load_rng_module))
     init.chmod(0o755)
     with initramfs.open("wb") as out:
         cpio = subprocess.Popen(
@@ -110,6 +116,8 @@ def boot(root, kernel, kernel_release, disk, binary, filesystem, phase, point, t
            "-nodefaults", "-nographic", "-serial", "stdio", "-no-reboot",
            "-kernel", str(kernel), "-initrd", str(initramfs),
            "-append", "console=ttyS0 quiet panic=1",
+           "-object", "rng-random,id=rng0,filename=/dev/urandom",
+           "-device", "virtio-rng-pci,rng=rng0",
            "-drive", f"file={disk},format=raw,if=virtio,cache=none"]
     with log.open("wb", buffering=0) as output:
         proc = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT,
