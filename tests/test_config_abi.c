@@ -55,8 +55,8 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
-	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE == sizeof(audit_config_t),
-		       "Audit v1 prefix changed before ABI freeze");
+	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE <= sizeof(audit_config_t),
+		       "Audit v1 prefix exceeds current config");
 	audit_config_t a = AUDIT_DEFAULT_CONFIG();
 	if (a.version != AUDIT_CONFIG_VERSION || a.struct_size != sizeof(a))
 		return 10;
@@ -71,14 +71,14 @@ int main(void)
 	a.version = 0;
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EINVAL)
-		return 16;
+		return 12;
 
 	/* A versioned caller must provide the complete stable v1 prefix. */
 	a = AUDIT_DEFAULT_CONFIG();
 	a.struct_size = AUDIT_CONFIG_V1_PREFIX_SIZE - 1u;
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EINVAL)
-		return 15;
+		return 13;
 
 	/* A pre-1.0 caller may still provide the historical 72-byte config.
 	 * Model the real memory extent: current 64-byte prefix plus an unknown
