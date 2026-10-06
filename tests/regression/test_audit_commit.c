@@ -7,7 +7,7 @@
 /* Link-time wrappers only: no callback/test branch is added to Audit's runtime. */
 static _Atomic int cp_failures, cp_calls, armed_fd = -1, io_mode, io_calls;
 static _Atomic int stop_cp_failure, start_cp_failure, offset_failure;
-int __real_audit_checkpoint_persist(const char *, const audit_ckpt_t *);
+int __real_audit_checkpoint_persist_at(int, const char *, const audit_ckpt_t *);
 int __real_logger_log_sync_status(logger_t *, logger_level_t, const char *,
 				  const char *, int, const char *, const char *,
 				  ...);
@@ -23,7 +23,8 @@ int __wrap_logger_file_offset(logger_t *l, uint64_t *offset)
 	return __real_logger_file_offset(l, offset);
 }
 
-int __wrap_audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
+int __wrap_audit_checkpoint_persist_at(int dirfd, const char *name,
+					  const audit_ckpt_t *cp)
 {
 	atomic_fetch_add(&cp_calls, 1);
 	int n = atomic_load(&cp_failures);
@@ -33,7 +34,7 @@ int __wrap_audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 		errno = n < 0 ? ENOSPC : EIO;
 		return -1;
 	}
-	return __real_audit_checkpoint_persist(path, cp);
+	return __real_audit_checkpoint_persist_at(dirfd, name, cp);
 }
 int __wrap_logger_log_sync_status(logger_t *l, logger_level_t level,
 				  const char *module, const char *file,
