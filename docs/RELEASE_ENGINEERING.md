@@ -1,8 +1,8 @@
 # 发布工程
 
-c-logger 当前是**受控生产发布候选**，不是已经完成全部目标平台、真实掉电和安全认证的
-Production v1。软件版本由仓库根 `VERSION` 唯一决定；ABI major 仍为 `0`，ELF symbol
-version 仍为 `LOGGER_0.9`。
+c-logger 当前仍是**受控生产发布候选**，不是已经完成全部目标平台、真实掉电和安全认证的
+Production 1.0。软件版本由仓库根 `VERSION` 唯一决定；Production v1 ABI identity 已提前
+冻结为 SONAME 1 / `LOGGER_1.0`，但当前软件版本仍为 0.9.6 candidate。ABI 冻结不等于 1.0 发布。
 
 ## 构建权威
 
@@ -27,56 +27,21 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 
 ## ABI 契约
 
-- SONAME：`liblogger.so.0`；
+- SONAME：`liblogger.so.1`；
 - shared 实体文件：`liblogger.so.<VERSION>`；
-- 符号版本：`LOGGER_0.9`；
-- 当前公开 C 符号允许列表：`abi/logger.symbols`；
-- frozen Production v1 快照：`abi/logger-1.0.symbols`（62 项；去除 4 个不能修复 raw-fork runtime 的 marker API）；
-- 已发布的 0.9.6 候选曾导出 66 项；pre-v1 cleanup 允许在重新冻结前删除明确评审过的错误抽象；
-- 旧版 fork 辅助接口 显式开启时额外导出 `logger_fork_reinit`；
-- production 默认 隐藏可见性，并使用 version script `local: *`；
-- 生产故障注入 固定关闭。
+- 默认 ELF symbol version：`LOGGER_1.0`；
+- 唯一 Production v1 public C ABI allowlist：`abi/logger-1.0.symbols`（62 项）；
+- 安装元数据固定 `LOGGER_ABI_VERSION=1`；
+- 旧版 fork 辅助接口仅在显式 compatibility build 中额外导出 `logger_fork_reinit`；
+- production 默认隐藏可见性，并使用 version script `local: *`；
+- 生产故障注入固定关闭。
 
-新增/删除 public API 必须同时修改 公开头文件 与 `abi/logger.symbols`，并通过
-`scripts/check_release_abi.py`。进入 v1 hardening 后，`scripts/check_v1_abi_snapshot.py` 还要求
-active manifest 与 冻结的 v1 快照 完全一致；任何 公开接口面 变化必须先显式重新打开
-ABI 评审，而不能顺手修改 快照。禁止用 glob 代替显式 ABI allowlist。
+`abi/logger-1.0.symbols` 是 v1 ABI 的唯一权威符号清单，不再保留 pre-v1 active manifest。
+新增/删除 public API 必须显式重新打开 ABI 评审，并同步更新 public header、冻结清单和语义 ABI
+contract。禁止使用 glob 代替显式 allowlist。
 
-pre-1.0 不承诺未来版本自动 ABI 兼容；安装包的 `LoggerConfigVersion.cmake` 只对**完全相同**
-版本返回 精确版本 成功。
-
-Production v1 的长期支持范围和 ABI 升级目标不由本文件隐式推断，统一以
-[ V1_RELEASE_CRITERIA.md ](V1_RELEASE_CRITERIA.md) 为准。当前目标是在正式 v1 前完成
-`liblogger.so.1` / `LOGGER_1.0` / frozen ABI 快照 的独立迁移和 消费方 验证。
-
-### 非默认 v1 ABI 预览
-
-v1 hardening 使用显式的 `--v1_abi_preview=y` 配置验证未来 ABI identity，而不改变当前
-0.9.6 默认产物：
-
-```sh
-export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-xmake f -m release -o v1-abi-build \
-  --build_shared=y \
-  --build_tests=y \
-  --v1_abi_preview=y
-xmake -j4 logger
-xmake test -j2
-
-artifact="$(find v1-abi-build -type f -name "liblogger.so.$(cat VERSION)" -print -quit)"
-python3 scripts/check_release_abi.py "$artifact" \
-  --manifest abi/logger-1.0.symbols \
-  --abi-version 1 \
-  --symbol-version LOGGER_1.0
-```
-
-预览 的目标契约是 SONAME `liblogger.so.1`、符号版本 `LOGGER_1.0`、冻结的
-62-symbol v1 快照，以及安装 元数据 中 `LOGGER_ABI_VERSION=1`。CI 同时运行
-共享库/静态库 installed 消费方。
-
-预览 **不是正式 v1 发布**：`VERSION` 仍为 0.9.6，默认构建仍是 ABI 0；预览
-XPack 也使用独立的 `prod-c-logger-v1-abi-preview-...` 名称，不能被正式 发布资产
-检查接受。最终把 ABI 1 切为默认值必须与正式 v1 版本迁移一起完成。
+当前 `VERSION=0.9.6` 只表示软件发布仍处于 candidate 阶段；它不会改变已经冻结的 ABI major 1。
+正式 `VERSION=1.0.0` 只能在其余 Production v1 release hard gate 全部关闭后单独完成。
 
 ### v1 semantic ABI 契约
 
@@ -213,7 +178,7 @@ Linux 发行版、内核 或 CPU 自动兼容。
 13. production isolation。
 
 测试实现见 `tests/packaging/check_install.py`。该脚本直接读取 `VERSION` 和
-`abi/logger.symbols`，不维护第二份 发布 version/ABI 清单。
+`abi/logger-1.0.symbols`，不维护第二份发布 version/ABI 清单。
 
 ## Crash / 断电 / Sanitizer / 基准测试
 
