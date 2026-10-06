@@ -81,14 +81,14 @@ jobs:
           mkdir -p "$wrapper"
           cat > "$wrapper/xmake" <<EOF
           #!/bin/sh
-          case "${1:-}" in
+          case "\${1:-}" in
             f|config|test|install)
-              task="$1"
+              task="\$1"
               shift
-              exec "$real_xmake" "$task" --root "$@"
+              exec "$real_xmake" "\$task" --root "\$@"
               ;;
             *)
-              exec "$real_xmake" --root "$@"
+              exec "$real_xmake" --root "\$@"
               ;;
           esac
           EOF
