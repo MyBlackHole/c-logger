@@ -40,6 +40,7 @@ assert re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version), a.symbol_versio
 abi_manifest = a.source / a.abi_manifest
 assert abi_manifest.is_file(), abi_manifest
 version_major, version_minor, version_patch = map(int, version.split('.'))
+expected_release_candidate = version_major == 0
 next_patch = f'{version_major}.{version_minor}.{version_patch + 1}'
 next_major = f'{version_major + 1}.0.0'
 work = Path(tempfile.mkdtemp(prefix='install-check-', dir=Path.cwd()))
@@ -101,7 +102,336 @@ try:
     if a.legacy: expected_headers.add('logger_fork_compat.h')
     assert {x.name for x in include.iterdir()} == expected_headers
     version_header = (include / 'logger_version.h').read_text()
-    assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*$', version_header, re.M)
+    assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*
+    for x in prefix.rglob('*'):
+        if x.is_file() and x.suffix in ('.cmake','.pc'):
+            text = x.read_text()
+            assert str(a.source) not in text and str(a.build) not in text, x
+        assert x.name not in {'logger_internal.h','logger_test_support.a','liblogger_test_support.a',
+                              'logger_regression_support.a','liblogger_regression_support.a','logger_fault.h'}
+    # The copy is a stand-alone consumer tree, not add_subdirectory(Logger).
+    consumer = work / 'external source'
+    shutil.copytree(a.source / 'examples/installed_consumer', consumer)
+    cb = work / 'external build'
+    run([a.cmake, '-S', consumer, '-B', cb, '-DCMAKE_PREFIX_PATH='+str(prefix),
+         '-DCMAKE_C_COMPILER='+a.cc, '-DCMAKE_CXX_COMPILER='+a.cxx,
+         '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF','-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON',
+         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON','-DCONSUMER_TEST_CXX=ON',
+         '-DCONSUMER_LOGGER_VERSION='+version])
+    run([a.cmake, '--build', cb, '-j2'])
+    commands=(cb/'compile_commands.json').read_text()
+    assert str(a.source/'include') not in commands and str(a.source/'src') not in commands
+    assert 'LOGGER_ENABLE_FAULT_INJECTION' not in commands
+    assert 'LOGGER_ENABLE_LEGACY_FORK_HELPER' not in commands or a.legacy
+    for exe,args in [('logger_consumer',[]),('logger_cpp',[]),('plugin_loader',[cb/'libinstalled_plugin.so'])]:
+        wd=work/(exe+' run');wd.mkdir()
+        run([cb/exe]+args,cwd=wd)
+    if a.kind=='static':
+        names=run(['nm','-D','--defined-only',cb/'libinstalled_plugin.so'])
+        assert 'plugin_run' in names
+        assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
+    # Test pkg-config independently of CMake. The CMake consumer above
+    # deliberately validates a relocated prefix containing spaces. Older
+    # pkg-config implementations do not consistently preserve spaces in
+    # pcfiledir-derived -I/-L flags, so validate the .pc contract from a second
+    # no-space relocated copy instead of pretending that tool limitation is a
+    # package guarantee.
+    pkg_prefix=work/'pkg-relocated'
+    shutil.copytree(prefix,pkg_prefix,symlinks=True)
+    pkg_pc_dir=pkg_prefix/a.libdir/'pkgconfig'
+    pkg_lib=pkg_prefix/a.libdir
+    pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pkg_pc_dir))
+    assert run(['pkg-config','--modversion','logger'],env=pe).strip()==version
+    opts=['pkg-config','--cflags','--libs']
+    if a.kind=='static': opts.append('--static')
+    flags=shlex.split(run(opts+['logger'],env=pe))
+    exe=work/'pkg consumer'
+    run([a.cc,'-std=c11','-Wall','-Wextra','-Wpedantic','-Werror',consumer/'main.c',
+         '-o',exe]+flags)
+    pe['LD_LIBRARY_PATH']=str(pkg_lib)
+    wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
+    # Exact candidate version/components fail closed. No guessed compatibility.
+    q=work/'query';q.mkdir()
+    for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
+        (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
+        (version,'invented',False),(version,'legacy_fork',a.legacy)]:
+        (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
+            'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
+        run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
+            expected=0 if success else 1)
+    # Freeze the current Production-v1 source layout across C and C++ only.
+    # Pre-v1 headers are intentionally not a compatibility target.
+    layouts=[]
+    for compiler,standard,language in [(a.cc,'c11','c'),(a.cxx,'c++11','c++')]:
+        ex=work/('layout-%d'%counter)
+        run([compiler,'-std='+standard,'-Wall','-Wextra','-Wpedantic','-Werror','-pedantic-errors',
+             '-x',language,'-I'+str(include),a.source/'tests/packaging/layout.c','-o',ex])
+        layouts.append(run([ex]))
+    assert layouts[0]==layouts[1]
+    (work/'public-layout.txt').write_text(layouts[0])
+    if a.kind=='shared':
+        dso=lib/'liblogger.so'
+        soname_link = lib / ('liblogger.so.' + a.abi_version)
+        assert dso.is_symlink() and soname_link.is_symlink()
+        assert dso.resolve().name=='liblogger.so.'+version
+        assert Path(os.readlink(dso)).name == soname_link.name
+        argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
+              '--manifest',abi_manifest,
+              '--abi-version',a.abi_version,
+              '--symbol-version',a.symbol_version]
+        if a.legacy: argv.append('--legacy-fork')
+        run(argv)
+        # A deliberately impossible GLIBC ceiling must cause a failing gate.
+        run(argv+['--max-glibc','2.0'],expected=1)
+        names=[n for n in abi_manifest.read_text().splitlines()
+               if n and not n.startswith('#')]
+        if a.legacy: names.append('logger_fork_reinit')
+        loader=work/'abi-loader'
+        run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
+        run([loader,dso,a.symbol_version]+names)
+    artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
+    iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
+    if a.legacy: iso.append('--legacy-fork')
+    run(iso)
+    if a.installed_prefix:
+        install_check = 'preinstalled package tree'
+    else:
+        install_check = 'Xmake staged install'
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'abi_version':a.abi_version,
+            'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
+            'install_driver':'xmake',
+            'work':str(work),'commands':log,
+            'checks':[install_check,'relocated prefix with spaces','public headers only',
+                      'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
+                      'version/components rejection','current C/C++ layouts and defaults','production isolation']}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))
+except BaseException as e:
+    report={'passed':False,'error':str(e),'work':str(work),'commands':log}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2));raise
+, version_header, re.M)
+    expected_candidate_macro = '1' if expected_release_candidate else '0'
+    assert re.search(r'^#define LOGGER_RELEASE_CANDIDATE\s+' + expected_candidate_macro + r'\s*
+    for x in prefix.rglob('*'):
+        if x.is_file() and x.suffix in ('.cmake','.pc'):
+            text = x.read_text()
+            assert str(a.source) not in text and str(a.build) not in text, x
+        assert x.name not in {'logger_internal.h','logger_test_support.a','liblogger_test_support.a',
+                              'logger_regression_support.a','liblogger_regression_support.a','logger_fault.h'}
+    # The copy is a stand-alone consumer tree, not add_subdirectory(Logger).
+    consumer = work / 'external source'
+    shutil.copytree(a.source / 'examples/installed_consumer', consumer)
+    cb = work / 'external build'
+    run([a.cmake, '-S', consumer, '-B', cb, '-DCMAKE_PREFIX_PATH='+str(prefix),
+         '-DCMAKE_C_COMPILER='+a.cc, '-DCMAKE_CXX_COMPILER='+a.cxx,
+         '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF','-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON',
+         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON','-DCONSUMER_TEST_CXX=ON',
+         '-DCONSUMER_LOGGER_VERSION='+version])
+    run([a.cmake, '--build', cb, '-j2'])
+    commands=(cb/'compile_commands.json').read_text()
+    assert str(a.source/'include') not in commands and str(a.source/'src') not in commands
+    assert 'LOGGER_ENABLE_FAULT_INJECTION' not in commands
+    assert 'LOGGER_ENABLE_LEGACY_FORK_HELPER' not in commands or a.legacy
+    for exe,args in [('logger_consumer',[]),('logger_cpp',[]),('plugin_loader',[cb/'libinstalled_plugin.so'])]:
+        wd=work/(exe+' run');wd.mkdir()
+        run([cb/exe]+args,cwd=wd)
+    if a.kind=='static':
+        names=run(['nm','-D','--defined-only',cb/'libinstalled_plugin.so'])
+        assert 'plugin_run' in names
+        assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
+    # Test pkg-config independently of CMake. The CMake consumer above
+    # deliberately validates a relocated prefix containing spaces. Older
+    # pkg-config implementations do not consistently preserve spaces in
+    # pcfiledir-derived -I/-L flags, so validate the .pc contract from a second
+    # no-space relocated copy instead of pretending that tool limitation is a
+    # package guarantee.
+    pkg_prefix=work/'pkg-relocated'
+    shutil.copytree(prefix,pkg_prefix,symlinks=True)
+    pkg_pc_dir=pkg_prefix/a.libdir/'pkgconfig'
+    pkg_lib=pkg_prefix/a.libdir
+    pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pkg_pc_dir))
+    assert run(['pkg-config','--modversion','logger'],env=pe).strip()==version
+    opts=['pkg-config','--cflags','--libs']
+    if a.kind=='static': opts.append('--static')
+    flags=shlex.split(run(opts+['logger'],env=pe))
+    exe=work/'pkg consumer'
+    run([a.cc,'-std=c11','-Wall','-Wextra','-Wpedantic','-Werror',consumer/'main.c',
+         '-o',exe]+flags)
+    pe['LD_LIBRARY_PATH']=str(pkg_lib)
+    wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
+    # Exact candidate version/components fail closed. No guessed compatibility.
+    q=work/'query';q.mkdir()
+    for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
+        (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
+        (version,'invented',False),(version,'legacy_fork',a.legacy)]:
+        (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
+            'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
+        run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
+            expected=0 if success else 1)
+    # Freeze the current Production-v1 source layout across C and C++ only.
+    # Pre-v1 headers are intentionally not a compatibility target.
+    layouts=[]
+    for compiler,standard,language in [(a.cc,'c11','c'),(a.cxx,'c++11','c++')]:
+        ex=work/('layout-%d'%counter)
+        run([compiler,'-std='+standard,'-Wall','-Wextra','-Wpedantic','-Werror','-pedantic-errors',
+             '-x',language,'-I'+str(include),a.source/'tests/packaging/layout.c','-o',ex])
+        layouts.append(run([ex]))
+    assert layouts[0]==layouts[1]
+    (work/'public-layout.txt').write_text(layouts[0])
+    if a.kind=='shared':
+        dso=lib/'liblogger.so'
+        soname_link = lib / ('liblogger.so.' + a.abi_version)
+        assert dso.is_symlink() and soname_link.is_symlink()
+        assert dso.resolve().name=='liblogger.so.'+version
+        assert Path(os.readlink(dso)).name == soname_link.name
+        argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
+              '--manifest',abi_manifest,
+              '--abi-version',a.abi_version,
+              '--symbol-version',a.symbol_version]
+        if a.legacy: argv.append('--legacy-fork')
+        run(argv)
+        # A deliberately impossible GLIBC ceiling must cause a failing gate.
+        run(argv+['--max-glibc','2.0'],expected=1)
+        names=[n for n in abi_manifest.read_text().splitlines()
+               if n and not n.startswith('#')]
+        if a.legacy: names.append('logger_fork_reinit')
+        loader=work/'abi-loader'
+        run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
+        run([loader,dso,a.symbol_version]+names)
+    artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
+    iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
+    if a.legacy: iso.append('--legacy-fork')
+    run(iso)
+    if a.installed_prefix:
+        install_check = 'preinstalled package tree'
+    else:
+        install_check = 'Xmake staged install'
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'abi_version':a.abi_version,
+            'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
+            'install_driver':'xmake',
+            'work':str(work),'commands':log,
+            'checks':[install_check,'relocated prefix with spaces','public headers only',
+                      'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
+                      'version/components rejection','current C/C++ layouts and defaults','production isolation']}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))
+except BaseException as e:
+    report={'passed':False,'error':str(e),'work':str(work),'commands':log}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2));raise
+, version_header, re.M)
+    cmake_config = (config_dir / 'LoggerConfig.cmake').read_text()
+    expected_candidate_cmake = 'TRUE' if expected_release_candidate else 'FALSE'
+    assert re.search(r'^set\(Logger_RELEASE_CANDIDATE\s+' + expected_candidate_cmake + r'\)
+    for x in prefix.rglob('*'):
+        if x.is_file() and x.suffix in ('.cmake','.pc'):
+            text = x.read_text()
+            assert str(a.source) not in text and str(a.build) not in text, x
+        assert x.name not in {'logger_internal.h','logger_test_support.a','liblogger_test_support.a',
+                              'logger_regression_support.a','liblogger_regression_support.a','logger_fault.h'}
+    # The copy is a stand-alone consumer tree, not add_subdirectory(Logger).
+    consumer = work / 'external source'
+    shutil.copytree(a.source / 'examples/installed_consumer', consumer)
+    cb = work / 'external build'
+    run([a.cmake, '-S', consumer, '-B', cb, '-DCMAKE_PREFIX_PATH='+str(prefix),
+         '-DCMAKE_C_COMPILER='+a.cc, '-DCMAKE_CXX_COMPILER='+a.cxx,
+         '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF','-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON',
+         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON','-DCONSUMER_TEST_CXX=ON',
+         '-DCONSUMER_LOGGER_VERSION='+version])
+    run([a.cmake, '--build', cb, '-j2'])
+    commands=(cb/'compile_commands.json').read_text()
+    assert str(a.source/'include') not in commands and str(a.source/'src') not in commands
+    assert 'LOGGER_ENABLE_FAULT_INJECTION' not in commands
+    assert 'LOGGER_ENABLE_LEGACY_FORK_HELPER' not in commands or a.legacy
+    for exe,args in [('logger_consumer',[]),('logger_cpp',[]),('plugin_loader',[cb/'libinstalled_plugin.so'])]:
+        wd=work/(exe+' run');wd.mkdir()
+        run([cb/exe]+args,cwd=wd)
+    if a.kind=='static':
+        names=run(['nm','-D','--defined-only',cb/'libinstalled_plugin.so'])
+        assert 'plugin_run' in names
+        assert not any((' logger_' in l or ' audit_' in l or ' console_' in l) for l in names.splitlines())
+    # Test pkg-config independently of CMake. The CMake consumer above
+    # deliberately validates a relocated prefix containing spaces. Older
+    # pkg-config implementations do not consistently preserve spaces in
+    # pcfiledir-derived -I/-L flags, so validate the .pc contract from a second
+    # no-space relocated copy instead of pretending that tool limitation is a
+    # package guarantee.
+    pkg_prefix=work/'pkg-relocated'
+    shutil.copytree(prefix,pkg_prefix,symlinks=True)
+    pkg_pc_dir=pkg_prefix/a.libdir/'pkgconfig'
+    pkg_lib=pkg_prefix/a.libdir
+    pe = dict(base_env, PKG_CONFIG_LIBDIR=str(pkg_pc_dir))
+    assert run(['pkg-config','--modversion','logger'],env=pe).strip()==version
+    opts=['pkg-config','--cflags','--libs']
+    if a.kind=='static': opts.append('--static')
+    flags=shlex.split(run(opts+['logger'],env=pe))
+    exe=work/'pkg consumer'
+    run([a.cc,'-std=c11','-Wall','-Wextra','-Wpedantic','-Werror',consumer/'main.c',
+         '-o',exe]+flags)
+    pe['LD_LIBRARY_PATH']=str(pkg_lib)
+    wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
+    # Exact candidate version/components fail closed. No guessed compatibility.
+    q=work/'query';q.mkdir()
+    for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
+        (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
+        (version,'invented',False),(version,'legacy_fork',a.legacy)]:
+        (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
+            'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
+        run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
+            expected=0 if success else 1)
+    # Freeze the current Production-v1 source layout across C and C++ only.
+    # Pre-v1 headers are intentionally not a compatibility target.
+    layouts=[]
+    for compiler,standard,language in [(a.cc,'c11','c'),(a.cxx,'c++11','c++')]:
+        ex=work/('layout-%d'%counter)
+        run([compiler,'-std='+standard,'-Wall','-Wextra','-Wpedantic','-Werror','-pedantic-errors',
+             '-x',language,'-I'+str(include),a.source/'tests/packaging/layout.c','-o',ex])
+        layouts.append(run([ex]))
+    assert layouts[0]==layouts[1]
+    (work/'public-layout.txt').write_text(layouts[0])
+    if a.kind=='shared':
+        dso=lib/'liblogger.so'
+        soname_link = lib / ('liblogger.so.' + a.abi_version)
+        assert dso.is_symlink() and soname_link.is_symlink()
+        assert dso.resolve().name=='liblogger.so.'+version
+        assert Path(os.readlink(dso)).name == soname_link.name
+        argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
+              '--manifest',abi_manifest,
+              '--abi-version',a.abi_version,
+              '--symbol-version',a.symbol_version]
+        if a.legacy: argv.append('--legacy-fork')
+        run(argv)
+        # A deliberately impossible GLIBC ceiling must cause a failing gate.
+        run(argv+['--max-glibc','2.0'],expected=1)
+        names=[n for n in abi_manifest.read_text().splitlines()
+               if n and not n.startswith('#')]
+        if a.legacy: names.append('logger_fork_reinit')
+        loader=work/'abi-loader'
+        run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
+        run([loader,dso,a.symbol_version]+names)
+    artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
+    iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
+    if a.legacy: iso.append('--legacy-fork')
+    run(iso)
+    if a.installed_prefix:
+        install_check = 'preinstalled package tree'
+    else:
+        install_check = 'Xmake staged install'
+    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'abi_version':a.abi_version,
+            'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
+            'install_driver':'xmake',
+            'work':str(work),'commands':log,
+            'checks':[install_check,'relocated prefix with spaces','public headers only',
+                      'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
+                      'version/components rejection','current C/C++ layouts and defaults','production isolation']}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))
+except BaseException as e:
+    report={'passed':False,'error':str(e),'work':str(work),'commands':log}
+    (work/'RESULT.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2));raise
+, cmake_config, re.M)
     for x in prefix.rglob('*'):
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()
