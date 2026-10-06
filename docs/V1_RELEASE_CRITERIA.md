@@ -160,6 +160,14 @@ compatibility tier，不进入通用 Production v1 支持范围。
 
 ### 4. v1 public ABI freeze
 
+Audit 配置 ABI 在切换 SONAME 1 前先收口为单一版本化合同：
+
+- `AUDIT_CONFIG_V1_PREFIX_SIZE == 64` 是稳定 v1 readable prefix；
+- 调用者必须显式提供 `struct_size/version`；
+- 大于已知 prefix 的未来 tail 被忽略，不读取也不修改；
+- pre-v1 `struct_size=0/version=0` 入口不进入 Production v1；
+- runtime 只消费规范化后的内部配置副本。
+
 正式 v1 前完成一次 public ABI review，冻结：
 
 - 62 个目标 public symbol 的去留；
