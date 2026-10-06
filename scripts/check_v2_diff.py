@@ -61,6 +61,8 @@ def main() -> int:
                 f"{path}: use logger_compiler.h abstraction instead of raw always_inline"
             )
 
+    check_trailing_newline(args.base, errors)
+
     if errors:
         for item in errors:
             print(f"error: {item}", file=sys.stderr)
