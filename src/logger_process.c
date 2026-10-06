@@ -86,9 +86,17 @@ int logger_process_object_acquire(void)
 	return 0;
 }
 
-void logger_process_object_release(void)
+int logger_process_object_release(void)
 {
-	(void)atomic_fetch_sub_explicit(&live_objects, 1, memory_order_acq_rel);
+	unsigned n = atomic_load_explicit(&live_objects, memory_order_acquire);
+	for (;;) {
+		if (!n)
+			return -EUCLEAN;
+		if (atomic_compare_exchange_weak_explicit(
+			    &live_objects, &n, n - 1, memory_order_acq_rel,
+			    memory_order_acquire))
+			return 0;
+	}
 }
 
 unsigned logger_process_object_count(void)
