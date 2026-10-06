@@ -63,25 +63,37 @@ int main(void)
 	if (audit_init(&a) == 0 || errno != EPROTONOSUPPORT)
 		return 11;
 
-	/* A pre-1.0 caller may still advertise the historical 72-byte config.
-	 * The current library consumes only the known prefix and ignores the tail. */
-	a = AUDIT_DEFAULT_CONFIG();
-	a.struct_size = sizeof(a) + 8u;
-	a.log_dir = ".";
-	a.name = "config_abi_tail";
-	a.rotation.mode = LOGGER_ROTATE_NONE;
-	a.integrity = AUDIT_INTEGRITY_NONE;
+	/* A pre-1.0 caller may still provide the historical 72-byte config.
+	 * Model the real memory extent: current 64-byte prefix plus an unknown
+	 * 8-byte tail. The library must consume only the known prefix. */
+	struct legacy_audit_config {
+		audit_config_t prefix;
+		uint64_t retired_tail;
+	};
+	_Static_assert(sizeof(struct legacy_audit_config) == 72,
+		       "historical Audit config extent changed");
+	struct legacy_audit_config legacy = {
+		.prefix = AUDIT_DEFAULT_CONFIG(),
+		.retired_tail = UINT64_C(0xa5a5a5a5a5a5a5a5),
+	};
+	legacy.prefix.struct_size = sizeof(legacy);
+	legacy.prefix.log_dir = ".";
+	legacy.prefix.name = "config_abi_tail";
+	legacy.prefix.rotation.mode = LOGGER_ROTATE_NONE;
+	legacy.prefix.integrity = AUDIT_INTEGRITY_NONE;
 	unlink("./config_abi_tail.audit.log");
 	unlink("./config_abi_tail.audit.log.logger.lock");
-	if (audit_init(&a))
+	if (audit_init(&legacy.prefix))
 		return 12;
 	if (audit_shutdown_status())
 		return 13;
+	if (legacy.retired_tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
+		return 14;
 	unlink("./config_abi_tail.audit.log");
 	unlink("./config_abi_tail.audit.log.logger.lock");
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
-		return 14;
+		return 15;
 	return 0;
 }
