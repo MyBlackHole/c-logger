@@ -1,6 +1,6 @@
 # c-logger 2.0 C11 内存模型
 
-状态：**#103 第一阶段设计基线**。
+状态：**#103 冻结契约**。
 
 2.0 的用户态并发首先服从 ISO C11 data-race rules。Linux 内核中的 publication、RCU、seqcount、barrier 等思想可以借鉴，但不能直接复制 kernel-only memory-model 假设。
 
@@ -35,6 +35,17 @@ global_ticket_publish()
 ```
 
 这些 helper 必须在注释中写明对应 happens-before 关系。
+
+#103 的最终决定不是“把所有裸 `memory_order_*` 替换成统一 wrapper”，而是：
+
+- publication / handoff 有明确协议语义时使用专用 helper；
+- reservation、metrics 等有意使用 relaxed 的位置保留显式 C11 operation；
+- reviewer 必须能从调用点看出 atomic object 与 ordering 的协议职责；
+- 不为了 API 形式统一隐藏 linearization/publication point。
+
+当前 queue wakeup 已落地
+`logger_queue_wait_arm_recheck()/probe_after_publish()/claim_signal()/disarm()`
+协议 helper；slot generation 的 release/acquire publication 则继续显式保留。
 
 ## 3. Queue：slot publication
 
@@ -378,3 +389,35 @@ Global 可能是未来候选，但在 #104 决定 Global facade/object model 前
 10. progress guarantee 是 blocking/lock-free/wait-free 中哪一种？
 11. failure/retry 是否会重复 side effect？
 12. 有什么 litmus/TSan/fault-injection evidence？
+
+
+## 19. #103 最终 primitive 决策
+
+#103 以“真实问题 -> proof -> primitive”收敛，而不是以 primitive 数量验收：
+
+| 机制 | 结论 | 原因 |
+|---|---|---|
+| 泛化 atomic load/store wrapper | 不采用 | 会隐藏不同 atomic object 的协议语义 |
+| Queue wakeup | 采用同一 atomic 的 acq_rel RMW handoff | ISO C11/C17 可证明，并有 litmus/TSan |
+| generic completion | 当前不采用 | flush 是可重复 watermark predicate，不是一发 completion |
+| wait-event | 保留 mutex + condition predicate loop | signal 只是通知，predicate 才是状态 |
+| seqcount | 当前不采用 | 普通 payload 的无锁并发读写不满足 C11 data-race rules |
+| RCU/SRCU | 当前不采用 | 当前 rwlock/operation scope 的 lifetime proof 更简单，且无 benchmark 证明需要替换 |
+
+未来 #104 若改变 ownership/object model，可以重新评估 primitive，但必须重新提交
+lockless proof 与 reclamation/lifetime 证明，不能把本阶段“不采用”解释成永久禁止。
+
+## 20. #103 验证证据边界
+
+当前 C11/并发证据至少包括：
+
+- Queue slot/spill release-acquire publication/reuse；
+- Queue wakeup RMW handoff formal proof + reservation-gap analysis；
+- Queue wakeup litmus + MPSC stress；
+- Audit generation-stable failure-policy publication；
+- Global rwlock lifetime pin 与 ticket admission 分离；
+- debug lockdep 对 Global/Audit/instance/Console 实际锁路径的 order/assertion 检查；
+- ASan/UBSan/TSan、旧 GCC/Clang 基线和 failure-path regression。
+
+测试和 sanitizer 是 proof evidence，不替代本文的 C11 happens-before / lifetime
+reasoning；反过来，纯文档 proof 也不能替代 regression 和 sanitizer。
