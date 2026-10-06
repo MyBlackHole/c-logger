@@ -55,6 +55,8 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
+	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE == sizeof(audit_config_t),
+		       "Audit v1 prefix changed before ABI freeze");
 	audit_config_t a = AUDIT_DEFAULT_CONFIG();
 	if (a.version != AUDIT_CONFIG_VERSION || a.struct_size != sizeof(a))
 		return 10;
@@ -62,6 +64,21 @@ int main(void)
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EPROTONOSUPPORT)
 		return 11;
+
+	/* The pre-v1 zero/zero escape hatch must not enter SONAME 1. */
+	a = AUDIT_DEFAULT_CONFIG();
+	a.struct_size = 0;
+	a.version = 0;
+	errno = 0;
+	if (audit_init(&a) == 0 || errno != EINVAL)
+		return 16;
+
+	/* A versioned caller must provide the complete stable v1 prefix. */
+	a = AUDIT_DEFAULT_CONFIG();
+	a.struct_size = AUDIT_CONFIG_V1_PREFIX_SIZE - 1u;
+	errno = 0;
+	if (audit_init(&a) == 0 || errno != EINVAL)
+		return 15;
 
 	/* A pre-1.0 caller may still provide the historical 72-byte config.
 	 * Model the real memory extent: current 64-byte prefix plus an unknown
@@ -84,16 +101,16 @@ int main(void)
 	unlink("./config_abi_tail.audit.log");
 	unlink("./config_abi_tail.audit.log.logger.lock");
 	if (audit_init(&legacy.prefix))
-		return 12;
-	if (audit_shutdown_status())
-		return 13;
-	if (legacy.retired_tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
 		return 14;
+	if (audit_shutdown_status())
+		return 15;
+	if (legacy.retired_tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
+		return 16;
 	unlink("./config_abi_tail.audit.log");
 	unlink("./config_abi_tail.audit.log.logger.lock");
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
-		return 15;
+		return 17;
 	return 0;
 }
