@@ -139,7 +139,7 @@ __cleanup_must_check_ptr(const volatile void *value)
 		_lock;                                                            \
 		return (class_##_name##_t){ .resource = _T, .err = 0 };          \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE void                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                        \
 	class_##_name##_destructor(class_##_name##_t *__guard)                  \
 	{                                                                      \
 		if (__guard->err)                                                  \
@@ -147,12 +147,12 @@ __cleanup_must_check_ptr(const volatile void *value)
 		_type _T = __guard->resource;                                     \
 		_unlock;                                                          \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE int                                              \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                         \
 	class_##_name##_lock_err(class_##_name##_t *__guard)                    \
 	{                                                                      \
 		return __guard->err;                                               \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE bool                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED bool                        \
 	class_##_name##_lock_acquired(class_##_name##_t *__guard)               \
 	{                                                                      \
 		return __guard->err == 0;                                          \
