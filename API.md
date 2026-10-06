@@ -67,7 +67,13 @@ Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。
 
 借入 logger_t 时，创建/调用/销毁必须使用同一个实际 Logger 实现；不要在多个 SDK 中各自
 静态嵌入不同副本，然后跨副本传递 opaque pointer。宿主已有另一套日志系统时，使用 callback ABI。
-本轮未承诺旧配置二进制 ABI 自适应；结构体 size/version 的既有校验保持不变。
+
+Audit v1 配置采用显式版本化结构体合同：调用者必须填写
+`struct_size >= AUDIT_CONFIG_V1_PREFIX_SIZE` 与
+`version == AUDIT_CONFIG_VERSION`。库只读取已冻结的 v1 prefix，先规范化为内部完整配置再校验；
+更大的调用者结构体尾部被忽略，为 1.x append-only 扩展保留空间。pre-v1 的
+`struct_size=0/version=0` 隐式入口在 SONAME 1 冻结前明确退役，避免形成第二套无法判长的稳定 ABI。
+
 源码/二进制发布 ABI 冻结、符号可见性、安装/导出仍需后续处理。
 
 完整集成示例和关闭顺序见 [HOST_OWNED.md](docs/HOST_OWNED.md)。
