@@ -253,26 +253,43 @@ build complete candidate
 
 operation caller 在使用 `g_runtime` 前必须通过 phase/generation gate 并取得 `g_operation_mu`。
 
-## 12. Audit failure policy：已发现的 2.0 缺口
+## 12. Audit failure policy：fail-closed publication
 
-当前 `g_policy` 是独立 relaxed atomic，`audit_failure_policy()` 不检查 `g_phase`。
-
-这意味着并发 init/shutdown 边界上，caller 可以观察到与当前 session phase 不匹配的 policy。
-
-2.0 需要改成 fail-closed publication：
+`audit_failure_policy()` 使用 generation-stable snapshot，避免把旧 session 的 RUNNING phase 与下一代 policy 配对：
 
 ```text
-load g_phase acquire
+generation = load g_generation acquire
+phase = load g_phase acquire
 if phase != RUNNING:
     return AUDIT_FAIL_DENY
-load g_policy
+
+policy = load g_policy acquire
+
+if generation != load g_generation acquire:
+    return AUDIT_FAIL_DENY
+
+return policy
 ```
 
-init 必须保证 policy store sequenced-before RUNNING release store。
+init 的 publication 顺序：
 
-这样只有观察到当前 RUNNING generation 的 caller 才能使用 session policy；非 RUNNING 阶段统一 DENY。
+```text
+publish STARTING
+    -> increment generation (release)
+    -> build candidate
+    -> store g_policy (release)
+    -> store g_phase = RUNNING (release)
+```
 
-该修复作为 #103 后续独立 runtime PR，不与本设计 PR 混合。
+关键关系：
+
+1. 如果 phase acquire 观察到当前代 RUNNING，则该代 policy store 已经发生；
+2. 如果调用在第一次 phase load 后跨越 shutdown/reinit，而 policy load 观察到下一代 policy，则该 policy 的 release/acquire 会使之前的 generation increment 对后续 generation load 可见，generation mismatch 因而 fail closed；
+3. 如果 generation 在调用期间变化，无论 policy 读到旧值还是新值，都不会把结果作为稳定 session policy 返回。
+
+STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅与同一 generation 的稳定 RUNNING snapshot 匹配时返回配置 policy。
+
+该协议由 Audit lifecycle regression 验证 STARTING、RUNNING、STOPPING、IDLE 和 fork-child 边界；跨代压力继续由 Audit concurrency + TSan 覆盖。
 
 ## 13. Console config
 

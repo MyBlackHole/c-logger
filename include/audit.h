@@ -131,6 +131,9 @@ LOGGER_API int audit_end(audit_event_t *event, audit_result_t result,
  * IO_FAILED / CRYPTO_FAILED are not cleared by flush; fix the cause, shut down
  * and reinitialize. IO_FAILED additionally requires reconciliation. */
 LOGGER_API int audit_flush(void);
+/* Fail closed outside a published RUNNING Audit session. A RUNNING snapshot
+ * returns that session's configured policy; STARTING/STOPPING/IDLE/fork child
+ * all return AUDIT_FAIL_DENY. */
 LOGGER_API audit_failure_policy_t audit_failure_policy(void);
 /* Returns a thread-local snapshot (empty on error), replaced by the next call
  * in this thread. Prefer the error-reporting copy API. */
