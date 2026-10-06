@@ -78,7 +78,9 @@ struct logger {
 	_Atomic uint64_t consumer_batches, consumer_records;
 };
 /* 内部完整 teardown：调用者必须拥有独占 ownership，返回 0 / -errno。
- * 与 logger_destroy 一样会释放对象；失败也不能把旧指针当作可重试对象。 */
+ * 普通 I/O teardown 错误仍完成 final free；若 join/同步对象/census 无法
+ * 证明 quiescent，则故意保留 retired allocation，绝不继续 free 成 UAF。
+ * teardown 一旦开始，旧指针都不能被调用者当作可重试对象。 */
 /* Audit 在检查/修复目标前先取得 file ownership，随后把该 reservation
  * move 给同步 logger。 */
 logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);
