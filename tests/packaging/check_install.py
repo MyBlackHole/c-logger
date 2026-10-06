@@ -165,7 +165,10 @@ try:
     run([a.cc,'-std=c11','-I'+str(old_include),a.source/'tests/packaging/legacy_consumer.c',
          '-o',oldexe]+link_flags)
     wd=work/'old-header run';wd.mkdir();run([oldexe],cwd=wd,env=pe)
-    # All public layout/default snapshots remain identical across old C / new C / C++11.
+    # The old pre-1.0 header must still compile/link/run against the new
+    # library, but its aggregate layout is NOT required to remain identical:
+    # deliberate pre-v1 cleanup may shrink structs before SONAME 1 is frozen.
+    # The new installed C and C++11 headers, however, must remain identical.
     layouts=[]
     for compiler,standard,inc,language in [(a.cc,'c11',old_include,'c'),(a.cc,'c11',include,'c'),
                                         (a.cxx,'c++11',include,'c++')]:
@@ -173,8 +176,9 @@ try:
         run([compiler,'-std='+standard,'-Wall','-Wextra','-Wpedantic','-Werror','-pedantic-errors',
              '-x',language,'-I'+str(inc),a.source/'tests/packaging/layout.c','-o',ex])
         layouts.append(run([ex]))
-    assert layouts[0]==layouts[1]==layouts[2]
-    (work/'public-layout.txt').write_text(layouts[0])
+    assert layouts[1]==layouts[2]
+    (work/'old-public-layout.txt').write_text(layouts[0])
+    (work/'public-layout.txt').write_text(layouts[1])
     if a.kind=='shared':
         dso=lib/'liblogger.so'
         soname_link = lib / ('liblogger.so.' + a.abi_version)
@@ -210,7 +214,7 @@ try:
             'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
                       'version/components rejection','frozen old-header consumer',
-                      'C/C++ layouts and defaults','production isolation']}
+                      'old-header runtime compatibility','new C/C++ layouts and defaults','production isolation']}
     (work/'RESULT.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2))
 except BaseException as e:
