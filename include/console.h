@@ -18,6 +18,7 @@ typedef enum {
 	CONSOLE_DEBUG = 3
 } console_verbosity_t;
 #define CONSOLE_CONFIG_VERSION 1u
+#define CONSOLE_CONFIG_SIZE 16u
 typedef struct {
 	uint32_t struct_size;
 	uint32_t version;

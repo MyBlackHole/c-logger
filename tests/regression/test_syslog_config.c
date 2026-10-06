@@ -38,34 +38,43 @@ int main(int argc, char **argv)
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_SYSLOG;
 	c.async_mode = 0;
-	size_t n = LOGGER_CONFIG_V1_PREFIX_SIZE;
+
+	size_t n = sizeof(c);
 	int expected = ENOENT;
-	if (!strcmp(argv[1], "prefix"))
-		c.struct_size = (uint32_t)n;
-	else if (!strcmp(argv[1], "zero-prefix")) {
+	unsigned char bytes[sizeof(c) + 16];
+	memset(bytes, 0, sizeof(bytes));
+
+	if (!strcmp(argv[1], "exact")) {
+		c.struct_size = sizeof(c);
+	} else if (!strcmp(argv[1], "zero-header")) {
+		n = 8;
 		c.struct_size = 0;
 		c.version = 0;
-	} else if (!strcmp(argv[1], "header-only")) {
+		expected = EPROTONOSUPPORT;
+	} else if (!strcmp(argv[1], "short")) {
 		n = 8;
 		c.struct_size = 8;
 		expected = EINVAL;
-	} else if (!strcmp(argv[1], "unknown-header")) {
+	} else if (!strcmp(argv[1], "unknown-version")) {
 		n = 8;
 		c.struct_size = 8;
 		c.version = 999;
 		expected = EPROTONOSUPPORT;
-	} else if (!strcmp(argv[1], "partial-tail")) {
-		n += 8;
-		c.struct_size = (uint32_t)n;
-		expected = EINVAL;
-	} else if (!strcmp(argv[1], "future-tail")) {
+	} else if (!strcmp(argv[1], "future-zero")) {
 		n = sizeof(c) + 16;
 		c.struct_size = (uint32_t)n;
-	} else
+	} else if (!strcmp(argv[1], "future-nonzero")) {
+		n = sizeof(c) + 16;
+		c.struct_size = (uint32_t)n;
+		expected = E2BIG;
+	} else {
 		CHECK(!"unknown config scenario");
-	unsigned char bytes[sizeof(c) + 16];
-	memset(bytes, 0xa5, sizeof(bytes));
+	}
+
 	memcpy(bytes, &c, sizeof(c));
+	if (!strcmp(argv[1], "future-nonzero"))
+		bytes[sizeof(c)] = 1;
+
 	size_t allocated;
 	void *base = boundary(bytes, n, &allocated);
 	logger_t *l = logger_create(
@@ -73,7 +82,7 @@ int main(int argc, char **argv)
 	CHECK(!l && errno == expected);
 	CHECK(connects == (expected == ENOENT ? 1 : 0));
 	CHECK(!munmap(base, allocated));
-	printf("version-1 bounded config read passed: %s prefix=%zu current=%zu\n",
-	       argv[1], (size_t)LOGGER_CONFIG_V1_PREFIX_SIZE, sizeof(c));
+	printf("uapi config read passed: %s current=%zu\n",
+	       argv[1], sizeof(c));
 	return 0;
 }

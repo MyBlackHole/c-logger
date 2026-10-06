@@ -5,6 +5,7 @@
 #include "logger_internal.h"
 #include "logger_fault.h"
 #include "logger_cleanup.h"
+#include "logger_uapi.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -174,16 +175,30 @@ static int safe_name(const char *s)
 	return 1;
 }
 
+static int copy_audit_config(const audit_config_t *in,
+			     audit_config_t *out)
+{
+	_Static_assert(AUDIT_CONFIG_SIZE == sizeof(*out),
+		       "Audit v1 config layout changed");
+	if (!in || !out)
+		return -EINVAL;
+
+	uint32_t size, version;
+	memcpy(&size, (const unsigned char *)in, sizeof(size));
+	memcpy(&version, (const unsigned char *)in + sizeof(size),
+	       sizeof(version));
+	int rc = logger_uapi_copy_struct(out, sizeof(*out), in, size, version,
+					AUDIT_CONFIG_VERSION);
+	if (rc)
+		return rc;
+
+	out->struct_size = sizeof(*out);
+	out->version = AUDIT_CONFIG_VERSION;
+	return 0;
+}
+
 static int validate_config(const audit_config_t *c)
 {
-	if (!c)
-		return -EINVAL;
-	if (!(c->struct_size == 0 && c->version == 0)) {
-		if (c->version != AUDIT_CONFIG_VERSION)
-			return -EPROTONOSUPPORT;
-		if (c->struct_size < sizeof(*c))
-			return -EINVAL;
-	}
 	if (!c->log_dir || !safe_name(c->name) ||
 	    (unsigned)c->failure_policy > AUDIT_FAIL_DENY)
 		return -EINVAL;
@@ -434,14 +449,17 @@ int audit_init(const audit_config_t *c)
 	pthread_mutex_unlock(&g_operation_mu);
 
 	audit_runtime_t *candidate = NULL;
-	rc = validate_config(c);
+	audit_config_t config;
+	rc = copy_audit_config(c, &config);
 	if (!rc)
-		rc = create_runtime(c, &candidate);
+		rc = validate_config(&config);
+	if (!rc)
+		rc = create_runtime(&config, &candidate);
 	if (!rc) {
 		pthread_mutex_lock(&g_operation_mu);
 		g_runtime =
 			candidate; /* START and its checkpoint have succeeded */
-		atomic_store_explicit(&g_policy, c->failure_policy,
+		atomic_store_explicit(&g_policy, config.failure_policy,
 				      memory_order_relaxed);
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
 				      memory_order_release);

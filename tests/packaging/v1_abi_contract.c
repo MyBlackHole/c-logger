@@ -50,7 +50,7 @@ ABI_FIELD(logger_config_t, include_source, 84);
 ABI_FIELD(logger_config_t, ident, 88);
 ABI_FIELD(logger_config_t, overflow, 96);
 ABI_FIELD(logger_config_t, syslog, 120);
-ABI_ASSERT(LOGGER_CONFIG_V1_PREFIX_SIZE == 120);
+ABI_ASSERT(LOGGER_CONFIG_SIZE == 144);
 
 ABI_TYPE(logger_rotation_config_t, 24, 8);
 ABI_FIELD(logger_rotation_config_t, mode, 0);
@@ -162,6 +162,7 @@ ABI_FIELD(logger_syslog_metrics_t, last_error, 92);
 ABI_FIELD(logger_syslog_metrics_t, last_close_error, 96);
 
 ABI_TYPE(audit_config_t, 64, 8);
+ABI_ASSERT(AUDIT_CONFIG_SIZE == 64);
 ABI_FIELD(audit_config_t, struct_size, 0);
 ABI_FIELD(audit_config_t, version, 4);
 ABI_FIELD(audit_config_t, log_dir, 8);
@@ -192,6 +193,7 @@ ABI_FIELD(audit_status_t, checkpoint_seq, 24);
 ABI_FIELD(audit_status_t, instance_id, 32);
 
 ABI_TYPE(console_config_t, 16, 4);
+ABI_ASSERT(CONSOLE_CONFIG_SIZE == 16);
 ABI_FIELD(console_config_t, struct_size, 0);
 ABI_FIELD(console_config_t, version, 4);
 ABI_FIELD(console_config_t, verbosity, 8);

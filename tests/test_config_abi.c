@@ -2,6 +2,7 @@
 #include "console.h"
 #include "logger.h"
 #include <errno.h>
+#include <stdint.h>
 #include <unistd.h>
 
 static int rejects_invalid(logger_config_t *c)
@@ -17,6 +18,13 @@ static int rejects_invalid(logger_config_t *c)
 
 int main(void)
 {
+	_Static_assert(LOGGER_CONFIG_SIZE == sizeof(logger_config_t),
+		       "Logger v1 config size changed");
+	_Static_assert(AUDIT_CONFIG_SIZE == sizeof(audit_config_t),
+		       "Audit v1 config size changed");
+	_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),
+		       "Console v1 config size changed");
+
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
 	if (l.version != LOGGER_CONFIG_VERSION || l.struct_size != sizeof(l))
 		return 1;
@@ -63,37 +71,69 @@ int main(void)
 	if (audit_init(&a) == 0 || errno != EPROTONOSUPPORT)
 		return 11;
 
-	/* A pre-1.0 caller may still provide the historical 72-byte config.
-	 * Model the real memory extent: current 64-byte prefix plus an unknown
-	 * 8-byte tail. The library must consume only the known prefix. */
-	struct legacy_audit_config {
-		audit_config_t prefix;
-		uint64_t retired_tail;
-	};
-	_Static_assert(sizeof(struct legacy_audit_config) == 72,
-		       "historical Audit config extent changed");
-	struct legacy_audit_config legacy = {
-		.prefix = AUDIT_DEFAULT_CONFIG(),
-		.retired_tail = UINT64_C(0xa5a5a5a5a5a5a5a5),
-	};
-	legacy.prefix.struct_size = sizeof(legacy);
-	legacy.prefix.log_dir = ".";
-	legacy.prefix.name = "config_abi_tail";
-	legacy.prefix.rotation.mode = LOGGER_ROTATE_NONE;
-	legacy.prefix.integrity = AUDIT_INTEGRITY_NONE;
-	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.log.logger.lock");
-	if (audit_init(&legacy.prefix))
+	a = AUDIT_DEFAULT_CONFIG();
+	a.struct_size = AUDIT_CONFIG_SIZE - 1u;
+	errno = 0;
+	if (audit_init(&a) == 0 || errno != EINVAL)
 		return 12;
-	if (audit_shutdown_status())
-		return 13;
-	if (legacy.retired_tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
-		return 14;
-	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.log.logger.lock");
 
-	console_config_t c = CONSOLE_DEFAULT_CONFIG();
-	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
+	struct future_audit_config {
+		audit_config_t config;
+		uint64_t tail;
+	};
+	_Static_assert(sizeof(struct future_audit_config) == 72,
+		       "future Audit fixture extent changed");
+
+	struct future_audit_config future = {
+		.config = AUDIT_DEFAULT_CONFIG(),
+		.tail = 0,
+	};
+	future.config.struct_size = sizeof(future);
+	future.config.log_dir = ".";
+	future.config.name = "config_abi_future";
+	future.config.rotation.mode = LOGGER_ROTATE_NONE;
+	future.config.integrity = AUDIT_INTEGRITY_NONE;
+	unlink("./config_abi_future.audit.log");
+	unlink("./config_abi_future.audit.log.logger.lock");
+	if (audit_init(&future.config))
+		return 13;
+	if (audit_shutdown_status())
+		return 14;
+	unlink("./config_abi_future.audit.log");
+	unlink("./config_abi_future.audit.log.logger.lock");
+
+	future.config = AUDIT_DEFAULT_CONFIG();
+	future.config.struct_size = sizeof(future);
+	future.tail = UINT64_C(1);
+	errno = 0;
+	if (audit_init(&future.config) == 0 || errno != E2BIG)
 		return 15;
+
+	console_config_t con = CONSOLE_DEFAULT_CONFIG();
+	if (con.version != CONSOLE_CONFIG_VERSION ||
+	    con.struct_size != sizeof(con))
+		return 16;
+
+	struct future_console_config {
+		console_config_t config;
+		uint64_t tail;
+	} future_console = {
+		.config = CONSOLE_DEFAULT_CONFIG(),
+		.tail = 0,
+	};
+	future_console.config.struct_size = sizeof(future_console);
+	errno = 0;
+	console_init(&future_console.config);
+	if (errno)
+		return 17;
+
+	future_console.config = CONSOLE_DEFAULT_CONFIG();
+	future_console.config.struct_size = sizeof(future_console);
+	future_console.tail = UINT64_C(1);
+	errno = 0;
+	console_init(&future_console.config);
+	if (errno != E2BIG)
+		return 18;
+
 	return 0;
 }

@@ -1,6 +1,7 @@
 #include "console.h"
 #include "logger_scope.h"
 #include "logger_cleanup.h"
+#include "logger_uapi.h"
 #undef CONSOLE_DEBUG
 #include <errno.h>
 #include <pthread.h>
@@ -30,17 +31,24 @@ void console_init(const console_config_t *c)
 		return;
 	int rc = 0;
 	if (c) {
-		if (!((c->struct_size == 0 && c->version == 0) ||
-		      (c->version == CONSOLE_CONFIG_VERSION &&
-		       c->struct_size >= sizeof(*c))) ||
-		    (unsigned)c->verbosity > CONSOLE_DEBUG ||
-		    (unsigned)c->color > CONSOLE_COLOR_NEVER)
+		_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),
+			       "Console v1 config layout changed");
+		console_config_t config;
+		uint32_t size, version;
+		memcpy(&size, (const unsigned char *)c, sizeof(size));
+		memcpy(&version, (const unsigned char *)c + sizeof(size),
+		       sizeof(version));
+		rc = logger_uapi_copy_struct(&config, sizeof(config), c, size,
+					     version, CONSOLE_CONFIG_VERSION);
+		if (!rc &&
+		    ((unsigned)config.verbosity > CONSOLE_DEBUG ||
+		     (unsigned)config.color > CONSOLE_COLOR_NEVER))
 			rc = -EINVAL;
-		else
+		if (!rc)
 			atomic_store_explicit(&g_config,
-					      ((unsigned)c->verbosity
+					      ((unsigned)config.verbosity
 					       << COLOR_BITS) |
-						      (unsigned)c->color,
+						      (unsigned)config.color,
 					      memory_order_relaxed);
 	}
 	(void)finish(&scope, rc);

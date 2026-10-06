@@ -67,7 +67,16 @@ Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。
 
 借入 logger_t 时，创建/调用/销毁必须使用同一个实际 Logger 实现；不要在多个 SDK 中各自
 静态嵌入不同副本，然后跨副本传递 opaque pointer。宿主已有另一套日志系统时，使用 callback ABI。
-本轮未承诺旧配置二进制 ABI 自适应；结构体 size/version 的既有校验保持不变。
+
+Logger、Audit、Console 的 Production v1 顶层配置统一采用 Linux UAPI 风格的
+`struct_size/version` 合同。当前已知结构必须完整存在；未来更大的结构只有在未知 tail
+全部为 0 时才被旧库接受，未知非零语义返回 `E2BIG`。不支持的 version 返回
+`EPROTONOSUPPORT`，过短结构返回 `EINVAL`。pre-v1 zero/zero、旧 prefix 和历史
+old-header consumer 均不进入 v1 兼容合同。
+
+结构体本身在 init/create 期间复制为内部快照；其中的字符串指针只在该调用期间借用，
+调用者必须保证其有效且不被并发修改。完整规则见 `docs/UAPI.md`。
+
 源码/二进制发布 ABI 冻结、符号可见性、安装/导出仍需后续处理。
 
 完整集成示例和关闭顺序见 [HOST_OWNED.md](docs/HOST_OWNED.md)。

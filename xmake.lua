@@ -661,8 +661,6 @@ if has_config("build_regression_tests") then
             {"socket", "connect", "send", "clock_gettime", "close"}},
         {"syslog_config_regression", "tests/regression/test_syslog_config.c",
             {"connect"}},
-        {"logger_v1_consumer", "tests/compat/test_logger_v1_consumer.c",
-            {"connect"}},
         {"syslog_fallback_regression", "tests/regression/test_syslog_fallback.c",
             {"logger_format_line"}},
 
@@ -1318,29 +1316,13 @@ if has_config("build_regression_tests") then
 
     target("syslog_config_regression")
         for _, scenario in ipairs({
-            "prefix", "zero-prefix", "header-only",
-            "unknown-header", "partial-tail", "future-tail"
+            "exact", "zero-header", "short",
+            "unknown-version", "future-zero", "future-nonzero"
         }) do
             add_tests("syslog_config_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
     target_end()
-
-    target("logger_v1_consumer")
-        add_tests("syslog_old_header_consumer", {timeout = 15})
-    target_end()
-
-    if has_config("build_shared") then
-        target("logger_v1_shared_consumer")
-            set_kind("binary")
-            set_default(false)
-            add_files("tests/compat/test_logger_v1_shared.c")
-            add_deps("logger")
-            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                       {force = true})
-            add_tests("syslog_old_header_shared_consumer", {timeout = 15})
-        target_end()
-    end
 
     target("syslog_fallback_regression")
         add_tests("syslog_fallback_pressure", {timeout = 15})
