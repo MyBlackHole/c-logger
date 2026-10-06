@@ -1,6 +1,6 @@
 # c-logger 2.0 锁与阻塞契约
 
-状态：**#103 第一阶段设计基线**。
+状态：**#103 冻结契约**。
 
 本文件定义 2.0 当前锁图。修改锁图、增加嵌套或改变 condition predicate 时必须同步更新。
 
@@ -196,3 +196,36 @@ cancellation 恢复必须发生在全部 library lock/lifetime pin 释放之后�
 8. cancellation/fork 影响；
 9. 是否需要 lockdep-style assertion；
 10. failure-path test。
+
+
+## 12. condition wait 与 debug lockdep
+
+`pthread_cond_wait()` 会在 libc 内部原子释放 mutex，并在返回前重新取得 mutex。
+当前 debug lockdep 是**线程本地的锁序/契约检查器**，不是 pthread mutex owner 的
+第二套实现，因此在 wait 调用期间保留当前线程的逻辑 held entry。
+
+这个模型只在以下前提下成立：
+
+- 调用 `pthread_cond_wait()` 前 tracker 已记录对应 mutex；
+- wait 内部没有执行 c-logger 的受保护 callback/嵌套 lock acquisition；
+- 函数返回到 c-logger 时 POSIX 已保证 mutex 重新取得；
+- cancellation 边界仍由现有 scope contract 管理。
+
+因此 tracker 不尝试观察 libc 内部暂时 unlock/relock，也不用于判断跨线程实际
+mutex owner。真实互斥仍完全由 pthread primitive 保证。
+
+## 13. lockdep 不承担 lifetime
+
+debug lockdep 能证明的是“当前执行路径遵守冻结的锁顺序和 assert-held contract”。
+
+它不能证明：
+
+- 对象仍然存活；
+- candidate 是否已经 publish；
+- retired object 是否已经完成 reader/operation drain；
+- worker 是否已经 join；
+- callback 是否持有独立 lifetime owner。
+
+所以 `Global/Audit control -> instance` 的合法边必须同时满足 #102 ownership
+proof：对象尚未 publish，或已经 unpublish + drain 后独占回到 controller。
+lockdep 允许这条无环锁序，不等于自动证明该 ownership phase。

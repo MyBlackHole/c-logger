@@ -1,6 +1,6 @@
 # Lockdep-style debug assertions
 
-状态：**#103 第三阶段基础设施**。
+状态：**#103 冻结 debug contract**。
 
 c-logger 不通过 `pthread_mutex_trylock()` 推断“当前线程是否持锁”。debug/test
 构建使用显式 TLS held-lock stack；production 通过
@@ -21,8 +21,14 @@ c-logger 不通过 `pthread_mutex_trylock()` 推断“当前线程是否持锁�
 
 ```text
 Global control -> Global lifetime -> one instance lock
-Audit control  -> Audit operation -> one instance lock
+Global control --------------------> one detached instance lock
+
+Audit control  -> Audit operation  -> one instance lock
+Audit control  --------------------> one detached instance lock
 ```
+
+direct controller -> instance 只表达 candidate/retired ownership phase；tracker
+本身不判断对象是否已经 unpublish/drain，该生命周期证明仍属于 #102/#104。
 
 instance lock 之间禁止嵌套；Console 当前不允许与其他 tracked lock 嵌套。
 
@@ -47,10 +53,18 @@ debug invariant 的 fail-fast 用途一致；production 不改变错误模型。
 
 ## 边界
 
-本 PR 只建立 tracking engine 和 relation-matrix regression。下一步把真实
-Global/Audit/instance mutex/rwlock acquisition 接入 tracking，然后在已有
-locked helpers 上放置 assert-held。这样避免“为了 lockdep 重写锁抽象”与
-“同时修改 production locking semantics”混在一个 commit 中。
+#103 已把 Global/Audit/instance/Queue/Console 的实际 pthread acquisition path
+接入 debug tracking。production 仍以 `LOGGER_ENABLE_LOCKDEP=0` 编译为空操作。
+
+lockdep 不：
+
+- 包装或替换 pthread mutex/rwlock 的同步语义；
+- 通过 `pthread_mutex_trylock()` 猜 owner；
+- 证明 object lifetime；
+- 证明 condition variable predicate；
+- 允许用 debug tracking 修复 production race。
+
+它只把已冻结的 lock-order / held-lock invariant 变成可执行断言。
 
 
 ## 真实接入：Global / Audit

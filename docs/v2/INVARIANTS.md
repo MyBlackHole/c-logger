@@ -23,3 +23,24 @@
 11. 从属 worker/queue/backend 不因为跨线程访问就自动成为 parent 对象的 refcount owner；其 lifetime 由结构 owner + quiescence/join 证明。
 12. `inc_not_zero` 的调用者必须已经拥有可安全解引用 refcount 字段的 lifetime proof，它不能复活或保护一个可能已经 free 的裸指针。
 13. process-level census 与 object refcount 是不同机制，禁止合并语义。
+
+
+## #103 并发与锁补充不变量
+
+14. reservation counter、metrics counter、state atomic 与 payload publication
+    primitive 必须分开说明；“都是 atomic”不能合并语义。
+15. 任何 lockless/atomic state machine 必须有 linearization、publication、
+    happens-before、reclamation、ABA、progress 和 failure/retry proof；TSan
+    不能替代该 proof。
+16. Queue wakeup 的 live `consumer_waiting` 修改必须保持在已证明的 acq_rel
+    RMW handoff protocol 中；不能重新插入 plain concurrent store 或用 SC fence
+    注释代替 C11 proof。
+17. condition variable 的 signal/broadcast 只是通知，predicate 才是状态；wait
+    必须在 mutex 下循环重新检查 predicate。
+18. debug lockdep 是 order/assertion checker，不是同步 primitive，也不是 lifetime
+    pin；production correctness 不能依赖 `LOGGER_ENABLE_LOCKDEP=1`。
+19. `Global/Audit control -> instance` 只在 controller 独占 candidate，或对象已经
+    unpublish + drain 成为 retired object 后合法；published object 仍必须经过
+    lifetime/operation scope。
+20. instance emit/progress/queue-wait lock 之间禁止嵌套；worker 必须保持
+    queue consume -> emit -> progress 的分阶段结构。
