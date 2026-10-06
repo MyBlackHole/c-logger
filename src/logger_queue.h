@@ -80,7 +80,7 @@ typedef struct {
 } logger_queue_t;
 
 int logger_queue_init(logger_queue_t *, size_t);
-void logger_queue_destroy(logger_queue_t *);
+int logger_queue_destroy(logger_queue_t *);
 int logger_queue_push(logger_queue_t *, const logger_message_t *);
 int logger_queue_try_pop(logger_queue_t *, logger_message_t *);
 size_t logger_queue_drain(logger_queue_t *, logger_message_t *, size_t);
