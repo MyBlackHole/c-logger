@@ -102,7 +102,7 @@ __cleanup_must_check_ptr(const volatile void *value)
 #define EXTEND_CLASS(_name, _ext, _init, ...)                               \
 	EXTEND_CLASS_COND(_name, _ext, false, _init, __VA_ARGS__)
 
-#define CLASS(_name, _var)                                                  \
+/* cleanup attribute 是变量的语义使用；Clang 10 仍会对隐藏 guard storage 报\n * unused-variable，因此 class storage 显式标记 LOGGER_MAYBE_UNUSED。 */\n#define CLASS(_name, _var)                                                  \
 	class_##_name##_t _var LOGGER_MAYBE_UNUSED                             \
 		CLEANUP_ATTR(class_##_name##_destructor) =                         \
 		class_##_name##_constructor
