@@ -1,8 +1,8 @@
-# C Logger — 受控生产发布候选
+# C Logger — Production v1
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
-保留文件/标准错误/Syslog、同步/异步、Console 与完整 Audit。当前发布仍属于受控生产候选，
-当前默认 ABI 已冻结为 Production v1 ABI，但软件版本仍是 0.9.6 受控生产候选；**尚未发布 Production 1.0**。
+保留文件/标准错误/Syslog、同步/异步、Console 与完整 Audit。当前软件版本为 **1.0.0**，
+默认 ABI 为 Production v1：SONAME 1 / `LOGGER_1.0` / 62-symbol public C ABI。
 
 ## 构建与安装
 
@@ -26,9 +26,8 @@ xmake install -o /opt/logger/"$(cat VERSION)"-static logger
 `liblogger.a`。生产库默认关闭故障注入，并使用隐藏可见性 +
 `LOGGER_1.0` ELF 符号版本。
 
-Production v1 ABI 允许列表唯一由 `abi/logger-1.0.symbols` 维护。新增/删除 public API
-必须显式重新打开 ABI 评审并通过 ABI gate，不能用通配符导出。当前软件版本仍可处于
-0.9.x candidate；ABI 1 冻结不等于 Production 1.0 已发布。
+Production v1 ABI 允许列表唯一由 `abi/logger-1.0.symbols` 维护。新增 public API 必须经过
+ABI review 并保持 1.x 向后兼容；删除、重排或改变既有 ABI 语义必须进入新的 ABI major。
 
 ## 下游接入
 

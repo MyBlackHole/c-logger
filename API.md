@@ -1,8 +1,8 @@
 # 当前 API 与集成边界
 
-旧 `logger_metrics_t` / `logger_io_metrics_t` 布局和既有函数签名保持不变。0.9.6
-新增诊断与文件后端指标共四个增量式可观测性访问接口；既有指标结构
-不扩写；`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供。
+Production 1.0 冻结 62 个默认 public C symbol、既有 public struct layout、enum/macro 数值、
+函数类型和错误/生命周期语义。诊断与文件后端指标作为 v1 public surface 的组成部分保留；
+`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供，不进入默认 Production v1 ABI。
 
 ## 显式实例（第三方默认入口）
 

@@ -1,8 +1,7 @@
 # Production v1 支持范围与发布准入
 
-本文定义 c-logger **Production v1** 的目标支持范围和发布硬门禁。它不是对当前 0.9.6
-candidate 的扩大承诺；只有“已冻结支持范围”中的条目满足对应 v1 证据后，才能在正式 v1
-发布中声明支持。
+本文定义 c-logger **Production v1** 的支持范围、持续门禁与部署边界。1.0.0 已完成实现级
+hard gate、ABI freeze 与正式发布身份切换；后续 1.x 必须持续保持这些不变量。
 
 跟踪入口：GitHub issue #73（Production release-hardening roadmap），子门禁为 #68–#72。
 
@@ -182,6 +181,5 @@ Production v1 只能在以下条件同时成立时发布：
 - release notes 明确列出 supported/unsupported platform contract；
 - release artifact 与证据能追溯到同一个 tag/commit/checksum。
 
-当前实现级 hard gate 已关闭。正式切换 `VERSION=1.0.0` 前仍必须完成最终文档一致性、
-release notes、exact release commit/tag/checksum 审查；这些发布动作完成前继续保持
-controlled production candidate。
+Production 1.0 已完成版本身份切换。发布产物必须继续能追溯到 exact tag/commit/checksum；
+任何 hard gate 回退都应阻断后续 1.x 发布。

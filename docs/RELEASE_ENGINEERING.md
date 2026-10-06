@@ -1,8 +1,8 @@
 # 发布工程
 
-c-logger 当前仍是**受控生产发布候选**，不是已经完成全部目标平台、真实掉电和安全认证的
-Production 1.0。软件版本由仓库根 `VERSION` 唯一决定；Production v1 ABI identity 已提前
-冻结为 SONAME 1 / `LOGGER_1.0`，但当前软件版本仍为 0.9.6 candidate。ABI 冻结不等于 1.0 发布。
+c-logger 当前软件版本为 **1.0.0 / Production v1**。软件版本由仓库根 `VERSION` 唯一决定；
+默认 ABI 为 SONAME 1 / `LOGGER_1.0`，public C ABI 由 62-symbol
+`abi/logger-1.0.symbols` 与语义 ABI contract 共同冻结。
 
 ## 构建权威
 
@@ -40,8 +40,8 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 新增/删除 public API 必须显式重新打开 ABI 评审，并同步更新 public header、冻结清单和语义 ABI
 contract。禁止使用 glob 代替显式 allowlist。
 
-当前 `VERSION=0.9.6` 只表示软件发布仍处于 candidate 阶段；它不会改变已经冻结的 ABI major 1。
-正式 `VERSION=1.0.0` 只能在其余 Production v1 release hard gate 全部关闭后单独完成。
+`VERSION=1.0.0` 起，安装元数据与生成头文件的 release-candidate 标志为 false/0；
+0.x 历史发布继续作为 candidate 记录保留。
 
 ### v1 semantic ABI 契约
 
@@ -181,12 +181,12 @@ Linux 发行版、内核 或 CPU 自动兼容。
 
 ## Crash / 断电 / Sanitizer / 基准测试
 
-发布候选还必须保留以下独立证据链：
+Production v1 继续保留以下独立证据链：
 
 - `crash-recovery`：9 个 进程崩溃用例，共享库/静态库 各重复 3 次；
 - `vm-powercut`：ext4 + XFS 各 10 个 QEMU SIGKILL + raw-disk reboot/recovery 切断点；
 - `xmake-parity` Sanitizer：ASan+UBSan 与 TSan 的完整 static suite；
-- `queue-benchmark`：当前 candidate 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
+- `queue-benchmark`：当前 Production v1 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
 
 这些 gate 证明指定虚拟环境中的实现行为，不替代实际服务器、电源、控制器/device volatile
 cache、实际目标 挂载/存储栈 或最低 内核/glibc 验收。
@@ -200,11 +200,12 @@ cache、实际目标 挂载/存储栈 或最低 内核/glibc 验收。
 1. 读取 `VERSION`；
 2. 要求 `docs/RELEASE_NOTES_<VERSION>.md` 存在；
 3. 解析 `v<VERSION>` tag/发布 状态；已有 tag 时锁定该 tag 对应 commit，重试不能改用更新后的 `main` 源码；
-4. 已有 发布 只有在 pre发布 元数据正确、四个 asset 齐全且包内 SHA-256 校验全部通过时才视为完成并跳过；
+4. 已有 release 只有在标题、prerelease/stable 分类、四个 asset 与 SHA-256 全部正确时才视为完成并跳过；
 5. 发布 缺失或不完整时，共享库/静态库 分别执行完整 Xmake 发布 suite；
 6. 生成并验证 XPack + SHA-256，汇总四个 authoritative 发布资产；
-7. 发布 不存在时创建 pre发布；发布 已存在但不完整时使用 `gh release upload --clobber` 修复同名资产；
-8. 发布后重新下载远端四个 asset，并再次执行数量、SHA-256、pre发布/title 校验。
+7. 0.x 发布使用 prerelease；1.x+ 使用 stable Production release；已有 release 不完整时使用
+   `gh release upload --clobber` 并通过 API 归一化 prerelease 标志；
+8. 发布后重新下载远端四个 asset，并再次执行数量、SHA-256、release class/title 校验。
 
 `workflow_dispatch` 因而是幂等恢复入口：完整 发布 不会重复发布，不完整 发布 会从既有 tag 的源码重建并修复。
 发布新代码仍必须先递增 `VERSION`；不能把同一 tag 改指向另一份源码。

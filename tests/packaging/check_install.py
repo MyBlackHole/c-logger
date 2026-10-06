@@ -40,6 +40,7 @@ assert re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version), a.symbol_versio
 abi_manifest = a.source / a.abi_manifest
 assert abi_manifest.is_file(), abi_manifest
 version_major, version_minor, version_patch = map(int, version.split('.'))
+expected_release_candidate = version_major == 0
 next_patch = f'{version_major}.{version_minor}.{version_patch + 1}'
 next_major = f'{version_major + 1}.0.0'
 work = Path(tempfile.mkdtemp(prefix='install-check-', dir=Path.cwd()))
@@ -102,6 +103,11 @@ try:
     assert {x.name for x in include.iterdir()} == expected_headers
     version_header = (include / 'logger_version.h').read_text()
     assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*$', version_header, re.M)
+    expected_candidate_macro = '1' if expected_release_candidate else '0'
+    assert re.search(r'^#define LOGGER_RELEASE_CANDIDATE\s+' + expected_candidate_macro + r'\s*$', version_header, re.M)
+    cmake_config = (config_dir / 'LoggerConfig.cmake').read_text()
+    expected_candidate_cmake = 'TRUE' if expected_release_candidate else 'FALSE'
+    assert re.search(r'^set\(Logger_RELEASE_CANDIDATE\s+' + expected_candidate_cmake + r'\)$', cmake_config, re.M)
     for x in prefix.rglob('*'):
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()
