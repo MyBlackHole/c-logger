@@ -467,37 +467,65 @@ static int dispose_body(logger_t *l)
 		atomic_store_explicit(&l->running, 0, memory_order_release);
 		logger_queue_wake_force(&l->q);
 		int join_rc = pthread_join(l->worker, NULL);
-		if (join_rc)
+		if (join_rc) {
+			int expected = 0;
+			(void)atomic_compare_exchange_strong_explicit(
+				&l->lifecycle_error, &expected, join_rc,
+				memory_order_release, memory_order_relaxed);
 			return -join_rc;
+		}
 	}
 
+	int lifecycle_error = atomic_load_explicit(
+		&l->lifecycle_error, memory_order_acquire);
+	if (lifecycle_error)
+		return -lifecycle_error;
+
 	int lock_rc = pthread_mutex_lock(&l->emit_mu);
-	if (lock_rc)
+	if (lock_rc) {
+		atomic_store_explicit(&l->lifecycle_error, lock_rc,
+				      memory_order_release);
 		return -lock_rc;
+	}
 	int rc = logger_sync_outputs_locked(l);
 	int unlock_rc = pthread_mutex_unlock(&l->emit_mu);
-	if (unlock_rc)
+	if (unlock_rc) {
+		atomic_store_explicit(&l->lifecycle_error, unlock_rc,
+				      memory_order_release);
 		return -unlock_rc;
+	}
 
 	/* Worker no longer exists, so its private workspace is no longer shared. */
 	if (l->async_mode) {
 		logger_worker_workspace_destroy(l->worker_workspace);
 		l->worker_workspace = NULL;
 		int qrc = logger_queue_destroy(&l->q);
-		if (qrc)
+		if (qrc) {
+			atomic_store_explicit(&l->lifecycle_error, -qrc,
+					      memory_order_release);
 			return qrc;
+		}
 	}
 
 	/* These destroys are lifetime assertions, not best-effort cleanup. */
 	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
-	if (destroy_rc)
+	if (destroy_rc) {
+		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
+				      memory_order_release);
 		return -destroy_rc;
+	}
 	destroy_rc = pthread_mutex_destroy(&l->progress_mu);
-	if (destroy_rc)
+	if (destroy_rc) {
+		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
+				      memory_order_release);
 		return -destroy_rc;
+	}
 	destroy_rc = pthread_mutex_destroy(&l->emit_mu);
-	if (destroy_rc)
+	if (destroy_rc) {
+		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
+				      memory_order_release);
 		return -destroy_rc;
+	}
 
 	int close_rc = logger_file_close_status(&l->file_backend);
 	if (!rc)
