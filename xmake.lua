@@ -734,6 +734,11 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
+    target("queue_notify_regression")
+        add_tests("queue_notify_wait_error",
+                  {runargs = "wait-error", timeout = 15})
+    target_end()
+
     target("resource_cleanup_regression")
         add_tests("resource_cleanup_regression", {timeout = 15})
     target_end()
