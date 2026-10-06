@@ -177,6 +177,8 @@ static int safe_name(const char *s)
 static int normalize_audit_config(const audit_config_t *in,
 				  audit_config_t *out)
 {
+	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE <= sizeof(*out),
+		       "Audit v1 prefix exceeds current config");
 	if (!in || !out)
 		return -EINVAL;
 
