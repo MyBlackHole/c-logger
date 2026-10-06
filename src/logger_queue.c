@@ -276,14 +276,26 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	return 0;
 }
 
-void logger_queue_destroy(logger_queue_t *q)
+int logger_queue_destroy(logger_queue_t *q)
 {
-	pthread_cond_destroy(&q->wait_cv);
-	pthread_mutex_destroy(&q->wait_mu);
+	if (!q)
+		return -EINVAL;
+
+	/* Lifetime proof comes before storage release. If either synchronization
+	 * object still has users, intentionally retain all queue storage rather than
+	 * free memory that a waiter/producer could still reach. */
+	int rc = pthread_cond_destroy(&q->wait_cv);
+	if (rc)
+		return -rc;
+	rc = pthread_mutex_destroy(&q->wait_mu);
+	if (rc)
+		return -rc;
+
 	free(q->spills);
 	q->spills = NULL;
 	free(q->slots);
 	q->slots = NULL;
+	return 0;
 }
 
 void logger_queue_notify_if_waiting(logger_queue_t *q)

@@ -600,7 +600,8 @@ if has_config("build_regression_tests") then
         {"source_ownership_regression", "tests/regression/test_source_ownership.c",
             {"logger_format_line"}},
         {"destroy_status_regression", "tests/regression/test_destroy_status.c",
-            {"close"}},
+            {"close", "pthread_join", "pthread_cond_destroy",
+             "pthread_mutex_destroy"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
         {"bench_matrix", "tests/bench_matrix.c"},
@@ -732,6 +733,11 @@ if has_config("build_regression_tests") then
             add_tests(name, {timeout = 15})
         target_end()
     end
+
+    target("queue_notify_regression")
+        add_tests("queue_notify_wait_error",
+                  {runargs = "wait-error", timeout = 15})
+    target_end()
 
     target("resource_cleanup_regression")
         add_tests("resource_cleanup_regression", {timeout = 15})
@@ -936,7 +942,10 @@ if has_config("build_regression_tests") then
     target_end()
 
     target("destroy_status_regression")
-        for _, scenario in ipairs({"null", "drain", "io-error", "close-error"}) do
+        for _, scenario in ipairs({
+            "null", "drain", "io-error", "close-error",
+            "join-error", "cond-destroy-error", "mutex-destroy-error"
+        }) do
             add_tests("destroy_status_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end

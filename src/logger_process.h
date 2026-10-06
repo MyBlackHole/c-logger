@@ -19,7 +19,7 @@ void logger_process_invalidate_child(void);
  * 计数归零不会触发析构；只有 create/destroy 路径承担该成本，
  * 普通日志提交不受影响。 */
 int logger_process_object_acquire(void);
-void logger_process_object_release(void);
+int logger_process_object_release(void);
 unsigned logger_process_object_count(void);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 int logger_process_thread_count(unsigned *out); /* Linux /proc，实现返回 0 / -errno */

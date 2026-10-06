@@ -21,6 +21,8 @@ STOPPING
   ->
 停止并等待退出工作线程
   ->
+确认 join / 同步对象 teardown 成功
+  ->
 同步/关闭/释放已拥有资源
   ->
 STOPPED + 释放对象
@@ -76,7 +78,12 @@ IDLE
 工作线程归所属 `logger_t` 所有。
 
 只有异步实例才会创建工作线程，并通过协作方式停止。
-工作线程可能访问的资源——包括工作区和队列存储——只有在 `pthread_join()` 之后才能释放。
+工作线程可能访问的资源——包括工作区和队列存储——只有在 `pthread_join()` 成功之后才能释放。
+是否允许 final free 只取决于 quiescence 是否被证明，而不是“是否发生过内部错误”。
+worker 内部同步错误（例如 cond_wait 返回错误）若随后 pthread_join 成功，则 worker 已经确定退出，
+可以继续安全 teardown，同时把该错误返回调用方。只有 join、queue/progress/emit 同步对象销毁、
+process census 等无法证明 quiescent/ownership 已终止的错误，才必须停止 final release并保留
+retired allocation。生命周期证明失败不是普通 I/O close 失败。
 
 ## 后端生命周期
 
@@ -89,6 +96,18 @@ IDLE
 Audit 拥有独立的子系统状态和单写入器所有权。
 它的状态机、检查点/恢复以及持久写入器锁不会折叠进 Logger 的词法作用域清理。
 Audit 状态转换错误和持久状态写入必须保持显式处理。
+
+## 生命周期证明失败
+
+teardown 必须区分两类错误：
+
+- **release-side I/O error**：对象已经证明没有使用者，可以继续完成 final free，并把
+  fsync/close 等错误返回调用方；
+- **lifetime-proof error**：join、同步对象销毁、内部 census 等无法证明对象无人使用，
+  此时禁止继续 final free。
+
+公开 teardown 一旦真正开始仍消费 owner 的 public pointer；发生 lifetime-proof error 时，
+实现可以内部保留 retired allocation，调用方不得重试或复用该指针。
 
 ## 非法的生命周期捷径
 

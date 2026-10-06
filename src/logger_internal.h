@@ -59,7 +59,10 @@ struct logger {
 	size_t completed_pos; /* queue 的 exclusive watermark，由 progress_mu 保护 */
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
-	_Atomic int first_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
+	_Atomic int first_error;
+	/* Internal synchronization/lifecycle failure; positive errno, sticky.
+	 * Distinct from backend first_error because it gates safe teardown. */
+	_Atomic int lifecycle_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
 	/* 异步 queue：q 拥有 compact slots 与预分配 spill pool。
 	 * producer/consumer 顺序由 slot.seq atomic publication 协议保证；
 	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
@@ -75,7 +78,9 @@ struct logger {
 	_Atomic uint64_t consumer_batches, consumer_records;
 };
 /* 内部完整 teardown：调用者必须拥有独占 ownership，返回 0 / -errno。
- * 与 logger_destroy 一样会释放对象；失败也不能把旧指针当作可重试对象。 */
+ * 普通 I/O teardown 错误仍完成 final free；若 join/同步对象/census 无法
+ * 证明 quiescent，则故意保留 retired allocation，绝不继续 free 成 UAF。
+ * teardown 一旦开始，旧指针都不能被调用者当作可重试对象。 */
 /* Audit 在检查/修复目标前先取得 file ownership，随后把该 reservation
  * move 给同步 logger。 */
 logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);

@@ -317,10 +317,14 @@ LOGGER_API void logger_log_source(logger_t *, logger_level_t, logger_source_t,
 #endif
 	;
 
-/* Exclusive owner only: first stop/join every user. Returns 0 or -1+errno.
- * On an ordinary I/O failure the instance IS freed; never retry the pointer.
- * NULL succeeds. ECHILD refuses inherited state without touching/freeing it.
- * Cancellation is deferred until teardown is complete. No implicit refcount. */
+/* Exclusive owner only: first stop/join every borrower. Returns 0 or -1+errno.
+ * Ordinary final I/O/close failure still consumes and frees the instance.
+ * A lifecycle-proof failure (worker join / synchronization teardown / internal
+ * census invariant) also consumes public ownership, but may intentionally
+ * retain the retired allocation internally rather than risk UAF. In every case
+ * except pre-entry rejection (for example ECHILD/EDEADLK), never retry or reuse
+ * a pointer once teardown has actually started.
+ * NULL succeeds. Cancellation is deferred across teardown. No implicit refcount. */
 LOGGER_API int logger_destroy_status(logger_t *);
 /* Compatibility wrapper, discards teardown status. */
 /* A pending cancellation at the end of dispose may run host cleanup after the
