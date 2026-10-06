@@ -3,10 +3,12 @@
 #include "support.h"
 
 /* No library hook: wrap the real pthread wait entry at link time. */
-static _Atomic int in_gap, release_wait, intercepted;
+static _Atomic int in_gap, release_wait, intercepted, fail_wait;
 int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
+	if (atomic_exchange(&fail_wait, 0))
+		return EIO;
 	if (!atomic_exchange(&intercepted, 1)) {
 		atomic_store(&in_gap, 1);
 		wait_flag(
@@ -20,8 +22,16 @@ static void *producer(void *p)
 		   "last-before-idle");
 	return NULL;
 }
-int main(void)
+int main(int argc, char **argv)
 {
+	CHECK(argc == 1 || argc == 2);
+	int wait_error = argc == 2 && !strcmp(argv[1], "wait-error");
+	if (argc == 2)
+		CHECK(wait_error);
+	if (wait_error) {
+		atomic_store(&fail_wait, 1);
+		atomic_store(&release_wait, 1);
+	}
 	char dir[] = "/tmp/logger-notify-XXXXXX";
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
@@ -31,6 +41,24 @@ int main(void)
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *l = logger_create(&c);
 	CHECK(l);
+	if (wait_error) {
+		for (int i = 0; i < 5000; ++i) {
+			if (atomic_load_explicit(&l->lifecycle_error,
+						 memory_order_acquire) == EIO)
+				break;
+			nap_ms();
+		}
+		CHECK(atomic_load_explicit(&l->lifecycle_error,
+					   memory_order_acquire) == EIO);
+		CHECK(atomic_load_explicit(&l->state, memory_order_acquire) ==
+		      LOGGER_STATE_STOPPING);
+		errno = 0;
+		CHECK(logger_destroy_status(l) == -1 && errno == EIO);
+		CHECK(logger_process_object_count() == 1);
+		leave_temp(dir);
+		puts("worker wait failure blocks final free");
+		return 0;
+	}
 	wait_flag(&in_gap);
 	CHECK(atomic_load_explicit(&l->q.consumer_waiting,
 				   memory_order_acquire) == 1);
