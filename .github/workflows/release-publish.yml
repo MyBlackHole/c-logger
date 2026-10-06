@@ -264,7 +264,8 @@ jobs:
           version="${{ needs.prepare.outputs.version }}"
           tag="${{ needs.prepare.outputs.tag }}"
           notes="${{ needs.prepare.outputs.notes }}"
-          title="c-logger ${version} — Controlled Production Candidate"
+          title="${{ needs.prepare.outputs.title }}"
+          prerelease="${{ needs.prepare.outputs.prerelease }}"
 
           test "$(cat VERSION)" = "$version"
           shopt -s nullglob
@@ -279,26 +280,34 @@ jobs:
             exit 1
           fi
 
+          prerelease_args=()
+          if [ "$prerelease" = true ]; then
+            prerelease_args=(--prerelease)
+          fi
+
           if [ "${{ needs.prepare.outputs.release_exists }}" = true ]; then
             gh release edit "$tag" \
               --title "$title" \
-              --notes-file "$notes" \
-              --prerelease
+              --notes-file "$notes"
             gh release upload "$tag" --clobber "${assets[@]}"
           elif [ "${{ needs.prepare.outputs.tag_exists }}" = true ]; then
             gh release create "$tag" \
               --title "$title" \
               --notes-file "$notes" \
-              --prerelease \
+              "${prerelease_args[@]}" \
               "${assets[@]}"
           else
             gh release create "$tag" \
               --target "${{ needs.prepare.outputs.source_sha }}" \
               --title "$title" \
               --notes-file "$notes" \
-              --prerelease \
+              "${prerelease_args[@]}" \
               "${assets[@]}"
           fi
+
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.id')"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F prerelease="$prerelease" >/dev/null
 
           rm -rf release-verify
           mkdir -p release-verify
@@ -307,7 +316,7 @@ jobs:
           python3 scripts/check_release_assets.py \
             --directory release-verify \
             --version "$version"
-          test "$(gh release view "$tag" --json isPrerelease --jq '.isPrerelease')" = true
+          test "$(gh release view "$tag" --json isPrerelease --jq '.isPrerelease')" = "$prerelease"
           test "$(gh release view "$tag" --json name --jq '.name')" = "$title"
 
   release-already-exists:
