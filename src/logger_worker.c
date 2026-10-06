@@ -308,7 +308,20 @@ void *logger_worker_main(void *p)
 					break;
 				atomic_fetch_add_explicit(&l->q.wait_count, 1,
 							  memory_order_relaxed);
-				pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
+				int wait_rc =
+					pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
+				if (wait_rc) {
+					int expected = 0;
+					(void)atomic_compare_exchange_strong_explicit(
+						&l->lifecycle_error, &expected, wait_rc,
+						memory_order_release, memory_order_relaxed);
+					atomic_store_explicit(&l->state,
+							      LOGGER_STATE_STOPPING,
+							      memory_order_release);
+					atomic_store_explicit(&l->running, 0,
+							      memory_order_release);
+					break;
+				}
 			}
 			atomic_store_explicit(&l->q.consumer_waiting, 0,
 					      memory_order_release);
