@@ -617,16 +617,18 @@ if has_config("build_regression_tests") then
         {"resource_cleanup_regression", "tests/regression/test_resource_cleanup.c",
             {"free"}},
         {"audit_commit_regression", "tests/regression/test_audit_commit.c",
-            {"audit_checkpoint_persist", "logger_log_sync_status", "write", "fsync",
+            {"audit_checkpoint_persist_at", "logger_log_sync_status", "write", "fsync",
              "logger_file_offset"}},
         {"audit_lifecycle_regression", "tests/regression/test_audit_lifecycle.c",
             {"logger_destroy_status", "logger_log_sync_status", "pthread_mutex_lock"}},
         {"checkpoint_io_regression", "tests/regression/test_checkpoint_io.c",
-            {"write", "fsync", "close", "rename"}},
+            {"write", "fsync", "close", "renameat"}},
         {"crypto_failure_regression", "tests/regression/test_crypto_failure.c",
             {"audit_digest_provider"}},
         {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
             {"write", "fsync", "ftruncate"}},
+        {"audit_dirfd_regression", "tests/regression/test_audit_dirfd.c",
+            {"stat"}},
         {"audit_entropy_regression", "tests/regression/test_audit_entropy.c",
             {"getrandom"}},
 
@@ -768,6 +770,10 @@ if has_config("build_regression_tests") then
             add_tests("audit_" .. scenario .. "_regression",
                       {runargs = scenario, timeout = 20})
         end
+    target_end()
+
+    target("audit_dirfd_regression")
+        add_tests("audit_dirfd_parent_rename", {timeout = 20})
     target_end()
 
     target("checkpoint_io_regression")
