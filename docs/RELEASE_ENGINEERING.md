@@ -172,10 +172,9 @@ Linux 发行版、内核 或 CPU 自动兼容。
 7. C/C++11 CMake 消费方；
 8. PIC SDK 模块；
 9. pkg-config 消费方；
-10. 精确版本/组件s rejection；
-11. frozen 旧头文件 消费方；
-12. public layout/default 快照；
-13. production isolation。
+10. 精确版本/组件 rejection；
+11. current C/C++ public layout/default 快照；
+12. production isolation。
 
 测试实现见 `tests/packaging/check_install.py`。该脚本直接读取 `VERSION` 和
 `abi/logger-1.0.symbols`，不维护第二份发布 version/ABI 清单。
