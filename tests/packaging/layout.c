@@ -71,7 +71,6 @@ int main(void)
 	N(a.rotation.retention_days);
 	N(a.failure_policy);
 	N(a.integrity);
-	N(a.fsync_each_record);
 	N(c.struct_size);
 	N(c.version);
 	N(c.verbosity);

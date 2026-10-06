@@ -161,7 +161,7 @@ ABI_FIELD(logger_syslog_metrics_t, connected, 88);
 ABI_FIELD(logger_syslog_metrics_t, last_error, 92);
 ABI_FIELD(logger_syslog_metrics_t, last_close_error, 96);
 
-ABI_TYPE(audit_config_t, 72, 8);
+ABI_TYPE(audit_config_t, 64, 8);
 ABI_FIELD(audit_config_t, struct_size, 0);
 ABI_FIELD(audit_config_t, version, 4);
 ABI_FIELD(audit_config_t, log_dir, 8);
@@ -170,7 +170,6 @@ ABI_FIELD(audit_config_t, chain_state_path, 24);
 ABI_FIELD(audit_config_t, rotation, 32);
 ABI_FIELD(audit_config_t, failure_policy, 56);
 ABI_FIELD(audit_config_t, integrity, 60);
-ABI_FIELD(audit_config_t, fsync_each_record, 64);
 
 ABI_TYPE(audit_event_t, 72, 8);
 ABI_FIELD(audit_event_t, phase, 0);
@@ -367,14 +366,14 @@ static int defaults_match(void)
 		return 3;
 
 	audit_config_t a = AUDIT_DEFAULT_CONFIG();
-	if (a.struct_size != 72 || a.version != 1 || !a.log_dir ||
+	if (a.struct_size != 64 || a.version != 1 || !a.log_dir ||
 	    strcmp(a.log_dir, "/var/log") || !a.name || strcmp(a.name, "app") ||
 	    a.chain_state_path != NULL ||
 	    a.rotation.mode != LOGGER_ROTATE_SIZE_DAILY ||
 	    a.rotation.max_file_size != 100u * 1024u * 1024u ||
 	    a.rotation.retention_days != 90 ||
 	    a.failure_policy != AUDIT_FAIL_REPORT ||
-	    a.integrity != AUDIT_INTEGRITY_SHA256 || a.fsync_each_record != 1)
+	    a.integrity != AUDIT_INTEGRITY_SHA256)
 		return 4;
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();

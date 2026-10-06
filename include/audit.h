@@ -36,6 +36,11 @@ typedef struct {
 	const char *detail;
 } audit_event_t;
 #define AUDIT_CONFIG_VERSION 1u
+/* Audit durability is strict and not configurable: each committed record uses
+ * the synchronous forced-sync path before checkpoint advancement.
+ * Pre-1.0 callers may advertise a larger struct_size; unknown trailing bytes are
+ * ignored, so removal of the historical no-op fsync field remains source/API
+ * cleanup without requiring the library to interpret that tail. */
 typedef struct {
 	uint32_t struct_size;
 	uint32_t version;
@@ -45,7 +50,6 @@ typedef struct {
 	logger_rotation_config_t rotation;
 	audit_failure_policy_t failure_policy;
 	audit_integrity_t integrity;
-	int fsync_each_record;
 } audit_config_t;
 #ifdef __cplusplus
 static inline audit_config_t audit_defaults_cpp(void)
@@ -60,7 +64,6 @@ static inline audit_config_t audit_defaults_cpp(void)
 	c.rotation.retention_days = 90;
 	c.failure_policy = AUDIT_FAIL_REPORT;
 	c.integrity = AUDIT_INTEGRITY_SHA256;
-	c.fsync_each_record = 1;
 	return c;
 }
 #define AUDIT_DEFAULT_CONFIG() audit_defaults_cpp()
@@ -75,8 +78,7 @@ static inline audit_config_t audit_defaults_cpp(void)
 			      .max_file_size = 100u * 1024u * 1024u, \
 			      .retention_days = 90 },                \
 		.failure_policy = AUDIT_FAIL_REPORT,                 \
-		.integrity = AUDIT_INTEGRITY_SHA256,                 \
-		.fsync_each_record = 1 })
+		.integrity = AUDIT_INTEGRITY_SHA256 })
 #endif
 /* audit_init/audit_write/audit_begin/audit_end/audit_flush use POSIX-style
  * 0 success, -1 failure with errno. Audit is a single-writer process-global

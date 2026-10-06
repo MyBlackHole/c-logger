@@ -10,7 +10,6 @@ int main(void)
 	c.log_dir = ".";
 	c.name = "audittxn";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	c.fsync_each_record = 1;
 	c.failure_policy = AUDIT_FAIL_DENY;
 	if (audit_init(&c)) {
 		perror("audit_init");
