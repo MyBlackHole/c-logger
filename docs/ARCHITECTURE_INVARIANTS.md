@@ -25,9 +25,9 @@
 8. BORROWED 指针 不能被 词法作用域清理 自动释放。
 9. 移交 后旧 所有者 必须失效。
 10. 工作线程/队列/工作区 必须在 final free 前证明执行者已经退出；`pthread_join` 必须成功。
-11. join、cond/mutex teardown、process census 等生命周期证明失败时，禁止继续 final free；安全泄漏优先于 UAF。
+11. 是否允许 final free 只由 quiescence proof 决定；普通内部错误若仍能证明所有执行者已退出，可以返回错误后安全释放。
 12. 销毁一旦真正开始即消费 public ownership；普通最终 I/O 错误不让旧指针变成可重试对象。
-13. 同步对象 destroy 不是 best-effort cleanup，而是“已经无使用者”的生命周期断言。
+13. join、同步对象 destroy、process census 等是 quiescence/ownership 证明；这些证明失败时禁止继续 final free，安全泄漏优先于 UAF。
 14. process/object census 必须防 overflow/underflow，不能用无检查 fetch_sub 隐藏 double release。
 15. lock、atomic、生命周期固定、join、refcount 不得互相替代。
 16. 通用引用计数只有在多个独立 owner 真正需要延长生命周期时才允许引入。
