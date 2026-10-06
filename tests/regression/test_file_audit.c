@@ -2,6 +2,7 @@
 #include "audit_support.h"
 #include "audit_internal.h"
 #include "logger_internal.h"
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
 
@@ -51,12 +52,14 @@ static int child(int argc, char **argv)
 }
 static void crash(const char *point, audit_integrity_t alg)
 {
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	audit_config_t c = cfg("app", alg);
 	CHECK(audit_init(&c) == 0);
 	audit_event_t e = audit_test_event("BASELINE");
 	CHECK(audit_write(&e) == 0 && audit_shutdown_status() == 0);
 	audit_ckpt_t before;
-	CHECK(audit_checkpoint_load("app.audit.state", &before) == 0);
+	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &before) == 0);
 	char *args[] = { exe, "--crash", (char *)point, "sha256", NULL };
 	subprocess(args, 197);
 	CHECK(audit_init(&c) == 0);
@@ -64,10 +67,11 @@ static void crash(const char *point, audit_integrity_t alg)
 	CHECK(audit_write(&e) == 0);
 	CHECK(audit_shutdown_status() == 0);
 	audit_ckpt_t after;
-	CHECK(audit_checkpoint_load("app.audit.state", &after) == 0);
+	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &after) == 0);
 	CHECK(memcmp(before.hash, after.hash, 32) != 0);
-	CHECK(audit_recover_set(".", "app", "app.audit.log", &after) == 0);
+	CHECK(audit_recover_set_at(dirfd, "app", "app.audit.log", &after) == 0);
 	CHECK(count_event("RECOVERED") == 1);
+	CHECK(close(dirfd) == 0);
 }
 static void logger_blocks_audit(int state)
 {
@@ -120,9 +124,11 @@ static void audit_cwd(void)
 	      access("app.audit.log", F_OK) != 0);
 	CHECK(chdir("..") == 0);
 	audit_ckpt_t cp;
-	CHECK(audit_checkpoint_load("moved/app.audit.state", &cp) == 0);
-	CHECK(audit_recover_set("moved", "app", "moved/app.audit.log", &cp) ==
-	      0);
+	int moved_fd = open("moved", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(moved_fd >= 0);
+	CHECK(audit_checkpoint_load_at(moved_fd, "app.audit.state", &cp) == 0);
+	CHECK(audit_recover_set_at(moved_fd, "app", "app.audit.log", &cp) == 0);
+	CHECK(close(moved_fd) == 0);
 	/* remove nested fixtures using the existing Audit test helper */
 	CHECK(chdir("moved") == 0);
 	DIR *d = opendir(".");

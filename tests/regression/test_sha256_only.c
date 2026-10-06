@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #include "crypto_support.h"
 #include "audit_record.h"
+#include <fcntl.h>
 
 /* Retired wire/API ID. It deliberately has no public enum name now. The
  * historical fixture is inert negative-test data, not a supported algorithm. */
@@ -81,6 +82,8 @@ static void verify_rejected(int empty)
 
 static void rejected_history(const char *mode, const char *fixture)
 {
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	copy_fixture(fixture, "app.audit.log");
 	copy_fixture(fixture, "app.audit.state");
 	crypto_file_t log = crypto_snapshot("app.audit.log");
@@ -102,8 +105,7 @@ static void rejected_history(const char *mode, const char *fixture)
 		audit_ckpt_t out, before;
 		memset(&out, 0xa5, sizeof(out));
 		memcpy(&before, &out, sizeof(before));
-		crypto_expect_error(audit_checkpoint_load("app.audit.state",
-							  &out),
+		crypto_expect_error(audit_checkpoint_load_at(dirfd, "app.audit.state", &out),
 				    EBADMSG);
 		CHECK(!memcmp(&out, &before, sizeof(out)));
 	} else if (!strcmp(mode, "recover-id")) {
@@ -111,14 +113,12 @@ static void rejected_history(const char *mode, const char *fixture)
 		memset(&out, 0, sizeof(out));
 		out.algorithm = (uint32_t)RETIRED_ID;
 		memcpy(&before, &out, sizeof(before));
-		crypto_expect_error(audit_recover_set(".", "app",
-						      "app.audit.log", &out),
+		crypto_expect_error(audit_recover_set_at(dirfd, "app", "app.audit.log", &out),
 				    EPROTONOSUPPORT);
 		CHECK(!memcmp(&out, &before, sizeof(out)));
 	} else if (!strcmp(mode, "checkpoint-write")) {
 		audit_ckpt_t cp = { .algorithm = (uint32_t)RETIRED_ID };
-		crypto_expect_error(audit_checkpoint_persist("app.audit.state",
-							     &cp),
+		crypto_expect_error(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp),
 				    EINVAL);
 	} else {
 		int missing = !strcmp(mode, "init-missing-state");
@@ -167,6 +167,7 @@ static void rejected_history(const char *mode, const char *fixture)
 	crypto_same_file("app.audit.state", &state);
 	free(log.data);
 	free(state.data);
+	CHECK(close(dirfd) == 0);
 }
 
 static void live_unchanged(void)

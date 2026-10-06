@@ -1,6 +1,7 @@
 #include <limits.h>
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <fcntl.h>
 
 static const char *mode;
 static int armed, tail_fd = -1, seen_truncate, seen_evidence, short_calls;
@@ -94,6 +95,8 @@ int main(int argc, char **argv)
 	mode = argv[1];
 	char dir[] = "/tmp/audit-tail-io-XXXXXX";
 	enter_temp(dir);
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	const unsigned char zero[32] = { 0 };
 	record_fixture_t r =
 		record_fixture(AUDIT_INTEGRITY_SHA256, 1, zero, "EVENT");
@@ -104,13 +107,13 @@ int main(int argc, char **argv)
 			    .seq = 1,
 			    .offset = r.length };
 	memcpy(cp.hash, r.hash, 32);
-	CHECK(audit_checkpoint_persist("app.audit.state", &cp) == 0);
+	CHECK(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp) == 0);
 	audit_ckpt_t before = cp;
 	crypto_file_t log = crypto_snapshot("app.audit.log"),
 		      state = crypto_snapshot("app.audit.state");
 	int before_fds = fd_count();
 	armed = 1;
-	int rc = audit_recover_set(".", "app", "app.audit.log", &cp);
+	int rc = audit_recover_set_at(dirfd, "app", "app.audit.log", &cp);
 	int saved = errno;
 	armed = 0;
 	errno = saved;
@@ -150,6 +153,7 @@ int main(int argc, char **argv)
 	}
 	free(log.data);
 	free(state.data);
+	CHECK(close(dirfd) == 0);
 	audit_test_cleanup(dir);
 	printf("tail I/O %s passed\n", mode);
 	return 0;

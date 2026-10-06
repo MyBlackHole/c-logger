@@ -45,8 +45,7 @@ v1 的持久文件/Audit 支持范围限定为：
 - 受信任的本地目录；
 - 单目标 cooperative owner；
 - Linux 5.10+ 上 ext4/XFS 的 `RENAME_NOREPLACE` 路径；
-- 当前 Audit 使用场景必须保持可访问 procfs，使 owned procfd 路径绑定语义成立
-  （该实现依赖计划在 ABI freeze 前用原生 dirfd API 消除）。
+- Audit recovery/checkpoint 使用已持有的目录 fd；procfs 不属于运行时依赖。
 
 这里的“支持 ext4/XFS”要求正式 v1 前补齐真实目标存储栈证据。现有 QEMU/raw-disk ext4 +
 XFS × 10 cut-point matrix 是必要 CI gate，但不是物理断电认证。
@@ -97,7 +96,6 @@ Global facade 继续作为宿主便利 API，但不改变显式 owner 模型。
 - NFS、SMB 以及其他网络/分布式文件系统；
 - 除 ext4/XFS 外未明确验收的文件系统；
 - 恶意目录替换、恶意/不协作 writer、锁 inode 删除替换等把 cooperative lock 当安全边界的场景；
-- 初始化后进入导致 procfs 不可访问的 chroot / namespace / procfs unmount 场景；
 - signal-handler-safe 使用；
 - `PTHREAD_CANCEL_ASYNCHRONOUS + ENABLE` 进入普通 Logger/Console API；
 - `pthread_exit` / `longjmp` 穿过库调用；
@@ -124,7 +122,7 @@ Global facade 继续作为宿主便利 API，但不改变显式 owner 模型。
 - kernel CRNG ready 后实际执行 `getrandom`；
 - ext4 与 XFS 的 `RENAME_NOREPLACE` internal rotation；
 - Audit 在 ext4/XFS 上的 init/write/shutdown/verify；
-- 当前 procfs/procfd Audit 路径。
+- Audit owned-dirfd recovery/checkpoint 路径。
 
 minimum-kernel gate 不再重复 shared/static packaging、完整 consumer、process-crash、
 sanitizer 等已有独立 workflow 的证明。更老 kernel 只在出现真实部署需求时建立单独

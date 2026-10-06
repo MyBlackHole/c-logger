@@ -95,14 +95,14 @@ ownership 本身就是 writer lease，恢复成功后该 reservation 直接 move
 因此从恢复开始到 shutdown 始终不存在第二个协作 writer 可以取得同一 active target 的窗口。
 这也避免在同一对象上长期维护 flock 与 fcntl/OFD 两套所有权协议。
 
-本轮保留恢复/检查点 的 path 接口，以 `/proc/self/fd/<owned-dirfd>/...` 连接到
-持有的目录。默认 state 和自定义 state 都在本生命周期内绑定。**Audit 现在需要可用的
-Linux procfs fd 遍历**；不可用时初始化明确失败，不回退到可漂移的相对路径。这不是
-/proc/self/task 扫描，不管理宿主线程。chroot/卸载 procfs 等后续变化不在保证范围内。
-普通 Logger 文件后端自身不依赖 procfs。
+Audit recovery 和 checkpoint 直接使用 file-backend owner 已持有的 `dir_fd + basename`。
+archive 枚举通过 `fdopendir(dup(dirfd))`，文件访问/identity 检查/commit 分别使用
+`openat/fstatat/renameat/unlinkat`。初始化完成后不再通过 `/proc/self/fd` 把 fd 重新
+转换成 pathname，也不依赖 procfs。父目录 rename 或 cwd 改变不会改变本生命周期绑定的
+目录 identity；目录本身仍属于受信任部署边界。
 
 普通文件实例常驻 3 个 fd（data、dir、所有者），比之前增加 2 个。启用完整性保护的
-Audit 常驻约 6 个文件/目录/锁 fd（此前约 2 个）；检查点 临时 I/O 另计。没有
+Audit 常驻约 5 个文件/目录/锁 fd；checkpoint/evidence 临时 I/O 另计。没有
 每条日志新增长期资源或新 工作线程。本轮没有重新测量吞吐，更多轮换同步可能增加延迟。
 
 ## 全局便利层的联动修复

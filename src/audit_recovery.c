@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -23,25 +24,16 @@ uint32_t audit_crc32(const void *p_, size_t n)
 	return ~c;
 }
 
-static int open_regular(const char *, int, FILE **, struct stat *);
+static int open_regular_at(int, const char *, int, FILE **, struct stat *);
 
-int audit_checkpoint_load(const char *path, audit_ckpt_t *out)
+static int valid_basename(const char *name)
 {
-	if (!path || !out) {
-		errno = EINVAL;
-		return -1;
-	}
-	FILE *f = NULL;
-	struct stat st;
-	int opened = open_regular(path, 0, &f, &st);
-	if (opened) {
-		if (opened != -ENOENT) {
-			errno = -opened;
-			return -1;
-		}
-		*out = (audit_ckpt_t){ 0 };
-		return 0;
-	}
+	return name && name[0] && strcmp(name, ".") && strcmp(name, "..") &&
+	       !strchr(name, '/');
+}
+
+static int checkpoint_parse_stream(FILE *f, audit_ckpt_t *out)
+{
 	char line[AUDIT_CHECKPOINT_MAX + 1u];
 	size_t length;
 	int kind = audit_line_read(f, line, AUDIT_CHECKPOINT_MAX, &length);
@@ -55,28 +47,79 @@ int audit_checkpoint_load(const char *path, audit_ckpt_t *out)
 		if (kind != AUDIT_LINE_EOF)
 			rc = kind < 0 ? kind : -EBADMSG;
 	}
+	if (!rc)
+		*out = parsed;
+	return rc;
+}
+
+int audit_checkpoint_load_at(int dirfd, const char *name, audit_ckpt_t *out)
+{
+	if (dirfd < 0 || !valid_basename(name) || !out) {
+		errno = EINVAL;
+		return -1;
+	}
+	FILE *f = NULL;
+	struct stat st;
+	int opened = open_regular_at(dirfd, name, 0, &f, &st);
+	if (opened) {
+		if (opened != -ENOENT) {
+			errno = -opened;
+			return -1;
+		}
+		*out = (audit_ckpt_t){ 0 };
+		return 0;
+	}
+	int rc = checkpoint_parse_stream(f, out);
 	if (fclose(f) && !rc)
 		rc = -(errno ? errno : EIO);
 	if (rc) {
 		errno = -rc;
 		return -1;
 	}
-	*out = parsed;
 	return 0;
 }
-/* Persist derived state without leaking a descriptor on an earlier error.
+
+static _Atomic uint64_t audit_temp_serial;
+
+static int open_temp_at(int dirfd, const char *base, const char *tag,
+			char *name, size_t name_size)
+{
+	for (unsigned attempt = 0; attempt < 1024u; ++attempt) {
+		uint64_t serial = atomic_fetch_add_explicit(
+			&audit_temp_serial, 1u, memory_order_relaxed);
+		int n = snprintf(name, name_size, "%s.%s.%ld.%llu", base, tag,
+				 (long)getpid(), (unsigned long long)serial);
+		if (n < 0 || (size_t)n >= name_size) {
+			errno = ENAMETOOLONG;
+			return -1;
+		}
+		int fd = openat(dirfd, name,
+				O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC |
+					O_NOFOLLOW,
+				0600);
+		if (fd >= 0)
+			return fd;
+		if (errno != EEXIST)
+			return -1;
+	}
+	errno = EEXIST;
+	return -1;
+}
+
+/* Persist derived state relative to an already-owned directory descriptor.
  * A rename followed by failed directory fsync is still a failed checkpoint:
  * the destination may have changed, so callers retry the SAME committed head.
  */
-int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
+int audit_checkpoint_persist_at(int dirfd, const char *name,
+				const audit_ckpt_t *cp)
 {
-	if (!path || !cp || cp->offset > INT64_MAX ||
+	if (dirfd < 0 || !valid_basename(name) || !cp ||
+	    cp->offset > INT64_MAX ||
 	    !audit_digest_provider((audit_integrity_t)cp->algorithm)) {
 		errno = EINVAL;
 		return -1;
 	}
-	char hex[65], canon[448], line[512], tmp[AUDIT_PATH_MAX],
-		dir[AUDIT_PATH_MAX];
+	char hex[65], canon[448], line[512], tmp[AUDIT_PATH_MAX];
 	audit_hash_hex(cp->hash, hex);
 	int n = snprintf(
 		canon, sizeof(canon),
@@ -89,32 +132,17 @@ int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 	}
 	uint32_t crc = audit_crc32(canon, (size_t)n);
 	int m = snprintf(line, sizeof(line), "%s crc=%08x\n", canon, crc);
-	n = snprintf(tmp, sizeof(tmp), "%s.tmp.XXXXXX", path);
-	int k = snprintf(dir, sizeof(dir), "%s", path);
-	if (m < 0 || (size_t)m >= sizeof(line) || n < 0 ||
-	    (size_t)n >= sizeof(tmp) || k < 0 || (size_t)k >= sizeof(dir)) {
-		errno = ENAMETOOLONG;
+	if (m < 0 || (size_t)m >= sizeof(line)) {
+		errno = EOVERFLOW;
 		return -1;
 	}
-	char *slash = strrchr(dir, '/');
-	if (slash) {
-		if (slash == dir)
-			slash[1] = '\0';
-		else
-			*slash = '\0';
-	} else {
-		memcpy(dir, ".", 2);
-	}
-	int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (dfd < 0)
-		return -1;
-	int fd = mkostemp(tmp, O_CLOEXEC); /* private unique 0600 inode */
+
+	int fd = open_temp_at(dirfd, name, "tmp", tmp, sizeof(tmp));
 	int error = 0;
 	int owns_tmp = fd >= 0;
-	if (fd < 0) {
-		error = errno;
-		goto out;
-	}
+	if (fd < 0)
+		return -1;
+
 	size_t off = 0;
 	while (off < (size_t)m) {
 		ssize_t written;
@@ -125,7 +153,7 @@ int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 		if (written < 0) {
 			if (errno == EINTR)
 				continue;
-			error = errno;
+			error = errno ? errno : EIO;
 			goto out;
 		}
 		if (!written) {
@@ -141,25 +169,25 @@ int audit_checkpoint_persist(const char *path, const audit_ckpt_t *cp)
 		if (!rc)
 			break;
 		if (errno != EINTR) {
-			error = errno;
+			error = errno ? errno : EIO;
 			goto out;
 		}
 	}
 	if (close(fd)) {
 		error = errno;
-		fd = -1; /* Linux close errors do not license retry of this fd number */
+		fd = -1;
 		goto out;
 	}
 	fd = -1;
 	logger_fault_crash_if_requested("before_state_rename");
 	if (logger_fault_should_fail(LOGGER_FAULT_STATE_RENAME) ||
-	    rename(tmp, path)) {
-		error = errno;
+	    renameat(dirfd, tmp, dirfd, name)) {
+		error = errno ? errno : EIO;
 		goto out;
 	}
 	owns_tmp = 0;
 	logger_fault_crash_if_requested("after_state_rename");
-	while (fsync(dfd)) {
+	while (fsync(dirfd)) {
 		if (errno != EINTR) {
 			error = errno;
 			goto out;
@@ -169,9 +197,7 @@ out:
 	if (fd >= 0 && close(fd) && !error)
 		error = errno;
 	if (owns_tmp)
-		(void)unlink(tmp);
-	if (close(dfd) && !error)
-		error = errno;
+		(void)unlinkat(dirfd, tmp, 0);
 	if (error) {
 		errno = error;
 		return -1;
@@ -182,7 +208,7 @@ out:
 #define AUDIT_ARCHIVE_LIMIT 4096u
 
 typedef struct {
-	char *path;
+	char *name;
 	unsigned char first_prev[32], last_hash[32];
 	uint64_t end, seq;
 	int has_records;
@@ -350,28 +376,28 @@ static int archive_name(const char *name, const char *base)
 		!memcmp(p + 24, ".audit.log", 10));
 }
 
-static int add_segment(segment_t *files, size_t *count, const char *dir,
-		       const char *name)
+static int add_segment(segment_t *files, size_t *count, const char *name)
 {
 	if (*count == AUDIT_ARCHIVE_LIMIT)
 		return -E2BIG;
-	char path[AUDIT_PATH_MAX];
-	int n = snprintf(path, sizeof(path), "%s/%s", dir, name);
-	if (n < 0 || (size_t)n >= sizeof(path))
-		return -ENAMETOOLONG;
-	files[*count].path = strdup(path);
-	if (!files[*count].path)
+	if (!valid_basename(name))
+		return -EINVAL;
+	files[*count].name = strdup(name);
+	if (!files[*count].name)
 		return -ENOMEM;
 	++*count;
 	return 0;
 }
 
-static int open_regular(const char *path, int writable, FILE **out,
-			struct stat *st)
+static int open_regular_at(int dirfd, const char *name, int writable,
+			   FILE **out, struct stat *st)
 {
+	if (dirfd < 0 || !valid_basename(name))
+		return -EINVAL;
 	int fd __free(close_fd) =
-		open(path, (writable ? O_RDWR : O_RDONLY) | O_CLOEXEC |
-				   O_NOFOLLOW | O_NONBLOCK);
+		openat(dirfd, name,
+		       (writable ? O_RDWR : O_RDONLY) | O_CLOEXEC |
+			       O_NOFOLLOW | O_NONBLOCK);
 	if (fd < 0)
 		return -errno;
 	int rc = fstat(fd, st) ? -errno : 0;
@@ -471,32 +497,20 @@ static int same_stat(const struct stat *a, const struct stat *b)
 /* Persist exact evidence before modifying a true EOF fragment. This is not a
  * diagnosis of a crash: manual truncation/tampering can produce the same bytes.
  * Never repair an archive, oversized input or a complete malformed line. */
-static int preserve_and_trim(FILE *f, const char *active, const char *tail,
-			     size_t length, uint64_t last,
-			     const struct stat *scanned)
+static int preserve_and_trim_at(FILE *f, int dirfd, const char *active,
+				const char *tail, size_t length, uint64_t last,
+				const struct stat *scanned)
 {
 	struct stat now, named;
-	if (fstat(fileno(f), &now) || lstat(active, &named))
+	if (fstat(fileno(f), &now) ||
+	    fstatat(dirfd, active, &named, AT_SYMLINK_NOFOLLOW))
 		return -errno;
 	if (!same_stat(scanned, &now) || !same_stat(scanned, &named))
 		return -ESTALE;
-	char path[AUDIT_PATH_MAX], dir[AUDIT_PATH_MAX];
-	int n = snprintf(path, sizeof(path), "%s.tail.XXXXXX", active);
-	int m = snprintf(dir, sizeof(dir), "%s", active);
-	if (n < 0 || (size_t)n >= sizeof(path) || m < 0 ||
-	    (size_t)m >= sizeof(dir))
-		return -ENAMETOOLONG;
-	char *slash = strrchr(dir, '/');
-	if (!slash)
-		memcpy(dir, ".", 2);
-	else if (slash == dir)
-		slash[1] = 0;
-	else
-		*slash = 0;
-	int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (dfd < 0)
-		return -errno;
-	int fd = mkostemp(path, O_CLOEXEC);
+
+	char evidence[AUDIT_PATH_MAX];
+	int fd = open_temp_at(dirfd, active, "tail", evidence,
+			      sizeof(evidence));
 	int rc = fd < 0 ? -errno : 0;
 	if (fd >= 0) {
 		size_t offset = 0;
@@ -516,20 +530,19 @@ static int preserve_and_trim(FILE *f, const char *active, const char *tail,
 		if (close(fd) && !rc)
 			rc = -errno;
 		if (rc)
-			(void)unlink(
-				path); /* incomplete evidence; original untouched */
+			(void)unlinkat(dirfd, evidence, 0);
 		else
-			rc = sync_fd(
-				dfd); /* preserve evidence path before truncation */
+			rc = sync_fd(dirfd); /* evidence name before truncation */
 	}
-	if (close(dfd) && !rc)
-		rc = -errno;
 	if (rc)
 		return rc;
-	if (fstat(fileno(f), &now) || lstat(active, &named))
+
+	if (fstat(fileno(f), &now) ||
+	    fstatat(dirfd, active, &named, AT_SYMLINK_NOFOLLOW))
 		return -errno;
 	if (!same_stat(scanned, &now) || !same_stat(scanned, &named))
 		return -ESTALE;
+
 	off_t offset = (off_t)last;
 	if (offset < 0 || (uint64_t)offset != last)
 		return -EOVERFLOW;
@@ -546,10 +559,10 @@ static int preserve_and_trim(FILE *f, const char *active, const char *tail,
 	return sync_fd(fileno(f));
 }
 
-int audit_recover_set(const char *dir, const char *name, const char *active,
-		      audit_ckpt_t *out)
+int audit_recover_set_at(int dirfd, const char *name,
+			 const char *active, audit_ckpt_t *out)
 {
-	if (!dir || !name || !active || !out) {
+	if (dirfd < 0 || !name || !valid_basename(active) || !out) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -568,11 +581,19 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		errno = ENOMEM;
 		return -1;
 	}
+
 	size_t count = 0, active_index = 0;
 	FILE *active_file = NULL;
-	DIR *d = opendir(dir);
+	int scanfd =
+		openat(dirfd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (scanfd < 0) {
+		rc = -errno;
+		goto done;
+	}
+	DIR *d = fdopendir(scanfd);
 	if (!d) {
 		rc = -errno;
+		(void)close(scanfd);
 		goto done;
 	}
 	for (;;) {
@@ -584,7 +605,7 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 			break;
 		}
 		if (archive_name(e->d_name, name)) {
-			rc = add_segment(files, &count, dir, e->d_name);
+			rc = add_segment(files, &count, e->d_name);
 			if (rc)
 				break;
 		}
@@ -593,13 +614,15 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		rc = -errno;
 	if (rc)
 		goto done;
+
 	active_index = count;
-	files[count].path = strdup(active);
-	if (!files[count].path) {
+	files[count].name = strdup(active);
+	if (!files[count].name) {
 		rc = -ENOMEM;
 		goto done;
 	}
 	++count;
+
 	unsigned anchors = 0;
 	char tail[AUDIT_RECORD_MAX + 1u];
 	size_t tail_length = 0, nonempty = 0;
@@ -608,7 +631,7 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		FILE *f = NULL;
 		struct stat st;
 		int is_active = i == active_index;
-		rc = open_regular(files[i].path, is_active, &f, &st);
+		rc = open_regular_at(dirfd, files[i].name, is_active, &f, &st);
 		if (rc == -ENOENT && is_active) {
 			rc = 0;
 			continue;
@@ -627,7 +650,7 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		if (!rc && !same_stat(&st, &after))
 			rc = -ESTALE;
 		/* Valid bytes recovered beyond an old checkpoint must be synced before
-         * a new checkpoint can acknowledge them. No application data rewrite. */
+		 * a new checkpoint can acknowledge them. No application data rewrite. */
 		if (!rc && !is_active)
 			rc = sync_fd(fileno(f));
 		if (!is_active && fclose(f) && !rc)
@@ -640,10 +663,7 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 		rc = -EBADMSG;
 		goto done;
 	}
-	/* Form a UNIQUE chain of all retained nonempty segments by their verified
-     * digest edges. UTC filenames are hints only (clock can move backwards).
-     * Edge indexes are sorted once, so predecessor/successor lookups are
-     * O(log N) instead of rescanning every retained segment. */
+
 	size_t last = count;
 	rc = validate_segment_chain(files, count, active_index, nonempty, genesis,
 				    &last);
@@ -655,8 +675,8 @@ int audit_recover_set(const char *dir, const char *name, const char *active,
 	}
 	next.offset = files[active_index].end;
 	if (tail_length) {
-		rc = preserve_and_trim(active_file, active, tail, tail_length,
-				       next.offset, &active_stat);
+		rc = preserve_and_trim_at(active_file, dirfd, active, tail,
+					  tail_length, next.offset, &active_stat);
 		if (rc)
 			goto done;
 	} else if (active_file) {
@@ -668,7 +688,7 @@ done:
 	if (active_file && fclose(active_file) && !rc)
 		rc = -errno;
 	for (size_t i = 0; i < count; ++i)
-		free(files[i].path);
+		free(files[i].name);
 	free(files);
 	if (rc) {
 		errno = -rc;
@@ -677,3 +697,4 @@ done:
 	*out = next;
 	return 0;
 }
+

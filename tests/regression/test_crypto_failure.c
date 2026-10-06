@@ -218,8 +218,10 @@ static void recovery_failure(audit_config_t *config, const char *mode)
 	}
 	crypto_file_t log = crypto_snapshot("app.audit.log");
 	crypto_file_t state = crypto_snapshot("app.audit.state");
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	audit_ckpt_t checkpoint;
-	CHECK(audit_checkpoint_load("app.audit.state", &checkpoint) == 0);
+	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &checkpoint) == 0);
 	audit_ckpt_t before = checkpoint;
 	if (preflight)
 		arm_probe();
@@ -229,15 +231,15 @@ static void recovery_failure(audit_config_t *config, const char *mode)
 		crypto_expect_error(audit_init(config), EIO);
 		check_writer_owner("free");
 	} else {
-		crypto_expect_error(audit_recover_set(".", "app",
-						      "app.audit.log",
-						      &checkpoint),
+		crypto_expect_error(audit_recover_set_at(dirfd, "app", "app.audit.log",
+						       &checkpoint),
 				    failure_error);
 		CHECK(checkpoint.algorithm == before.algorithm &&
 		      checkpoint.seq == before.seq);
 		CHECK(checkpoint.offset == before.offset &&
 		      !memcmp(checkpoint.hash, before.hash, 32));
 	}
+	CHECK(close(dirfd) == 0);
 	CHECK(matching_calls == (preflight ? 1u : 2u));
 	crypto_same_file("app.audit.log", &log);
 	crypto_same_file("app.audit.state", &state);

@@ -58,7 +58,7 @@ readelf -h -d -V build/liblogger.so
 
 ## 构建与验证顺序
 
-1. 明确 架构、最低 内核、libc 版本、文件系统、挂载与 procfs 策略。
+1. 明确 架构、最低 内核、libc 版本、文件系统与挂载策略。
 2. 在实际最低支持环境，或使用与它匹配的交叉工具链/sysroot 构建。
 3. 记录编译器、sysroot 来源/校验、构建选项、产物 checksum、动态符号需求。
 4. 在实际目标执行完整功能/错误/生命周期测试，检测运行期特性。
@@ -72,7 +72,7 @@ readelf -h -d -V build/liblogger.so
 Production v1 的最低 upstream kernel baseline 收敛为 **Linux 5.10 / x86_64**，
 与最低 userland Ubuntu 20.04 / glibc 2.31 组合做真实 QEMU 运行验证。选择 5.10 的理由不是
 “某个 syscall 最早在哪个版本出现”，而是它仍属于 upstream longterm 维护线，并且完整覆盖
-当前 runtime 已实际依赖的 getrandom、renameat2/RENAME_NOREPLACE、procfs/procfd
+当前 runtime 已实际依赖的 getrandom、renameat2/RENAME_NOREPLACE
 以及 ext4/XFS 本地文件系统能力。更老的 3.x/4.x 不进入 v1 默认支持合同；若未来存在明确客户
 需求，按具体发行版/backport 作为独立 compatibility tier 验证，而不是扩大通用 v1 baseline。
 
@@ -82,7 +82,7 @@ smoke。shared/static packaging、完整 consumer、process-crash 和 sanitizer 
 不在 minimum-kernel workflow 中重复执行。
 
 已知需平台验证/兼容设计的功能：`getrandom` wrapper/系统调用，`RENAME_NOREPLACE` 的内核和
-文件系统支持，Audit 的 procfd 路径，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
+文件系统支持，32 位 off_t/原子操作，以及 timezone 和本地 syslogd。
 没有能力时沿用既有明确错误，不降级为覆盖式 rename、不切换算法或隐藏 I/O 失败。
 
 ## 参考接口契约

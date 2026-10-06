@@ -1,13 +1,14 @@
 #define _GNU_SOURCE
 #include "audit_support.h"
 #include "audit_internal.h"
+#include <fcntl.h>
 
 static int mode, call_count, data_fd = -1;
 static int temp_sync_seen, directory_sync_seen;
 ssize_t __real_write(int, const void *, size_t);
 int __real_fsync(int);
 int __real_close(int);
-int __real_rename(const char *, const char *);
+int __real_renameat(int, const char *, int, const char *);
 
 ssize_t __wrap_write(int fd, const void *data, size_t n)
 {
@@ -61,13 +62,14 @@ int __wrap_close(int fd)
 	}
 	return rc;
 }
-int __wrap_rename(const char *old, const char *path)
+int __wrap_renameat(int olddirfd, const char *old, int newdirfd,
+		    const char *path)
 {
 	if (mode == 7) {
 		errno = EACCES;
 		return -1;
 	}
-	return __real_rename(old, path);
+	return __real_renameat(olddirfd, old, newdirfd, path);
 }
 static int fd_count(void)
 {
@@ -95,6 +97,8 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	char dir[] = "/tmp/audit-checkpoint-io-XXXXXX";
 	enter_temp(dir);
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	const char *names[] = { "ok",	 "write",     "zero",  "short-eintr",
 				"fsync", "dir-fsync", "close", "rename" };
 	int chosen = -1;
@@ -106,7 +110,7 @@ int main(int argc, char **argv)
 			    .seq = 1,
 			    .offset = 123 };
 	memset(cp.hash, 0x11, sizeof(cp.hash));
-	CHECK(audit_checkpoint_persist("app.audit.state", &cp) == 0);
+	CHECK(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp) == 0);
 	int count = fd_count();
 	cp.seq = 2;
 	memset(cp.hash, 0x22, sizeof(cp.hash));
@@ -116,7 +120,7 @@ int main(int argc, char **argv)
 		temp_sync_seen = directory_sync_seen = 0;
 		data_fd = -1;
 		mode = chosen;
-		int rc = audit_checkpoint_persist("app.audit.state", &cp);
+		int rc = audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp);
 		int error = errno;
 		mode = 0;
 		data_fd = -1;
@@ -130,12 +134,13 @@ int main(int argc, char **argv)
 		no_temporary_files();
 	}
 	audit_ckpt_t loaded;
-	CHECK(audit_checkpoint_load("app.audit.state", &loaded) == 0);
+	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &loaded) == 0);
 	CHECK(loaded.seq == (uint64_t)((success || chosen == 5) ? 2 : 1));
 	/* Even after rename+directory-sync failure, retrying the same head works. */
-	CHECK(audit_checkpoint_persist("app.audit.state", &cp) == 0);
-	CHECK(audit_checkpoint_load("app.audit.state", &loaded) == 0 &&
+	CHECK(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp) == 0);
+	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &loaded) == 0 &&
 	      loaded.seq == 2);
+	CHECK(close(dirfd) == 0);
 	audit_test_cleanup(dir);
 	return 0;
 }

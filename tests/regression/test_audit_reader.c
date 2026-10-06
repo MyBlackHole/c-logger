@@ -1,13 +1,16 @@
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <fcntl.h>
 
 static void checkpoint_case(const char *mode)
 {
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	audit_ckpt_t cp = { .algorithm = AUDIT_INTEGRITY_SHA256,
 			    .seq = 3,
 			    .offset = 900 };
 	memset(cp.hash, 0xab, 32);
-	CHECK(audit_checkpoint_persist("app.audit.state", &cp) == 0);
+	CHECK(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp) == 0);
 	crypto_file_t saved = crypto_snapshot("app.audit.state");
 	char s[1024];
 	CHECK(saved.size < sizeof(s));
@@ -70,7 +73,7 @@ static void checkpoint_case(const char *mode)
 	audit_ckpt_t out, before;
 	memset(&out, 0x5a, sizeof(out));
 	memcpy(&before, &out, sizeof(before));
-	int rc = audit_checkpoint_load("app.audit.state", &out);
+	int rc = audit_checkpoint_load_at(dirfd, "app.audit.state", &out);
 	if (error) {
 		crypto_expect_error(rc, error);
 		CHECK(!memcmp(&out, &before, sizeof(out)));
@@ -79,6 +82,7 @@ static void checkpoint_case(const char *mode)
 		      !memcmp(cp.hash, out.hash, 32));
 	}
 	free(saved.data);
+	CHECK(close(dirfd) == 0);
 }
 
 typedef struct {

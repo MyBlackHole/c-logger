@@ -23,8 +23,7 @@ void audit_digest_hex(const unsigned char *, size_t, char *);
 int audit_digest_check(const audit_digest_ops_t *);
 void audit_hash_hex(const unsigned char *, char[65]);
 uint32_t audit_crc32(const void *, size_t);
-int audit_checkpoint_load(const char *, audit_ckpt_t *);
-int audit_checkpoint_persist(const char *, const audit_ckpt_t *);
-int audit_recover_set(const char *dir, const char *name, const char *active,
-		      audit_ckpt_t *);
+int audit_checkpoint_load_at(int, const char *, audit_ckpt_t *);
+int audit_checkpoint_persist_at(int, const char *, const audit_ckpt_t *);
+int audit_recover_set_at(int, const char *, const char *, audit_ckpt_t *);
 #endif

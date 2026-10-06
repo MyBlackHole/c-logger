@@ -27,10 +27,8 @@
  */
 typedef struct {
 	logger_t *logger;
-	int log_dir_fd;
 	logger_file_t reserved_log;
 	logger_file_t checkpoint_owner;
-	char state_path[AUDIT_PATH_MAX];
 	char instance_id[33];
 	audit_integrity_t integrity;
 	const audit_digest_ops_t *digest;
@@ -160,8 +158,6 @@ static int dispose_runtime(audit_runtime_t *s)
 	other = logger_file_close_status(&s->checkpoint_owner);
 	if (!rc)
 		rc = other;
-	if (s->log_dir_fd >= 0 && close(s->log_dir_fd) < 0 && !rc)
-		rc = -errno;
 	free(s);
 	return rc;
 }
@@ -262,7 +258,8 @@ static int checkpoint_runtime(audit_runtime_t *s)
 					    -errno);
 		s->offset_valid = 1;
 	}
-	if (audit_checkpoint_persist(s->state_path, &s->pending))
+	if (audit_checkpoint_persist_at(s->checkpoint_owner.dir_fd,
+				       s->checkpoint_owner.name, &s->pending))
 		return fail_runtime(s, AUDIT_STATE_CHECKPOINT_FAILED, -errno);
 	logger_fault_crash_if_requested("after_checkpoint_commit");
 	s->checkpoint_seq = s->seq;
@@ -328,7 +325,6 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	if (!s)
 		return -ENOMEM;
 	*out = s; /* caller owns cleanup on every subsequent error */
-	s->log_dir_fd = -1;
 	s->reserved_log = LOGGER_FILE_EMPTY;
 	s->checkpoint_owner = LOGGER_FILE_EMPTY;
 	s->integrity = c->integrity;
@@ -340,70 +336,49 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 	rc = generate_instance_id(s->instance_id);
 	if (rc)
 		return rc;
-	char path[AUDIT_PATH_MAX];
+	char path[AUDIT_PATH_MAX], state_path[AUDIT_PATH_MAX];
 	int n = snprintf(path, sizeof(path), "%s/%s.audit.log", c->log_dir,
 			 c->name);
 	if (n < 0 || (size_t)n >= sizeof(path))
 		return -ENAMETOOLONG;
 	if (c->chain_state_path)
-		n = snprintf(s->state_path, sizeof(s->state_path), "%s",
+		n = snprintf(state_path, sizeof(state_path), "%s",
 			     c->chain_state_path);
 	else
-		n = snprintf(s->state_path, sizeof(s->state_path),
+		n = snprintf(state_path, sizeof(state_path),
 			     "%s/%s.audit.state", c->log_dir, c->name);
-	if (n < 0 || (size_t)n >= sizeof(s->state_path))
+	if (n < 0 || (size_t)n >= sizeof(state_path))
 		return -ENAMETOOLONG;
-	/* Lock the ordinary file target BEFORE any recovery can inspect or
-     * truncate it. Recovery keeps its path API, anchored via Linux procfd
-     * names to directory descriptors we own for the session lifetime. This
-     * adds no process scanning or fork policy. */
+
+	/* Acquire the active file-backend owner BEFORE recovery. The reservation
+	 * already contains the stable directory fd and basename; recovery never
+	 * converts them back into synthetic pathnames. */
 	if (logger_file_reserve(&s->reserved_log, path, c->rotation, 0600))
 		return -errno;
 	if (!s->reserved_log.managed)
 		return -EINVAL;
-	s->log_dir_fd = fcntl(s->reserved_log.dir_fd, F_DUPFD_CLOEXEC, 0);
-	if (s->log_dir_fd < 0)
-		return -errno;
-	char directory[64];
-	n = snprintf(directory, sizeof(directory), "/proc/self/fd/%d",
-		     s->log_dir_fd);
-	if (n < 0 || (size_t)n >= sizeof(directory))
-		return -ENAMETOOLONG;
-	/* Fail before recovery if procfs fd traversal is unavailable. */
-	struct stat bound;
-	if (stat(directory, &bound))
-		return -errno;
-	n = snprintf(path, sizeof(path), "%s/%s", directory,
-		     s->reserved_log.name);
-	if (n < 0 || (size_t)n >= sizeof(path))
-		return -ENAMETOOLONG;
+
 	if (s->digest) {
-		if (!c->chain_state_path) {
-			n = snprintf(s->state_path, sizeof(s->state_path),
-				     "%s/%s.audit.state", directory, c->name);
-			if (n < 0 || (size_t)n >= sizeof(s->state_path))
-				return -ENAMETOOLONG;
-		}
 		logger_rotation_config_t none = { .mode = LOGGER_ROTATE_NONE };
-		if (logger_file_reserve(&s->checkpoint_owner, s->state_path,
+		if (logger_file_reserve(&s->checkpoint_owner, state_path,
 					none, 0600))
 			return -errno;
 		if (!s->checkpoint_owner.managed)
 			return -EINVAL;
-		n = snprintf(s->state_path, sizeof(s->state_path),
-			     "/proc/self/fd/%d/%s", s->checkpoint_owner.dir_fd,
-			     s->checkpoint_owner.name);
-		if (n < 0 || (size_t)n >= sizeof(s->state_path))
-			return -ENAMETOOLONG;
+
 		audit_ckpt_t checkpoint;
-		if (audit_checkpoint_load(s->state_path, &checkpoint))
+		if (audit_checkpoint_load_at(s->checkpoint_owner.dir_fd,
+					     s->checkpoint_owner.name, &checkpoint))
 			return -errno;
 		if (!checkpoint.algorithm)
 			checkpoint.algorithm = (uint32_t)c->integrity;
 		if (checkpoint.algorithm != (uint32_t)c->integrity)
 			return -EPROTONOSUPPORT;
-		if (audit_recover_set(directory, c->name, path, &checkpoint) ||
-		    audit_checkpoint_persist(s->state_path, &checkpoint))
+		if (audit_recover_set_at(s->reserved_log.dir_fd, c->name,
+					 s->reserved_log.name, &checkpoint) ||
+		    audit_checkpoint_persist_at(s->checkpoint_owner.dir_fd,
+						s->checkpoint_owner.name,
+						&checkpoint))
 			return -errno;
 		memcpy(s->head, checkpoint.hash, sizeof(s->head));
 	}
