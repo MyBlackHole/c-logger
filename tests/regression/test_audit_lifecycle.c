@@ -94,6 +94,19 @@ static void *initializer(void *ptr)
 	atomic_store(&a->done, 1);
 	return NULL;
 }
+
+static void *report_initializer(void *ptr)
+{
+	answer_t *a = ptr;
+	audit_config_t c = audit_test_config();
+	c.failure_policy = AUDIT_FAIL_REPORT;
+	atomic_store(&init_attempted, 1);
+	mark_initializer = 1;
+	a->rc = audit_init(&c);
+	a->error = errno;
+	atomic_store(&a->done, 1);
+	return NULL;
+}
 static void *stopper(void *ptr)
 {
 	answer_t *a = ptr;
@@ -123,7 +136,7 @@ static void init_gate(void)
 	atomic_store(&pause_start, 1);
 	pthread_t thread;
 	answer_t a = { 0 };
-	CHECK(!pthread_create(&thread, NULL, initializer, &a));
+	CHECK(!pthread_create(&thread, NULL, report_initializer, &a));
 	wait_flag(&entered);
 	/* Candidate exists, but STARTING is not a published Audit session. */
 	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
@@ -145,6 +158,7 @@ static void init_gate(void)
 static void stop_gate(void)
 {
 	audit_config_t c = audit_test_config();
+	c.failure_policy = AUDIT_FAIL_REPORT;
 	CHECK(audit_init(&c) == 0);
 	CHECK(audit_failure_policy() == AUDIT_FAIL_REPORT);
 	atomic_store(&pause_stop, 1);
