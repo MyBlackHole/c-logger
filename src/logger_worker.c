@@ -294,14 +294,12 @@ void *logger_worker_main(void *p)
 			while (logger_queue_empty(&l->q) &&
 			       atomic_load_explicit(&l->running,
 						    memory_order_acquire)) {
-				atomic_store_explicit(&l->q.consumer_waiting, 1,
-						      memory_order_release);
 				/*
-				 * 与 producer publish slot 后的 SC fence 成对。
-				 * 如果本次 recheck 仍看不到 record，则并发 producer
-				 * 必须观察到 waiting=1 并负责 signal。
+				 * arm 是 acq_rel RMW，随后立即 recheck。若 producer
+				 * probe 已先发生，arm acquire 取得其 publication chain；
+				 * 否则后续 producer 会观察 waiting=1 并走 signal。
 				 */
-				atomic_thread_fence(memory_order_seq_cst);
+				logger_queue_wait_arm_recheck(&l->q);
 				if (!logger_queue_empty(&l->q) ||
 				    !atomic_load_explicit(&l->running,
 							 memory_order_acquire))
@@ -323,8 +321,7 @@ void *logger_worker_main(void *p)
 					break;
 				}
 			}
-			atomic_store_explicit(&l->q.consumer_waiting, 0,
-					      memory_order_release);
+			logger_queue_wait_disarm(&l->q);
 			stop = !atomic_load_explicit(&l->running,
 						     memory_order_acquire) &&
 			       logger_queue_empty(&l->q);

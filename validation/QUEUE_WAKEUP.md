@@ -1,5 +1,10 @@
 # Queue self-paced wakeup 验证
 
+> 历史说明：本文记录 2026-09-25 / PR #14 的 1.x self-paced wakeup 性能与
+> 回归证据，其中“双 SC fence”是当时实现。2.0 的 #103 已不再把该方案作为
+> ISO C11/C17 correctness contract；当前协议和证明以
+> `docs/v2/QUEUE_WAKEUP_PROOF.md` 与 `docs/v2/MEMORY_MODEL.md` 为准。
+
 日期：2026-09-25
 
 本报告验证 PR #14 的 self-paced worker wakeup。目标不是改变 queue topology，而是消除

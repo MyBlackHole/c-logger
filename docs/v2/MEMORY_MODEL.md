@@ -122,36 +122,52 @@ spill_used release clear
 
 ## 6. Queue sleep/wakeup
 
-当前 fast wake 协议使用：
+#103 第二阶段没有继续依赖旧的“双 SC fence + 较弱 atomic”推理。严格按
+C11/C17 审查后，queue wakeup 改成**同一个 atomic 上的 acq_rel RMW handoff**：
 
 ```text
-worker:
-  waiting = 1 (release)
-  seq_cst fence
-  recheck queue/running
-
-producer:
-  publish slot.seq (release)
-  seq_cst fence
-  load waiting (acquire)
+worker:                              producer:
+exchange(waiting, 1, acq_rel)        publish slot.seq (release)
+recheck slot.seq (acquire)           fetch_or(waiting, 0, acq_rel)
+                                      |
+                                      +-- saw 1 -> wait_mu 下 clear + signal
 ```
 
-设计目标是防止同时出现：
+核心不是“RMW 更强”，而是 `consumer_waiting` 自己有唯一 modification order，
+且每个 RMW 都读取该 order 中紧邻自己的前一个 modification。所有并发的
+post-init write 都通过 acq_rel RMW helper：
 
-```text
-worker 没看到新 record
-AND
-producer 没看到 waiting=1
-```
+- `logger_queue_wait_arm_recheck()`；
+- `logger_queue_wait_probe_after_publish()`；
+- `logger_queue_wait_claim_signal()`；
+- `logger_queue_wait_disarm()`。
 
-这部分在 #103 中仍视为**待正式证明的 lockless handshake**，不能只凭注释认定完成。
+因此只有两类情况：
 
-后续必须二选一：
+1. producer probe 在 worker arm 之前：arm acquire 通过 RMW chain 取得 producer
+   release 之前的 `slot.seq` publication，worker recheck 不能继续把该 record
+   当作未发布；
+2. worker arm 在 producer probe 之前：probe 观察到 waiting=1 并进入
+   `wait_mu + cond_signal` slow path；如果中间已经有人把 1 清为 0，那么该
+   modification 本身必须来自已证明安全的 signal/disarm/force-wake 路径。
 
-- 给出 C11 formal reasoning + concurrency litmus regression；或
-- 简化为 mutex-coupled predicate/wakeup，使 correctness 不依赖跨 atomic 的 SC-fence 推理。
+这里的第 1 条对 queue-empty 判定应理解为“**当前 dequeue head 的 producer**
+publication 已进入 handoff chain”。若后续 position 先 publish、head position
+仍有 reservation gap，worker 仍可看到 empty；但真正关闭 head gap 的 producer
+在 publish 后也会执行 probe，并在 worker 已 arm 时负责 signal。该边界在正式
+proof 与 litmus 的 reservation-gap case 中单独验证。
 
-在 proof 完成前，不扩大该模式到其他子系统。
+这里不再使用 `atomic_thread_fence(memory_order_seq_cst)`。原因不是实现机器上
+SC fence 一定错误，而是 c-logger 的 correctness contract 是 ISO C11/C17；
+WG14 对 SC fence 的规则明确提醒：较弱 atomic 加 SC fence 不能一般化地恢复
+sequential consistency。项目不以更晚的 C++ memory-model 加强语义替 C11 作证。
+
+正式 proof、MPSC RMW-chain、condvar wait-entry、shutdown 和验证边界见：
+
+- `docs/v2/QUEUE_WAKEUP_PROOF.md`；
+- `tests/regression/test_queue_wakeup_litmus.c`。
+
+litmus/stress/TSan 是 proof evidence，不替代 C11 proof。
 
 ## 7. Worker stop state
 
