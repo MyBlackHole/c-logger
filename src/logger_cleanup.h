@@ -20,24 +20,23 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#if defined(__clang__)
-#if !__has_attribute(cleanup)
-#error "c-logger cleanup helpers require __attribute__((cleanup))"
-#endif
-#elif !defined(__GNUC__)
-#error "c-logger cleanup helpers require GCC/Clang"
-#endif
+#include "logger_compiler.h"
 
-#define CLEANUP_ATTR(function) __attribute__((cleanup(function)))
-#define CLEANUP_MUST_CHECK __attribute__((warn_unused_result))
-#define CLEANUP_ALWAYS_INLINE inline __attribute__((always_inline))
+#define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
+#define CLEANUP_MUST_CHECK LOGGER_MUST_CHECK
+#define CLEANUP_MAYBE_UNUSED LOGGER_MAYBE_UNUSED
+/*
+ * cleanup/class helpers rely on inlining to keep generated ownership scaffolding
+ * local and warning-free. New ordinary helpers should prefer plain static inline.
+ */
+#define CLEANUP_ALWAYS_INLINE LOGGER_ALWAYS_INLINE
 
 #define __cleanup_concat_1(a, b) a##b
 #define __cleanup_concat(a, b) __cleanup_concat_1(a, b)
 #define __cleanup_unique(prefix) __cleanup_concat(prefix, __COUNTER__)
 
 #define DEFINE_FREE(_name, _type, _release)                                \
-	static CLEANUP_ALWAYS_INLINE void __free_##_name(void *__slot)            \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void __free_##_name(void *__slot)            \
 	{                                                                     \
 		_type _T = *(_type *)__slot;                                   \
 		_release;                                                        \
@@ -75,19 +74,19 @@ __cleanup_must_check_ptr(const volatile void *value)
 
 #define DEFINE_CLASS(_name, _type, _exit, _init, ...)                        \
 	typedef _type class_##_name##_t;                                       \
-	static CLEANUP_ALWAYS_INLINE void class_##_name##_destructor(_type *__slot)  \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void class_##_name##_destructor(_type *__slot)  \
 	{                                                                     \
 		_type _T = *__slot;                                             \
 		_exit;                                                           \
 	}                                                                     \
-	static CLEANUP_ALWAYS_INLINE _type class_##_name##_constructor(__VA_ARGS__)  \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED _type class_##_name##_constructor(__VA_ARGS__)  \
 	{                                                                     \
 		return (_init);                                                  \
 	}
 
 #define EXTEND_CLASS_COND(_name, _ext, _cond, _init, ...)                   \
 	typedef class_##_name##_t class_##_name##_ext##_t;                    \
-	static CLEANUP_ALWAYS_INLINE void                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                        \
 	class_##_name##_ext##_destructor(class_##_name##_t *__slot)            \
 	{                                                                      \
 		class_##_name##_t _T = *__slot;                                  \
@@ -95,7 +94,7 @@ __cleanup_must_check_ptr(const volatile void *value)
 			return;                                                      \
 		class_##_name##_destructor(__slot);                               \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE class_##_name##_t                                \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED class_##_name##_t           \
 	class_##_name##_ext##_constructor(__VA_ARGS__)                          \
 	{                                                                      \
 		return (_init);                                                   \
@@ -104,12 +103,16 @@ __cleanup_must_check_ptr(const volatile void *value)
 #define EXTEND_CLASS(_name, _ext, _init, ...)                               \
 	EXTEND_CLASS_COND(_name, _ext, false, _init, __VA_ARGS__)
 
+/* cleanup attribute 是变量的语义使用；Clang 10 仍会对隐藏 guard storage 报
+ * unused-variable，因此 class storage 显式标记 LOGGER_MAYBE_UNUSED。 */
 #define CLASS(_name, _var)                                                  \
-	class_##_name##_t _var CLEANUP_ATTR(class_##_name##_destructor) =       \
+	class_##_name##_t _var LOGGER_MAYBE_UNUSED                             \
+		CLEANUP_ATTR(class_##_name##_destructor) =                         \
 		class_##_name##_constructor
 
 #define CLASS_INIT(_name, _var, _init_expr)                                 \
-	class_##_name##_t _var CLEANUP_ATTR(class_##_name##_destructor) =       \
+	class_##_name##_t _var LOGGER_MAYBE_UNUSED                             \
+		CLEANUP_ATTR(class_##_name##_destructor) =                         \
 		(_init_expr)
 
 #define __scoped_class(_name, _var, _once, ...)                             \
@@ -130,13 +133,13 @@ __cleanup_must_check_ptr(const volatile void *value)
 		_type resource;                                                   \
 		int err;                                                          \
 	} class_##_name##_t;                                                   \
-	static CLEANUP_ALWAYS_INLINE class_##_name##_t                               \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED class_##_name##_t          \
 	class_##_name##_constructor(_type _T)                                  \
 	{                                                                      \
 		_lock;                                                            \
 		return (class_##_name##_t){ .resource = _T, .err = 0 };          \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE void                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                        \
 	class_##_name##_destructor(class_##_name##_t *__guard)                  \
 	{                                                                      \
 		if (__guard->err)                                                  \
@@ -144,12 +147,12 @@ __cleanup_must_check_ptr(const volatile void *value)
 		_type _T = __guard->resource;                                     \
 		_unlock;                                                          \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE int                                              \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                         \
 	class_##_name##_lock_err(class_##_name##_t *__guard)                    \
 	{                                                                      \
 		return __guard->err;                                               \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE bool                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED bool                        \
 	class_##_name##_lock_acquired(class_##_name##_t *__guard)               \
 	{                                                                      \
 		return __guard->err == 0;                                          \
@@ -166,25 +169,25 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 
 #define DEFINE_GUARD_COND_4(_name, _ext, _lock, _success)                   \
 	typedef class_##_name##_t class_##_name##_ext##_t;                    \
-	static CLEANUP_ALWAYS_INLINE class_##_name##_t                                \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED class_##_name##_t           \
 	class_##_name##_ext##_constructor(lock_##_name##_t _T)                 \
 	{                                                                      \
 		int _RET = (_lock);                                                \
 		int __err = (_success) ? 0 : __cleanup_normalize_lock_error(_RET);\
 		return (class_##_name##_t){ .resource = _T, .err = __err };       \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE void                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                        \
 	class_##_name##_ext##_destructor(class_##_name##_t *__guard)            \
 	{                                                                      \
 		if (!__guard->err)                                                 \
 			class_##_name##_destructor(__guard);                         \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE int                                              \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                         \
 	class_##_name##_ext##_lock_err(class_##_name##_t *__guard)              \
 	{                                                                      \
 		return __guard->err;                                               \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE bool                                             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED bool                        \
 	class_##_name##_ext##_lock_acquired(class_##_name##_t *__guard)         \
 	{                                                                      \
 		return __guard->err == 0;                                          \
@@ -196,7 +199,7 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 #define __cleanup_get_5th(_1, _2, _3, _4, _name, ...) _name
 #define DEFINE_GUARD_COND(...)                                              \
 	__cleanup_get_5th(__VA_ARGS__, DEFINE_GUARD_COND_4,                  \
-		          DEFINE_GUARD_COND_3)(__VA_ARGS__)
+		          DEFINE_GUARD_COND_3, 0)(__VA_ARGS__)
 
 #define guard(_name) CLASS(_name, __cleanup_unique(__cleanup_guard_))
 #define ACQUIRE(_name, _var) CLASS(_name, _var)
