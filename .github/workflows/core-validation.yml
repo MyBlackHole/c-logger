@@ -8,7 +8,7 @@ on:
       - "tests/**"
       - "xmake.lua"
       - "VERSION"
-      - "abi/logger.symbols"
+      - "abi/logger-1.0.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/core-validation.yml"

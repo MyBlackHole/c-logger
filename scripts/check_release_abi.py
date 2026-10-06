@@ -17,7 +17,7 @@ def run(*args):
 
 
 def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_class=None,
-            abi_version='0', symbol_version='LOGGER_0.9'):
+            abi_version='1', symbol_version='LOGGER_1.0'):
     names = {s.strip() for s in manifest.read_text().splitlines()
              if s.strip() and not s.lstrip().startswith('#')}
     if legacy:
@@ -86,15 +86,15 @@ def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('artifact', type=Path)
-    p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'abi/logger.symbols')
+    p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'abi/logger-1.0.symbols')
     p.add_argument('--legacy-fork', action='store_true')
     p.add_argument('--max-glibc', help='Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements')
     p.add_argument('--machine', help='Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64')
     p.add_argument('--elf-class', choices=('ELF32', 'ELF64'), help='Required target ELF class')
-    p.add_argument('--abi-version', default='0',
-                   help='Expected SONAME ABI major, default: 0')
-    p.add_argument('--symbol-version', default='LOGGER_0.9',
-                   help='Expected default ELF symbol version, default: LOGGER_0.9')
+    p.add_argument('--abi-version', default='1',
+                   help='Expected SONAME ABI major, default: 1')
+    p.add_argument('--symbol-version', default='LOGGER_1.0',
+                   help='Expected default ELF symbol version, default: LOGGER_1.0')
     a = p.parse_args()
     if a.max_glibc and not re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', a.max_glibc):
         p.error('--max-glibc must be a dotted numeric version, e.g. 2.25')

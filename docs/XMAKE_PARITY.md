@@ -30,9 +30,9 @@ Xmake 已表达以下生产契约：
 - shared / static；
 - static PIC；
 - hidden visibility + public `LOGGER_API`；
-- `liblogger.so.<VERSION>` / SONAME `liblogger.so.0`；
-- `LOGGER_0.9` ELF symbol version；
-- public symbol allowlist 直接读取现有 `abi/logger.symbols`，不维护第二份 ABI 清单；
+- `liblogger.so.<VERSION>` / SONAME `liblogger.so.1`；
+- `LOGGER_1.0` ELF symbol version；
+- public symbol allowlist 直接读取现有 `abi/logger-1.0.symbols`，不维护第二份 ABI 清单；
 - `--no-undefined` / `--no-undefined-version`；
 - production fault injection disabled；
 - builtin SHA-256 only；
@@ -410,7 +410,7 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 
 - production shared/static、tests、sanitizer、crash、VM power-cut、benchmark candidate、
   install 与 packaging 均由 Xmake 驱动；
-- ABI allowlist 已迁到中立的 `abi/logger.symbols`；
+- ABI allowlist 已迁到中立的 `abi/logger-1.0.symbols`；
 - 根 `CMakeLists.txt` 与旧 CMake packaging/helper 文件不再属于当前工程；
 - `scripts/check.sh` 已切到 Xmake，本地旧 profile 名仅作为保守完整-suite 兼容别名。
 

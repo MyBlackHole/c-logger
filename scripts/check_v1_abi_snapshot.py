@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that the active public ABI manifest still matches the frozen v1 snapshot."""
+"""Verify the frozen Production v1 public ABI manifest."""
 
 import argparse
 import json
@@ -32,29 +32,22 @@ def load_manifest(path: Path):
 def main():
     root = Path(__file__).resolve().parents[1]
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--active", type=Path, default=root / "abi/logger.symbols")
-    p.add_argument("--snapshot", type=Path, default=root / "abi/logger-1.0.symbols")
+    p.add_argument("--manifest", type=Path,
+                   default=root / "abi/logger-1.0.symbols")
+    p.add_argument("--expected-count", type=int, default=62)
     a = p.parse_args()
 
-    active, active_errors = load_manifest(a.active)
-    frozen, frozen_errors = load_manifest(a.snapshot)
-    errors = active_errors + frozen_errors
-
-    active_set = set(active)
-    frozen_set = set(frozen)
-    if active_set != frozen_set:
+    symbols, errors = load_manifest(a.manifest)
+    if len(symbols) != a.expected_count:
         errors.append({
-            "added_since_v1_snapshot": sorted(active_set - frozen_set),
-            "missing_from_active": sorted(frozen_set - active_set),
+            "symbol_count": len(symbols),
+            "expected_count": a.expected_count,
         })
-    elif active != frozen:
-        errors.append("symbol order differs from frozen v1 snapshot")
 
     report = {
         "passed": not errors,
-        "active": str(a.active),
-        "snapshot": str(a.snapshot),
-        "symbol_count": len(active),
+        "manifest": str(a.manifest),
+        "symbol_count": len(symbols),
         "errors": errors,
     }
     print(json.dumps(report, indent=2))
