@@ -2,6 +2,7 @@
 #include "console.h"
 #include "logger.h"
 #include <errno.h>
+#include <stdint.h>
 #include <unistd.h>
 
 static int rejects_invalid(logger_config_t *c)
@@ -17,6 +18,13 @@ static int rejects_invalid(logger_config_t *c)
 
 int main(void)
 {
+	_Static_assert(LOGGER_CONFIG_SIZE == sizeof(logger_config_t),
+		       "Logger v1 config size changed");
+	_Static_assert(AUDIT_CONFIG_SIZE == sizeof(audit_config_t),
+		       "Audit v1 config size changed");
+	_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),
+		       "Console v1 config size changed");
+
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
 	if (l.version != LOGGER_CONFIG_VERSION || l.struct_size != sizeof(l))
 		return 1;
@@ -55,8 +63,6 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
-	_Static_assert(AUDIT_CONFIG_V1_SIZE == sizeof(audit_config_t),
-		       "Audit v1 config size changed");
 	audit_config_t a = AUDIT_DEFAULT_CONFIG();
 	if (a.version != AUDIT_CONFIG_VERSION || a.struct_size != sizeof(a))
 		return 10;
@@ -65,42 +71,69 @@ int main(void)
 	if (audit_init(&a) == 0 || errno != EPROTONOSUPPORT)
 		return 11;
 
-	/* The pre-v1 zero/zero escape hatch must not enter SONAME 1. */
 	a = AUDIT_DEFAULT_CONFIG();
-	a.struct_size = 0;
-	a.version = 0;
+	a.struct_size = AUDIT_CONFIG_SIZE - 1u;
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EINVAL)
 		return 12;
 
-	/* A versioned caller must provide the complete stable v1 prefix. */
-	a = AUDIT_DEFAULT_CONFIG();
-	a.struct_size = AUDIT_CONFIG_V1_SIZE - 1u;
-	errno = 0;
-	if (audit_init(&a) == 0 || errno != EINVAL)
-		return 13;
-
-	/* Production v1 intentionally rejects oversized pre-v1/future layouts.
-	 * A layout change must use a new config version, not an implicit tail. */
-	struct oversized_audit_config {
+	struct future_audit_config {
 		audit_config_t config;
 		uint64_t tail;
 	};
-	_Static_assert(sizeof(struct oversized_audit_config) == 72,
-		       "oversized fixture extent changed");
-	struct oversized_audit_config oversized = {
+	_Static_assert(sizeof(struct future_audit_config) == 72,
+		       "future Audit fixture extent changed");
+
+	struct future_audit_config future = {
 		.config = AUDIT_DEFAULT_CONFIG(),
-		.tail = UINT64_C(0xa5a5a5a5a5a5a5a5),
+		.tail = 0,
 	};
-	oversized.config.struct_size = sizeof(oversized);
-	errno = 0;
-	if (audit_init(&oversized.config) == 0 || errno != EINVAL)
+	future.config.struct_size = sizeof(future);
+	future.config.log_dir = ".";
+	future.config.name = "config_abi_future";
+	future.config.rotation.mode = LOGGER_ROTATE_NONE;
+	future.config.integrity = AUDIT_INTEGRITY_NONE;
+	unlink("./config_abi_future.audit.log");
+	unlink("./config_abi_future.audit.log.logger.lock");
+	if (audit_init(&future.config))
+		return 13;
+	if (audit_shutdown_status())
 		return 14;
-	if (oversized.tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
+	unlink("./config_abi_future.audit.log");
+	unlink("./config_abi_future.audit.log.logger.lock");
+
+	future.config = AUDIT_DEFAULT_CONFIG();
+	future.config.struct_size = sizeof(future);
+	future.tail = UINT64_C(1);
+	errno = 0;
+	if (audit_init(&future.config) == 0 || errno != E2BIG)
 		return 15;
 
-	console_config_t c = CONSOLE_DEFAULT_CONFIG();
-	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
+	console_config_t con = CONSOLE_DEFAULT_CONFIG();
+	if (con.version != CONSOLE_CONFIG_VERSION ||
+	    con.struct_size != sizeof(con))
 		return 16;
+
+	struct future_console_config {
+		console_config_t config;
+		uint64_t tail;
+	} future_console = {
+		.config = CONSOLE_DEFAULT_CONFIG(),
+		.tail = 0,
+	};
+	future_console.config.struct_size = sizeof(future_console);
+	errno = 0;
+	console_init(&future_console.config);
+	if (errno)
+		return 17;
+
+	future_console.config = CONSOLE_DEFAULT_CONFIG();
+	future_console.config.struct_size = sizeof(future_console);
+	future_console.tail = UINT64_C(1);
+	errno = 0;
+	console_init(&future_console.config);
+	if (errno != E2BIG)
+		return 18;
+
 	return 0;
 }
