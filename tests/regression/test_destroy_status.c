@@ -23,7 +23,12 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 {
 	if (fail_join) {
 		fail_join = 0;
-		return EDEADLK;
+		/* Let the real worker quiesce so the test itself has no runaway
+		 * thread, but report a failed lifetime proof to the implementation.
+		 * The implementation must conservatively refuse final free because
+		 * it cannot rely on facts hidden behind a failed pthread_join(). */
+		int rc = __real_pthread_join(thread, result);
+		return rc ? rc : EDEADLK;
 	}
 	return __real_pthread_join(thread, result);
 }
