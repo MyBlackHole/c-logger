@@ -10,12 +10,6 @@ option("build_shared")
     set_description("Build the production logger as a shared library")
 option_end()
 
-option("v1_abi_preview")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Build the non-default Production v1 ABI preview (SONAME 1 / LOGGER_1.0)")
-option_end()
-
 option("legacy_fork")
     set_default(false)
     set_showmenu(true)
@@ -47,10 +41,9 @@ set_allowedplats("linux")
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
-local v1_abi_preview = has_config("v1_abi_preview")
-local abi_version = v1_abi_preview and "1" or "0"
-local symbol_version = v1_abi_preview and "LOGGER_1.0" or "LOGGER_0.9"
-local abi_manifest = v1_abi_preview and "abi/logger-1.0.symbols" or "abi/logger.symbols"
+local abi_version = "1"
+local symbol_version = "LOGGER_1.0"
+local abi_manifest = "abi/logger-1.0.symbols"
 
 local function cmake_bool(value)
     return value and "TRUE" or "FALSE"
@@ -354,12 +347,10 @@ if has_config("legacy_fork") then
 end
 
 local package_kind = has_config("build_shared") and "shared" or "static"
-local package_basename = v1_abi_preview
-    and ("prod-c-logger-v1-abi-preview-" .. project_version .. "-Linux-x86_64-" .. package_kind)
-    or ("prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind)
-local package_title = v1_abi_preview
-    and ("c-logger " .. project_version .. " Production v1 ABI preview")
-    or ("c-logger " .. project_version .. " controlled production candidate")
+local package_basename =
+    "prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind
+local package_title =
+    "c-logger " .. project_version .. " controlled production candidate"
 xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
