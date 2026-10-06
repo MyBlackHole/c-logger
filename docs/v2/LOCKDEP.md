@@ -84,3 +84,27 @@ tracking。这样 call site 直接暴露 lock class，reviewer 不需要根据 m
 语义。
 
 `logger_sync_outputs_locked()` 增加 emit assert-held，明确 locked helper contract。
+
+
+## Controller-owned candidate / retired object
+
+真实接入 instance guard 后确认，controller lock graph 需要区分 published 与
+unpublished/detached 阶段。
+
+合法边：
+
+```text
+Global control -> Global lifetime -> instance
+Global control --------------------> instance
+
+Audit control  -> Audit operation  -> instance
+Audit control  --------------------> instance
+```
+
+direct controller -> instance 只对应：
+
+- init 时尚未 publish 的 candidate；
+- unpublish + reader/operation drain 后，由 controller 独占的 retired object。
+
+这不是 lifetime shortcut。tracker 仍禁止 `instance -> lifetime/operation`，因此
+不会允许形成 controller -> instance -> lifetime 的反向环。
