@@ -54,9 +54,9 @@ int main(int argc, char **argv)
 		      LOGGER_STATE_STOPPING);
 		errno = 0;
 		CHECK(logger_destroy_status(l) == -1 && errno == EIO);
-		CHECK(logger_process_object_count() == 1);
+		CHECK(logger_process_object_count() == 0);
 		leave_temp(dir);
-		puts("worker wait failure blocks final free");
+		puts("worker wait failure is reported after successful join/free");
 		return 0;
 	}
 	wait_flag(&in_gap);
