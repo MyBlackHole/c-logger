@@ -22,12 +22,13 @@ xmake -j4 logger
 xmake install -o /opt/logger/"$(cat VERSION)"-static logger
 ```
 
-共享产物使用 `liblogger.so.<VERSION>`，SONAME 固定为 `liblogger.so.0`；静态产物为
-`liblogger.a`。生产库默认关闭 故障注入，并使用 隐藏可见性 +
-`LOGGER_0.9` ELF 符号版本。
+共享产物使用 `liblogger.so.<VERSION>`，SONAME 固定为 `liblogger.so.1`；静态产物为
+`liblogger.a`。生产库默认关闭故障注入，并使用隐藏可见性 +
+`LOGGER_1.0` ELF 符号版本。
 
-ABI 允许列表由 `abi/logger.symbols` 维护。新增 public API 时必须同步更新该清单并通过
-ABI gate，不能用通配符导出。
+Production v1 ABI 允许列表唯一由 `abi/logger-1.0.symbols` 维护。新增/删除 public API
+必须显式重新打开 ABI 评审并通过 ABI gate，不能用通配符导出。当前软件版本仍可处于
+0.9.x candidate；ABI 1 冻结不等于 Production 1.0 已发布。
 
 ## 下游接入
 
