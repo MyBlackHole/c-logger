@@ -253,11 +253,104 @@ static int validate_logger_config(const logger_config_t *cfg)
 	return 0;
 }
 
+typedef struct {
+	int emit_mu_ready;
+	int progress_mu_ready;
+	int progress_cv_ready;
+	int queue_ready;
+	int worker_started;
+} logger_ctor_state_t;
+
+static void logger_ctor_note_proof_error(logger_t *l, int rc)
+{
+	int error = rc < 0 ? -rc : rc;
+	if (!l || !error)
+		return;
+	int expected = 0;
+	(void)atomic_compare_exchange_strong_explicit(
+		&l->lifecycle_error, &expected, error,
+		memory_order_release, memory_order_relaxed);
+}
+
+/*
+ * Roll back only resources whose construction completed. A synchronization,
+ * join or census failure is a lifetime-proof failure: stop immediately and
+ * intentionally retain the unpublished container. The caller keeps the
+ * original construction errno; this return value is cleanup diagnostics.
+ */
+static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
+{
+	if (!l)
+		return logger_process_object_release();
+
+	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
+			      memory_order_release);
+
+	if (state->worker_started) {
+		atomic_store_explicit(&l->running, 0, memory_order_release);
+		if (state->queue_ready)
+			logger_queue_wake_force(&l->q);
+		int join_rc = pthread_join(l->worker, NULL);
+		if (join_rc) {
+			logger_ctor_note_proof_error(l, join_rc);
+			return -join_rc;
+		}
+	}
+
+	logger_worker_workspace_destroy(l->worker_workspace);
+	l->worker_workspace = NULL;
+
+	if (state->queue_ready) {
+		int rc = logger_queue_destroy(&l->q);
+		if (rc) {
+			logger_ctor_note_proof_error(l, rc);
+			return rc;
+		}
+	}
+
+	if (state->progress_cv_ready) {
+		int rc = pthread_cond_destroy(&l->progress_cv);
+		if (rc) {
+			logger_ctor_note_proof_error(l, rc);
+			return -rc;
+		}
+	}
+	if (state->progress_mu_ready) {
+		int rc = pthread_mutex_destroy(&l->progress_mu);
+		if (rc) {
+			logger_ctor_note_proof_error(l, rc);
+			return -rc;
+		}
+	}
+	if (state->emit_mu_ready) {
+		int rc = pthread_mutex_destroy(&l->emit_mu);
+		if (rc) {
+			logger_ctor_note_proof_error(l, rc);
+			return -rc;
+		}
+	}
+
+	/* close errors are secondary to the construction error and do not make
+	 * already-proven memory lifetime unsafe. Linux close is never retried. */
+	int cleanup_rc = logger_file_close_status(&l->file_backend);
+	logger_syslog_close(&l->syslog_backend);
+
+	int release_rc = logger_process_object_release();
+	if (release_rc) {
+		logger_ctor_note_proof_error(l, release_rc);
+		return release_rc;
+	}
+
+	free(l);
+	return cleanup_rc;
+}
+
 static logger_t *create_logger(const logger_config_t *input,
 			       logger_file_t *reserved)
 {
 	logger_config_t cfg;
-	int rc, queue_ready = 0;
+	logger_ctor_state_t state = { 0 };
+	int rc;
 	if (copy_logger_config(input, &cfg) != 0)
 		return NULL;
 	rc = validate_logger_config(&cfg);
@@ -272,7 +365,11 @@ static logger_t *create_logger(const logger_config_t *input,
 	}
 	logger_t *l = calloc(1, sizeof(*l));
 	if (!l) {
-		logger_process_object_release();
+		int primary = errno ? errno : ENOMEM;
+		/* No container exists to retain. A failed census rollback still leaves
+		 * the process guard conservative; never replace the primary ENOMEM. */
+		(void)logger_ctor_rollback(NULL, &state);
+		errno = primary;
 		return NULL;
 	}
 	l->file_backend = LOGGER_FILE_EMPTY;
@@ -310,18 +407,24 @@ static logger_t *create_logger(const logger_config_t *input,
 
 	rc = pthread_mutex_init(&l->emit_mu, NULL);
 	if (rc != 0)
-		goto fail_alloc;
+		goto fail;
+	state.emit_mu_ready = 1;
+
 	rc = pthread_mutex_init(&l->progress_mu, NULL);
 	if (rc != 0)
-		goto fail_emit;
+		goto fail;
+	state.progress_mu_ready = 1;
+
 	rc = pthread_cond_init(&l->progress_cv, NULL);
 	if (rc != 0)
-		goto fail_progress;
+		goto fail;
+	state.progress_cv_ready = 1;
+
 	if (reserved) {
 		if (!(l->outputs & LOGGER_OUT_FILE) ||
 		    logger_file_open_reserved(reserved)) {
 			rc = errno ? errno : EINVAL;
-			goto fail_backends;
+			goto fail;
 		}
 		l->file_backend = *reserved;
 		*reserved =
@@ -329,65 +432,59 @@ static logger_t *create_logger(const logger_config_t *input,
 	} else if ((l->outputs & LOGGER_OUT_FILE) &&
 		   logger_file_init(&l->file_backend, cfg.file_path,
 				    cfg.rotation, l->file_mode)) {
-		rc = errno;
-		goto fail_backends;
+		rc = errno ? errno : EIO;
+		goto fail;
 	}
+
 	if ((l->outputs & LOGGER_OUT_SYSLOG) &&
 	    logger_syslog_init(&l->syslog_backend, cfg.ident, &cfg.syslog) !=
 		    0) {
-		rc = errno;
-		goto fail_backends;
+		rc = errno ? errno : EIO;
+		goto fail;
 	}
+
 	/* Deferred startup is explicit, not a claim that the sink is healthy. */
 	if (l->outputs & LOGGER_OUT_SYSLOG)
 		logger_note_io_error(l, l->syslog_backend.metrics.last_error);
+
 	if (l->async_mode) {
 		if (logger_queue_init(&l->q, cfg.queue_capacity ?
 						     cfg.queue_capacity :
 						     8192) != 0) {
-			rc = errno;
-			goto fail_backends;
+			rc = errno ? errno : EIO;
+			goto fail;
 		}
-		queue_ready = 1;
+		state.queue_ready = 1;
 		l->worker_workspace = logger_worker_workspace_create(l->q.cap);
 		if (!l->worker_workspace) {
 			rc = errno ? errno : ENOMEM;
-			goto fail_backends;
+			goto fail;
 		}
 		atomic_store_explicit(&l->running, 1, memory_order_release);
 		rc = pthread_create(&l->worker, NULL, logger_worker_main, l);
 		if (rc != 0) {
 			atomic_store_explicit(&l->running, 0,
 					      memory_order_release);
-			goto fail_backends;
+			goto fail;
 		}
+		state.worker_started = 1;
 	}
+
 	atomic_store_explicit(&l->state, LOGGER_STATE_RUNNING,
 			      memory_order_release);
 	return l;
 
-fail_backends:
-	logger_worker_workspace_destroy(l->worker_workspace);
-	l->worker_workspace = NULL;
-	if (queue_ready) {
-		int qrc = logger_queue_destroy(&l->q);
-		if (!rc && qrc)
-			rc = -qrc;
-	}
-	logger_syslog_close(&l->syslog_backend);
-	logger_file_close(&l->file_backend);
-	pthread_cond_destroy(&l->progress_cv);
-fail_progress:
-	pthread_mutex_destroy(&l->progress_mu);
-fail_emit:
-	pthread_mutex_destroy(&l->emit_mu);
-fail_alloc:
-	free(l);
-	int release_rc = logger_process_object_release();
-	if (!rc && release_rc)
-		rc = -release_rc;
-	errno = rc ? rc : EIO;
+fail: {
+	int primary = rc ? rc : EIO;
+	/*
+	 * Cleanup diagnostics never replace the primary construction failure.
+	 * logger_ctor_rollback() itself enforces proof-before-free.
+	 */
+	int cleanup_rc = logger_ctor_rollback(l, &state);
+	(void)cleanup_rc;
+	errno = primary;
 	return NULL;
+}
 }
 
 static void cancel_unreturned_logger(void *arg)
