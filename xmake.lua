@@ -172,6 +172,7 @@ local logger_sources = {
     "src/logger_global.c",
     "src/logger_process.c",
     "src/logger_scope.c",
+    "src/logger_lockdep.c",
     "src/logger_redact.c",
     "src/logger_format.c",
     "src/logger_queue.c",
@@ -217,6 +218,7 @@ target("logger")
     end
 
     add_defines("LOGGER_ENABLE_FAULT_INJECTION=0")
+    add_defines("LOGGER_ENABLE_LOCKDEP=0")
     if not has_config("build_shared") then
         add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
     end
@@ -435,6 +437,7 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         add_cflags("-Wvla", "-Wframe-larger-than=24576", {force = true})
         set_symbols("hidden")
         add_defines("LOGGER_ENABLE_FAULT_INJECTION=1")
+        add_defines("LOGGER_ENABLE_LOCKDEP=1")
         add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
         add_syslinks("pthread", {public = true})
         add_includedirs("include", "$(builddir)/generated", {public = true})
@@ -574,6 +577,7 @@ if has_config("build_regression_tests") then
         add_cflags("-Wvla", "-Wframe-larger-than=24576", {force = true})
         set_symbols("hidden")
         add_defines("LOGGER_ENABLE_FAULT_INJECTION=0")
+        add_defines("LOGGER_ENABLE_LOCKDEP=1")
         add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
         add_syslinks("pthread", {public = true})
         add_includedirs("include", "$(builddir)/generated", {public = true})
@@ -582,6 +586,7 @@ if has_config("build_regression_tests") then
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
         {"queue_wakeup_litmus", "tests/regression/test_queue_wakeup_litmus.c"},
+        {"lockdep_regression", "tests/regression/test_lockdep.c"},
         {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
         {"global_flush_regression", "tests/regression/test_global_flush.c"},
         {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
@@ -703,6 +708,7 @@ if has_config("build_regression_tests") then
     for _, name in ipairs({
         "queue_mpsc_regression",
         "queue_wakeup_litmus",
+        "lockdep_regression",
         "metadata_capture_regression",
         "global_flush_regression",
         "crypto_vectors_test"
