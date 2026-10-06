@@ -82,7 +82,9 @@ static inline audit_config_t audit_defaults_cpp(void)
  * 0 success, -1 failure with errno. Audit is a single-writer process-global
  * subsystem. Writer ownership is the same file-backend lease held on the
  * active Audit log before recovery and retained by the live logger; a second
- * process targeting the same chain returns EBUSY. */
+ * process targeting the same chain returns EBUSY.
+ * audit_init also fails with EAGAIN when the kernel CRNG is not ready; it never
+ * blocks indefinitely or falls back to weaker randomness for the instance ID. */
 LOGGER_API int audit_init(const audit_config_t *);
 /* Always releases the local runtime. Returns -1/errno if STOP, its checkpoint,
  * or an earlier uncertain log/crypto operation failed. The void API is a wrapper. */
