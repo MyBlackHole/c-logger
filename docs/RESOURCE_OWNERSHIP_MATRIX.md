@@ -110,7 +110,7 @@ recovery/commit 语义。
     ->
 pthread_join 成功
     ->
-检查 worker lifecycle_error
+记录/返回 worker lifecycle_error（不再阻止安全回收）
     ->
 销毁工作区
     ->
