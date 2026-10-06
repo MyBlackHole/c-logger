@@ -627,6 +627,8 @@ if has_config("build_regression_tests") then
             {"audit_digest_provider"}},
         {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
             {"write", "fsync", "ftruncate"}},
+        {"audit_entropy_regression", "tests/regression/test_audit_entropy.c",
+            {"getrandom"}},
 
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
@@ -798,6 +800,10 @@ if has_config("build_regression_tests") then
             add_tests("tail_io_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
+    target_end()
+
+    target("audit_entropy_regression")
+        add_tests("audit_entropy_failfast", {timeout = 15})
     target_end()
 
     target("audit_record_regression")
