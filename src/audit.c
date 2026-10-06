@@ -174,16 +174,38 @@ static int safe_name(const char *s)
 	return 1;
 }
 
+static int normalize_audit_config(const audit_config_t *in,
+				  audit_config_t *out)
+{
+	if (!in || !out)
+		return -EINVAL;
+
+	/* Read only the stable ABI header before deciding how much caller memory
+	 * is part of the contract. This mirrors logger_config_t normalization. */
+	uint32_t size, version;
+	memcpy(&size, (const unsigned char *)in, sizeof(size));
+	memcpy(&version, (const unsigned char *)in + sizeof(size),
+	       sizeof(version));
+
+	/* Production v1 has one configuration ABI: explicit size + version.
+	 * The pre-v1 zero/zero escape hatch is intentionally retired before
+	 * SONAME 1 so future appended fields remain unambiguous. */
+	if (size == 0 && version == 0)
+		return -EINVAL;
+	if (version != AUDIT_CONFIG_VERSION)
+		return -EPROTONOSUPPORT;
+	if (size < AUDIT_CONFIG_V1_PREFIX_SIZE)
+		return -EINVAL;
+
+	*out = AUDIT_DEFAULT_CONFIG();
+	memcpy(out, in, AUDIT_CONFIG_V1_PREFIX_SIZE);
+	out->struct_size = sizeof(*out);
+	out->version = AUDIT_CONFIG_VERSION;
+	return 0;
+}
+
 static int validate_config(const audit_config_t *c)
 {
-	if (!c)
-		return -EINVAL;
-	if (!(c->struct_size == 0 && c->version == 0)) {
-		if (c->version != AUDIT_CONFIG_VERSION)
-			return -EPROTONOSUPPORT;
-		if (c->struct_size < sizeof(*c))
-			return -EINVAL;
-	}
 	if (!c->log_dir || !safe_name(c->name) ||
 	    (unsigned)c->failure_policy > AUDIT_FAIL_DENY)
 		return -EINVAL;
@@ -434,14 +456,17 @@ int audit_init(const audit_config_t *c)
 	pthread_mutex_unlock(&g_operation_mu);
 
 	audit_runtime_t *candidate = NULL;
-	rc = validate_config(c);
+	audit_config_t config;
+	rc = normalize_audit_config(c, &config);
 	if (!rc)
-		rc = create_runtime(c, &candidate);
+		rc = validate_config(&config);
+	if (!rc)
+		rc = create_runtime(&config, &candidate);
 	if (!rc) {
 		pthread_mutex_lock(&g_operation_mu);
 		g_runtime =
 			candidate; /* START and its checkpoint have succeeded */
-		atomic_store_explicit(&g_policy, c->failure_policy,
+		atomic_store_explicit(&g_policy, config.failure_policy,
 				      memory_order_relaxed);
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
 				      memory_order_release);
