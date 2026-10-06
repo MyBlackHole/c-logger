@@ -3,6 +3,7 @@
 #include "audit_internal.h"
 #include "audit_record.h"
 #include "logger_internal.h"
+#include "logger_lockdep.h"
 #include "logger_fault.h"
 #include "logger_cleanup.h"
 #include "logger_uapi.h"
@@ -63,7 +64,8 @@ static int result(int rc)
 
 /* Cancellation is deferred until all owned locks/resources have been released.
  * Cancellation is not an application-level rollback of a committed record. */
-static int lock_scope(pthread_mutex_t *mu, int *old_cancel)
+static int lock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
+		      int *old_cancel)
 {
 	if (logger_scope_busy())
 		return -EDEADLK;
@@ -71,15 +73,37 @@ static int lock_scope(pthread_mutex_t *mu, int *old_cancel)
 	if (rc)
 		return -rc;
 	rc = pthread_mutex_lock(mu);
-	if (rc)
+	if (rc) {
 		(void)pthread_setcancelstate(*old_cancel, NULL);
-	return -rc;
+		return -rc;
+	}
+	logger_lockdep_acquire(class_id, mu);
+	return 0;
 }
 
-static void unlock_scope(pthread_mutex_t *mu, int old_cancel)
+static void unlock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
+			 int old_cancel)
 {
-	(void)pthread_mutex_unlock(mu);
+	int rc = pthread_mutex_unlock(mu);
+	if (!rc)
+		logger_lockdep_release(class_id, mu);
 	(void)pthread_setcancelstate(old_cancel, NULL);
+}
+
+static void operation_lock_nested(void)
+{
+	int rc = pthread_mutex_lock(&g_operation_mu);
+	if (!rc)
+		logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION,
+				       &g_operation_mu);
+}
+
+static void operation_unlock_nested(void)
+{
+	int rc = pthread_mutex_unlock(&g_operation_mu);
+	if (!rc)
+		logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION,
+				       &g_operation_mu);
 }
 
 static int admission_error(void)
@@ -105,7 +129,8 @@ static int lock_runtime(audit_runtime_t **runtime, int *old_cancel)
 	int error = admission_error();
 	if (error)
 		return -error;
-	int rc = lock_scope(&g_operation_mu, old_cancel);
+	int rc = lock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			    old_cancel);
 	if (rc)
 		return rc;
 	error = admission_error();
@@ -115,9 +140,12 @@ static int lock_runtime(audit_runtime_t **runtime, int *old_cancel)
 	if (!error && !g_runtime)
 		error = ENODEV;
 	if (error) {
-		unlock_scope(&g_operation_mu, *old_cancel);
+		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			     *old_cancel);
 		return -error;
 	}
+	logger_lockdep_assert_held(LOGGER_LOCK_AUDIT_OPERATION,
+				   &g_operation_mu);
 	*runtime = g_runtime;
 	return 0;
 }
@@ -428,25 +456,28 @@ int audit_init(const audit_config_t *c)
 	if (rc)
 		return result(rc);
 	int old_cancel;
-	rc = lock_scope(&g_control_mu, &old_cancel);
+	rc = lock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+			&old_cancel);
 	if (rc)
 		return result(rc);
-	pthread_mutex_lock(&g_operation_mu);
+	operation_lock_nested();
 	if (g_runtime) {
-		pthread_mutex_unlock(&g_operation_mu);
-		unlock_scope(&g_control_mu, old_cancel);
+		operation_unlock_nested();
+		unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+			     old_cancel);
 		return result(-EALREADY);
 	}
 	if (atomic_load_explicit(&g_generation, memory_order_relaxed) ==
 	    UINT64_MAX) {
-		pthread_mutex_unlock(&g_operation_mu);
-		unlock_scope(&g_control_mu, old_cancel);
+		operation_unlock_nested();
+		unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+			     old_cancel);
 		return result(-EOVERFLOW);
 	}
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STARTING,
 			      memory_order_release);
 	atomic_fetch_add_explicit(&g_generation, 1, memory_order_release);
-	pthread_mutex_unlock(&g_operation_mu);
+	operation_unlock_nested();
 
 	audit_runtime_t *candidate = NULL;
 	audit_config_t config;
@@ -456,14 +487,14 @@ int audit_init(const audit_config_t *c)
 	if (!rc)
 		rc = create_runtime(&config, &candidate);
 	if (!rc) {
-		pthread_mutex_lock(&g_operation_mu);
+		operation_lock_nested();
 		g_runtime =
 			candidate; /* START and its checkpoint have succeeded */
 		atomic_store_explicit(&g_policy, config.failure_policy,
 				      memory_order_release);
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
 				      memory_order_release);
-		pthread_mutex_unlock(&g_operation_mu);
+		operation_unlock_nested();
 	} else {
 		audit_status_t failed = { 0 };
 		if (candidate)
@@ -473,13 +504,14 @@ int audit_init(const audit_config_t *c)
 		(void)dispose_runtime(candidate);
 		failed.state = AUDIT_STATE_IDLE;
 		failed.error_code = -rc;
-		pthread_mutex_lock(&g_operation_mu);
+		operation_lock_nested();
 		g_last_status = failed;
 		atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE,
 				      memory_order_release);
-		pthread_mutex_unlock(&g_operation_mu);
+		operation_unlock_nested();
 	}
-	unlock_scope(&g_control_mu, old_cancel);
+	unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+		     old_cancel);
 	return result(rc);
 }
 
@@ -489,13 +521,13 @@ int audit_shutdown_status(void)
 	if (ready)
 		return result(ready);
 	int old_cancel;
-	int rc = lock_scope(&g_control_mu, &old_cancel);
+	int rc = lock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+			    &old_cancel);
 	if (rc)
 		return result(rc);
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
 			      memory_order_release);
-	pthread_mutex_lock(
-		&g_operation_mu); /* drains the in-flight operation */
+	operation_lock_nested(); /* drains the in-flight operation */
 	audit_runtime_t *s = g_runtime;
 	g_runtime = NULL;
 	audit_status_t final = g_last_status;
@@ -518,18 +550,19 @@ int audit_shutdown_status(void)
 		}
 		snapshot_runtime(s, &final);
 	}
-	pthread_mutex_unlock(&g_operation_mu);
+	operation_unlock_nested();
 	int close_rc = dispose_runtime(s); /* still holding the control mutex */
 	if (!rc)
 		rc = close_rc;
 	final.state = AUDIT_STATE_IDLE;
 	if (rc)
 		final.error_code = -rc;
-	pthread_mutex_lock(&g_operation_mu);
+	operation_lock_nested();
 	g_last_status = final;
 	atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE, memory_order_release);
-	pthread_mutex_unlock(&g_operation_mu);
-	unlock_scope(&g_control_mu, old_cancel);
+	operation_unlock_nested();
+	unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+		     old_cancel);
 	return result(rc);
 }
 
@@ -550,7 +583,8 @@ int audit_write(const audit_event_t *e)
 	rc = lock_runtime(&s, &old_cancel);
 	if (!rc) {
 		rc = write_runtime(s, e);
-		unlock_scope(&g_operation_mu, old_cancel);
+		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			     old_cancel);
 	}
 	return result(rc);
 }
@@ -581,7 +615,8 @@ int audit_begin(audit_event_t *e)
 		*e = next;
 		rc = write_runtime(s, &next);
 	}
-	unlock_scope(&g_operation_mu, old_cancel);
+	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+		     old_cancel);
 	return result(rc);
 }
 
@@ -609,7 +644,8 @@ int audit_end(audit_event_t *e, audit_result_t outcome, int error_code)
 		*e = next;
 		rc = write_runtime(s, &next);
 	}
-	unlock_scope(&g_operation_mu, old_cancel);
+	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+		     old_cancel);
 	return result(rc);
 }
 
@@ -628,7 +664,8 @@ int audit_flush(void)
 			s); /* no re-append; repair the committed head */
 	else if (logger_flush_instance_status(s->logger))
 		rc = fail_runtime(s, AUDIT_STATE_IO_FAILED, -errno);
-	unlock_scope(&g_operation_mu, old_cancel);
+	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+		     old_cancel);
 	return result(rc);
 }
 
@@ -651,7 +688,8 @@ int audit_get_status(audit_status_t *out)
 		return 0; /* no partial candidate/session data is exposed */
 	}
 	int old_cancel;
-	int rc = lock_scope(&g_operation_mu, &old_cancel);
+	int rc = lock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			    &old_cancel);
 	if (rc)
 		return result(rc);
 	phase = atomic_load_explicit(&g_phase, memory_order_acquire);
@@ -661,7 +699,8 @@ int audit_get_status(audit_status_t *out)
 		*out = g_last_status;
 	else
 		out->state = (audit_state_t)phase;
-	unlock_scope(&g_operation_mu, old_cancel);
+	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+		     old_cancel);
 	return 0;
 }
 
@@ -700,7 +739,8 @@ int audit_instance_id_copy(char out[33])
 	int rc = lock_runtime(&s, &old_cancel);
 	if (!rc) {
 		memcpy(out, s->instance_id, 33);
-		unlock_scope(&g_operation_mu, old_cancel);
+		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			     old_cancel);
 	}
 	return result(rc);
 }
