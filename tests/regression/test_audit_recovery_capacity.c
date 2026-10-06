@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <fcntl.h>
 
 #include <sys/resource.h>
 #include <time.h>
@@ -17,12 +18,12 @@ static void archive_path(char out[128], unsigned index)
 	CHECK(n > 0 && n < 128);
 }
 
-static double recover(audit_ckpt_t *cp, int expected_errno)
+static double recover(int dirfd, audit_ckpt_t *cp, int expected_errno)
 {
 	struct timespec begin, end;
 	CHECK(clock_gettime(CLOCK_MONOTONIC, &begin) == 0);
 	errno = 0;
-	int rc = audit_recover_set(".", "app", "app.audit.log", cp);
+	int rc = audit_recover_set_at(dirfd, "app", "app.audit.log", cp);
 	int error = errno;
 	CHECK(clock_gettime(CLOCK_MONOTONIC, &end) == 0);
 	if (expected_errno) {
@@ -46,6 +47,8 @@ int main(int argc, char **argv)
 
 	char tmp[] = "/tmp/audit-recovery-capacity-XXXXXX";
 	enter_temp(tmp);
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 
 	unsigned char previous[32] = { 0 };
 	char middle_path[128] = { 0 };
@@ -76,26 +79,26 @@ int main(int argc, char **argv)
 
 	audit_ckpt_t genesis = { .algorithm = AUDIT_INTEGRITY_SHA256 };
 	audit_ckpt_t cp = genesis;
-	double valid_ms = recover(&cp, 0);
+	double valid_ms = recover(dirfd, &cp, 0);
 	CHECK(cp.seq == (uint64_t)archives + 1u);
 	CHECK(cp.offset == active_record.length);
 	CHECK(!memcmp(cp.hash, active_record.hash, sizeof(cp.hash)));
 
 	CHECK(unlink(middle_path) == 0);
 	cp = genesis;
-	double missing_ms = recover(&cp, EBADMSG);
+	double missing_ms = recover(dirfd, &cp, EBADMSG);
 	record_write(middle_path, middle_record.data, middle_record.length);
 
 	middle_record.data[middle_record.length / 2u] ^= 1;
 	record_write(middle_path, middle_record.data, middle_record.length);
 	cp = genesis;
-	double corrupt_ms = recover(&cp, EBADMSG);
+	double corrupt_ms = recover(dirfd, &cp, EBADMSG);
 	middle_record.data[middle_record.length / 2u] ^= 1;
 	record_write(middle_path, middle_record.data, middle_record.length);
 
 	CHECK(truncate(middle_path, (off_t)middle_record.length - 1) == 0);
 	cp = genesis;
-	double truncated_ms = recover(&cp, EBADMSG);
+	double truncated_ms = recover(dirfd, &cp, EBADMSG);
 	record_write(middle_path, middle_record.data, middle_record.length);
 
 	struct rusage usage;
@@ -113,6 +116,7 @@ int main(int argc, char **argv)
 	printf("  \"maxrss_kb\": %ld\n", usage.ru_maxrss);
 	printf("}\n");
 
+	CHECK(close(dirfd) == 0);
 	audit_test_cleanup(tmp);
 	return 0;
 }
