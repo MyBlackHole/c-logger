@@ -32,7 +32,7 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | Global API | 本轮覆盖准入、代次、连续控制 reader、取消延迟、嵌套和最终状态。仍不支持信号处理、pthread_exit/longjmp 穿过调用、跨线程回调等待环；禁用取消期间可能等待底层 I/O，无硬实时保证。详见 GLOBAL_LIFECYCLE.md |
 | Syslog | 已修非阻塞 socket/send、有限 EINTR、单调冷却重连、失败统计和实例配置。仅本地 datagram；无磁盘重试队列/已失败记录重放/远端持久确认。没有绝对 I/O 超时，文件/stdio、调度和锁竞争仍可能阻塞；真实 syslogd/旧平台矩阵待验收。见 SYSLOG_BACKEND.md |
 | 文件部署边界 | 协作锁不是安全边界；不支持恶意目录替换、不协作 writer、锁 inode 删除/替换、跨版本旧 writer。每个目标的归档命名空间由同一 所有者 管理，不允许另一个 active 故意占用归档名。Production v1 明确不支持 NFS/SMB/其他网络文件系统 |
-| 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit 使用 procfd 绑定路径，需要可用 procfs；Production v1 明确不支持初始化后导致 procfs 不可访问的 chroot/命名空间/procfs-unmount 场景 |
+| 路径/平台收紧 | 普通文件末级 symlink/hardlink 被拒绝。内部轮换要求 RENAME_NOREPLACE，缺少能力返回 ENOTSUP，无覆盖式降级。Audit recovery/checkpoint 已绑定 file-backend 持有的 dirfd，不再依赖 procfs；父目录 rename/cwd 改变不会重新解析原路径。目录本身仍要求受信任 |
 | 持久化验证 | 已增加 Release 共享库/静态库 进程 crash 恢复矩阵，以及 QEMU + raw ext4/XFS 同盘重启的 10 个 断电 点（已确认记录、Audit fsync 前后、检查点 rename 前后/commit 后、文件轮换 4 个阶段）。串口证据记录 来宾内核/文件系统。这些 CI 证据验证当前虚拟 QEMU 文件系统路径，但仍不等于物理断电、控制器/磁盘 易失缓存 或实际目标存储栈验收；输出错误后的业务重试仍可能重复 |
 | API/ABI | 已发布 0.9.6 曾有 66 项公开符号；pre-v1 cleanup 删除 4 个仅做 marker/invalidation、不能修复 raw-fork runtime 的公开接口，目标 v1 surface 收敛为 62 项。稳定 ABI identity 尚未切换；v1 前仍需完成 SONAME 1 / LOGGER_1.0 的最终默认迁移 |
 | 平台基线 | Production v1 范围固定为 Linux/ELF x86_64 + glibc >= 2.31；32-bit、非 x86_64、musl/非 glibc 明确 不支持。Ubuntu 20.04/22.04/24.04（glibc 2.31/2.35/2.39）已有 共享库/静态库 core、installed C/C++ 消费方 与 pkg-config CI；最低 Linux 内核 仍是独立 v1 阻断项，不能由共享 运行器 内核 的 container matrix 推断 |
