@@ -478,8 +478,6 @@ static int dispose_body(logger_t *l)
 
 	int lifecycle_error = atomic_load_explicit(
 		&l->lifecycle_error, memory_order_acquire);
-	if (lifecycle_error)
-		return -lifecycle_error;
 
 	int lock_rc = pthread_mutex_lock(&l->emit_mu);
 	if (lock_rc) {
@@ -487,7 +485,8 @@ static int dispose_body(logger_t *l)
 				      memory_order_release);
 		return -lock_rc;
 	}
-	int rc = logger_sync_outputs_locked(l);
+	int rc = lifecycle_error ? -lifecycle_error :
+		 logger_sync_outputs_locked(l);
 	int unlock_rc = pthread_mutex_unlock(&l->emit_mu);
 	if (unlock_rc) {
 		atomic_store_explicit(&l->lifecycle_error, unlock_rc,
