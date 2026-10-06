@@ -602,6 +602,10 @@ if has_config("build_regression_tests") then
         {"destroy_status_regression", "tests/regression/test_destroy_status.c",
             {"close", "pthread_join", "pthread_cond_destroy",
              "pthread_mutex_destroy"}},
+        {"constructor_rollback_regression",
+            "tests/regression/test_constructor_rollback.c",
+            {"calloc", "free", "pthread_create", "pthread_cond_destroy",
+             "pthread_mutex_destroy", "logger_process_object_release"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
         {"bench_matrix", "tests/bench_matrix.c"},
@@ -947,6 +951,16 @@ if has_config("build_regression_tests") then
             "join-error", "cond-destroy-error", "mutex-destroy-error"
         }) do
             add_tests("destroy_status_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("constructor_rollback_regression")
+        for _, scenario in ipairs({
+            "success", "queue-cond", "queue-mutex",
+            "progress-cond", "progress-mutex", "emit-mutex", "census"
+        }) do
+            add_tests("constructor_rollback_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
     target_end()
