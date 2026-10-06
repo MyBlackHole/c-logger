@@ -23,6 +23,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       notes: ${{ steps.version.outputs.notes }}
+      title: ${{ steps.version.outputs.title }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
       release_exists: ${{ steps.existing.outputs.release_exists }}
       release_complete: ${{ steps.existing.outputs.release_complete }}
       tag_exists: ${{ steps.existing.outputs.tag_exists }}
@@ -42,9 +44,19 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           notes="docs/RELEASE_NOTES_${version}.md"
           test -f "$notes"
+          major="${version%%.*}"
+          if [ "$major" -eq 0 ]; then
+            title="c-logger ${version} — Controlled Production Candidate"
+            prerelease=true
+          else
+            title="c-logger ${version} — Production v1"
+            prerelease=false
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "notes=$notes" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Resolve release recovery state
         id: existing
@@ -55,7 +67,8 @@ jobs:
           set -euo pipefail
           tag="${{ steps.version.outputs.tag }}"
           version="${{ steps.version.outputs.version }}"
-          title="c-logger ${version} — Controlled Production Candidate"
+          title="${{ steps.version.outputs.title }}"
+          expected_prerelease="${{ steps.version.outputs.prerelease }}"
 
           git fetch --tags --force
           if source_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
@@ -90,7 +103,7 @@ jobs:
             mkdir -p existing-release-assets
             if [ "$asset_count" = 4 ] \
               && [ "$release_name" = "$title" ] \
-              && [ "$is_prerelease" = true ] \
+              && [ "$is_prerelease" = "$expected_prerelease" ] \
               && gh release download "$tag" --dir existing-release-assets \
               && [ "$(find existing-release-assets -maxdepth 1 -type f | wc -l)" -eq 4 ] \
               && python3 scripts/check_release_assets.py \
