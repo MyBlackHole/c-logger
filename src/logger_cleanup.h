@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "logger_compiler.h"
+#include "logger_lockdep.h"
 
 #define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
 #define CLEANUP_MUST_CHECK LOGGER_MUST_CHECK
@@ -270,5 +271,45 @@ DEFINE_GUARD(pthread_mutex, pthread_mutex_t *,
 	     (void)pthread_mutex_unlock(_T))
 DEFINE_GUARD_COND(pthread_mutex, _checked, pthread_mutex_lock(_T))
 DEFINE_GUARD_COND(pthread_mutex, _try, pthread_mutex_trylock(_T))
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_mutex_lock(pthread_mutex_t *mu, logger_lock_class_t class_id)
+{
+	int rc = pthread_mutex_lock(mu);
+
+	if (!rc)
+		logger_lockdep_acquire(class_id, mu);
+	return rc;
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
+			       logger_lock_class_t class_id)
+{
+	int rc = pthread_mutex_unlock(mu);
+
+	if (!rc)
+		logger_lockdep_release(class_id, mu);
+	return rc;
+}
+
+/*
+ * Instance/Console guards carry an explicit lock class. Do not hide class
+ * selection in the generic pthread_mutex guard: lockdep review must be able to
+ * see whether a call site is emit/progress/queue-wait/console.
+ */
+#define DEFINE_LOCKDEP_MUTEX_GUARD(_name, _class_id)                         \
+	DEFINE_GUARD(_name, pthread_mutex_t *,                                \
+		     (void)__cleanup_lockdep_mutex_lock(_T, _class_id),          \
+		     (void)__cleanup_lockdep_mutex_unlock(_T, _class_id))        \
+	DEFINE_GUARD_COND(_name, _checked,                                   \
+			  __cleanup_lockdep_mutex_lock(_T, _class_id))
+
+DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_emit, LOGGER_LOCK_INSTANCE_EMIT)
+DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_progress, LOGGER_LOCK_INSTANCE_PROGRESS)
+DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_queue_wait, LOGGER_LOCK_QUEUE_WAIT)
+DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_console, LOGGER_LOCK_CONSOLE)
+
+#undef DEFINE_LOCKDEP_MUTEX_GUARD
 
 #endif

@@ -56,11 +56,23 @@ int main(void)
 	logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 
+	/* Controller-owned candidate/retired object: lifetime is not published. */
+	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_CONTROL, &a);
+	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_EMIT, &c);
+	logger_lockdep_release(LOGGER_LOCK_INSTANCE_EMIT, &c);
+	logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL, &a);
+
 	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_CONTROL, &a);
 	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION, &b);
 	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_PROGRESS, &c);
 	logger_lockdep_release(LOGGER_LOCK_INSTANCE_PROGRESS, &c);
 	logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION, &b);
+	logger_lockdep_release(LOGGER_LOCK_AUDIT_CONTROL, &a);
+
+	/* Audit candidate/retired private logger is owned by the controller. */
+	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_CONTROL, &a);
+	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_EMIT, &c);
+	logger_lockdep_release(LOGGER_LOCK_INSTANCE_EMIT, &c);
 	logger_lockdep_release(LOGGER_LOCK_AUDIT_CONTROL, &a);
 
 	expect_abort(bad_instance_nesting);

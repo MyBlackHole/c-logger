@@ -162,7 +162,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	char line[LOGGER_LINE_MAX];
 	size_t n = logger_format_line(l, m, line, sizeof(line));
 	int rc = 0;
-	guard(pthread_mutex)(&l->emit_mu);
+	guard(pthread_mutex_emit)(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };
 		rc = stderr_writev_all(&v, 1);
@@ -205,7 +205,7 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		workspace->vec[i].iov_len = workspace->lens[i];
 	}
 
-	guard(pthread_mutex)(&l->emit_mu);
+	guard(pthread_mutex_emit)(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		memcpy(workspace->copy, workspace->vec,
 		       count * sizeof(*workspace->vec));
@@ -273,7 +273,7 @@ void *logger_worker_main(void *p)
 			emit_batch(l, workspace, n);
 
 			{
-				guard(pthread_mutex)(&l->progress_mu);
+				guard(pthread_mutex_progress)(&l->progress_mu);
 				atomic_fetch_add_explicit(&l->async_completed, n,
 							  memory_order_release);
 				l->completed_pos = atomic_load_explicit(
@@ -284,7 +284,7 @@ void *logger_worker_main(void *p)
 		}
 		int stop;
 		{
-			guard(pthread_mutex)(&l->q.wait_mu);
+			guard(pthread_mutex_queue_wait)(&l->q.wait_mu);
 			/*
 			 * waiting 必须在持有 wait_mu 时 publish，并且 publish 后重新检查
 			 * queue/running。这样 producer 如果在任一窗口发布 record：

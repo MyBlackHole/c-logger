@@ -68,3 +68,43 @@ Global publish/unpublish 与 Audit runtime borrow 位置加入 `assert_held`，�
 build 直接验证“访问受保护对象时对应 lock contract 仍成立”。
 
 本阶段不改 instance emit/progress/queue-wait guard；它们单独进入下一接入阶段。
+
+
+## Instance / Console guard 接入
+
+instance lock 不复用 generic `pthread_mutex` guard 的 class：
+
+- `pthread_mutex_emit[_checked]`
+- `pthread_mutex_progress[_checked]`
+- `pthread_mutex_queue_wait[_checked]`
+- `pthread_mutex_console[_checked]`
+
+每个 guard 仍调用原始 pthread mutex primitive，只在成功 transition 后更新 debug
+tracking。这样 call site 直接暴露 lock class，reviewer 不需要根据 mutex 地址猜
+语义。
+
+`logger_sync_outputs_locked()` 增加 emit assert-held，明确 locked helper contract。
+
+
+## Controller-owned candidate / retired object
+
+真实接入 instance guard 后确认，controller lock graph 需要区分 published 与
+unpublished/detached 阶段。
+
+合法边：
+
+```text
+Global control -> Global lifetime -> instance
+Global control --------------------> instance
+
+Audit control  -> Audit operation  -> instance
+Audit control  --------------------> instance
+```
+
+direct controller -> instance 只对应：
+
+- init 时尚未 publish 的 candidate；
+- unpublish + reader/operation drain 后，由 controller 独占的 retired object。
+
+这不是 lifetime shortcut。tracker 仍禁止 `instance -> lifetime/operation`，因此
+不会允许形成 controller -> instance -> lifetime 的反向环。

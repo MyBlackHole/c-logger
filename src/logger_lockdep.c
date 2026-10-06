@@ -55,11 +55,13 @@ static int is_instance(logger_lock_class_t class_id)
 static int allowed_after(logger_lock_class_t held, logger_lock_class_t next)
 {
 	if (held == LOGGER_LOCK_GLOBAL_CONTROL)
-		return next == LOGGER_LOCK_GLOBAL_LIFETIME;
+		return next == LOGGER_LOCK_GLOBAL_LIFETIME ||
+		       is_instance(next);
 	if (held == LOGGER_LOCK_GLOBAL_LIFETIME)
 		return is_instance(next);
 	if (held == LOGGER_LOCK_AUDIT_CONTROL)
-		return next == LOGGER_LOCK_AUDIT_OPERATION;
+		return next == LOGGER_LOCK_AUDIT_OPERATION ||
+		       is_instance(next);
 	if (held == LOGGER_LOCK_AUDIT_OPERATION)
 		return is_instance(next);
 	return 0;

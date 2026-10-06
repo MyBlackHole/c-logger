@@ -47,13 +47,30 @@ worker 的流程必须拆成：queue consume -> emit -> progress update，而不
 
 ## 4. Global lock order
 
-唯一允许的 controller 顺序：
+controller 有两种合法阶段：
 
 ```text
+published/global object:
 g_control_mu
     -> g_lifetime_lock (writer)
         -> instance operation
+
+controller-owned candidate/retired object:
+g_control_mu
+    -> instance operation
 ```
+
+第二条只适用于对象尚未 publish，或已经在 lifetime writer 下 unpublish 并完成
+reader drain 之后。此时对象 ownership 已独占转回 controller，lifetime pin 不再
+承担该对象的可达性证明。
+
+即使允许 `g_control_mu -> instance`，仍禁止：
+
+```text
+g_control_mu -> instance -> g_lifetime_lock
+```
+
+所以不能先拿 instance 再回头进入 lifetime graph。
 
 reader：
 
@@ -72,13 +89,21 @@ g_lifetime_lock -> g_control_mu
 
 ## 5. Audit lock order
 
-controller：
+controller 有两种合法阶段：
 
 ```text
+published runtime:
 Audit g_control_mu
     -> Audit g_operation_mu
         -> private logger instance lock
+
+candidate/retired runtime owned only by controller:
+Audit g_control_mu
+    -> private logger instance lock
 ```
+
+第二条覆盖 init candidate 构造以及 runtime unpublish/drain 后的 dispose；此时
+`g_runtime` 尚未 publish 或已经不可被 ordinary operation 借用。
 
 ordinary operation：
 

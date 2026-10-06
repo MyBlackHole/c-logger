@@ -314,7 +314,7 @@ void logger_queue_notify_if_waiting(logger_queue_t *q)
 	 * worker either rechecks and disarms without sleeping, or cond_wait()
 	 * atomically releases wait_mu before this producer clears + signals.
 	 */
-	guard(pthread_mutex)(&q->wait_mu);
+	guard(pthread_mutex_queue_wait)(&q->wait_mu);
 	if (!logger_queue_wait_claim_signal(q))
 		return;
 
@@ -330,7 +330,7 @@ void logger_queue_wake_force(logger_queue_t *q)
 	 * running 已关闭后始终发送一次强制 wake；即使 worker 尚未真正 sleep，
 	 * 同一 mutex + predicate recheck 也保证它不会随后睡死。
 	 */
-	guard(pthread_mutex)(&q->wait_mu);
+	guard(pthread_mutex_queue_wait)(&q->wait_mu);
 	logger_queue_wait_disarm(q);
 	(void)pthread_cond_signal(&q->wait_cv);
 	atomic_fetch_add_explicit(&q->force_wake_signals, 1,

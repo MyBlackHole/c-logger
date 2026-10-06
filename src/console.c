@@ -125,8 +125,8 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 {
 	if (!fmt)
 		return -EINVAL;
-	ACQUIRE(pthread_mutex_checked, console_guard)(&g_console_mu);
-	int rc = ACQUIRE_ERR(pthread_mutex_checked, &console_guard);
+	ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 	if (rc)
 		return rc;
 	if (label) {
@@ -212,8 +212,8 @@ int console_debug_source(const char *file, int line, const char *func,
 				rc = -EOVERFLOW;
 		}
 		if (!rc) {
-			ACQUIRE(pthread_mutex_checked, console_guard)(&g_console_mu);
-			rc = ACQUIRE_ERR(pthread_mutex_checked, &console_guard);
+			ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
+			rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 			if (!rc) {
 				if (fprintf(stderr, "DEBUG: %s\n", merged) < 0)
 					rc = -(errno ? errno : EIO);
