@@ -5,6 +5,7 @@
 #include "logger_internal.h"
 #include "logger_fault.h"
 #include "logger_cleanup.h"
+#include "logger_uapi.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -174,32 +175,23 @@ static int safe_name(const char *s)
 	return 1;
 }
 
-static int normalize_audit_config(const audit_config_t *in,
-				  audit_config_t *out)
+static int copy_audit_config(const audit_config_t *in,
+			     audit_config_t *out)
 {
-	_Static_assert(AUDIT_CONFIG_V1_SIZE == sizeof(*out),
+	_Static_assert(AUDIT_CONFIG_SIZE == sizeof(*out),
 		       "Audit v1 config layout changed");
 	if (!in || !out)
 		return -EINVAL;
 
-	/* Read only the stable ABI header before deciding how much caller memory
-	 * is part of the contract. This mirrors logger_config_t normalization. */
 	uint32_t size, version;
 	memcpy(&size, (const unsigned char *)in, sizeof(size));
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));
+	int rc = logger_uapi_copy_struct(out, sizeof(*out), in, size, version,
+					AUDIT_CONFIG_VERSION);
+	if (rc)
+		return rc;
 
-	/* Production v1 has one exact configuration ABI: explicit size + version.
-	 * No pre-v1 zero/zero or oversized historical/future tail is accepted.
-	 * Layout changes require an explicit config-version transition. */
-	if (size == 0 && version == 0)
-		return -EINVAL;
-	if (version != AUDIT_CONFIG_VERSION)
-		return -EPROTONOSUPPORT;
-	if (size != AUDIT_CONFIG_V1_SIZE)
-		return -EINVAL;
-
-	memcpy(out, in, sizeof(*out));
 	out->struct_size = sizeof(*out);
 	out->version = AUDIT_CONFIG_VERSION;
 	return 0;
@@ -458,7 +450,7 @@ int audit_init(const audit_config_t *c)
 
 	audit_runtime_t *candidate = NULL;
 	audit_config_t config;
-	rc = normalize_audit_config(c, &config);
+	rc = copy_audit_config(c, &config);
 	if (!rc)
 		rc = validate_config(&config);
 	if (!rc)
