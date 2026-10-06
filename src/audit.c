@@ -177,8 +177,8 @@ static int safe_name(const char *s)
 static int normalize_audit_config(const audit_config_t *in,
 				  audit_config_t *out)
 {
-	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE <= sizeof(*out),
-		       "Audit v1 prefix exceeds current config");
+	_Static_assert(AUDIT_CONFIG_V1_SIZE == sizeof(*out),
+		       "Audit v1 config layout changed");
 	if (!in || !out)
 		return -EINVAL;
 
@@ -189,18 +189,17 @@ static int normalize_audit_config(const audit_config_t *in,
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));
 
-	/* Production v1 has one configuration ABI: explicit size + version.
-	 * The pre-v1 zero/zero escape hatch is intentionally retired before
-	 * SONAME 1 so future appended fields remain unambiguous. */
+	/* Production v1 has one exact configuration ABI: explicit size + version.
+	 * No pre-v1 zero/zero or oversized historical/future tail is accepted.
+	 * Layout changes require an explicit config-version transition. */
 	if (size == 0 && version == 0)
 		return -EINVAL;
 	if (version != AUDIT_CONFIG_VERSION)
 		return -EPROTONOSUPPORT;
-	if (size < AUDIT_CONFIG_V1_PREFIX_SIZE)
+	if (size != AUDIT_CONFIG_V1_SIZE)
 		return -EINVAL;
 
-	*out = AUDIT_DEFAULT_CONFIG();
-	memcpy(out, in, AUDIT_CONFIG_V1_PREFIX_SIZE);
+	memcpy(out, in, sizeof(*out));
 	out->struct_size = sizeof(*out);
 	out->version = AUDIT_CONFIG_VERSION;
 	return 0;
