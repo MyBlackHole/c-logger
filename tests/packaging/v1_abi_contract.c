@@ -270,8 +270,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* Exact public function type contract: 66 default production exports. */
-ABI_FN(audit_after_fork_child, void, void);
+/* Exact public function type contract: 62 default production exports. */
 ABI_FN(audit_begin, int, audit_event_t *);
 ABI_FN(audit_crypto_backend, const char *, void);
 ABI_FN(audit_end, int, audit_event_t *, audit_result_t, int);
@@ -301,8 +300,6 @@ ABI_FN(console_stdout_is_tty, int, void);
 ABI_FN(console_verbose, int, const char *, ...);
 ABI_FN(console_warn, int, const char *, ...);
 
-ABI_FN(logger_after_fork_child, void, void);
-ABI_FN(logger_after_fork_parent, void, void);
 ABI_FN(logger_context_clear, void, void);
 ABI_FN(logger_context_get, logger_context_t, void);
 ABI_FN(logger_context_set, void, const logger_context_t *);
@@ -335,7 +332,6 @@ ABI_FN(logger_log_source, void, logger_t *, logger_level_t, logger_source_t,
 ABI_FN(logger_log_sync_status, int, logger_t *, logger_level_t, const char *,
        const char *, int, const char *, const char *, ...);
 ABI_FN(logger_mask_secret, int, const char *, char *, size_t, size_t, size_t);
-ABI_FN(logger_prepare_fork, int, void);
 ABI_FN(logger_redact, const char *, void);
 ABI_FN(logger_reopen, int, void);
 ABI_FN(logger_reopen_instance, int, logger_t *);

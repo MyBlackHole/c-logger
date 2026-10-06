@@ -1,5 +1,4 @@
-# Explicit public C ABI allowlist. Additive names only; do not use globs.
-audit_after_fork_child
+# Frozen Production v1 public C ABI allowlist. After 1.0, additions require ABI review; do not use globs.
 audit_begin
 audit_crypto_backend
 audit_end
@@ -27,8 +26,6 @@ console_stderr_is_tty
 console_stdout_is_tty
 console_verbose
 console_warn
-logger_after_fork_child
-logger_after_fork_parent
 logger_context_clear
 logger_context_get
 logger_context_set
@@ -57,7 +54,6 @@ logger_log
 logger_log_source
 logger_log_sync_status
 logger_mask_secret
-logger_prepare_fork
 logger_redact
 logger_reopen
 logger_reopen_instance

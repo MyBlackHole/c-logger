@@ -16,7 +16,6 @@ int main(void)
 	if (p < 0)
 		return 2;
 	if (p == 0) {
-		audit_after_fork_child();
 		audit_event_t e = { .phase = AUDIT_PHASE_RESULT,
 				    .event = "CHILD",
 				    .operation = "probe" };

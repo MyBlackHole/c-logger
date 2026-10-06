@@ -31,8 +31,8 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 - shared 实体文件：`liblogger.so.<VERSION>`；
 - 符号版本：`LOGGER_0.9`；
 - 当前公开 C 符号允许列表：`abi/logger.symbols`；
-- frozen Production v1 快照：`abi/logger-1.0.symbols`（66 项，hardening 阶段禁止漂移）；
-- 0.9.6 候选 公开符号集：66 项；相对 0.9.5 的 62 项仅新增两个 诊断访问接口 与两个 文件指标 访问接口；
+- frozen Production v1 快照：`abi/logger-1.0.symbols`（62 项；去除 4 个不能修复 raw-fork runtime 的 marker API）；
+- 已发布的 0.9.6 候选曾导出 66 项；pre-v1 cleanup 允许在重新冻结前删除明确评审过的错误抽象；
 - 旧版 fork 辅助接口 显式开启时额外导出 `logger_fork_reinit`；
 - production 默认 隐藏可见性，并使用 version script `local: *`；
 - 生产故障注入 固定关闭。
@@ -71,7 +71,7 @@ python3 scripts/check_release_abi.py "$artifact" \
 ```
 
 预览 的目标契约是 SONAME `liblogger.so.1`、符号版本 `LOGGER_1.0`、冻结的
-66-symbol v1 快照，以及安装 元数据 中 `LOGGER_ABI_VERSION=1`。CI 同时运行
+62-symbol v1 快照，以及安装 元数据 中 `LOGGER_ABI_VERSION=1`。CI 同时运行
 共享库/静态库 installed 消费方。
 
 预览 **不是正式 v1 发布**：`VERSION` 仍为 0.9.6，默认构建仍是 ABI 0；预览
@@ -84,7 +84,7 @@ XPack 也使用独立的 `prod-c-logger-v1-abi-preview-...` 名称，不能被�
 
 - 所有现有 public struct 的 size/alignment/全部 field offset；
 - public enum 与数值宏；
-- 66 个默认 production public function 的精确 C type；
+- 62 个默认 production public function 的精确 C type；
 - Logger/Audit/Console 配置版本与默认值；
 - 1.x 增量式-only 规则和需要新 ABI major 的破坏性变化。
 

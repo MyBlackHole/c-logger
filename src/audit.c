@@ -490,14 +490,6 @@ int audit_init(const audit_config_t *c)
 	return result(rc);
 }
 
-void audit_after_fork_child(void)
-{
-	/* Compatibility entry point, now invalidation only. A forked child must
-     * exec before reinitializing Audit. CLOEXEC descriptors close on exec;
-     * do not reset inherited mutexes, free runtime, or attempt an AUDIT_STOP. */
-	logger_process_invalidate_child();
-}
-
 int audit_shutdown_status(void)
 {
 	int ready = logger_process_ensure();

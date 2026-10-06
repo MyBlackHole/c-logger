@@ -39,7 +39,6 @@ static void verify_reentry(void)
 	logger_config_t cfg = config_for("side.log", 0);
 	CHECK(logger_init(&cfg) == -1 && errno == EDEADLK);
 	CHECK(stop_status() == -1 && errno == EDEADLK);
-	CHECK(logger_prepare_fork() == -1 && errno == EDEADLK);
 	for (int i = 0; i < OP_COUNT; ++i) {
 		call_result_t r = { .op = (enum operation)i };
 		invoke(&r);

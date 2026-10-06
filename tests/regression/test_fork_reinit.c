@@ -210,7 +210,7 @@ static void guard_after_raw(void)
 		errno = 0;
 		if (logger_fork_reinit() != -1 || errno != ECHILD)
 			_exit(91);
-		logger_after_fork_child();
+		logger_process_invalidate_child();
 		errno = 0;
 		if (logger_init(&cfg) != -1 || errno != ECHILD)
 			_exit(92);

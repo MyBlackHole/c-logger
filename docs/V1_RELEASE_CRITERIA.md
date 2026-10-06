@@ -164,7 +164,7 @@ compatibility tier，不进入通用 Production v1 支持范围。
 
 正式 v1 前完成一次 public ABI review，冻结：
 
-- 66 个现有 public symbol 的去留；
+- 62 个目标 public symbol 的去留；
 - public struct layout；
 - enum 数值；
 - ownership/lifetime；
@@ -187,7 +187,7 @@ v1 发布时应把 ABI identity 从 candidate 契约切到稳定契约。当前�
 1. 已冻结 `abi/logger-1.0.symbols`，CI 阻止 active public symbol surface 未审查漂移；
 2. 非默认 `v1_abi_preview` 已验证 SONAME 1 / `LOGGER_1.0` / installed metadata，
    同时保持当前 0.9.6 默认产物为 ABI 0；
-3. `v1_abi_contract` 冻结 public struct layout、enum/macro 数值、66 个函数类型和默认配置，
+3. `v1_abi_contract` 冻结 public struct layout、enum/macro 数值、62 个函数类型和默认配置，
    并由 C11/C++11 + release-validation 持续验证。
 
 只有其余 v1 hard gate 关闭并准备正式 1.0 release 时，才把 ABI 1 从 preview 切为默认。

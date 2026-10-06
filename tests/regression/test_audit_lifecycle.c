@@ -244,7 +244,6 @@ static void guard(void)
 	pid_t child = fork();
 	CHECK(child >= 0);
 	if (!child) {
-		audit_after_fork_child();
 		audit_event_t e = { .phase = AUDIT_PHASE_RESULT,
 				    .event = "NO",
 				    .operation = "probe" };

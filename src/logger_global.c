@@ -27,7 +27,6 @@ enum global_phase { G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED };
  */
 static _Atomic uint64_t g_ticket;
 static _Thread_local int g_in_global;
-static _Thread_local int g_fork_prepared;
 
 typedef struct {
 	int old_cancel;
@@ -381,32 +380,6 @@ void logger_global_write(logger_level_t level, const char *module,
 		va_end(ap);
 	}
 	(void)finish(&scope, rc);
-}
-
-int logger_prepare_fork(void)
-{
-	global_scope_t scope;
-	if (begin(&scope))
-		return -1;
-	int rc = g_fork_prepared ? -EALREADY : 0;
-	if (!rc)
-		g_fork_prepared = 1;
-	/* 这里只记录 marker；不持锁、不停止 worker、不 flush queue，也不提供 fork 安全保证。 */
-	return finish(&scope, rc);
-}
-
-void logger_after_fork_parent(void)
-{
-	if (logger_process_is_child()) {
-		errno = ECHILD;
-		return;
-	}
-	g_fork_prepared = 0;
-}
-
-void logger_after_fork_child(void)
-{
-	logger_process_invalidate_child();
 }
 
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER

@@ -20,8 +20,7 @@ static _Atomic int strict_child;
 static _Atomic int fail_registration, pause_registration, pause_reader,
 	pause_console;
 static _Atomic int entered, release_pause;
-static _Atomic unsigned registrations, prepare_locks;
-static int checking_prepare;
+static _Atomic unsigned registrations;
 static logger_t *instance;
 static logger_config_t cfg;
 static audit_config_t acfg;
@@ -52,8 +51,6 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
-	if (checking_prepare)
-		atomic_fetch_add(&prepare_locks, 1);
 	return __real_pthread_rwlock_rdlock(p);
 }
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
@@ -61,8 +58,6 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
-	if (checking_prepare)
-		atomic_fetch_add(&prepare_locks, 1);
 	return __real_pthread_rwlock_wrlock(p);
 }
 int __real_pthread_once(pthread_once_t *, void (*)(void));
@@ -165,11 +160,9 @@ static void child_guard_matrix(void)
 	errno = 0;
 	if (logger_create(&cfg) != NULL || errno != ECHILD)
 		_exit(11);
-	CHILD_POSIX(logger_prepare_fork(), 12);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 	CHILD_POSIX(logger_fork_reinit(), 12);
 #endif
-	CHILD_VOID(logger_after_fork_parent(), 13);
 	CHILD_VOID(LOG_INFO("INHERITED_FORBIDDEN"), 14);
 	CHILD_POSIX(logger_flush_status(), 15);
 	CHILD_POSIX(logger_reopen(), 16);
@@ -265,8 +258,6 @@ static void child_guard_matrix(void)
 	CHILD_POSIX(audit_verify_file_with("no-file", (audit_integrity_t)2),
 		    64);
 	CHILD_POSIX(audit_verify_file_from("no-file", NULL, NULL), 65);
-	logger_after_fork_child();
-	audit_after_fork_child(); /* idempotent invalidation */
 	CHILD_POSIX(logger_init(&cfg), 66);
 	_exit(0);
 }
@@ -437,15 +428,6 @@ int main(int argc, char **argv)
 		} else if (!strcmp(mode, "after-shutdown"))
 			logger_shutdown();
 	}
-	if (!strcmp(mode, "prepare") || !strcmp(mode, "reader-held")) {
-		checking_prepare = 1;
-		CHECK(!logger_prepare_fork());
-		checking_prepare = 0;
-		CHECK(atomic_load(&prepare_locks) == 0);
-		CHECK(logger_prepare_fork() == -1 && errno == EALREADY);
-		logger_after_fork_parent();
-		CHECK(!logger_prepare_fork());
-	}
 	pid_t p;
 	if (!strcmp(mode, "bypass-handler")) {
 #ifdef SYS_fork
@@ -460,7 +442,6 @@ int main(int argc, char **argv)
 	if (!p)
 		child_guard_matrix();
 	atomic_store(&release_pause, 1);
-	logger_after_fork_parent();
 	if (has_thread)
 		CHECK(!pthread_join(thread, NULL));
 	wait_child(p);
