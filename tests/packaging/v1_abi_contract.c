@@ -162,6 +162,7 @@ ABI_FIELD(logger_syslog_metrics_t, last_error, 92);
 ABI_FIELD(logger_syslog_metrics_t, last_close_error, 96);
 
 ABI_TYPE(audit_config_t, 64, 8);
+ABI_ASSERT(AUDIT_CONFIG_V1_PREFIX_SIZE == 64);
 ABI_FIELD(audit_config_t, struct_size, 0);
 ABI_FIELD(audit_config_t, version, 4);
 ABI_FIELD(audit_config_t, log_dir, 8);
