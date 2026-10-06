@@ -40,58 +40,58 @@
 20. 溢出 必须通过明确 policy 表达。
 21. 不允许 silent truncation 代替 resource exhaustion。
 22. 不允许无限增长 队列/溢出区 来掩盖持续 消费者 overload。
-23. 队列拓扑 可以改变，但必须保持可证明的 发布/顺序/完成 语义。
-24. performance 队列 修改必须同时检查固定内存成本。
+25. 队列拓扑 可以改变，但必须保持可证明的 发布/顺序/完成 语义。
+26. performance 队列 修改必须同时检查固定内存成本。
 
 ## 4. 完成 / 刷新
 
-23. 出队 不等于 后端完成。
-24. 队列为空 不等于 后端完成。
-25. 后端完成 不自动等于 durable fsync。
-26. 刷新 必须等待其 快照目标 的 completion。
-27. 刷新 语义变化属于 architecture/API contract change，不能只改实现代码。
+25. 出队 不等于 后端完成。
+26. 队列为空 不等于 后端完成。
+27. 后端完成 不自动等于 durable fsync。
+28. 刷新 必须等待其 快照目标 的 completion。
+29. 刷新 语义变化属于 architecture/API contract change，不能只改实现代码。
 
 ## 5. 后端 / I/O
 
-28. 后端 mutable state 必须有唯一 串行化契约。
-29. file target 所有权 不能被多个独立 Logger 无协议共享。
-30. reopen/rotation 必须先准备并验证 替代对象，再 retire usable old state。
-31. no-clobber rotation 不能为兼容平台退化成覆盖式 rename。
-32. error-bearing finalization 保持显式。
-33. first meaningful 后端 error 不能被 cleanup error 覆盖。
-34. sticky historical I/O error 不能被后续成功静默清除。
-35. unsupported platform capability 返回明确错误，不做危险降级。
-36. Syslog 故障/backpressure 不能伪装成 durable success。
+30. 后端 mutable state 必须有唯一 串行化契约。
+31. file target 所有权 不能被多个独立 Logger 无协议共享。
+32. reopen/rotation 必须先准备并验证 替代对象，再 retire usable old state。
+33. no-clobber rotation 不能为兼容平台退化成覆盖式 rename。
+34. error-bearing finalization 保持显式。
+35. first meaningful 后端 error 不能被 cleanup error 覆盖。
+36. sticky historical I/O error 不能被后续成功静默清除。
+37. unsupported platform capability 返回明确错误，不做危险降级。
+38. Syslog 故障/backpressure 不能伪装成 durable success。
 
 ## 6. Process / Cancellation
 
-37. raw fork 子进程 不得触碰可能处于 inherited-locked 状态的复杂 运行时。
-38. fork safety 不能通过重置继承 pthread object 来伪造。
-39. library 不扫描/控制整个宿主线程模型来替宿主决定生命周期。
-40. cancellation 恢复前必须先释放库内 lock/resource/pin。
-41. 普通 API 不宣称 唤醒信号-safe 或 generic async-cancel-safe。
-42. `pthread_exit/longjmp` 不能成为绕过 cleanup/生命周期 protocol 的支持路径。
+39. raw fork 子进程 不得触碰可能处于 inherited-locked 状态的复杂 运行时。
+40. fork safety 不能通过重置继承 pthread object 来伪造。
+41. library 不扫描/控制整个宿主线程模型来替宿主决定生命周期。
+42. cancellation 恢复前必须先释放库内 lock/resource/pin。
+43. 普通 API 不宣称 唤醒信号-safe 或 generic async-cancel-safe。
+44. `pthread_exit/longjmp` 不能成为绕过 cleanup/生命周期 protocol 的支持路径。
 
 ## 7. Audit
 
-43. Audit 是独立 security/持久性 subsystem，不等价于普通 Logger。
-44. Audit single-写入器 所有权 必须在 recovery/active use 前建立。
-45. crypto 故障 必须 fail closed。
-46. 不支持的 algorithm 不自动映射到另一个 algorithm。
-47. log commit 与 检查点 success 是不同状态。
-48. uncertain I/O/crypto state 必须可观察。
-49. recovery 不静默伪造、覆盖或重写历史可信链。
-50. 普通 Logger throughput 优化不得弱化 Audit 持久性/security contract。
+45. Audit 是独立 security/持久性 subsystem，不等价于普通 Logger。
+46. Audit single-写入器 所有权 必须在 recovery/active use 前建立。
+47. crypto 故障 必须 fail closed。
+48. 不支持的 algorithm 不自动映射到另一个 algorithm。
+49. log commit 与 检查点 success 是不同状态。
+50. uncertain I/O/crypto state 必须可观察。
+51. recovery 不静默伪造、覆盖或重写历史可信链。
+52. 普通 Logger throughput 优化不得弱化 Audit 持久性/security contract。
 
 ## 8. Performance
 
-51. 性能结论必须有可复现 benchmark 证据。
-52. shared runner 的吞吐抖动不应成为脆弱的硬门禁。
-53. correctness、有界内存、生命周期 优先于单项 logs/sec。
-54. “lock-free”标签不能替代 所有权/发布 proof。
-55. 不能通过 drop 更多记录制造虚假 throughput improvement。
-56. 提高固定内存换 burst capacity 时，必须同时报告 memory tradeoff。
-57. 新 fast path 不得偷偷改变旧 compatibility API 的 caller-生命周期 语义。
+53. 性能结论必须有可复现 benchmark 证据。
+54. shared runner 的吞吐抖动不应成为脆弱的硬门禁。
+55. correctness、有界内存、生命周期 优先于单项 logs/sec。
+56. “lock-free”标签不能替代 所有权/发布 proof。
+57. 不能通过 drop 更多记录制造虚假 throughput improvement。
+58. 提高固定内存换 burst capacity 时，必须同时报告 memory tradeoff。
+59. 新 fast path 不得偷偷改变旧 compatibility API 的 caller-生命周期 语义。
 
 ## 9. Current Implementation vs Invariant
 
