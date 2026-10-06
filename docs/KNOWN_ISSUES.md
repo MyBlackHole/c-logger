@@ -1,8 +1,10 @@
-# 尚未关闭的发布阻断项（仅内置 SHA-256）
+# 已知限制、部署边界与后续增强（仅内置 SHA-256）
 
-本项目当前发布仍不是 Production v1。v1 的支持范围、明确 不支持 范围和硬门禁已经集中定义在
-[V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)。本表继续记录实现边界与待办；属于 v1 明确
-不支持 的场景不再作为发布阻断项。旧轮次报告保留历史证据，不表示旧用法仍受支持。
+当前默认 Production v1 ABI 已冻结，但软件版本仍为 0.9.6 controlled-production candidate，
+尚未执行正式 1.0 发布动作。v1 的支持范围、明确不支持范围和发布判定集中定义在
+[V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)。本表记录已知限制、unsupported 边界、
+deployment qualification 与 post-v1 enhancement；这些条目除非明确重新分类，不再作为
+实现级 v1 发布阻断项。旧轮次报告保留历史证据，不表示旧用法仍受支持。
 
 ## 已完成的定向修复
 
@@ -25,7 +27,7 @@ OpenSSL 后端及构建依赖已按要求移除；不是以 suppression 隐藏 r
 线程测试保留；SM3 算法及其专属参数化测试已按最新需求删除，替换为原 ID/历史的拒绝回归。
 Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 validation/SHA256_ONLY_RESULTS.md。
 
-## 尚未关闭
+## 已知限制 / deployment qualification / post-v1
 
 | 范围 | 边界或待办 |
 |---|---|
