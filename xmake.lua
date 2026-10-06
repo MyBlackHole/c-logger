@@ -44,6 +44,7 @@ local version_major, version_minor, version_patch =
 local abi_version = "1"
 local symbol_version = "LOGGER_1.0"
 local abi_manifest = "abi/logger-1.0.symbols"
+local release_candidate = version_major == "0"
 
 local function cmake_bool(value)
     return value and "TRUE" or "FALSE"
@@ -62,7 +63,7 @@ set(Logger_FOUND TRUE)
 set(Logger_VERSION "%s")
 set(Logger_ABI_VERSION "%s")
 set(Logger_CRYPTO_IMPLEMENTATION "builtin-sha256")
-set(Logger_RELEASE_CANDIDATE TRUE)
+set(Logger_RELEASE_CANDIDATE %s)
 set(Logger_shared_FOUND %s)
 set(Logger_static_FOUND %s)
 set(Logger_legacy_fork_FOUND %s)
@@ -73,8 +74,8 @@ foreach(_comp IN LISTS Logger_FIND_COMPONENTS)
     set(Logger_FOUND FALSE)
   endif()
 endforeach()
-]], project_version, abi_version, cmake_bool(shared), cmake_bool(not shared),
-       cmake_bool(legacy))
+]], project_version, abi_version, cmake_bool(release_candidate),
+       cmake_bool(shared), cmake_bool(not shared), cmake_bool(legacy))
     local config_file = path.join(generated, "LoggerConfig.cmake")
     writefile(config_file, config)
 
@@ -151,12 +152,13 @@ libdir=${prefix}/lib
 includedir=${prefix}/include/logger
 
 Name: prod-c-logger
-Description: Host-owned Logger and Audit (builtin SHA-256), controlled-production candidate
+Description: Host-owned Logger and Audit (builtin SHA-256), %s
 Version: %s
 Libs: -L${libdir} -llogger
 Libs.private: -pthread
 Cflags: -I${includedir}%s
-]], project_version, pc_definitions)
+]], release_candidate and "controlled-production candidate" or "Production v1",
+       project_version, pc_definitions)
     local pc_file = path.join(generated, "logger.pc")
     writefile(pc_file, pc)
 
@@ -226,7 +228,8 @@ target("logger")
             PROJECT_VERSION_MINOR = version_minor,
             PROJECT_VERSION_PATCH = version_patch,
             PROJECT_VERSION = project_version,
-            LOGGER_ABI_VERSION = abi_version
+            LOGGER_ABI_VERSION = abi_version,
+            LOGGER_RELEASE_CANDIDATE = release_candidate and "1" or "0"
         }
     })
     add_includedirs("include", "$(builddir)/generated", {public = true})
@@ -349,8 +352,9 @@ end
 local package_kind = has_config("build_shared") and "shared" or "static"
 local package_basename =
     "prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind
-local package_title =
-    "c-logger " .. project_version .. " controlled production candidate"
+local package_title = release_candidate
+    and ("c-logger " .. project_version .. " controlled production candidate")
+    or ("c-logger " .. project_version .. " Production v1")
 xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
