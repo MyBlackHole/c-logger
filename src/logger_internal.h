@@ -59,7 +59,10 @@ struct logger {
 	size_t completed_pos; /* queue 的 exclusive watermark，由 progress_mu 保护 */
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
-	_Atomic int first_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
+	_Atomic int first_error;
+	/* Internal synchronization/lifecycle failure; positive errno, sticky.
+	 * Distinct from backend first_error because it gates safe teardown. */
+	_Atomic int lifecycle_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
 	/* 异步 queue：q 拥有 compact slots 与预分配 spill pool。
 	 * producer/consumer 顺序由 slot.seq atomic publication 协议保证；
 	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
