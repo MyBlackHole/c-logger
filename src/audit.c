@@ -460,7 +460,7 @@ int audit_init(const audit_config_t *c)
 		g_runtime =
 			candidate; /* START and its checkpoint have succeeded */
 		atomic_store_explicit(&g_policy, config.failure_policy,
-				      memory_order_relaxed);
+				      memory_order_release);
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
 				      memory_order_release);
 		pthread_mutex_unlock(&g_operation_mu);
@@ -671,16 +671,23 @@ audit_failure_policy_t audit_failure_policy(void)
 		return AUDIT_FAIL_DENY;
 
 	/*
-	 * The acquire load is the linearization point for this snapshot.
-	 * init stores g_policy before publishing RUNNING with release semantics,
-	 * so observing RUNNING makes that session policy visible. Every other
-	 * lifecycle phase fails closed and never exposes a stale session policy.
+	 * Snapshot generation before phase. Observing RUNNING publishes that
+	 * generation's policy. A second generation load rejects a call that spans
+	 * shutdown/reinit, so a previous RUNNING phase can never be paired with a
+	 * later session's policy.
 	 */
+	uint64_t generation =
+		atomic_load_explicit(&g_generation, memory_order_acquire);
 	int phase = atomic_load_explicit(&g_phase, memory_order_acquire);
 	if (phase != AUDIT_STATE_RUNNING)
 		return AUDIT_FAIL_DENY;
-	return (audit_failure_policy_t)atomic_load_explicit(
-		&g_policy, memory_order_relaxed);
+	audit_failure_policy_t policy =
+		(audit_failure_policy_t)atomic_load_explicit(
+			&g_policy, memory_order_acquire);
+	if (generation != atomic_load_explicit(&g_generation,
+					       memory_order_acquire))
+		return AUDIT_FAIL_DENY;
+	return policy;
 }
 
 int audit_instance_id_copy(char out[33])
