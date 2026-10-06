@@ -4,6 +4,7 @@
 #include "logger_queue.h"
 #include "logger_file.h"
 #include "logger_cleanup.h"
+#include "logger_uapi.h"
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -211,40 +212,25 @@ void logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
 	(void)logger_scope_end(&scope, 0);
 }
 
-static int normalize_logger_config(const logger_config_t *in,
-				   logger_config_t *out)
+static int copy_logger_config(const logger_config_t *in,
+			      logger_config_t *out)
 {
 	if (!in || !out) {
 		errno = EINVAL;
 		return -1;
 	}
-	/* The versioned ABI requires the readable 8-byte header. memcpy avoids
-     * typed reads of appended fields in a caller built with the old header. */
+	_Static_assert(LOGGER_CONFIG_SIZE == sizeof(*out),
+		       "Logger v1 config layout changed");
+
 	uint32_t size, version;
 	memcpy(&size, (const unsigned char *)in, sizeof(size));
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));
-	*out = LOGGER_DEFAULT_CONFIG();
-	if (size == 0 && version == 0) {
-		/* Source-only legacy zero-init: fixed old prefix, never assume tail. */
-		memcpy(out, in, LOGGER_CONFIG_V1_PREFIX_SIZE);
-	} else {
-		if (version != LOGGER_CONFIG_VERSION) {
-			errno = EPROTONOSUPPORT;
-			return -1;
-		}
-		if (size < LOGGER_CONFIG_V1_PREFIX_SIZE ||
-		    (size > LOGGER_CONFIG_V1_PREFIX_SIZE &&
-		     size < sizeof(*out))) {
-			errno = EINVAL;
-			return -1;
-		}
-		memcpy(out, in, LOGGER_CONFIG_V1_PREFIX_SIZE);
-		if (size >= sizeof(*out))
-			memcpy(&out->syslog,
-			       (const unsigned char *)in +
-				       offsetof(logger_config_t, syslog),
-			       sizeof(out->syslog));
+	int rc = logger_uapi_copy_struct(out, sizeof(*out), in, size, version,
+					LOGGER_CONFIG_VERSION);
+	if (rc) {
+		errno = -rc;
+		return -1;
 	}
 	out->struct_size = sizeof(*out);
 	out->version = LOGGER_CONFIG_VERSION;
@@ -272,7 +258,7 @@ static logger_t *create_logger(const logger_config_t *input,
 {
 	logger_config_t cfg;
 	int rc, queue_ready = 0;
-	if (normalize_logger_config(input, &cfg) != 0)
+	if (copy_logger_config(input, &cfg) != 0)
 		return NULL;
 	rc = validate_logger_config(&cfg);
 	if (rc) {
