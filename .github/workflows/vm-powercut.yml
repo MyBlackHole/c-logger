@@ -7,8 +7,6 @@ on:
       - ".github/workflows/vm-powercut.yml"
       - "scripts/run_vm_powercut.py"
       - "tests/vm_powercut.c"
-      - "xmake.lua"
-      - "VERSION"
       - "src/audit.c"
       - "src/audit_integrity.c"
       - "src/audit_record.c"

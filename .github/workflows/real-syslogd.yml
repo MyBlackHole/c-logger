@@ -5,8 +5,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/real-syslogd.yml"
-      - "xmake.lua"
-      - "VERSION"
       - "src/logger_syslog.c"
       - "src/logger_syslog.h"
       - "src/logger.c"
