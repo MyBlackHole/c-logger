@@ -669,6 +669,16 @@ audit_failure_policy_t audit_failure_policy(void)
 {
 	if (logger_process_is_child())
 		return AUDIT_FAIL_DENY;
+
+	/*
+	 * The acquire load is the linearization point for this snapshot.
+	 * init stores g_policy before publishing RUNNING with release semantics,
+	 * so observing RUNNING makes that session policy visible. Every other
+	 * lifecycle phase fails closed and never exposes a stale session policy.
+	 */
+	int phase = atomic_load_explicit(&g_phase, memory_order_acquire);
+	if (phase != AUDIT_STATE_RUNNING)
+		return AUDIT_FAIL_DENY;
 	return (audit_failure_policy_t)atomic_load_explicit(
 		&g_policy, memory_order_relaxed);
 }

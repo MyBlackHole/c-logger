@@ -119,19 +119,23 @@ static void *writer(void *ptr)
 
 static void init_gate(void)
 {
+	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
 	atomic_store(&pause_start, 1);
 	pthread_t thread;
 	answer_t a = { 0 };
 	CHECK(!pthread_create(&thread, NULL, initializer, &a));
 	wait_flag(&entered);
-	/* Getter in the baseline incorrectly exposes the candidate before START. */
+	/* Candidate exists, but STARTING is not a published Audit session. */
+	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
 	char id[33];
 	int copy_rc = audit_instance_id_copy(id);
 	int copy_error = errno;
 	atomic_store(&release_point, 1);
 	CHECK(!pthread_join(thread, NULL));
 	CHECK(a.rc == 0);
+	CHECK(audit_failure_policy() == AUDIT_FAIL_REPORT);
 	audit_shutdown();
+	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
 	CHECK(copy_rc == -1 && copy_error == EAGAIN);
 	CHECK(count_event("AUDIT_START") == 1 &&
 	      count_event("AUDIT_STOP") == 1);
@@ -142,11 +146,14 @@ static void stop_gate(void)
 {
 	audit_config_t c = audit_test_config();
 	CHECK(audit_init(&c) == 0);
+	CHECK(audit_failure_policy() == AUDIT_FAIL_REPORT);
 	atomic_store(&pause_stop, 1);
 	pthread_t shutdown_thread, write_thread;
 	answer_t stop = { 0 }, write = { 0 };
 	CHECK(!pthread_create(&shutdown_thread, NULL, stopper, &stop));
 	wait_flag(&entered);
+	/* STOPPING closes policy admission before durable teardown completes. */
+	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
 	CHECK(!pthread_create(&write_thread, NULL, writer, &write));
 	/* Bounded wait ensures a regression never leaves the runner hung. */
 	for (int i = 0; i < 100 && !atomic_load(&write.done); ++i)
@@ -155,6 +162,7 @@ static void stop_gate(void)
 	atomic_store(&release_point, 1);
 	CHECK(!pthread_join(shutdown_thread, NULL));
 	CHECK(!pthread_join(write_thread, NULL));
+	CHECK(audit_failure_policy() == AUDIT_FAIL_DENY);
 	CHECK(rejected_before_release && write.rc == -1 &&
 	      write.error == ESHUTDOWN);
 	CHECK(stop.rc == 0 && !count_event("LATE"));
@@ -258,6 +266,8 @@ static void guard(void)
 			_exit(13);
 		if (audit_shutdown_status() != -1 || errno != ECHILD)
 			_exit(14);
+		if (audit_failure_policy() != AUDIT_FAIL_DENY)
+			_exit(15);
 		_exit(0);
 	}
 	int status;

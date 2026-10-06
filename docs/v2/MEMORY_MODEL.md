@@ -253,26 +253,29 @@ build complete candidate
 
 operation caller 在使用 `g_runtime` 前必须通过 phase/generation gate 并取得 `g_operation_mu`。
 
-## 12. Audit failure policy：已发现的 2.0 缺口
+## 12. Audit failure policy：fail-closed publication
 
-当前 `g_policy` 是独立 relaxed atomic，`audit_failure_policy()` 不检查 `g_phase`。
-
-这意味着并发 init/shutdown 边界上，caller 可以观察到与当前 session phase 不匹配的 policy。
-
-2.0 需要改成 fail-closed publication：
+`audit_failure_policy()` 以 `g_phase` 的 acquire load 作为 snapshot linearization point：
 
 ```text
-load g_phase acquire
+phase = load g_phase acquire
 if phase != RUNNING:
     return AUDIT_FAIL_DENY
-load g_policy
+return load g_policy relaxed
 ```
 
-init 必须保证 policy store sequenced-before RUNNING release store。
+init 的 publication 顺序保持：
 
-这样只有观察到当前 RUNNING generation 的 caller 才能使用 session policy；非 RUNNING 阶段统一 DENY。
+```text
+store g_policy
+    -> store g_phase = RUNNING (release)
+```
 
-该修复作为 #103 后续独立 runtime PR，不与本设计 PR 混合。
+因此 reader 一旦 acquire-load 观察到该 RUNNING publication，就同时获得该 session policy 的可见性。
+
+STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。如果 shutdown 在 phase load 之后才开始，getter 可以返回刚刚线性化的 RUNNING session policy；这不构成跨 session policy 泄漏。
+
+该协议由 Audit lifecycle regression 在 STARTING、RUNNING、STOPPING、IDLE 和 fork-child 边界验证。
 
 ## 13. Console config
 
