@@ -290,6 +290,7 @@ static logger_t *create_logger(const logger_config_t *input,
 	atomic_init(&l->emitted_records, 0);
 	atomic_init(&l->failed_records, 0);
 	atomic_init(&l->first_error, 0);
+	atomic_init(&l->lifecycle_error, 0);
 	for (unsigned i = 0; i < 6; ++i) {
 		atomic_init(&l->dropped_by_level[i], 0);
 		l->overflow[i] = cfg.overflow[i];
@@ -368,8 +369,11 @@ static logger_t *create_logger(const logger_config_t *input,
 fail_backends:
 	logger_worker_workspace_destroy(l->worker_workspace);
 	l->worker_workspace = NULL;
-	if (queue_ready)
-		logger_queue_destroy(&l->q);
+	if (queue_ready) {
+		int qrc = logger_queue_destroy(&l->q);
+		if (!rc && qrc)
+			rc = -qrc;
+	}
 	logger_syslog_close(&l->syslog_backend);
 	logger_file_close(&l->file_backend);
 	pthread_cond_destroy(&l->progress_cv);
@@ -379,7 +383,9 @@ fail_emit:
 	pthread_mutex_destroy(&l->emit_mu);
 fail_alloc:
 	free(l);
-	logger_process_object_release();
+	int release_rc = logger_process_object_release();
+	if (!rc && release_rc)
+		rc = -release_rc;
 	errno = rc ? rc : EIO;
 	return NULL;
 }
@@ -449,23 +455,50 @@ static int dispose_body(logger_t *l)
 {
 	if (!l)
 		return 0;
-	/* Explicit users must be joined before entry. An in-object counter cannot
-     * make a freed raw C pointer safe. The global facade pins its own users. */
+
+	/* Linux lifetime rule: stop publication/execution first, prove every worker
+	 * and synchronization user is gone, then release dependent storage. A
+	 * lifecycle-proof failure intentionally leaks the partially retired object;
+	 * freeing it would turn an invariant failure into a possible UAF. */
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
+
 	if (l->async_mode) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
 		logger_queue_wake_force(&l->q);
-		pthread_join(l->worker, NULL);
+		int join_rc = pthread_join(l->worker, NULL);
+		if (join_rc)
+			return -join_rc;
 	}
-	pthread_mutex_lock(&l->emit_mu);
+
+	int lock_rc = pthread_mutex_lock(&l->emit_mu);
+	if (lock_rc)
+		return -lock_rc;
 	int rc = logger_sync_outputs_locked(l);
-	pthread_mutex_unlock(&l->emit_mu);
+	int unlock_rc = pthread_mutex_unlock(&l->emit_mu);
+	if (unlock_rc)
+		return -unlock_rc;
+
+	/* Worker no longer exists, so its private workspace is no longer shared. */
 	if (l->async_mode) {
 		logger_worker_workspace_destroy(l->worker_workspace);
 		l->worker_workspace = NULL;
-		logger_queue_destroy(&l->q);
+		int qrc = logger_queue_destroy(&l->q);
+		if (qrc)
+			return qrc;
 	}
+
+	/* These destroys are lifetime assertions, not best-effort cleanup. */
+	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
+	if (destroy_rc)
+		return -destroy_rc;
+	destroy_rc = pthread_mutex_destroy(&l->progress_mu);
+	if (destroy_rc)
+		return -destroy_rc;
+	destroy_rc = pthread_mutex_destroy(&l->emit_mu);
+	if (destroy_rc)
+		return -destroy_rc;
+
 	int close_rc = logger_file_close_status(&l->file_backend);
 	if (!rc)
 		rc = close_rc;
@@ -475,13 +508,17 @@ static int dispose_body(logger_t *l)
 		if (close(fd) < 0 && !rc)
 			rc = -errno;
 	}
+
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPED,
 			      memory_order_release);
-	pthread_cond_destroy(&l->progress_cv);
-	pthread_mutex_destroy(&l->progress_mu);
-	pthread_mutex_destroy(&l->emit_mu);
+
+	/* The process census is an invariant gate. Underflow must not be hidden by
+	 * freeing the object and pretending that no runtime exists. */
+	int release_rc = logger_process_object_release();
+	if (release_rc)
+		return release_rc;
+
 	free(l);
-	logger_process_object_release();
 	return rc;
 }
 
