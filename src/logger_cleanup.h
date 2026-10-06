@@ -194,7 +194,7 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 #define __cleanup_get_5th(_1, _2, _3, _4, _name, ...) _name
 #define DEFINE_GUARD_COND(...)                                              \
 	__cleanup_get_5th(__VA_ARGS__, DEFINE_GUARD_COND_4,                  \
-		          DEFINE_GUARD_COND_3)(__VA_ARGS__)
+		          DEFINE_GUARD_COND_3, 0)(__VA_ARGS__)
 
 #define guard(_name) CLASS(_name, __cleanup_unique(__cleanup_guard_))
 #define ACQUIRE(_name, _var) CLASS(_name, _var)
