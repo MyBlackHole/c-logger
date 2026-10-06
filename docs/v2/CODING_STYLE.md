@@ -90,3 +90,23 @@ VLA
 - VLA 和大栈帧由编译器门禁检查。
 
 这些门禁只约束新改动；清理历史技术债必须独立 PR，不能混入无关功能变更。
+
+
+## 所有权命名
+
+内部 API 的动词必须表达 ownership/lifetime 语义：
+
+```text
+take_*     ownership transfer；成功后 source 失效
+get_*      获取独立 lifetime reference
+put_*      释放独立 lifetime reference
+borrow_*   获取非 owning 访问；不得延长 lifetime
+release_*  释放某项资源，但不一定结束 container lifetime
+close_*    关闭 fd/backend 等外部资源
+destroy_*  结束对象生命周期
+reset_*    复用仍然存活的对象
+```
+
+如果对象不是 REFCOUNTED，不应为了命名对称增加空洞的 `get_*/put_*`。
+
+同一个动词不能同时表示普通读取和 ownership transfer。
