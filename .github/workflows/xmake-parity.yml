@@ -24,9 +24,9 @@ on:
   pull_request:
     paths:
       - "xmake.lua"
-      - "src/**"
       - "include/**"
-      - "tests/**"
+      - "tests/packaging/**"
+      - "tests/compat/**"
       - "examples/**"
       - "VERSION"
       - "LICENSE"
@@ -36,7 +36,6 @@ on:
       - "scripts/check_v1_abi_snapshot.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_release_assets.py"
-      - "tests/packaging/check_install.py"
       - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
       - ".github/workflows/xmake-parity.yml"

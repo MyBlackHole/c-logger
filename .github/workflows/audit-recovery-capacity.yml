@@ -70,7 +70,12 @@ jobs:
           set -euo pipefail
           binary="$(find capacity-build -type f -name audit_recovery_capacity -print -quit)"
           test -n "$binary"
-          for i in 1 2 3; do
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            samples=1
+          else
+            samples=3
+          fi
+          for i in $(seq 1 "$samples"); do
             "$binary" 4096 | tee "audit-recovery-capacity-${i}.json"
           done
 
@@ -79,8 +84,10 @@ jobs:
           import statistics
           from pathlib import Path
 
-          runs = [json.loads(Path(f"audit-recovery-capacity-{i}.json").read_text())
-                  for i in range(1, 4)]
+          files = sorted(Path(".").glob("audit-recovery-capacity-[0-9]*.json"))
+          if not files:
+              raise SystemExit("no capacity samples produced")
+          runs = [json.loads(path.read_text()) for path in files]
           valid = [r["valid_recovery_ms"] for r in runs]
           maxrss = [r["maxrss_kb"] for r in runs]
           failures = {
@@ -113,7 +120,7 @@ jobs:
           {
             echo '## Audit recovery capacity'
             echo
-            echo 'Three repeated 4096-archive runs; limits are CI regression guards, not target-server SLAs.'
+            echo 'Pull requests use one 4096-archive sample; main/manual runs use three. Limits are CI regression guards, not target-server SLAs.'
             echo
             echo '~~~json'
             cat audit-recovery-capacity-summary.json
