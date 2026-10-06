@@ -301,25 +301,21 @@ int logger_queue_destroy(logger_queue_t *q)
 void logger_queue_notify_if_waiting(logger_queue_t *q)
 {
 	/*
-	 * 与 worker publish waiting 后的 SC fence 成对，禁止 store-buffering：
-	 * 不能同时出现“worker 看不到新 record”且“producer 看不到 waiting”。
-	 * fast path 仍然不碰 wait_mu/condvar。
+	 * Must follow slot.seq release publication. The probe itself is an acq_rel
+	 * RMW: if it precedes a later worker arm, that arm acquires the publication
+	 * chain; if it observes waiting=1, this producer enters the mutex-coupled
+	 * signal path.
 	 */
-	atomic_thread_fence(memory_order_seq_cst);
-	/*
-	 * worker 没有进入准备睡眠状态时，producer 完全不碰 wait_mu。
-	 *
-	 * slow path 仍必须获取同一把 wait_mu。worker 在持锁状态下先 publish
-	 * consumer_waiting=1，再重新检查 queue/running，最后才 cond_wait；
-	 * 因此 producer 要么看到 waiting=0，而 worker 的 recheck 会看到 record，
-	 * 要么看到 waiting=1，并在 cond_wait 原子释放 mutex 后取得锁并 signal。
-	 */
-	if (!atomic_load_explicit(&q->consumer_waiting, memory_order_acquire))
+	if (!logger_queue_wait_probe_after_publish(q))
 		return;
 
+	/*
+	 * waiting remains 1 until the slow-path winner holds wait_mu. Therefore the
+	 * worker either rechecks and disarms without sleeping, or cond_wait()
+	 * atomically releases wait_mu before this producer clears + signals.
+	 */
 	guard(pthread_mutex)(&q->wait_mu);
-	if (!atomic_exchange_explicit(&q->consumer_waiting, 0,
-				      memory_order_acq_rel))
+	if (!logger_queue_wait_claim_signal(q))
 		return;
 
 	(void)pthread_cond_signal(&q->wait_cv);
@@ -335,7 +331,7 @@ void logger_queue_wake_force(logger_queue_t *q)
 	 * 同一 mutex + predicate recheck 也保证它不会随后睡死。
 	 */
 	guard(pthread_mutex)(&q->wait_mu);
-	atomic_store_explicit(&q->consumer_waiting, 0, memory_order_release);
+	logger_queue_wait_disarm(q);
 	(void)pthread_cond_signal(&q->wait_cv);
 	atomic_fetch_add_explicit(&q->force_wake_signals, 1,
 				  memory_order_relaxed);

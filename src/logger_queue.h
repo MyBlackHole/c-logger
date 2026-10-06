@@ -79,6 +79,41 @@ typedef struct {
 	pthread_cond_t wait_cv;
 } logger_queue_t;
 
+/*
+ * Lost-wakeup handoff for the single consumer.
+ *
+ * All concurrent post-init writes to consumer_waiting are acq_rel RMWs.
+ * This is intentional: a producer probes only after slot.seq publication,
+ * and the RMW modification-order chain carries that publication to a later
+ * worker arm. Do not replace these helpers with plain loads/stores or fences.
+ *
+ * See docs/v2/QUEUE_WAKEUP_PROOF.md.
+ */
+static inline void logger_queue_wait_arm_recheck(logger_queue_t *q)
+{
+	(void)atomic_exchange_explicit(&q->consumer_waiting, 1,
+				       memory_order_acq_rel);
+}
+
+static inline int
+logger_queue_wait_probe_after_publish(logger_queue_t *q)
+{
+	return atomic_fetch_or_explicit(&q->consumer_waiting, 0,
+					memory_order_acq_rel) != 0;
+}
+
+static inline int logger_queue_wait_claim_signal(logger_queue_t *q)
+{
+	return atomic_exchange_explicit(&q->consumer_waiting, 0,
+					memory_order_acq_rel) != 0;
+}
+
+static inline void logger_queue_wait_disarm(logger_queue_t *q)
+{
+	(void)atomic_exchange_explicit(&q->consumer_waiting, 0,
+				       memory_order_acq_rel);
+}
+
 int logger_queue_init(logger_queue_t *, size_t);
 int logger_queue_destroy(logger_queue_t *);
 int logger_queue_push(logger_queue_t *, const logger_message_t *);

@@ -581,6 +581,7 @@ if has_config("build_regression_tests") then
 
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
+        {"queue_wakeup_litmus", "tests/regression/test_queue_wakeup_litmus.c"},
         {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
         {"global_flush_regression", "tests/regression/test_global_flush.c"},
         {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
@@ -701,6 +702,7 @@ if has_config("build_regression_tests") then
 
     for _, name in ipairs({
         "queue_mpsc_regression",
+        "queue_wakeup_litmus",
         "metadata_capture_regression",
         "global_flush_regression",
         "crypto_vectors_test"

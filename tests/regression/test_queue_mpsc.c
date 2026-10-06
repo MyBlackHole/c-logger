@@ -52,17 +52,14 @@ static void *consume(void *arg)
 		}
 		pthread_mutex_lock(&queue.wait_mu);
 		while (logger_queue_empty(&queue) && atomic_load(&running)) {
-			atomic_store_explicit(&queue.consumer_waiting, 1,
-					      memory_order_release);
-			atomic_thread_fence(memory_order_seq_cst);
+			logger_queue_wait_arm_recheck(&queue);
 			if (!logger_queue_empty(&queue) || !atomic_load(&running))
 				break;
 			atomic_fetch_add_explicit(&queue.wait_count, 1,
 						  memory_order_relaxed);
 			pthread_cond_wait(&queue.wait_cv, &queue.wait_mu);
 		}
-		atomic_store_explicit(&queue.consumer_waiting, 0,
-				      memory_order_release);
+		logger_queue_wait_disarm(&queue);
 		int stop = logger_queue_empty(&queue) && !atomic_load(&running);
 		pthread_mutex_unlock(&queue.wait_mu);
 		if (stop)
