@@ -1,5 +1,27 @@
 # 变更记录
 
+## 1.0.0 — 2026-10-06
+
+首个稳定 Production v1。默认 shared ABI 正式冻结为 SONAME `liblogger.so.1` /
+`LOGGER_1.0`，公开 C 符号集收敛为 62 项；`abi/logger-1.0.symbols` 与
+`abi/LOGGER_1_0_CONTRACT.md` 分别冻结 ELF symbol surface 和语义 ABI。
+
+pre-v1 兼容债务不进入稳定 ABI：删除无效的 `audit_config_t.fsync_each_record`、四个误导性
+fork marker，以及 zero/zero/旧 prefix 配置入口。Logger/Audit/Console 配置统一采用 Linux
+UAPI 风格的 size/version + future-zero-tail 规则。
+
+资源生命周期按 quiescent-before-free 收口：worker join、同步对象 teardown、process census
+成为 final release 的生命周期证明；无法证明 quiescent 时禁止继续 free。Audit recovery/
+checkpoint 改为 owned `dirfd + basename`，instance ID entropy 改为 nonblocking fail-fast；
+4096 archive segment 连接由 O(N²) 优化为 O(N log N)。
+
+Production v1 支持范围固定为 Linux/ELF/x86_64、glibc >= 2.31、Linux >= 5.10、本地 ext4/XFS
+以及本地 Unix-domain datagram Syslog。最低内核、real syslogd、glibc runtime、crash/power-cut、
+Sanitizer、4096 archive capacity、installed consumer 与 release packaging 门禁均已建立并通过。
+
+从 0.9.x 升级必须使用 1.0.0 headers 重新构建；SONAME 0 不承诺与稳定 v1 二进制兼容。
+详细迁移与不支持范围见 `docs/RELEASE_NOTES_1.0.0.md`。
+
 ## 0.9.6 — 2026-10-04
 
 受控生产发布候选的可观测性收敛版本。保持 ABI major `0`、SONAME
