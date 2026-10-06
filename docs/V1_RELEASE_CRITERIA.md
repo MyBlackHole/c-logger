@@ -11,7 +11,7 @@ candidate 的扩大承诺；只有“已冻结支持范围”中的条目满足�
 1. **支持范围必须可验证**，不能从 syscall 首次出现版本或构建成功反推兼容性；
 2. **明确不支持**优于保留模糊的“尚未验收”；
 3. v1 只冻结真实需要长期维护的最小平台集合；
-4. CI、QEMU 与静态 ELF 检查是证据的一部分，不替代最低平台和真实存储栈验收。
+4. CI、QEMU 与静态 ELF 检查证明库级合同；特定服务器/控制器/介质的物理掉电能力属于部署 qualification，不作为通用库 v1 发布门禁。
 
 ## 已冻结的 v1 支持范围
 
@@ -47,8 +47,9 @@ v1 的持久文件/Audit 支持范围限定为：
 - Linux 5.10+ 上 ext4/XFS 的 `RENAME_NOREPLACE` 路径；
 - Audit recovery/checkpoint 使用已持有的目录 fd；procfs 不属于运行时依赖。
 
-这里的“支持 ext4/XFS”要求正式 v1 前补齐真实目标存储栈证据。现有 QEMU/raw-disk ext4 +
-XFS × 10 cut-point matrix 是必要 CI gate，但不是物理断电认证。
+这里的“支持 ext4/XFS”指库级文件系统语义已由 Linux 5.10 minimum-kernel 与 QEMU/raw-disk
+ext4/XFS cut-point matrix 验证。该证据不等于任意服务器、RAID/HBA/NVMe/SATA write-cache
+组合的物理掉电认证；需要这类保证的产品/部署必须单独 qualification。
 
 ### Syslog
 
@@ -111,123 +112,45 @@ Global facade 继续作为宿主便利 API，但不改变显式 owner 模型。
 
 ## Production v1 硬门禁
 
-以下项目全部关闭前，不得把 release title / README / package metadata 改为 Production v1。
+实现级 Production v1 hard gate 已全部关闭。以下四项必须持续保持绿色，任何回退都重新打开发布阻断：
 
-### 1. 最低 Linux kernel
+### 1. 最低 Linux kernel（已关闭）
 
-最低 kernel baseline 固定为 **Linux 5.10**，并在 Ubuntu 20.04 / glibc 2.31 rootfs 的
-真实 QEMU guest 中验证当前 production shared runtime：
+最低 baseline 固定为 **Linux 5.10 / x86_64 + glibc 2.31**。minimum-kernel gate 已在真实
+QEMU 5.10 guest 中验证 getrandom、ext4/XFS `RENAME_NOREPLACE`、Audit
+write/recovery/checkpoint owned-dirfd 路径。更老内核不进入通用 v1 支持合同。
 
-- guest `uname` 必须为 5.10.x，glibc 必须为 2.31；
-- kernel CRNG ready 后实际执行 `getrandom`；
-- ext4 与 XFS 的 `RENAME_NOREPLACE` internal rotation；
-- Audit 在 ext4/XFS 上的 init/write/shutdown/verify；
-- Audit owned-dirfd recovery/checkpoint 路径。
+### 2. 真实 local syslogd integration（已关闭）
 
-minimum-kernel gate 不再重复 shared/static packaging、完整 consumer、process-crash、
-sanitizer 等已有独立 workflow 的证明。更老 kernel 只在出现真实部署需求时建立单独
-compatibility tier，不进入通用 Production v1 支持范围。
+真实 local syslog daemon gate 已覆盖 required/deferred startup、endpoint unavailable、
+reconnect cooldown、backpressure、daemon restart、shutdown/flush 与 metrics/diagnostics。
+这不扩展为 remote durable delivery。
 
-### 2. 真实存储栈掉电验证
+### 3. v1 public ABI freeze（已关闭）
 
-至少对正式支持的 ext4 和 XFS 各完成一套可追溯的真实目标存储栈验收，记录：
+默认 production ABI 已冻结为：
 
-- server / VM host 型号或环境；
-- kernel；
-- filesystem 与 mount options；
-- block device / RAID / HBA / NVMe/SATA controller；
-- volatile write-cache 策略；
-- c-logger commit / artifact checksum；
-- cut point；
-- reboot/recovery/append/verify 结果。
+- SONAME `liblogger.so.1`；
+- ELF symbol version `LOGGER_1.0`；
+- 62-symbol `abi/logger-1.0.symbols` 唯一 allowlist；
+- installed `LOGGER_ABI_VERSION=1`；
+- `v1_abi_contract` 冻结 public layout、enum/macro、函数类型和默认配置；
+- Logger/Audit/Console 配置遵守 `docs/UAPI.md` 的 Linux UAPI 演进规则。
 
-重点覆盖与 CI 一致的 acknowledged、Audit fsync/checkpoint 与 file rotation switch 边界。
-如果某一 filesystem 无法取得真实存储栈证据，应从 v1 支持范围中删除，而不是保留模糊承诺。
+后续 1.x 只允许兼容性 additive ABI 变化；破坏性变化进入新的 ABI major。
 
-### 3. 真实 syslogd integration
+### 4. Audit recovery 容量契约（已关闭）
 
-在最低 userland / kernel 目标上使用真实 local syslog daemon 完成：
+4096 archive 上限保持不变。segment 拓扑连接已由 O(N²) 收敛为 O(N log N)，capacity gate
+覆盖合法完整链、缺段、损坏、截断、峰值 RSS 与重复测量。恢复仍完整扫描并验证保留日志字节；
+持久索引属于 post-v1 enhancement，不能替代内容验证。
 
-- startup required/deferred；
-- endpoint unavailable；
-- reconnect cooldown；
-- backpressure；
-- daemon restart；
-- shutdown/flush 边界；
-- metrics/diagnostics 可观察性。
+### 部署 qualification，不是通用发布门禁
 
-通过 fake socket/unit test 不能独立关闭此 gate。
-
-### 4. v1 public ABI freeze
-
-Production v1 的 public config ABI 在切换 SONAME 1 前统一为 Linux UAPI 演进规则：
-
-- Logger / Audit / Console 顶层配置均以 `struct_size/version` 为固定 ABI header；
-- pre-v1 zero/zero、旧 prefix、历史 old-header consumer 不进入 v1；
-- 当前结构必须完整存在，过短返回 `EINVAL`；
-- future larger struct 的未知 tail 全 0 时允许旧库接受；
-- unknown tail 任意非 0 返回 `E2BIG`，绝不静默忽略新语义；
-- unknown version 返回 `EPROTONOSUPPORT`；
-- 新字段只允许尾部追加且零值必须表示未请求新语义，否则提升 version；
-- runtime 复制结构体字段为内部快照；字符串指针只在 init/create 调用期间借用。
-
-完整规则由 `docs/UAPI.md` 冻结。
-
-正式 v1 前完成一次 public ABI review，冻结：
-
-- 62 个目标 public symbol 的去留；
-- public struct layout；
-- enum 数值；
-- ownership/lifetime；
-- error convention；
-- cancellation/reentry boundary；
-- global facade generation semantics；
-- Audit record/checkpoint compatibility boundary。
-
-v1 ABI identity 的实现级阻断已关闭：
-
-- 默认 SONAME 已冻结为 `liblogger.so.1`；
-- 默认 ELF symbol version 已冻结为 `LOGGER_1.0`；
-- `abi/logger-1.0.symbols` 是唯一权威 public symbol allowlist，共 62 项；
-- `v1_abi_contract` 冻结 public struct layout、enum/macro 数值、函数类型和默认配置；
-- Logger/Audit/Console public config 已统一采用 `docs/UAPI.md` 的 Linux UAPI 演进规则；
-- 默认 installed metadata 固定 `LOGGER_ABI_VERSION=1`；
-- release-validation / xmake-parity 直接验证 ABI 1，不再维护 preview 双轨。
-
-当前软件版本仍保持 0.9.6 controlled-production candidate。ABI identity freeze 不代表已经满足
-Production 1.0 发布条件；真实目标存储栈等剩余 hard gate 关闭后，才允许单独把 `VERSION`
-切到 1.0.0 并进入正式发布。后续 1.x 只允许兼容性 additive ABI 变化，破坏性变化进入下一个
-ABI major。
-
-### 5. Audit recovery 容量契约（实现级阻断已关闭）
-
-当前 archive 上限保持 4096。恢复仍会完整扫描并验证 retained log bytes，但扫描完成后的
-segment 拓扑连接已经从 O(N²) 全表查找改为临时排序 digest-edge 索引的 O(N log N)；
-没有新增 persistent segment ID/index，也没有改变 record/checkpoint 磁盘格式或降低
-fail-closed 校验。
-
-现有 4096-archive capacity gate 已覆盖：
-
-- 合法完整链恢复；
-- missing middle segment；
-- corrupt segment；
-- truncated segment；
-- 峰值 RSS；
-- 三次重复测量与宽松 CI regression guard。
-
-2026-10-05 的相邻 Ubuntu 24.04 托管运行证据中，旧 O(N²) 对照合法恢复中位数为
-1411.047 ms；O(N log N) 版本的保守候选观测为 1281.821 ms，中间缺段失败最大值由
-163.268 ms 降至 76.832 ms，最大 RSS 由 2344 KiB 增至 2724 KiB。后续最终 head 的
-重复运行还观测到 1058.108 ms 合法恢复中位数，但托管 runner 波动不作为目标服务器 SLA。
-
-因此 v1 不再把“segment 连接 O(N²)”视为实现级发布阻断。仍保留以下边界：
-
-- 内容扫描复杂度仍是 O(保留日志字节数)；
-- 4096 archive 是当前发布支持上限；
-- CI 时间/RSS 阈值是回归保护线，不是目标服务器 SLA；
-- persistent segment ID/可信恢复索引仅在新的实测瓶颈出现后再设计，不能替代内容验证。
-
-详细证据见 `validation/AUDIT_RECOVERY_CAPACITY.md`。
+物理断电/PDU/BMC、RAID/HBA/NVMe/SATA controller、drive firmware、volatile write-cache
+策略属于特定部署的 durability qualification。仓库继续要求 deterministic QEMU/raw-disk
+ext4/XFS cut-point matrix 作为库级 crash-consistency gate，但不把任意硬件组合认证扩大成
+通用 c-logger Production v1 发布条件。跟踪模板见 issue #69。
 
 ## 已完成且继续保持的门禁
 
@@ -252,12 +175,13 @@ fail-closed 校验。
 
 Production v1 只能在以下条件同时成立时发布：
 
-- 本文所有 hard gate 关闭；
+- 上述实现级 hard gate 全部保持关闭；
 - `docs/KNOWN_ISSUES.md` 中剩余条目均被分类为明确 unsupported、documented limitation 或
   post-v1 enhancement，而不是未知兼容性；
 - v1 ABI snapshot 已冻结并通过 packaging/consumer gate；
 - release notes 明确列出 supported/unsupported platform contract；
 - release artifact 与证据能追溯到同一个 tag/commit/checksum。
 
-在这些条件满足前，版本仍应保持 controlled production candidate，不得仅因测试数量很多而
-提前改称 Production v1。
+当前实现级 hard gate 已关闭。正式切换 `VERSION=1.0.0` 前仍必须完成最终文档一致性、
+release notes、exact release commit/tag/checksum 审查；这些发布动作完成前继续保持
+controlled production candidate。
