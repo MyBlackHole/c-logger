@@ -51,3 +51,20 @@ debug invariant 的 fail-fast 用途一致；production 不改变错误模型。
 Global/Audit/instance mutex/rwlock acquisition 接入 tracking，然后在已有
 locked helpers 上放置 assert-held。这样避免“为了 lockdep 重写锁抽象”与
 “同时修改 production locking semantics”混在一个 commit 中。
+
+
+## 真实接入：Global / Audit
+
+tracking 只跟随已经成功发生的真实 pthread transition，不改变锁语义：
+
+- Global `g_control_mu`：成功 lock/trylock 后登记，成功 unlock 后撤销；
+- Global `g_lifetime_lock`：read/write/try-write 共用
+  `LOGGER_LOCK_GLOBAL_LIFETIME` class；
+- Audit `g_control_mu`：现有 cancellation-aware scope 成功获取后登记；
+- Audit `g_operation_mu`：普通 operation 可以独立获取；controller 内的嵌套
+  acquisition 必须从 Audit control 进入。
+
+Global publish/unpublish 与 Audit runtime borrow 位置加入 `assert_held`，让 debug
+build 直接验证“访问受保护对象时对应 lock contract 仍成立”。
+
+本阶段不改 instance emit/progress/queue-wait guard；它们单独进入下一接入阶段。
