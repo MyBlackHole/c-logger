@@ -38,11 +38,6 @@ option_end()
 -- single source; callers export it once and every Xmake subprocess inherits it.
 set_allowedplats("linux")
 
--- 2.0 engineering baseline: new C code must not introduce VLAs, and large
--- stack frames must be visible during review. 16 KiB is an initial userspace
--- guardrail, not a kernel-stack size claim; tighten it after the v2 inventory.
-add_cflags("-Wvla", "-Wframe-larger-than=16384", {force = true})
-
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
@@ -209,6 +204,9 @@ target("logger")
     -- Match the production dialect/visibility contract rather than inheriting
     -- Xmake's built-in release rule (which strips by default).
     add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+    -- 2.0 production-source guardrails. Keep these scoped to library sources;
+    -- legacy test binaries have independent stack debt and are audited separately.
+    add_cflags("-Wvla", "-Wframe-larger-than=16384", {force = true})
     set_symbols("hidden")
     if is_mode("release") then
         set_optimize("fastest")
@@ -434,6 +432,7 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         end
         add_files("src/logger_fault.c")
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_cflags("-Wvla", "-Wframe-larger-than=16384", {force = true})
         set_symbols("hidden")
         add_defines("LOGGER_ENABLE_FAULT_INJECTION=1")
         add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
@@ -572,6 +571,7 @@ if has_config("build_regression_tests") then
         end
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0", {force = true})
+        add_cflags("-Wvla", "-Wframe-larger-than=16384", {force = true})
         set_symbols("hidden")
         add_defines("LOGGER_ENABLE_FAULT_INJECTION=0")
         add_defines("LOGGER_STATIC_DEFINE=1", {public = true})
