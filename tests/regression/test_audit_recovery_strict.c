@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "record_support.h"
+#include <fcntl.h>
 
 static const char a1[] = "app.audit.20260922T120000.000001Z.log";
 static const char a2[] =
@@ -37,6 +38,8 @@ static void expect_tail_evidence(const char *data, size_t length)
 
 static void scenario(const char *mode, audit_integrity_t alg)
 {
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	CHECK(dirfd >= 0);
 	const unsigned char zero[32] = { 0 };
 	for (size_t i = 0; i < 20; ++i)
 		records[i] = record_fixture(
@@ -165,14 +168,14 @@ static void scenario(const char *mode, audit_integrity_t alg)
 		} else
 			CHECK(0);
 	}
-	CHECK(audit_checkpoint_persist("app.audit.state", &cp) == 0);
+	CHECK(audit_checkpoint_persist_at(dirfd, "app.audit.state", &cp) == 0);
 	crypto_file_t state = crypto_snapshot("app.audit.state");
 	int has_active = access("app.audit.log", F_OK) == 0;
 	crypto_file_t log = { 0 };
 	if (has_active)
 		log = crypto_snapshot("app.audit.log");
 	audit_ckpt_t original = cp;
-	int rc = audit_recover_set(".", "app", "app.audit.log", &cp);
+	int rc = audit_recover_set_at(dirfd, "app", "app.audit.log", &cp);
 	if (error) {
 		crypto_expect_error(rc, error);
 		CHECK(!memcmp(&cp, &original, sizeof(cp)));
@@ -191,12 +194,13 @@ static void scenario(const char *mode, audit_integrity_t alg)
 			expect_tail_evidence(residue, sizeof(residue) - 1u);
 		}
 		/* Return value is a candidate only; direct recovery never writes state. */
-		CHECK(audit_checkpoint_persist("next.state", &cp) == 0);
-		CHECK(audit_recover_set(".", "app", "app.audit.log", &cp) == 0);
+		CHECK(audit_checkpoint_persist_at(dirfd, "next.state", &cp) == 0);
+		CHECK(audit_recover_set_at(dirfd, "app", "app.audit.log", &cp) == 0);
 	}
 	crypto_same_file("app.audit.state", &state);
 	free(log.data);
 	free(state.data);
+	CHECK(close(dirfd) == 0);
 }
 
 int main(int argc, char **argv)
