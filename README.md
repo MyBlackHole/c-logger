@@ -2,7 +2,7 @@
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
 保留文件/标准错误/Syslog、同步/异步、Console 与完整 Audit。当前发布仍属于受控生产候选，
-需要在目标平台和真实存储栈完成验收后再扩大部署范围；**不是通用 Production v1**。
+当前默认 ABI 已冻结为 Production v1 ABI，但软件版本仍是 0.9.6 受控生产候选；**尚未发布 Production 1.0**。
 
 ## 构建与安装
 
@@ -55,7 +55,6 @@ PKG_CONFIG_PATH=/opt/logger/current/lib/pkgconfig   pkg-config --cflags --libs l
 - 共享库/静态库/legacy 组件 失败关闭；
 - PIC 静态库 嵌入 SDK 模块；
 - pkg-config；
-- frozen 旧头文件 消费方；
 - SONAME、ELF 符号版本 与 公开符号允许列表；
 - 生产产物 isolation。
 
@@ -156,9 +155,10 @@ xmake test 'fork_reinit_regression/*' -j1
 - [变更清单](CHANGELOG.md)
 
 Audit 是独立安全审计子系统；普通日志 回调 返回不是 Audit 持久化回执。
-当前 QEMU/原始磁盘 ext4 + XFS 断电、Sanitizer、ABI、打包 和 基准测试 门禁不能替代
-真实服务器、RAID/HBA/NVMe/SATA 易失缓存、实际目标存储栈以及最低支持 内核 的部署验收。
-Production v1 的支持/不支持范围与剩余硬门禁见
+当前 QEMU/原始磁盘 ext4 + XFS 断电、Sanitizer、ABI、打包和基准测试门禁用于证明库本身的
+发布合同；它们不构成任意服务器、RAID/HBA/NVMe/SATA 易失缓存组合的物理掉电认证。
+需要更强物理介质保证的部署应单独做目标存储栈 qualification。Production v1 的支持/不支持
+范围与正式发布判定见
 [docs/V1_RELEASE_CRITERIA.md](docs/V1_RELEASE_CRITERIA.md)。
 
 ## 许可证
