@@ -263,12 +263,11 @@ typedef struct {
 	int include_pid, include_tid, include_source;
 	const char *ident;
 	logger_overflow_policy_t overflow[6];
-	/* Append-only extension. Older version-1 prefix sizes use Syslog defaults.
-     * Supply the complete extension or no extension; partial tails are rejected.
-     * Pre-versioned binaries are not supported. See docs/SYSLOG_BACKEND.md. */
+	/* Part of the v1 structure. Future extensions are appended after the
+	 * current structure and must be zero when passed to an older library. */
 	logger_syslog_config_t syslog;
 } logger_config_t;
-#define LOGGER_CONFIG_V1_PREFIX_SIZE offsetof(logger_config_t, syslog)
+#define LOGGER_CONFIG_SIZE 144u
 /* Ownership/threading:
  * - logger_create() returns an owned instance; logger_destroy() releases it.
  * - cfg is borrowed only during create; do not mutate it concurrently.
