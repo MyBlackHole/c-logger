@@ -49,7 +49,7 @@ jobs:
             title="c-logger ${version} — Controlled Production Candidate"
             prerelease=true
           else
-            title="c-logger ${version} — Production v1"
+            title="c-logger ${version} — Production v${major}"
             prerelease=false
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
