@@ -55,8 +55,8 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
-	_Static_assert(AUDIT_CONFIG_V1_PREFIX_SIZE <= sizeof(audit_config_t),
-		       "Audit v1 prefix exceeds current config");
+	_Static_assert(AUDIT_CONFIG_V1_SIZE == sizeof(audit_config_t),
+		       "Audit v1 config size changed");
 	audit_config_t a = AUDIT_DEFAULT_CONFIG();
 	if (a.version != AUDIT_CONFIG_VERSION || a.struct_size != sizeof(a))
 		return 10;
@@ -75,42 +75,32 @@ int main(void)
 
 	/* A versioned caller must provide the complete stable v1 prefix. */
 	a = AUDIT_DEFAULT_CONFIG();
-	a.struct_size = AUDIT_CONFIG_V1_PREFIX_SIZE - 1u;
+	a.struct_size = AUDIT_CONFIG_V1_SIZE - 1u;
 	errno = 0;
 	if (audit_init(&a) == 0 || errno != EINVAL)
 		return 13;
 
-	/* A pre-1.0 caller may still provide the historical 72-byte config.
-	 * Model the real memory extent: current 64-byte prefix plus an unknown
-	 * 8-byte tail. The library must consume only the known prefix. */
-	struct legacy_audit_config {
-		audit_config_t prefix;
-		uint64_t retired_tail;
+	/* Production v1 intentionally rejects oversized pre-v1/future layouts.
+	 * A layout change must use a new config version, not an implicit tail. */
+	struct oversized_audit_config {
+		audit_config_t config;
+		uint64_t tail;
 	};
-	_Static_assert(sizeof(struct legacy_audit_config) == 72,
-		       "historical Audit config extent changed");
-	struct legacy_audit_config legacy = {
-		.prefix = AUDIT_DEFAULT_CONFIG(),
-		.retired_tail = UINT64_C(0xa5a5a5a5a5a5a5a5),
+	_Static_assert(sizeof(struct oversized_audit_config) == 72,
+		       "oversized fixture extent changed");
+	struct oversized_audit_config oversized = {
+		.config = AUDIT_DEFAULT_CONFIG(),
+		.tail = UINT64_C(0xa5a5a5a5a5a5a5a5),
 	};
-	legacy.prefix.struct_size = sizeof(legacy);
-	legacy.prefix.log_dir = ".";
-	legacy.prefix.name = "config_abi_tail";
-	legacy.prefix.rotation.mode = LOGGER_ROTATE_NONE;
-	legacy.prefix.integrity = AUDIT_INTEGRITY_NONE;
-	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.log.logger.lock");
-	if (audit_init(&legacy.prefix))
+	oversized.config.struct_size = sizeof(oversized);
+	errno = 0;
+	if (audit_init(&oversized.config) == 0 || errno != EINVAL)
 		return 14;
-	if (audit_shutdown_status())
+	if (oversized.tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
 		return 15;
-	if (legacy.retired_tail != UINT64_C(0xa5a5a5a5a5a5a5a5))
-		return 16;
-	unlink("./config_abi_tail.audit.log");
-	unlink("./config_abi_tail.audit.log.logger.lock");
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.version != CONSOLE_CONFIG_VERSION || c.struct_size != sizeof(c))
-		return 17;
+		return 16;
 	return 0;
 }
