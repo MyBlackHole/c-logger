@@ -103,11 +103,13 @@ __cleanup_must_check_ptr(const volatile void *value)
 	EXTEND_CLASS_COND(_name, _ext, false, _init, __VA_ARGS__)
 
 #define CLASS(_name, _var)                                                  \
-	class_##_name##_t _var CLEANUP_ATTR(class_##_name##_destructor) =       \
+	class_##_name##_t _var LOGGER_MAYBE_UNUSED                             \
+		CLEANUP_ATTR(class_##_name##_destructor) =                         \
 		class_##_name##_constructor
 
 #define CLASS_INIT(_name, _var, _init_expr)                                 \
-	class_##_name##_t _var CLEANUP_ATTR(class_##_name##_destructor) =       \
+	class_##_name##_t _var LOGGER_MAYBE_UNUSED                             \
+		CLEANUP_ATTR(class_##_name##_destructor) =                         \
 		(_init_expr)
 
 #define __scoped_class(_name, _var, _once, ...)                             \
