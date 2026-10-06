@@ -1,5 +1,26 @@
 # 发布工程
 
+## 1.x / 2.0 分支模型
+
+从 2.0 开发开始，发布与开发职责分离：
+
+```text
+release/1.x
+    Production 1.x 维护线
+
+main
+    2.0 development 主线
+```
+
+- `release/1.x` 从不可变 `v1.0.0` 发布提交建立；1.x 修复只在该维护线演进。
+- `main` 用于 2.0 breaking redesign，不承诺 1.x source/binary ABI 兼容。
+- `v1.0.0` tag/release 永久保持不可变，不允许把 tag 改指向新提交。
+- 2.0 不在 `main` 维护双 runtime path 或 compatibility DSO；需要旧版行为时使用 1.x 分支/发布。
+- 在 #108 完成 2.0 public API/UAPI/ABI 冻结之前，不把 `main` 产物称为 2.0 正式发布。
+- 根 `VERSION` 暂不提前切成 2.0.0；正式切换 VERSION/SONAME/symbol node 属于 #108 的 ABI 冻结步骤。
+
+2.0 的设计权威位于 `docs/v2/`；现有根目录和 `docs/` 下的 v1 架构/ABI文档继续作为 Production v1 历史与维护依据。
+
 c-logger 当前软件版本为 **1.0.0 / Production v1**。软件版本由仓库根 `VERSION` 唯一决定；
 默认 ABI 为 SONAME 1 / `LOGGER_1.0`，public C ABI 由 62-symbol
 `abi/logger-1.0.symbols` 与语义 ABI contract 共同冻结。

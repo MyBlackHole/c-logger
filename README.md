@@ -1,4 +1,8 @@
-# C Logger — Production v1
+# C Logger — 2.0 开发主线 / Production v1 已发布
+
+> `main` 已进入 2.0 架构重构阶段；Production v1 由 `release/1.x` 维护，正式发布基线仍是 `v1.0.0`。\
+> 2.0 public API/ABI 尚未冻结，当前 `main` 不应被当作 2.0 release 使用。根 `VERSION` 在 #108 冻结 2.0 public contract 前仍保持已发布版本值，避免提前制造伪 2.0 release identity。
+
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
 保留文件/标准错误/Syslog、同步/异步、Console 与完整 Audit。当前软件版本为 **1.0.0**，
@@ -133,6 +137,11 @@ xmake test 'fork_reinit_regression/*' -j1
 新业务 SDK 不应依赖该 辅助接口。原始 fork 防御保护 和现有 ECHILD 契约仍然适用。
 
 ## 关键文档
+
+- [2.0 开发设计权威](docs/v2/README.md)
+- [2.0 支持基线](docs/v2/SUPPORT_MATRIX.md)
+- [2.0 Linux C 编码规范](docs/v2/CODING_STYLE.md)
+- [2.0 执行上下文规范](docs/v2/EXECUTION_CONTEXT.md)
 
 - [公共 API](API.md)
 - [测试策略](TESTING.md)
