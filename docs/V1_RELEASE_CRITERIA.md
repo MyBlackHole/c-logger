@@ -162,11 +162,11 @@ compatibility tier，不进入通用 Production v1 支持范围。
 
 Audit 配置 ABI 在切换 SONAME 1 前先收口为单一版本化合同：
 
-- `AUDIT_CONFIG_V1_PREFIX_SIZE == 64` 是稳定 v1 readable prefix；
-- 调用者必须显式提供 `struct_size/version`；
-- 大于已知 prefix 的未来 tail 被忽略，不读取也不修改；
-- pre-v1 `struct_size=0/version=0` 入口不进入 Production v1；
-- runtime 只消费规范化后的内部配置副本。
+- `AUDIT_CONFIG_V1_SIZE == 64` 是 Production v1 的精确配置布局；
+- 调用者必须显式提供 `struct_size == 64` 与当前 `version`；
+- pre-v1 `struct_size=0/version=0`、历史 72B 及任意 oversized tail 均拒绝；
+- layout 改动必须显式提升 config version，不做隐式尾部兼容；
+- runtime 只消费复制后的内部配置快照。
 
 正式 v1 前完成一次 public ABI review，冻结：
 
