@@ -718,6 +718,13 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
+    -- test_lockdep.c must see the same debug contract as the linked regression
+    -- support archive; otherwise logger_lockdep.h intentionally compiles to
+    -- production no-op inline helpers in this test translation unit.
+    target("lockdep_regression")
+        add_defines("LOGGER_ENABLE_LOCKDEP=1")
+    target_end()
+
     target("stderr_sigpipe_regression")
         for _, scenario in ipairs({"sync", "async", "preblocked"}) do
             add_tests(scenario, {runargs = scenario, timeout = 15})
