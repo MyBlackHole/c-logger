@@ -69,17 +69,22 @@
 
 | 资源 | 获取/创建 | 所有者 | 转移点 | 最终释放 | 模式 |
 |---|---|---|---|---|---|
-| `audit_runtime_t` 堆对象 | Audit 初始化期间 `calloc` | 初始化事务，随后为 Audit 全局运行时 | 在操作/生命周期协议下发布 | `dispose_runtime` | EXPLICIT/SHARED |
-| 写入器锁 fd | `acquire_writer_lock` 中 `open` | 词法 fd，随后为运行时 | `s->writer_lock_fd = take_fd(fd)` | Logger 拆除后由 `dispose_runtime` 释放 | AUTO -> EXPLICIT |
-| Audit 日志目录 fd | 初始化期间打开 | `audit_runtime_t` | 初始化成功 | `dispose_runtime` | EXPLICIT |
-| 已预留日志/检查点文件所有者 | 文件预留/初始化 | `audit_runtime_t` / Logger 事务 | 显式可移动 `logger_file_t` 交接 | 对应文件所有者关闭 | EXPLICIT |
-| 恢复用普通文件 fd | `open_regular` 中 `open` | 词法 fd | 成功的 `fdopen` 消费 fd；源通过 `take_fd` 失效 | 调用方 `fclose` | AUTO -> EXPLICIT |
-| 恢复用 `FILE *` | `fdopen/fopen` | 恢复操作 | 由具体函数决定 | 显式 `fclose`；错误可能有意义 | EXPLICIT |
-| 恢复段数组 | `calloc` | 恢复操作 | 无 | 逐个释放路径后再释放数组 | EXPLICIT |
-| 段路径字符串 | `strdup` | 段数组元素 | 存入元素 | 恢复清理循环 | EXPLICIT |
-| Audit 控制/操作互斥锁 | 静态初始化 | Audit 生命周期 | 无 | 进程生命周期 | SHARED |
+| `audit_runtime_t` 堆对象 | Audit 初始化期间 `calloc` | 初始化事务，随后为 Audit 全局运行时 | `g_runtime = candidate` 发布 | `dispose_runtime` | EXPLICIT/SHARED |
+| active 日志 reservation | `logger_file_reserve` | 初始为 `audit_runtime_t.reserved_log` | `logger_create_reserved_file` 成功后 move 到 private Logger；source 立即恢复 `LOGGER_FILE_EMPTY` | private Logger 的 file backend teardown | EXPLICIT/MOVED |
+| checkpoint reservation | `logger_file_reserve` | `audit_runtime_t.checkpoint_owner` | 不转移 | `dispose_runtime -> logger_file_close_status` | EXPLICIT |
+| active/checkpoint `dir_fd/lock_fd` | reservation 内部 `open/openat` | 各自所属 `logger_file_t` | 随整个 `logger_file_t` reservation move | 对应 `logger_file_close_status` | EXPLICIT/MOVED |
+| recovery 普通文件 fd | `open_regular_at` 中 `openat` | 词法 fd | 成功 `fdopen` 后由 `take_fd` 失效源 owner | 调用方显式 `fclose` | AUTO -> EXPLICIT |
+| recovery `FILE *` | `fdopen` | recovery 操作 | 无 | 显式 `fclose`；错误参与 recovery 结果 | EXPLICIT |
+| archive scan fd | `openat(dirfd, ".")` | 词法/扫描事务 | 成功 `fdopendir` 后由 DIR 接管 | `closedir` | EXPLICIT |
+| recovery 段数组 / 段名 | `calloc/strdup` | recovery 操作 | 存入 segment 聚合 | cleanup loop / `free` | EXPLICIT |
+| Audit control/operation mutex | 静态初始化 | Audit 生命周期 | 无 | 进程生命周期 | SHARED |
 
-Audit 的持久化最终处置保持显式，因为检查点/文件关闭/同步顺序及错误都属于恢复语义。
+Audit 不再维护独立 writer-lock 或独立长期 log-dir fd；跨进程 writer exclusivity
+由 active/checkpoint 对应的 file-backend reservation 承担。recovery/checkpoint 直接使用
+这些 owner 持有的 `dir_fd + basename`，不把 fd 转回 pathname。
+
+Audit 的持久化最终处置保持显式，因为 checkpoint、file close、sync 顺序和错误都属于
+recovery/commit 语义。
 
 ## 进程/fork 防护
 
@@ -103,11 +108,19 @@ Audit 的持久化最终处置保持显式，因为检查点/文件关闭/同步
     ->
 工作线程排空并退出
     ->
-pthread_join
+pthread_join 成功
+    ->
+检查 worker lifecycle_error
     ->
 销毁工作区
     ->
-销毁紧凑槽位 + 溢出池
+销毁 queue cond/mutex 成功
+    ->
+释放紧凑槽位 + 溢出池
+    ->
+销毁 progress/emit 同步对象
+    ->
+final free
 ```
 
 词法作用域清理不能替代这个“释放前等待工作线程退出”的要求。
