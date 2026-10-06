@@ -576,7 +576,7 @@ static int dispose_body(logger_t *l)
 	int lifecycle_error = atomic_load_explicit(
 		&l->lifecycle_error, memory_order_acquire);
 
-	int lock_rc = pthread_mutex_lock(&l->emit_mu);
+	int lock_rc = __cleanup_lockdep_mutex_lock(&l->emit_mu, LOGGER_LOCK_INSTANCE_EMIT);
 	if (lock_rc) {
 		atomic_store_explicit(&l->lifecycle_error, lock_rc,
 				      memory_order_release);
@@ -584,7 +584,7 @@ static int dispose_body(logger_t *l)
 	}
 	int rc = lifecycle_error ? -lifecycle_error :
 		 logger_sync_outputs_locked(l);
-	int unlock_rc = pthread_mutex_unlock(&l->emit_mu);
+	int unlock_rc = __cleanup_lockdep_mutex_unlock(&l->emit_mu, LOGGER_LOCK_INSTANCE_EMIT);
 	if (unlock_rc) {
 		atomic_store_explicit(&l->lifecycle_error, unlock_rc,
 				      memory_order_release);
@@ -758,8 +758,8 @@ int logger_reopen_instance(logger_t *l)
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
-		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
-		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (!rc) {
 			rc = logger_file_reopen(&l->file_backend) ?
 				     -(errno ? errno : EIO) :
@@ -777,8 +777,8 @@ int logger_file_offset(logger_t *l, uint64_t *out)
 		return -1;
 	int rc = !l || !out ? -EINVAL : 0;
 	if (!rc) {
-		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
-		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (!rc)
 			rc = logger_file_offset_get(&l->file_backend, out) ?
 				     -(errno ? errno : EIO) :
@@ -809,8 +809,8 @@ int logger_wait_for_output(logger_t *l)
 		 * 慢 producer 不能被后续 record 的 completion 越过。 */
 		size_t target = atomic_load_explicit(&l->q.enqueue_pos,
 						     memory_order_acquire);
-		ACQUIRE(pthread_mutex_checked, progress_guard)(&l->progress_mu);
-		int rc = ACQUIRE_ERR(pthread_mutex_checked, &progress_guard);
+		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
+		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
 		if (rc)
 			return rc;
 		while (l->completed_pos - target > SIZE_MAX / 2) {
@@ -826,6 +826,7 @@ int logger_wait_for_output(logger_t *l)
 
 int logger_sync_outputs_locked(logger_t *l)
 {
+	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &l->emit_mu);
 	if (l->outputs & LOGGER_OUT_FILE) {
 		int rc = logger_file_sync(&l->file_backend);
 		if (rc < 0)
@@ -850,8 +851,8 @@ int logger_flush_instance_status(logger_t *l)
 		rc = logger_wait_for_output(l);
 		int sync_rc;
 		{
-			ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
-			sync_rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+			ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+			sync_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 			if (!sync_rc)
 				sync_rc = logger_sync_outputs_locked(l);
 		}
@@ -1023,8 +1024,8 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 		return -EINVAL;
 	if (!(l->outputs & LOGGER_OUT_FILE))
 		return -ENOTSUP;
-	ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
-	int rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 	if (rc)
 		return rc;
 	logger_file_metrics_t snapshot = l->file_backend.metrics;
@@ -1052,8 +1053,8 @@ int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 	if (!rc && !(l->outputs & LOGGER_OUT_SYSLOG))
 		rc = -ENOTSUP;
 	if (!rc) {
-		ACQUIRE(pthread_mutex_checked, emit_guard)(&l->emit_mu);
-		rc = ACQUIRE_ERR(pthread_mutex_checked, &emit_guard);
+		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (!rc)
 			*out = l->syslog_backend.metrics;
 	}
