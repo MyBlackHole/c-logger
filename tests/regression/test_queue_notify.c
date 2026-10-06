@@ -7,14 +7,15 @@ static _Atomic int in_gap, release_wait, intercepted, fail_wait;
 int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
-	if (atomic_exchange(&fail_wait, 0))
-		return EIO;
 	if (!atomic_exchange(&intercepted, 1)) {
 		atomic_store(&in_gap, 1);
 		wait_flag(
 			&release_wait); /* worker still holds the predicate mutex */
 	}
-	return __real_pthread_cond_wait(cv, mu);
+	int rc = __real_pthread_cond_wait(cv, mu);
+	if (!rc && atomic_exchange(&fail_wait, 0))
+		return EIO; /* mutex has been reacquired, matching cond-wait return semantics */
+	return rc;
 }
 static void *producer(void *p)
 {
@@ -28,10 +29,6 @@ int main(int argc, char **argv)
 	int wait_error = argc == 2 && !strcmp(argv[1], "wait-error");
 	if (argc == 2)
 		CHECK(wait_error);
-	if (wait_error) {
-		atomic_store(&fail_wait, 1);
-		atomic_store(&release_wait, 1);
-	}
 	char dir[] = "/tmp/logger-notify-XXXXXX";
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
@@ -42,6 +39,10 @@ int main(int argc, char **argv)
 	logger_t *l = logger_create(&c);
 	CHECK(l);
 	if (wait_error) {
+		wait_flag(&in_gap);
+		atomic_store(&fail_wait, 1);
+		atomic_store(&release_wait, 1);
+		logger_queue_wake_force(&l->q);
 		for (int i = 0; i < 5000; ++i) {
 			if (atomic_load_explicit(&l->lifecycle_error,
 						 memory_order_acquire) == EIO)
