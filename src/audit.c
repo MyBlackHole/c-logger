@@ -128,7 +128,7 @@ static int generate_instance_id(char out[33])
 	unsigned char raw[16];
 	size_t off = 0;
 	while (off < sizeof(raw)) {
-		ssize_t n = getrandom(raw + off, sizeof(raw) - off, 0);
+		ssize_t n = getrandom(raw + off, sizeof(raw) - off, GRND_NONBLOCK);
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
