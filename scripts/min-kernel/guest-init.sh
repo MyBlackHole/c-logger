@@ -38,7 +38,17 @@ mount -t xfs /dev/vdb /mnt/xfs
 echo "MIN_KERNEL_EVIDENCE xfs=$(findmnt -n -o FSTYPE /mnt/xfs) ext4=$(findmnt -n -o FSTYPE /)"
 
 export LD_LIBRARY_PATH=/opt/c-logger-prefix/lib
-test -f /opt/c-logger-prefix/lib/liblogger.so.0 || fail "installed shared library missing"
+logger_link=/opt/c-logger-prefix/lib/liblogger.so
+test -e "$logger_link" || fail "installed shared library link missing"
+logger_real="$(readlink -f "$logger_link")"
+test -n "$logger_real" && test -f "$logger_real" ||
+  fail "installed shared library target missing"
+logger_soname="$(
+  readelf -d "$logger_real" |
+    sed -n 's/.*(SONAME).*\[\(.*\)\].*/\1/p'
+)"
+test -n "$logger_soname" || fail "installed shared library SONAME missing"
+echo "MIN_KERNEL_EVIDENCE logger_soname=$logger_soname"
 /opt/min-kernel-runtime   /tmp/min-kernel-ext4/runtime.log   /mnt/xfs/runtime.log   /tmp/min-kernel-ext4   /mnt/xfs
 
 echo "MIN_KERNEL_OK kernel=$kernel userland=$glibc ext4=1 xfs=1"
