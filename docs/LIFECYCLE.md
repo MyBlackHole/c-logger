@@ -79,9 +79,11 @@ IDLE
 
 只有异步实例才会创建工作线程，并通过协作方式停止。
 工作线程可能访问的资源——包括工作区和队列存储——只有在 `pthread_join()` 成功之后才能释放。
-如果 join、worker 同步故障、queue/progress/emit 同步对象销毁或 process census 检查失败，
-final release 必须停止。实现允许故意保留 retired allocation；泄漏比无法证明 quiescent 时 free
-更安全。生命周期证明失败不是普通 I/O close 失败。
+是否允许 final free 只取决于 quiescence 是否被证明，而不是“是否发生过内部错误”。
+worker 内部同步错误（例如 cond_wait 返回错误）若随后 pthread_join 成功，则 worker 已经确定退出，
+可以继续安全 teardown，同时把该错误返回调用方。只有 join、queue/progress/emit 同步对象销毁、
+process census 等无法证明 quiescent/ownership 已终止的错误，才必须停止 final release并保留
+retired allocation。生命周期证明失败不是普通 I/O close 失败。
 
 ## 后端生命周期
 
