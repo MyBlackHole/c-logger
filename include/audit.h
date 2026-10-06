@@ -36,13 +36,17 @@ typedef struct {
 	const char *detail;
 } audit_event_t;
 #define AUDIT_CONFIG_VERSION 1u
+/* Stable v1 readable prefix. Future 1.x fields may only be appended after this
+ * prefix; callers must set struct_size/version explicitly. */
+#define AUDIT_CONFIG_V1_PREFIX_SIZE 64u
 /* Audit durability is strict and not configurable: each committed record uses
  * the synchronous forced-sync path before checkpoint advancement.
  * Pre-1.0 callers may advertise a larger struct_size; unknown trailing bytes are
  * ignored, so removal of the historical no-op fsync field remains source/API
  * cleanup without requiring the library to interpret that tail. */
 typedef struct {
-	uint32_t struct_size;
+	uint32_t struct_size; /* must be >= AUDIT_CONFIG_V1_PREFIX_SIZE */
+
 	uint32_t version;
 	const char *log_dir;
 	const char *name; /* xxx -> xxx.audit.log */
