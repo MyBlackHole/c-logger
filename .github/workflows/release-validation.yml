@@ -7,7 +7,6 @@ on:
       - "VERSION"
       - "LICENSE"
       - "xmake.lua"
-      - "src/**"
       - "include/**"
       - "abi/logger.symbols"
       - "abi/logger-1.0.symbols"

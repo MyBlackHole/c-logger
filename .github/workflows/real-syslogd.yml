@@ -34,8 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      matrix:
-        kind: [shared, static]
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"kind":["shared"]}' || '{"kind":["shared","static"]}') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5

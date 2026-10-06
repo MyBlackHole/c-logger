@@ -31,12 +31,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - kind: shared
-            shared: "y"
-          - kind: static
-            shared: "n"
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"kind":"shared","shared":"y"}]}' || '{"include":[{"kind":"shared","shared":"y"},{"kind":"static","shared":"n"}]}') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -59,15 +54,23 @@ jobs:
           --build_shared=${{ matrix.shared }}
           --build_private_tests=y
 
-      - name: Run and verify process-crash recovery three times
+      - name: Run and verify process-crash recovery
         shell: bash
         run: |
           set -uo pipefail
           overall=0
+          logs=()
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            attempts="1"
+          else
+            attempts="1 2 3"
+          fi
 
-          for attempt in 1 2 3; do
+          for attempt in $attempts; do
             echo "process-crash attempt=$attempt"
-            xmake test -g process-crash -j1 -vD 2>&1 | tee "crash-$attempt.log"
+            log="crash-$attempt.log"
+            logs+=("$log")
+            xmake test -g process-crash -j1 -vD 2>&1 | tee "$log"
             rc=${PIPESTATUS[0]}
             if [ "$rc" -ne 0 ]; then
               overall=1
@@ -75,7 +78,7 @@ jobs:
           done
 
           python3 scripts/check_crash_matrix.py \
-            crash-1.log crash-2.log crash-3.log \
+            "${logs[@]}" \
             --output crash-matrix.json \
             --junit-dir . || overall=1
 

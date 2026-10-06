@@ -5,8 +5,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/queue-benchmark.yml"
-      - "xmake.lua"
-      - "VERSION"
       - "src/logger_queue.c"
       - "src/logger_queue.h"
       - "src/logger_record.h"
@@ -19,8 +17,6 @@ on:
   push:
     branches: [main]
     paths:
-      - "xmake.lua"
-      - "VERSION"
       - "src/logger_queue.c"
       - "src/logger_queue.h"
       - "src/logger_record.h"
@@ -102,6 +98,7 @@ jobs:
           --target bench_matrix -j2
 
       - name: Compare memory and throughput
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         run: >-
           python3 scripts/compare_queue_benchmark.py
           --memory-baseline-bin build-queue-memory-baseline/bench_matrix

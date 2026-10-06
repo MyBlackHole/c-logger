@@ -1,0 +1,106 @@
+name: core-validation
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "xmake.lua"
+      - "VERSION"
+      - "abi/logger.symbols"
+      - "scripts/check_release_abi.py"
+      - "scripts/check_production_artifact.py"
+      - ".github/workflows/core-validation.yml"
+
+permissions:
+  contents: read
+
+env:
+  XMAKE_VERSION: "3.1.1"
+
+jobs:
+  correctness:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: ${{ env.XMAKE_VERSION }}
+      - name: Run complete static correctness suite
+        run: |
+          xmake f -m release -o core-build \
+            --build_shared=n \
+            --build_tests=y \
+            --build_private_tests=y \
+            --build_regression_tests=y
+          xmake test -j1
+
+  sanitizer:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address-undefined, thread]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: ${{ env.XMAKE_VERSION }}
+      - name: Configure sanitizer suite
+        shell: bash
+        run: |
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            policies="build.sanitizer.address,build.sanitizer.undefined"
+          else
+            policies="build.sanitizer.thread"
+          fi
+          xmake f -m debug -o sanitizer-build \
+            --build_shared=n \
+            --build_tests=y \
+            --build_private_tests=y \
+            --build_regression_tests=y \
+            --policies="$policies"
+      - name: Run sanitized static suite
+        run: xmake test -j1
+
+  shared-abi:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: ${{ env.XMAKE_VERSION }}
+      - name: Build shared production artifact
+        run: |
+          xmake f -m release -o shared-build --build_shared=y
+          xmake -j2 logger
+      - name: Verify production and ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          artifact="$(find shared-build -type f -name "liblogger.so.${version}" -print -quit)"
+          test -n "$artifact"
+          python3 scripts/check_production_artifact.py "$artifact"
+          python3 scripts/check_release_abi.py "$artifact" \
+            --machine 'Advanced Micro Devices X86-64' \
+            --elf-class ELF64
