@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "xmake.lua"
-      - "VERSION"
       - "src/**"
       - "include/**"
-      - "tests/**"
+      - "tests/test_crash_recovery.c"
+      - "tests/regression/test_audit_rotation_crash.c"
+      - "tests/regression/test_file_audit.c"
+      - "tests/regression/audit_support.h"
+      - "tests/regression/record_support.h"
+      - "tests/regression/crypto_support.h"
+      - "tests/regression/support.h"
       - "scripts/check_crash_matrix.py"
       - ".github/workflows/crash-recovery.yml"
   push:
