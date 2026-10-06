@@ -1,7 +1,6 @@
 # 已知限制、部署边界与后续增强（仅内置 SHA-256）
 
-当前默认 Production v1 ABI 已冻结，但软件版本仍为 0.9.6 controlled-production candidate，
-尚未执行正式 1.0 发布动作。v1 的支持范围、明确不支持范围和发布判定集中定义在
+当前软件版本为 Production 1.0，默认 ABI 为 SONAME 1 / `LOGGER_1.0`。v1 的支持范围、明确不支持范围和发布判定集中定义在
 [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)。本表记录已知限制、unsupported 边界、
 deployment qualification 与 post-v1 enhancement；这些条目除非明确重新分类，不再作为
 实现级 v1 发布阻断项。旧轮次报告保留历史证据，不表示旧用法仍受支持。
@@ -45,11 +44,12 @@ Audit 功能保留，不再提供外部认证 provider 接入。当前验证见 
 | Fork | raw fork 继承运行时仍拒绝。可选旧 辅助接口 仅适用于其受控单线程前置条件，不代替宿主进程管理；默认第三方集成由宿主在合适阶段创建实例 |
 | 可选 fork 辅助接口 的 TSan | 历史上 TSan 残留后台 task 导致正向场景 EBUSY；本轮只复跑兼容 Release 651/651，没有宣称这些兼容场景的 TSan 全部通过 |
 | 成本/性能 | 普通文件常驻 3 个 fd，完整性 Audit 约 7 个 fd；无覆盖轮换新增同步。Queue 已完成 compact/热路径 同 运行器 基准测试，证明默认 queue 内存显著下降并定位 长消息突发背压；这些结果不是整库或目标平台性能承诺。按需采集的生产者元数据 与 自节奏唤醒 已完成；当前仍待评估 消费者阶段、Syslog 批处理 等热点，见 QUEUE_STORAGE.md 与 validation/QUEUE_HOTPATH.md |
-| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；默认 ABI 已冻结。当前剩余工作是正式 1.0 版本/发布元数据切换，不再有实现级 v1 hard gate |
+| 发布工程 | 测试与生产 archive 仍须分离；共享回归中的 --wrap 使用同源静态测试库，真实 SDK/dlclose 单独链接 .so。禁止应用手工混链私有测试库；Production 1.0 ABI/版本/发布元数据已冻结 |
 
-## 发布工程候选
+## Production 1.0 发布工程
 
-0.9.6 发布候选历史上曾包含 66 项公开动态符号；当前默认 v1 surface 已冻结为 62 项，SONAME 1 / `LOGGER_1.0`，并保持可重定位 CMake/pkg-config 下游安装契约和 XPack TGZ。没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机
+Production 1.0 默认 v1 surface 为 62 项，SONAME 1 / `LOGGER_1.0`，并保持可重定位
+CMake/pkg-config 下游安装契约和 XPack TGZ。0.9.6 的 66-symbol surface 仅作为 pre-v1 历史。没有删减功能，也没有以 package 成功替代平台/持久化验收。C++11 默认宏和本机
 布局/旧头兼容有独立测试。内部符号不再动态导出，白盒测试转用同源私有静态库。
 见 RELEASE_ENGINEERING.md、PLATFORM_BASELINE.md 和 validation/PACKAGING_RESULTS.md。
 
