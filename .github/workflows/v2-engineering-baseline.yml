@@ -1,0 +1,130 @@
+name: v2-engineering-baseline
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "scripts/**"
+      - "xmake.lua"
+      - "VERSION"
+      - ".github/workflows/v2-engineering-baseline.yml"
+      - ".github/pull_request_template.md"
+      - "docs/v2/**"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "scripts/**"
+      - "xmake.lua"
+      - "VERSION"
+      - ".github/workflows/v2-engineering-baseline.yml"
+
+permissions:
+  contents: read
+
+env:
+  XMAKE_VERSION: "3.1.1"
+
+jobs:
+  added-line-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check diff whitespace
+        shell: bash
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"
+      - name: Check newly added source lines
+        shell: bash
+        run: python3 scripts/check_v2_diff.py "origin/${{ github.base_ref }}"
+
+  toolchain:
+    name: ubuntu-20.04 / ${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gcc, clang]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ca-certificates clang curl git python3
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Set up Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: ${{ env.XMAKE_VERSION }}
+
+      - name: Enable Xmake in root-owned container
+        shell: bash
+        run: |
+          set -euo pipefail
+          real_xmake="$(command -v xmake)"
+          wrapper="$RUNNER_TEMP/xmake-root-bin"
+          mkdir -p "$wrapper"
+          cat > "$wrapper/xmake" <<EOF
+          #!/bin/sh
+          case "${1:-}" in
+            f|config|test|install)
+              task="$1"
+              shift
+              exec "$real_xmake" "$task" --root "$@"
+              ;;
+            *)
+              exec "$real_xmake" --root "$@"
+              ;;
+          esac
+          EOF
+          chmod +x "$wrapper/xmake"
+          echo "$wrapper" >> "$GITHUB_PATH"
+
+      - name: Record compiler baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.toolchain }}" in
+            gcc)
+              gcc --version
+              major="$(gcc -dumpversion | cut -d. -f1)"
+              test "$major" -ge 9
+              ;;
+            clang)
+              clang --version
+              major="$(clang --version | sed -n '1s/.*version \([0-9][0-9]*\).*/\1/p')"
+              test -n "$major"
+              test "$major" -ge 10
+              ;;
+          esac
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - name: Configure complete static suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake f -m release -o "v2-${{ matrix.toolchain }}-build" \
+            --toolchain="${{ matrix.toolchain }}" \
+            --build_shared=n \
+            --build_tests=y \
+            --build_private_tests=y \
+            --build_regression_tests=y
+
+      - name: Run complete static suite
+        shell: bash
+        run: xmake test -j1

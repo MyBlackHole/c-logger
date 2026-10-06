@@ -38,6 +38,11 @@ option_end()
 -- single source; callers export it once and every Xmake subprocess inherits it.
 set_allowedplats("linux")
 
+-- 2.0 engineering baseline: new C code must not introduce VLAs, and large
+-- stack frames must be visible during review. 16 KiB is an initial userspace
+-- guardrail, not a kernel-stack size claim; tighten it after the v2 inventory.
+add_cflags("-Wvla", "-Wframe-larger-than=16384", {force = true})
+
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")

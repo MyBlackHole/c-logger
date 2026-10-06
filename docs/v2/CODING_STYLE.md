@@ -76,3 +76,17 @@ VLA
 ## Review 原则
 
 2.0 代码优先“最小充分机制”。不能仅因为 Linux 内核存在某 primitive 就引入；必须先证明 c-logger 存在对应问题。
+
+
+## 自动化门禁
+
+针对进入 `main` 的 2.0 PR：
+
+- `scripts/check_v2_diff.py` 只检查新增 C/C++ 行，避免为了启用规则而顺手重写 v1 遗留代码；
+- 新增代码禁止 `strcpy/strcat/sprintf`；
+- 新增 `strncpy` 默认拒绝；确属固定宽度协议字段时必须在同一行标记 `V2_FIXED_WIDTH_OK` 并由 reviewer 审核；
+- 新增源码直接写 `__attribute__((always_inline))` 被拒绝，统一走 compiler abstraction；
+- `git diff --check` 负责 whitespace 错误；
+- VLA 和大栈帧由编译器门禁检查。
+
+这些门禁只约束新改动；清理历史技术债必须独立 PR，不能混入无关功能变更。

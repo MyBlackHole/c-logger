@@ -32,7 +32,7 @@
 
 2.0 必须保留等价或更强证据。
 
-GCC 9 是 Ubuntu 20.04 的工程基线；Clang 10 是 2.0 的最低目标版本。#101 关闭前必须给 GCC/Clang 都建立可重复 CI 证据；在 Clang baseline gate 落地前，不得把“Clang >= 10 已验证”写入发布说明。
+GCC 9 是 Ubuntu 20.04 的工程基线；Clang 10 是 2.0 的最低目标版本。`.github/workflows/v2-engineering-baseline.yml` 在 Ubuntu 20.04 用户态分别使用 GCC 与 Clang 构建并运行完整静态测试集，同时记录实际编译器版本。该 gate 成功后，GCC/Clang baseline 才视为已有可重复 CI 证据。
 
 ## 扩展规则
 
@@ -46,3 +46,12 @@ GCC 9 是 Ubuntu 20.04 的工程基线；Clang 10 是 2.0 的最低目标版本�
 - crash/persistence gate 是否需要新平台运行。
 
 支持矩阵变化必须在 2.0 ABI freeze 前完成，或作为后续明确版本能力发布。
+
+
+## 编译期守卫
+
+2.0 初始编译门禁：
+
+- 新增 VLA 通过 `-Wvla` 暴露，并在正常 `-Werror` target 中成为错误；
+- C target 对超过 16 KiB 的单函数 stack frame 发出诊断；这是用户态初始 guardrail，不等于 Linux kernel stack 大小；
+- 16 KiB 阈值在完成 2.0 stack inventory 后可以收紧，但扩大阈值必须有 review 依据。

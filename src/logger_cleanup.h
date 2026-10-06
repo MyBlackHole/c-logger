@@ -20,17 +20,15 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#if defined(__clang__)
-#if !__has_attribute(cleanup)
-#error "c-logger cleanup helpers require __attribute__((cleanup))"
-#endif
-#elif !defined(__GNUC__)
-#error "c-logger cleanup helpers require GCC/Clang"
-#endif
+#include "logger_compiler.h"
 
-#define CLEANUP_ATTR(function) __attribute__((cleanup(function)))
-#define CLEANUP_MUST_CHECK __attribute__((warn_unused_result))
-#define CLEANUP_ALWAYS_INLINE inline __attribute__((always_inline))
+#define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
+#define CLEANUP_MUST_CHECK LOGGER_MUST_CHECK
+/*
+ * cleanup/class helpers rely on inlining to keep generated ownership scaffolding
+ * local and warning-free. New ordinary helpers should prefer plain static inline.
+ */
+#define CLEANUP_ALWAYS_INLINE LOGGER_ALWAYS_INLINE
 
 #define __cleanup_concat_1(a, b) a##b
 #define __cleanup_concat(a, b) __cleanup_concat_1(a, b)
