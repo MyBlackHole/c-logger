@@ -5,8 +5,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/audit-recovery-capacity.yml"
-      - "xmake.lua"
-      - "VERSION"
       - "src/audit_recovery.c"
       - "src/audit_record.c"
       - "src/audit_record.h"
