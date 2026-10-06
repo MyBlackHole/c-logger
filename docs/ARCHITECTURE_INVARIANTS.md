@@ -24,22 +24,24 @@
    - 最终谁 release。
 8. BORROWED 指针 不能被 词法作用域清理 自动释放。
 9. 移交 后旧 所有者 必须失效。
-10. 工作线程/队列/工作区 必须 释放前等待退出。
-11. 销毁 消费s 所有权。
-12. 最终 I/O 失败 不让旧 指针 变成可重试对象。
-13. lock、atomic、生命周期固定、join、refcount 不得互相替代。
-14. 通用引用计数 只有在多个独立 所有者 真正需要 延长生命周期 时才允许引入。
+10. 工作线程/队列/工作区 必须在 final free 前证明执行者已经退出；`pthread_join` 必须成功。
+11. join、cond/mutex teardown、process census 等生命周期证明失败时，禁止继续 final free；安全泄漏优先于 UAF。
+12. 销毁一旦真正开始即消费 public ownership；普通最终 I/O 错误不让旧指针变成可重试对象。
+13. 同步对象 destroy 不是 best-effort cleanup，而是“已经无使用者”的生命周期断言。
+14. process/object census 必须防 overflow/underflow，不能用无检查 fetch_sub 隐藏 double release。
+15. lock、atomic、生命周期固定、join、refcount 不得互相替代。
+16. 通用引用计数只有在多个独立 owner 真正需要延长生命周期时才允许引入。
 
 ## 3. 异步 / 队列
 
-15. async 队列 必须 bounded。
-16. 当前 compatibility async path 不允许 per-record heap allocation。
-17. 成功 en队列 后，record 不依赖 caller/SDK 源指针 生命周期。
-18. 溢出 必须通过明确 policy 表达。
-19. 不允许 silent truncation 代替 resource exhaustion。
-20. 不允许无限增长 队列/溢出区 来掩盖持续 消费者 overload。
-21. 队列拓扑 可以改变，但必须保持可证明的 发布/顺序/完成 语义。
-22. performance 队列 修改必须同时检查固定内存成本。
+17. async 队列 必须 bounded。
+18. 当前 compatibility async path 不允许 per-record heap allocation。
+19. 成功 en队列 后，record 不依赖 caller/SDK 源指针 生命周期。
+20. 溢出 必须通过明确 policy 表达。
+21. 不允许 silent truncation 代替 resource exhaustion。
+22. 不允许无限增长 队列/溢出区 来掩盖持续 消费者 overload。
+23. 队列拓扑 可以改变，但必须保持可证明的 发布/顺序/完成 语义。
+24. performance 队列 修改必须同时检查固定内存成本。
 
 ## 4. 完成 / 刷新
 
