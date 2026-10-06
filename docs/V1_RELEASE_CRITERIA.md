@@ -160,13 +160,18 @@ compatibility tier，不进入通用 Production v1 支持范围。
 
 ### 4. v1 public ABI freeze
 
-Audit 配置 ABI 在切换 SONAME 1 前先收口为单一版本化合同：
+Production v1 的 public config ABI 在切换 SONAME 1 前统一为 Linux UAPI 演进规则：
 
-- `AUDIT_CONFIG_V1_SIZE == 64` 是 Production v1 的精确配置布局；
-- 调用者必须显式提供 `struct_size == 64` 与当前 `version`；
-- pre-v1 `struct_size=0/version=0`、历史 72B 及任意 oversized tail 均拒绝；
-- layout 改动必须显式提升 config version，不做隐式尾部兼容；
-- runtime 只消费复制后的内部配置快照。
+- Logger / Audit / Console 顶层配置均以 `struct_size/version` 为固定 ABI header；
+- pre-v1 zero/zero、旧 prefix、历史 old-header consumer 不进入 v1；
+- 当前结构必须完整存在，过短返回 `EINVAL`；
+- future larger struct 的未知 tail 全 0 时允许旧库接受；
+- unknown tail 任意非 0 返回 `E2BIG`，绝不静默忽略新语义；
+- unknown version 返回 `EPROTONOSUPPORT`；
+- 新字段只允许尾部追加且零值必须表示未请求新语义，否则提升 version；
+- runtime 复制结构体字段为内部快照；字符串指针只在 init/create 调用期间借用。
+
+完整规则由 `docs/UAPI.md` 冻结。
 
 正式 v1 前完成一次 public ABI review，冻结：
 
