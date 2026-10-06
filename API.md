@@ -77,7 +77,7 @@ old-header consumer 均不进入 v1 兼容合同。
 结构体本身在 init/create 期间复制为内部快照；其中的字符串指针只在该调用期间借用，
 调用者必须保证其有效且不被并发修改。完整规则见 `docs/UAPI.md`。
 
-源码/二进制发布 ABI 冻结、符号可见性、安装/导出仍需后续处理。
+源码/二进制发布 ABI 已冻结为 SONAME 1 / `LOGGER_1.0`，默认 62 个 public symbols，安装元数据固定 `LOGGER_ABI_VERSION=1`。
 
 完整集成示例和关闭顺序见 [HOST_OWNED.md](docs/HOST_OWNED.md)。
 
@@ -101,8 +101,7 @@ Audit 在恢复开始前会预留活动文件和检查点的所有权；恢复�
 ## Syslog 非阻塞修订
 
 本地数据报 Syslog 现在使用非阻塞、执行时关闭的套接字；发生背压时会形成明确可见的失败记录，
-绝不会隐式转化为重放队列。`logger_config_t` 末尾新增 `syslog` 字段（旧 version 1 前缀会按边界读取，
-缺失部分使用默认值）。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
+绝不会隐式转化为重放队列。`logger_config_t` 的 `syslog` 字段属于当前 v1 固定布局；pre-v1 短前缀不再受支持。未来扩展遵守 `docs/UAPI.md` 的尾部追加与未知零尾规则。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
 启动策略默认是 REQUIRED；DEFERRED 会显式接受临时端点故障，并记录粘滞错误状态。重连由单调时钟
 冷却周期节流，只由后续日志记录触发，不会由刷新/销毁触发。重连成功也绝不会清除实例历史上的
 `first_error`。
@@ -151,6 +150,6 @@ SM3 历史不再支持：保留归档与对应旧验证工具/版本离线核查
 Fail-closed 的返回值、输出不变契约和 `CRYPTO_FAILED` 均保留。见
 [BUILTIN_CRYPTO.md](docs/BUILTIN_CRYPTO.md)。
 
-## 0.9.0 打包版 ABI 快照
+## 历史：0.9.0 打包版 ABI 快照
 
-详见 `docs/RELEASE_ENGINEERING.md`。公开布局和函数签名保持不变；`LOGGER_API` 用于标注 Linux 共享库 ABI。所有未文档化的实现符号均被隐藏。C++11 便利默认值仅存在于头文件中，并保持与 C 默认值/布局一致。软件包版本 `0.9.0` 采用精确匹配；候选 SONAME 0 不代表对生产版 v1 ABI 的保证。
+详见 `docs/RELEASE_ENGINEERING.md`。公开布局和函数签名保持不变；`LOGGER_API` 用于标注 Linux 共享库 ABI。所有未文档化的实现符号均被隐藏。C++11 便利默认值仅存在于头文件中，并保持与 C 默认值/布局一致。软件包版本 `0.9.0` 采用精确匹配；该段仅记录 0.9.0 历史；当前默认 ABI 已冻结为 SONAME 1 / `LOGGER_1.0`。
