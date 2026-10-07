@@ -350,6 +350,7 @@ static logger_t *create_logger(const logger_config_t *input,
 {
 	logger_config_t cfg;
 	logger_ctor_state_t state = { 0 };
+	logger_state_t expected = LOGGER_STATE_CREATED;
 	int rc;
 	if (copy_logger_config(input, &cfg) != 0)
 		return NULL;
@@ -470,8 +471,21 @@ static logger_t *create_logger(const logger_config_t *input,
 		state.worker_started = 1;
 	}
 
-	atomic_store_explicit(&l->state, LOGGER_STATE_RUNNING,
-			      memory_order_release);
+	/*
+	 * The worker can fail before pthread_create() returns. Only CREATED may
+	 * become RUNNING: never overwrite its release-published STOPPING state.
+	 * A failed acquire observes the preceding lifecycle_error publication;
+	 * rollback still stops and joins every successfully created worker.
+	 */
+	if (!atomic_compare_exchange_strong_explicit(
+		    &l->state, &expected, LOGGER_STATE_RUNNING,
+		    memory_order_acq_rel, memory_order_acquire)) {
+		rc = atomic_load_explicit(&l->lifecycle_error,
+					  memory_order_acquire);
+		if (!rc)
+			rc = EIO;
+		goto fail;
+	}
 	return l;
 
 fail: {
