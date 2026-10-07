@@ -14,6 +14,10 @@ const char *logger_level_name(logger_level_t);
 const char *logger_basename(const char *);
 size_t logger_format_line(const logger_t *, const logger_message_t *, char *,
 			  size_t);
+/* Acknowledged output: no fallback or truncation; length is zero on error.
+ * Returns 0/-errno. Callers must not emit a partial buffer after failure. */
+int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
+			       char *out, size_t cap, size_t *length);
 logger_detail_t logger_internal_detail(const logger_t *);
 int logger_internal_include_pid(const logger_t *);
 int logger_internal_include_tid(const logger_t *);
