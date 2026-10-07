@@ -47,6 +47,11 @@ jobs:
           set -euo pipefail
           xmake -j2 logger
           bash tests/regression/run_audit_format.sh core-build | tee core-build/audit-format.log
+      - name: Worker startup production regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/regression/run_worker_startup.sh core-build | tee core-build/worker-startup.log
       - name: Preserve exact source and regression evidence
         if: always()
         shell: bash
@@ -55,6 +60,7 @@ jobs:
           git rev-parse HEAD > audit-format-evidence/source-commit.txt
           git archive --format=zip HEAD -o audit-format-evidence/source.zip
           cp core-build/audit-format.log audit-format-evidence/ 2>/dev/null || true
+          cp core-build/worker-startup.log audit-format-evidence/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -100,6 +106,18 @@ jobs:
         run: |
           xmake -j2 logger
           bash tests/regression/run_audit_format.sh sanitizer-build address,undefined
+
+      - name: Worker startup sanitized production regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            sanitizer="address,undefined"
+          else
+            sanitizer="thread"
+          fi
+          xmake -j2 logger
+          bash tests/regression/run_worker_startup.sh sanitizer-build "$sanitizer"
 
   shared-abi:
     runs-on: ubuntu-24.04
