@@ -25,6 +25,20 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
 	return __real_vsnprintf(out, cap, fmt, ap);
 }
 
+/* glibc redirects fortified production calls to __vsnprintf_chk. Exercise the
+ * same failure contract without disabling the library's FORTIFY protection. */
+int __real___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
+			  const char *fmt, va_list ap);
+int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
+			  const char *fmt, va_list ap)
+{
+	if (fail_format) {
+		fail_format = 0;
+		return -1;
+	}
+	return __real___vsnprintf_chk(out, cap, flag, object_size, fmt, ap);
+}
+
 int main(void)
 {
 	CHECK(!setenv("TZ", "UTC0", 1));

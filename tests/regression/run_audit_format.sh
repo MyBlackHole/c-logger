@@ -30,5 +30,5 @@ unit="$build/format-checked-regression"
 "${CC:-cc}" -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -DLOGGER_STATIC_DEFINE=1 -Iinclude -Isrc -I"$build/generated" \
     "${flags[@]}" tests/regression/test_format_checked.c "${libraries[0]}" \
-    -pthread -Wl,--wrap=vsnprintf -o "$unit"
+    -pthread -Wl,--wrap=vsnprintf -Wl,--wrap=__vsnprintf_chk -o "$unit"
 timeout 15s "$unit"
