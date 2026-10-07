@@ -42,7 +42,7 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	unsigned char *failed __free(free) =
 		calloc(capacity, sizeof(*failed));
 
-	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
+	if (!workspace || !batch || !vec || !copy || !lines || lens == NULL ||
 	    !failed) {
 		errno = ENOMEM;
 		return NULL;
@@ -160,8 +160,19 @@ static int stderr_writev_all(struct iovec *v, int count)
 int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 {
 	char line[LOGGER_LINE_MAX];
-	size_t n = logger_format_line(l, m, line, sizeof(line));
+	size_t n;
 	int rc = 0;
+
+	/* The acknowledged synchronous API (also used by Audit) must reject a
+	 * failed/truncated envelope before any sink can observe partial output.
+	 * Ordinary logging and worker batches retain best-effort formatting. */
+	if (force_sync) {
+		rc = logger_format_line_checked(l, m, line, sizeof(line), &n);
+		if (rc)
+			return rc;
+	} else {
+		n = logger_format_line(l, m, line, sizeof(line));
+	}
 	guard(pthread_mutex_emit)(&l->emit_mu);
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };

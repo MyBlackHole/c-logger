@@ -17,65 +17,128 @@ const char *logger_basename(const char *path)
 	return slash ? slash + 1 : (path ? path : "?");
 }
 
-/* libc printf still formats metadata. cap reserves space for the caller's LF;
- * used is bytes stored, NOT printf's would-have-written count. */
-static void append(char *, size_t, size_t *, const char *, ...)
+/* cap reserves space for LF; used counts stored, not would-have-written bytes.
+ * The ordinary logger may ignore truncation; acknowledged output must not. */
+static int append(char *out, size_t cap, size_t *used, const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 4, 5)))
 #endif
 	;
-static void append(char *out, size_t cap, size_t *used, const char *fmt, ...)
+static int append(char *out, size_t cap, size_t *used, const char *fmt, ...)
 {
 	if (*used >= cap - 1)
-		return;
+		return -EOVERFLOW;
 	va_list ap;
 	va_start(ap, fmt);
 	int n = vsnprintf(out + *used, cap - *used, fmt, ap);
 	va_end(ap);
-	if (n > 0) {
-		size_t room = cap - *used;
-		*used += (size_t)n < room ? (size_t)n : room - 1;
+	if (n < 0)
+		return -EILSEQ;
+	size_t room = cap - *used;
+	if ((size_t)n >= room) {
+		*used += room - 1;
+		return -EOVERFLOW;
 	}
+	*used += (size_t)n;
+	return 0;
 }
 
-size_t logger_format_line(const logger_t *l, const logger_message_t *m,
-			  char *out, size_t cap)
+struct timestamp_cache {
+	time_t sec;
+	int valid;
+	char date[32];
+	char zone[16];
+};
+
+static _Thread_local struct timestamp_cache timestamp;
+
+/* Validate cached bytes too: an ordinary call can populate this same cache.
+ * strftime success alone does not imply the four-digit-year Audit grammar. */
+static int canonical_time(const struct timestamp_cache *cache)
+{
+	const char *d = cache->date;
+	const char *z = cache->zone;
+	static const unsigned days[] = {
+		31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+	};
+
+	if (!cache->valid || strlen(d) != 19 || strlen(z) != 5)
+		return 0;
+	for (unsigned i = 0; i < 19; ++i) {
+		char delimiter = i == 4 || i == 7 ? '-' :
+				 i == 10 ? 'T' : i == 13 || i == 16 ? ':' : 0;
+		if (delimiter ? d[i] != delimiter : d[i] < '0' || d[i] > '9')
+			return 0;
+	}
+	if (z[0] != '+' && z[0] != '-')
+		return 0;
+	for (unsigned i = 1; i < 5; ++i)
+		if (z[i] < '0' || z[i] > '9')
+			return 0;
+
+	unsigned year = (unsigned)(d[0] - '0') * 1000u +
+			(unsigned)(d[1] - '0') * 100u +
+			(unsigned)(d[2] - '0') * 10u + (unsigned)(d[3] - '0');
+	unsigned month = (unsigned)(d[5] - '0') * 10u + (unsigned)(d[6] - '0');
+	unsigned day = (unsigned)(d[8] - '0') * 10u + (unsigned)(d[9] - '0');
+	unsigned hour = (unsigned)(d[11] - '0') * 10u + (unsigned)(d[12] - '0');
+	unsigned minute = (unsigned)(d[14] - '0') * 10u + (unsigned)(d[15] - '0');
+	unsigned second = (unsigned)(d[17] - '0') * 10u + (unsigned)(d[18] - '0');
+	unsigned zone_hour = (unsigned)(z[1] - '0') * 10u + (unsigned)(z[2] - '0');
+	unsigned zone_minute = (unsigned)(z[3] - '0') * 10u + (unsigned)(z[4] - '0');
+
+	if (!year || !month || month > 12 || !day || hour > 23 ||
+	    minute > 59 || second > 60 || zone_hour > 23 || zone_minute > 59)
+		return 0;
+	unsigned leap = !(year % 4) && (year % 100 || !(year % 400));
+	return day <= days[month - 1] + (month == 2 && leap);
+}
+
+static int format_line(const logger_t *l, const logger_message_t *m,
+		       char *out, size_t cap, size_t *length, int strict)
 {
 	if (!cap)
-		return 0;
-	if (!out || !l || !m) {
-		errno = EINVAL;
-		return 0;
-	}
+		return strict ? -EOVERFLOW : 0;
+	if (!out || !l || !m)
+		return -EINVAL;
 	out[0] = 0;
 	if (cap == 1)
-		return 0;
-	typedef struct {
-		time_t sec;
-		int valid;
-		char date[32], zone[16];
-	} timestamp_cache_t;
-	static _Thread_local timestamp_cache_t cache;
+		return strict ? -EOVERFLOW : 0;
+	if (strict && (m->ts.tv_nsec < 0 || m->ts.tv_nsec >= 1000000000L))
+		return -EINVAL;
+
 	time_t sec = m->ts.tv_sec;
-	if (!cache.valid || cache.sec != sec) {
+	if (!timestamp.valid || timestamp.sec != sec) {
 		struct tm tm;
+
+		/* Invalidate before touching buffers. A failed refresh must not make
+		 * partial new bytes appear as a valid old-second cache hit. */
+		timestamp.valid = 0;
 		if (!localtime_r(&sec, &tm) ||
-		    !strftime(cache.date, sizeof(cache.date),
+		    !strftime(timestamp.date, sizeof(timestamp.date),
 			      "%Y-%m-%dT%H:%M:%S", &tm) ||
-		    !strftime(cache.zone, sizeof(cache.zone), "%z", &tm)) {
-			/* Visible failure, not a made-up timestamp or uninitialized tm. */
-			strcpy(cache.date, "time-unavailable");
-			cache.zone[0] = 0;
-			cache.valid = 0;
+		    !strftime(timestamp.zone, sizeof(timestamp.zone), "%z", &tm)) {
+			/* Ordinary diagnostic output keeps its historical visible fallback.
+			 * Strict output rejects below, before any backend operation. */
+			memcpy(timestamp.date, "time-unavailable", sizeof("time-unavailable"));
+			timestamp.zone[0] = 0;
 		} else {
-			cache.sec = sec;
-			cache.valid = 1;
+			timestamp.sec = sec;
+			timestamp.valid = 1;
 		}
 	}
+	if (strict && !canonical_time(&timestamp))
+		return -EOVERFLOW;
+
 	size_t used = 0;
-#define ADD(...) append(out, cap - 1, &used, __VA_ARGS__)
-	ADD("%s.%06ld%s %-5s", cache.date, m->ts.tv_nsec / 1000L, cache.zone,
-	    logger_level_name(m->level));
+	int rc;
+#define ADD(...) do { \
+	rc = append(out, cap - 1, &used, __VA_ARGS__); \
+	if (strict && rc) \
+		return rc; \
+} while (0)
+	ADD("%s.%06ld%s %-5s", timestamp.date, m->ts.tv_nsec / 1000L,
+	    timestamp.zone, logger_level_name(m->level));
 	logger_detail_t detail = logger_internal_detail(l);
 	if (detail >= LOGGER_DETAIL_VERBOSE) {
 		if (logger_internal_include_pid(l))
@@ -100,5 +163,30 @@ size_t logger_format_line(const logger_t *l, const logger_message_t *m,
 #undef ADD
 	out[used++] = '\n';
 	out[used] = 0;
-	return used;
+	*length = used;
+	return 0;
+}
+
+size_t logger_format_line(const logger_t *l, const logger_message_t *m,
+			  char *out, size_t cap)
+{
+	size_t length = 0;
+	int rc = format_line(l, m, out, cap, &length, 0);
+
+	if (rc)
+		errno = -rc;
+	return length;
+}
+
+int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
+			       char *out, size_t cap, size_t *length)
+{
+	if (!length)
+		return -EINVAL;
+	*length = 0;
+	int rc = format_line(l, m, out, cap, length, 1);
+
+	if (rc && out && cap)
+		out[0] = 0;
+	return rc;
 }

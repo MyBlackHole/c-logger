@@ -41,6 +41,26 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y
           xmake test -j1
+      - name: Audit formatting production regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake -j2 logger
+          bash tests/regression/run_audit_format.sh core-build | tee core-build/audit-format.log
+      - name: Preserve exact source and regression evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p audit-format-evidence
+          git rev-parse HEAD > audit-format-evidence/source-commit.txt
+          git archive --format=zip HEAD -o audit-format-evidence/source.zip
+          cp core-build/audit-format.log audit-format-evidence/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-format-source-and-evidence
+          path: audit-format-evidence/
+          retention-days: 14
 
   sanitizer:
     runs-on: ubuntu-24.04
@@ -75,6 +95,11 @@ jobs:
             --policies="$policies"
       - name: Run sanitized static suite
         run: xmake test -j1
+      - name: Audit formatting ASan and UBSan regression
+        if: matrix.sanitizer == 'address-undefined'
+        run: |
+          xmake -j2 logger
+          bash tests/regression/run_audit_format.sh sanitizer-build address,undefined
 
   shared-abi:
     runs-on: ubuntu-24.04
