@@ -24,3 +24,11 @@ sha256sum "${libraries[0]}"
 for scenario in normal cache-hit localtime date zone bad-date bad-zone cached-bad truncation; do
     timeout 15s "$binary" "$scenario"
 done
+
+# Private formatter boundaries are linked against the same production archive.
+unit="$build/format-checked-regression"
+"${CC:-cc}" -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+    -DLOGGER_STATIC_DEFINE=1 -Iinclude -Isrc -I"$build/generated" \
+    "${flags[@]}" tests/regression/test_format_checked.c "${libraries[0]}" \
+    -pthread -Wl,--wrap=vsnprintf -o "$unit"
+timeout 15s "$unit"

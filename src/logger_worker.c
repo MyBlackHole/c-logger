@@ -42,7 +42,7 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	unsigned char *failed __free(free) =
 		calloc(capacity, sizeof(*failed));
 
-	if (!workspace || !batch || !vec || !copy || !lines || lens == NULL ||
+	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
 	    !failed) {
 		errno = ENOMEM;
 		return NULL;
