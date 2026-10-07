@@ -116,7 +116,10 @@ Audit g_operation_mu
 
 ## 6. condition variable contract
 
-`progress_cv` 必须与 `progress_mu` 配对；predicate 是 completion watermark。
+`progress_cv` 必须与 `progress_mu` 配对；predicate 是 completion watermark 已达到，
+或 sticky `lifecycle_error` 已发布。工作线程失败退出前在 `progress_mu` 下广播；
+等待者必须在同一锁下检查错误，不能等待已不存在的执行者。失败不伪造完成水位，
+也不解除对象借用。完整边界及双向竞争证明见 `WORKER_FAILURE.md`。
 
 `q.wait_cv` 必须与 `q.wait_mu` 配对；predicate 是 queue/running 状态。
 
