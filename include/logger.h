@@ -363,6 +363,10 @@ LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
  * backend. Concurrent calls may also be included; queue-full drops are NOT
  * accepted records. Successful sync logging calls preceding flush are covered.
  * Returns 0, or -1 + errno. Earlier output/sync failures remain sticky.
+ * An executor lifecycle failure also terminates an in-flight wait with that
+ * error; it does not acknowledge or replay unfinished reservations. A caller
+ * entering after admission closes is rejected with ESHUTDOWN. Failure is not
+ * proof of quiescence: stop/join all borrowers before destroying the instance.
  * This is not a remote syslog persistence acknowledgement or an I/O timeout.
  * Explicit-instance lifetime must be protected by the caller throughout. */
 LOGGER_API int logger_flush_instance_status(logger_t *);

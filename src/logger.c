@@ -827,7 +827,17 @@ int logger_wait_for_output(logger_t *l)
 		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
 		if (rc)
 			return rc;
-		while (l->completed_pos - target > SIZE_MAX / 2) {
+		for (;;) {
+			/* A failed executor cannot promise this watermark. Check the
+			 * sticky error under the notifier's mutex, including after a
+			 * spurious wake. Never manufacture completion for a queue hole.
+			 */
+			int error = atomic_load_explicit(&l->lifecycle_error,
+						 memory_order_acquire);
+			if (error)
+				return -error;
+			if (l->completed_pos - target <= SIZE_MAX / 2)
+				break;
 			rc = pthread_cond_wait(&l->progress_cv,
 					       &l->progress_mu);
 			if (rc != 0)

@@ -340,6 +340,23 @@ void *logger_worker_main(void *p)
 		if (stop)
 			break;
 	}
+	/*
+	 * A reservation hole can leave completion behind when this executor
+	 * fails. Pair the sticky error with progress_mu before the final broadcast:
+	 * a waiter either sees the error or atomically waits before we notify it.
+	 * wait_mu is no longer held; instance locks must never nest here.
+	 * This notification is not a lifetime release: destruction still joins us.
+	 */
+	if (atomic_load_explicit(&l->lifecycle_error, memory_order_acquire)) {
+		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
+		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
+
+		/* A second synchronization failure cannot erase the original error.
+		 * Never broadcast without ownership after a failed acquisition.
+		 */
+		if (!rc)
+			(void)pthread_cond_broadcast(&l->progress_cv);
+	}
 	logger_scope_worker_leave();
 	return NULL;
 }
