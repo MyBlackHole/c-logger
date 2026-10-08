@@ -99,6 +99,20 @@ void logger_lockdep_release(logger_lock_class_t class_id, const void *lock)
 	--state.depth;
 }
 
+void logger_lockdep_abandon(logger_lock_class_t class_id, const void *lock)
+{
+	/* 锁状态已不确定且调用方已封闭对象；移除线程记账，避免污染后续锁序。 */
+	for (unsigned i = 0; i < state.depth; ++i) {
+		if (state.held[i].class_id == class_id &&
+		    state.held[i].lock == lock) {
+			for (unsigned j = i + 1; j < state.depth; ++j)
+				state.held[j - 1] = state.held[j];
+			--state.depth;
+			return;
+		}
+	}
+}
+
 void logger_lockdep_assert_held(logger_lock_class_t class_id, const void *lock)
 {
 	for (unsigned i = 0; i < state.depth; ++i) {

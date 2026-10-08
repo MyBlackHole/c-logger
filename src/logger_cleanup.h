@@ -128,6 +128,7 @@ __cleanup_must_check_ptr(const volatile void *value)
  * guard class 使用独立结构保存资源和错误，而不是编码成 error pointer。
  * 这样保留 Linux 的源码级 ownership 语义，同时避免把内核 ERR_PTR 约定带入用户态。
  */
+/* DEFINE_GUARD 不检查获取表达式；仅可用于满足不可失败契约的资源。 */
 #define DEFINE_GUARD(_name, _type, _lock, _unlock)                          \
 	typedef _type lock_##_name##_t;                                        \
 	typedef struct {                                                        \
@@ -205,6 +206,7 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 #define guard(_name) CLASS(_name, __cleanup_unique(__cleanup_guard_))
 #define ACQUIRE(_name, _var) CLASS(_name, _var)
 #define ACQUIRE_ERR(_name, _var) class_##_name##_lock_err((_var))
+#define RELEASE_ERR(_name, _var) class_##_name##_release((_var))
 
 #define __scoped_guard(_name, _once, ...)                                   \
 	for (int _once = 1; _once; _once = 0)                                \
@@ -258,19 +260,29 @@ DEFINE_CLASS(fd, int, if (_T >= 0) __cleanup_release_fd(_T), _fd, int _fd)
 DEFINE_CLASS(file, FILE *, if (_T) __cleanup_release_file(_T), _file,
 	     FILE *_file)
 
-/*
- * pthread mutex guard：
- * - pthread_mutex：用于原代码本来就把 lock/unlock 视为不失败的内部路径；
- * - pthread_mutex_checked：保留 pthread_mutex_lock() 错误并通过 ACQUIRE_ERR() 返回；
- * - pthread_mutex_try：用于 trylock，失败时不会执行 unlock。
- *
- * global/Audit 多锁路径有额外 lock order 与 cancellation 语义，不应机械替换成这些 guard。
- */
-DEFINE_GUARD(pthread_mutex, pthread_mutex_t *,
-	     (void)pthread_mutex_lock(_T),
-	     (void)pthread_mutex_unlock(_T))
+/* pthread mutex 只生成可检查获取结果的 guard。 */
+typedef pthread_mutex_t *lock_pthread_mutex_t;
+typedef struct {
+	pthread_mutex_t *resource;
+	int err;
+} class_pthread_mutex_t;
+static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void
+class_pthread_mutex_destructor(class_pthread_mutex_t *__guard)
+{
+	if (!__guard->err)
+		(void)pthread_mutex_unlock(__guard->resource);
+}
 DEFINE_GUARD_COND(pthread_mutex, _checked, pthread_mutex_lock(_T))
 DEFINE_GUARD_COND(pthread_mutex, _try, pthread_mutex_trylock(_T))
+static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int
+class_pthread_mutex_release(class_pthread_mutex_t *__guard)
+{
+	if (__guard->err)
+		return __guard->err;
+	__guard->err = -ECANCELED;
+	int rc = pthread_mutex_unlock(__guard->resource);
+	return rc ? -rc : 0;
+}
 
 static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_mutex_lock(pthread_mutex_t *mu, logger_lock_class_t class_id)
@@ -290,20 +302,40 @@ __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
 
 	if (!rc)
 		logger_lockdep_release(class_id, mu);
+	else
+		logger_lockdep_abandon(class_id, mu);
 	return rc;
 }
 
-/*
- * Instance/Console guards carry an explicit lock class. Do not hide class
- * selection in the generic pthread_mutex guard: lockdep review must be able to
- * see whether a call site is emit/progress/queue-wait/console.
+/* 实例锁和 Console guard 必须显式携带锁类；获取与释放错误由调用点检查。
+ * cleanup 析构只作为早退兜底，不能替代 RELEASE_ERR 的错误传播。
  */
 #define DEFINE_LOCKDEP_MUTEX_GUARD(_name, _class_id)                         \
-	DEFINE_GUARD(_name, pthread_mutex_t *,                                \
-		     (void)__cleanup_lockdep_mutex_lock(_T, _class_id),          \
-		     (void)__cleanup_lockdep_mutex_unlock(_T, _class_id))        \
+	typedef pthread_mutex_t *lock_##_name##_t;                             \
+	typedef struct {                                                        \
+		pthread_mutex_t *resource;                                      \
+		int err;                                                         \
+	} class_##_name##_t;                                                   \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                       \
+	class_##_name##_destructor(class_##_name##_t *__guard)                 \
+	{                                                                      \
+		if (__guard->err)                                               \
+			return;                                                    \
+		(void)__cleanup_lockdep_mutex_unlock(__guard->resource,           \
+						     _class_id);           \
+	}                                                                      \
 	DEFINE_GUARD_COND(_name, _checked,                                   \
-			  __cleanup_lockdep_mutex_lock(_T, _class_id))
+			  __cleanup_lockdep_mutex_lock(_T, _class_id))             \
+	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                        \
+	class_##_name##_release(class_##_name##_t *__guard)                    \
+	{                                                                      \
+		if (__guard->err)                                               \
+			return __guard->err;                                      \
+		__guard->err = -ECANCELED;                                      \
+		int __rc = __cleanup_lockdep_mutex_unlock(__guard->resource,     \
+							 _class_id);      \
+		return __rc ? -__rc : 0;                                        \
+	}
 
 DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_emit, LOGGER_LOCK_INSTANCE_EMIT)
 DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_progress, LOGGER_LOCK_INSTANCE_PROGRESS)

@@ -17,6 +17,7 @@
 #define COLOR_MASK 3u
 static _Atomic unsigned g_config = (CONSOLE_NORMAL << COLOR_BITS) |
 				   CONSOLE_COLOR_AUTO;
+static _Atomic int g_console_lock_error;
 static pthread_mutex_t g_console_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static int finish(logger_scope_t *scope, int rc)
@@ -125,6 +126,10 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 {
 	if (!fmt)
 		return -EINVAL;
+	int lock_error = atomic_load_explicit(&g_console_lock_error,
+					      memory_order_acquire);
+	if (lock_error)
+		return -lock_error;
 	ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 	if (rc)
@@ -143,6 +148,14 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 	int flush = fflush(out);
 	if (!rc && flush)
 		rc = -(errno ? errno : EIO);
+	int unlock_rc = RELEASE_ERR(pthread_mutex_console,
+				    &console_guard);
+	if (unlock_rc) {
+		atomic_store_explicit(&g_console_lock_error, -unlock_rc,
+				      memory_order_release);
+		if (!rc)
+			rc = unlock_rc;
+	}
 	return rc;
 }
 
@@ -212,6 +225,12 @@ int console_debug_source(const char *file, int line, const char *func,
 				rc = -EOVERFLOW;
 		}
 		if (!rc) {
+			int lock_error = atomic_load_explicit(
+				&g_console_lock_error, memory_order_acquire);
+			if (lock_error)
+				rc = -lock_error;
+		}
+		if (!rc) {
 			ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
 			rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 			if (!rc) {
@@ -220,6 +239,16 @@ int console_debug_source(const char *file, int line, const char *func,
 				int flush = fflush(stderr);
 				if (!rc && flush)
 					rc = -(errno ? errno : EIO);
+				int unlock_rc = RELEASE_ERR(
+					pthread_mutex_console,
+					&console_guard);
+				if (unlock_rc) {
+					atomic_store_explicit(&g_console_lock_error,
+							      -unlock_rc,
+							      memory_order_release);
+					if (!rc)
+						rc = unlock_rc;
+				}
 			}
 		}
 	}

@@ -185,18 +185,42 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 
 	if (!l->async_mode) {
 		(void)logger_emit_status(l, &m, 0);
-	} else if (logger_queue_push(&l->q, &m)) {
-		atomic_fetch_add_explicit(&l->enqueued, 1,
-					  memory_order_relaxed);
-		update_high_watermark(l);
-	} else if (l->overflow[lv] == LOGGER_OVERFLOW_SYNC) {
-		/* sync fallback 不是 queue drop；实际 backend 结果由独立 I/O metrics 记录。 */
-		atomic_fetch_add_explicit(&l->sync_fallbacks, 1,
-					  memory_order_relaxed);
-		(void)logger_emit_status(l, &m, 0);
 	} else {
-		atomic_fetch_add_explicit(&l->dropped_by_level[lv], 1,
-					  memory_order_relaxed);
+		int push_rc = logger_queue_push(&l->q, &m);
+		if (push_rc > 0) {
+			atomic_fetch_add_explicit(&l->enqueued, 1,
+						  memory_order_relaxed);
+			update_high_watermark(l);
+		} else if (push_rc < 0) {
+			/* record 已发布；通知失败后不能回滚 MPSC slot，只能停止接纳。 */
+			int error = -push_rc;
+			atomic_fetch_add_explicit(&l->enqueued, 1,
+						  memory_order_relaxed);
+			update_high_watermark(l);
+			logger_note_io_error(l, error);
+			logger_note_lifecycle_error(l, error);
+			int wait_error = logger_queue_wait_error(&l->q);
+			if (wait_error) {
+				logger_note_synchronization_error(l, wait_error);
+			} else {
+				int wake_rc = logger_queue_wake_force(&l->q);
+				if (wake_rc) {
+					logger_note_lifecycle_error(l, -wake_rc);
+					wait_error = logger_queue_wait_error(&l->q);
+					if (wait_error)
+						logger_note_synchronization_error(l,
+									  wait_error);
+				}
+			}
+		} else if (l->overflow[lv] == LOGGER_OVERFLOW_SYNC) {
+			/* 同步回退不计入队列丢弃，I/O 结果由独立指标记录。 */
+			atomic_fetch_add_explicit(&l->sync_fallbacks, 1,
+						  memory_order_relaxed);
+			(void)logger_emit_status(l, &m, 0);
+		} else {
+			atomic_fetch_add_explicit(&l->dropped_by_level[lv], 1,
+						  memory_order_relaxed);
+		}
 	}
 }
 void logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
@@ -285,11 +309,24 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
+	int sync_error = atomic_load_explicit(&l->synchronization_error,
+					      memory_order_acquire);
+	if (!sync_error && state->queue_ready)
+		sync_error = logger_queue_wait_error(&l->q);
+	if (sync_error) {
+		logger_ctor_note_proof_error(l, sync_error);
+		return -sync_error;
+	}
 
 	if (state->worker_started) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
-		if (state->queue_ready)
-			logger_queue_wake_force(&l->q);
+		if (state->queue_ready) {
+			int wake_rc = logger_queue_wake_force(&l->q);
+			if (wake_rc) {
+				logger_ctor_note_proof_error(l, wake_rc);
+				return wake_rc;
+			}
+		}
 		int join_rc = pthread_join(l->worker, NULL);
 		if (join_rc) {
 			logger_ctor_note_proof_error(l, join_rc);
@@ -389,6 +426,7 @@ static logger_t *create_logger(const logger_config_t *input,
 	atomic_init(&l->failed_records, 0);
 	atomic_init(&l->first_error, 0);
 	atomic_init(&l->lifecycle_error, 0);
+	atomic_init(&l->synchronization_error, 0);
 	for (unsigned i = 0; i < 6; ++i) {
 		atomic_init(&l->dropped_by_level[i], 0);
 		l->overflow[i] = cfg.overflow[i];
@@ -567,16 +605,29 @@ static int dispose_body(logger_t *l)
 	if (!l)
 		return 0;
 
-	/* Linux lifetime rule: stop publication/execution first, prove every worker
-	 * and synchronization user is gone, then release dependent storage. A
-	 * lifecycle-proof failure intentionally leaks the partially retired object;
-	 * freeing it would turn an invariant failure into a possible UAF. */
+	/* 按生命周期顺序先停止发布和执行，再证明 worker 与同步对象无人使用，
+	 * 最后释放依赖存储。证明失败时保留半退役对象，避免把不变量错误变成 UAF。 */
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
+	int sync_error = atomic_load_explicit(&l->synchronization_error,
+					      memory_order_acquire);
+	if (!sync_error && l->async_mode)
+		sync_error = logger_queue_wait_error(&l->q);
+	if (sync_error) {
+		logger_note_lifecycle_error(l, sync_error);
+		return -sync_error;
+	}
 
 	if (l->async_mode) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
-		logger_queue_wake_force(&l->q);
+		int wake_rc = logger_queue_wake_force(&l->q);
+		if (wake_rc) {
+			logger_note_lifecycle_error(l, -wake_rc);
+			int wait_error = logger_queue_wait_error(&l->q);
+			if (wait_error)
+				logger_note_synchronization_error(l, wait_error);
+			return wake_rc;
+		}
 		int join_rc = pthread_join(l->worker, NULL);
 		if (join_rc) {
 			int expected = 0;
@@ -586,6 +637,10 @@ static int dispose_body(logger_t *l)
 			return -join_rc;
 		}
 	}
+	sync_error = atomic_load_explicit(&l->synchronization_error,
+					 memory_order_acquire);
+	if (sync_error)
+		return -sync_error;
 
 	int lifecycle_error = atomic_load_explicit(
 		&l->lifecycle_error, memory_order_acquire);
@@ -600,8 +655,7 @@ static int dispose_body(logger_t *l)
 		 logger_sync_outputs_locked(l);
 	int unlock_rc = __cleanup_lockdep_mutex_unlock(&l->emit_mu, LOGGER_LOCK_INSTANCE_EMIT);
 	if (unlock_rc) {
-		atomic_store_explicit(&l->lifecycle_error, unlock_rc,
-				      memory_order_release);
+		logger_note_synchronization_error(l, unlock_rc);
 		return -unlock_rc;
 	}
 
@@ -781,6 +835,15 @@ int logger_reopen_instance(logger_t *l)
 			if (rc)
 				logger_note_io_error(l, -rc);
 		}
+		if (!ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard)) {
+			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
+						    &emit_guard);
+			if (unlock_rc) {
+				logger_note_synchronization_error(l, unlock_rc);
+				if (!rc)
+					rc = unlock_rc;
+			}
+		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
 }
@@ -791,12 +854,27 @@ int logger_file_offset(logger_t *l, uint64_t *out)
 		return -1;
 	int rc = !l || !out ? -EINVAL : 0;
 	if (!rc) {
+		int sync_error = atomic_load_explicit(
+			&l->synchronization_error, memory_order_acquire);
+		if (sync_error)
+			rc = -sync_error;
+	}
+	if (!rc) {
 		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (!rc)
 			rc = logger_file_offset_get(&l->file_backend, out) ?
 				     -(errno ? errno : EIO) :
 				     0;
+		if (!ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard)) {
+			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
+						    &emit_guard);
+			if (unlock_rc) {
+				logger_note_synchronization_error(l, unlock_rc);
+				if (!rc)
+					rc = unlock_rc;
+			}
+		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
 }
@@ -811,38 +889,82 @@ void logger_note_io_error(logger_t *l, int error)
 						      memory_order_relaxed);
 }
 
+void logger_note_lifecycle_error(logger_t *l, int error)
+{
+	if (!l || !error)
+		return;
+	if (error < 0)
+		error = -error;
+	int expected = 0;
+	(void)atomic_compare_exchange_strong_explicit(
+		&l->lifecycle_error, &expected, error, memory_order_release,
+		memory_order_relaxed);
+	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
+			      memory_order_release);
+	atomic_store_explicit(&l->running, 0, memory_order_release);
+}
+
+void logger_note_synchronization_error(logger_t *l, int error)
+{
+	if (!l || !error)
+		return;
+	if (error < 0)
+		error = -error;
+	int expected = 0;
+	(void)atomic_compare_exchange_strong_explicit(
+		&l->synchronization_error, &expected, error,
+		memory_order_release, memory_order_relaxed);
+	logger_note_lifecycle_error(l, error);
+}
+
 int logger_wait_for_output(logger_t *l)
 {
 	if (logger_process_is_child())
 		return -ECHILD;
 	if (!l)
 		return -EINVAL;
+	int sync_error = atomic_load_explicit(&l->synchronization_error,
+					      memory_order_acquire);
+	if (sync_error)
+		return -sync_error;
 	if (l->async_mode) {
-		/* 顺序由 reservation counter 定义，而不是 enqueued metrics。
-		 * snapshot 前已经 reserve、但尚未 publish 的 slot 也必须计入；
-		 * 慢 producer 不能被后续 record 的 completion 越过。 */
+		/* 顺序由 reservation counter 定义，而不是 enqueued 统计。
+		 * snapshot 前已 reserve、但尚未 publish 的 slot 也必须计入，
+		 * 慢 producer 不能被后续记录的完成位置越过。 */
 		size_t target = atomic_load_explicit(&l->q.enqueue_pos,
 						     memory_order_acquire);
 		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
 		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
 		if (rc)
 			return rc;
+		int result = 0;
 		for (;;) {
-			/* A failed executor cannot promise this watermark. Check the
-			 * sticky error under the notifier's mutex, including after a
-			 * spurious wake. Never manufacture completion for a queue hole.
-			 */
+			/* executor 失败后不能保证该 watermark。每次唤醒后都在
+			 * notifier mutex 下检查 sticky error，不能伪造队列空洞的完成状态。 */
 			int error = atomic_load_explicit(&l->lifecycle_error,
 						 memory_order_acquire);
-			if (error)
-				return -error;
+			if (error) {
+				result = -error;
+				break;
+			}
 			if (l->completed_pos - target <= SIZE_MAX / 2)
 				break;
 			rc = pthread_cond_wait(&l->progress_cv,
 					       &l->progress_mu);
-			if (rc != 0)
-				return -rc;
+			if (rc != 0) {
+				result = -rc;
+				break;
+			}
 		}
+		int unlock_rc = RELEASE_ERR(pthread_mutex_progress,
+					    &progress_guard);
+		if (unlock_rc) {
+			logger_note_synchronization_error(l, unlock_rc);
+			if (!result)
+				result = unlock_rc;
+		}
+		if (result)
+			return result;
 	}
 	int error = atomic_load_explicit(&l->first_error, memory_order_acquire);
 	return error ? -error : 0;
@@ -879,6 +1001,16 @@ int logger_flush_instance_status(logger_t *l)
 			sync_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 			if (!sync_rc)
 				sync_rc = logger_sync_outputs_locked(l);
+			if (!ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard)) {
+				int unlock_rc = RELEASE_ERR(
+					pthread_mutex_emit, &emit_guard);
+				if (unlock_rc) {
+					logger_note_synchronization_error(l,
+								  unlock_rc);
+					if (!sync_rc)
+						sync_rc = unlock_rc;
+				}
+			}
 		}
 		if (!rc)
 			rc = sync_rc;
@@ -1048,6 +1180,10 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 		return -EINVAL;
 	if (!(l->outputs & LOGGER_OUT_FILE))
 		return -ENOTSUP;
+	int sync_error = atomic_load_explicit(&l->synchronization_error,
+					      memory_order_acquire);
+	if (sync_error)
+		return -sync_error;
 	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 	if (rc)
@@ -1055,6 +1191,11 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 	logger_file_metrics_t snapshot = l->file_backend.metrics;
 	snapshot.current_size = (uint64_t)l->file_backend.current_size;
 	snapshot.detached = l->file_backend.detached;
+	rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+	if (rc) {
+		logger_note_synchronization_error(l, rc);
+		return rc;
+	}
 	*out = snapshot;
 	return 0;
 }
@@ -1077,10 +1218,25 @@ int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 	if (!rc && !(l->outputs & LOGGER_OUT_SYSLOG))
 		rc = -ENOTSUP;
 	if (!rc) {
+		int sync_error = atomic_load_explicit(
+			&l->synchronization_error, memory_order_acquire);
+		if (sync_error)
+			rc = -sync_error;
+	}
+	if (!rc) {
 		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
-		if (!rc)
-			*out = l->syslog_backend.metrics;
+		if (!rc) {
+			logger_syslog_metrics_t snapshot = l->syslog_backend.metrics;
+			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
+						    &emit_guard);
+			if (unlock_rc) {
+				logger_note_synchronization_error(l, unlock_rc);
+				rc = unlock_rc;
+			} else {
+				*out = snapshot;
+			}
+		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
 }

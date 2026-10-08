@@ -75,6 +75,8 @@ typedef struct {
 	_Atomic uint64_t wait_count;
 	_Atomic uint64_t producer_wake_signals;
 	_Atomic uint64_t force_wake_signals;
+	/* wait_mu 解锁失败后，无法证明 worker 已能继续运行或安全销毁。 */
+	_Atomic int wait_mu_error;
 	pthread_mutex_t wait_mu;
 	pthread_cond_t wait_cv;
 } logger_queue_t;
@@ -116,12 +118,15 @@ static inline void logger_queue_wait_disarm(logger_queue_t *q)
 
 int logger_queue_init(logger_queue_t *, size_t);
 int logger_queue_destroy(logger_queue_t *);
+/* 返回 1 表示入队成功，0 表示未入队，负值表示已发布但唤醒失败。 */
 int logger_queue_push(logger_queue_t *, const logger_message_t *);
 int logger_queue_try_pop(logger_queue_t *, logger_message_t *);
 size_t logger_queue_drain(logger_queue_t *, logger_message_t *, size_t);
 int logger_queue_empty(logger_queue_t *);
-void logger_queue_notify_if_waiting(logger_queue_t *);
-void logger_queue_wake_force(logger_queue_t *);
+/* 通知和强制唤醒均返回 0 或负 errno；负值不能被当作入队失败回滚。 */
+int logger_queue_notify_if_waiting(logger_queue_t *);
+int logger_queue_wake_force(logger_queue_t *);
+int logger_queue_wait_error(const logger_queue_t *);
 size_t logger_queue_depth(const logger_queue_t *);
 
 /* private benchmark/diagnostic helpers，不进入 public ABI。 */

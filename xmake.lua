@@ -599,6 +599,8 @@ if has_config("build_regression_tests") then
         {"audit_recovery_capacity", "tests/regression/test_audit_recovery_capacity.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
         {"sha256_only_regression", "tests/regression/test_sha256_only.c"},
+        {"lock_failure_regression", "tests/regression/test_lock_failure.c",
+            {"pthread_mutex_lock", "pthread_mutex_unlock", "pthread_cond_signal"}},
 
         -- Default-static parity needed by the full sanitizer profile.
         {"production_isolation_regression", "tests/regression/test_fault_isolation.c",
@@ -723,6 +725,23 @@ if has_config("build_regression_tests") then
     -- production no-op inline helpers in this test translation unit.
     target("lockdep_regression")
         add_defines("LOGGER_ENABLE_LOCKDEP=1")
+    target_end()
+
+    target("lock_failure_regression")
+        add_tests("normal_lock_path", {runargs = "normal", timeout = 15})
+        add_tests("emit_lock_failure", {runargs = "emit", timeout = 15})
+        add_tests("emit_unlock_failure",
+                  {runargs = "emit-unlock", timeout = 15})
+        add_tests("queue_notify_lock_failure",
+                  {runargs = "queue-notify", timeout = 15})
+        add_tests("queue_notify_signal_failure",
+                  {runargs = "queue-signal", timeout = 15})
+        add_tests("force_wake_lock_failure",
+                  {runargs = "force-wake", timeout = 15})
+        add_tests("audit_operation_lock_failure",
+                  {runargs = "audit", timeout = 15})
+        add_tests("audit_operation_unlock_failure",
+                  {runargs = "audit-unlock", timeout = 15})
     target_end()
 
     target("stderr_sigpipe_regression")

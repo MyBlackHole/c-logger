@@ -50,6 +50,8 @@ static pthread_mutex_t g_operation_mu = PTHREAD_MUTEX_INITIALIZER;
 static audit_runtime_t *g_runtime; /* operation mutex; never exposed to callers */
 static audit_status_t g_last_status;
 static _Atomic int g_phase = AUDIT_STATE_IDLE;
+static _Atomic int g_operation_error;
+static _Atomic int g_control_error;
 /* Reject a call delayed across shutdown/reinit, not merely while STOPPING. */
 static _Atomic uint64_t g_generation;
 static _Atomic int g_policy = AUDIT_FAIL_REPORT;
@@ -69,6 +71,13 @@ static int lock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
 {
 	if (logger_scope_busy())
 		return -EDEADLK;
+	int lock_error = class_id == LOGGER_LOCK_AUDIT_OPERATION ?
+			 atomic_load_explicit(&g_operation_error,
+					      memory_order_acquire) :
+			 atomic_load_explicit(&g_control_error,
+					      memory_order_acquire);
+	if (lock_error)
+		return -lock_error;
 	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, old_cancel);
 	if (rc)
 		return -rc;
@@ -81,29 +90,68 @@ static int lock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
 	return 0;
 }
 
-static void unlock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
-			 int old_cancel)
+static int unlock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
+			int old_cancel)
 {
 	int rc = pthread_mutex_unlock(mu);
-	if (!rc)
-		logger_lockdep_release(class_id, mu);
-	(void)pthread_setcancelstate(old_cancel, NULL);
+	if (rc) {
+		logger_lockdep_abandon(class_id, mu);
+		_Atomic int *error = class_id == LOGGER_LOCK_AUDIT_OPERATION ?
+				     &g_operation_error :
+				     &g_control_error;
+		int expected = 0;
+		(void)atomic_compare_exchange_strong_explicit(
+			error, &expected, rc, memory_order_release,
+			memory_order_relaxed);
+		atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+				      memory_order_release);
+		/* 所有权不确定时不恢复可取消状态，以免取消穿过仍持有的锁。 */
+		return -rc;
+	}
+	logger_lockdep_release(class_id, mu);
+	if (class_id == LOGGER_LOCK_AUDIT_CONTROL &&
+	    atomic_load_explicit(&g_operation_error, memory_order_acquire)) {
+		/* control 锁虽已释放，operation 锁解锁失败后仍可能由当前线程持有；
+		 * 保持取消禁用，避免待处理取消让线程带锁退出。 */
+		return -atomic_load_explicit(&g_operation_error,
+					     memory_order_relaxed);
+	}
+	rc = pthread_setcancelstate(old_cancel, NULL);
+	return rc ? -rc : 0;
 }
 
-static void operation_lock_nested(void)
+static int operation_lock_nested(void)
 {
+	/* 调用者持有 control；失败时不登记锁，也不得读取 g_runtime。 */
+	int error = atomic_load_explicit(&g_operation_error,
+					memory_order_acquire);
+	if (error)
+		return -error;
 	int rc = pthread_mutex_lock(&g_operation_mu);
-	if (!rc)
-		logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION,
-				       &g_operation_mu);
+	if (rc)
+		return -rc;
+	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION,
+			       &g_operation_mu);
+	return 0;
 }
 
-static void operation_unlock_nested(void)
+static int operation_unlock_nested(void)
 {
+	/* 解锁失败后状态不确定；封闭 Audit，保留 runtime 且拒绝后续锁操作。 */
 	int rc = pthread_mutex_unlock(&g_operation_mu);
-	if (!rc)
-		logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION,
+	if (rc) {
+		logger_lockdep_abandon(LOGGER_LOCK_AUDIT_OPERATION,
 				       &g_operation_mu);
+		int expected = 0;
+		(void)atomic_compare_exchange_strong_explicit(
+			&g_operation_error, &expected, rc, memory_order_release,
+			memory_order_relaxed);
+		atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+				      memory_order_release);
+		return -rc;
+	}
+	logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION, &g_operation_mu);
+	return 0;
 }
 
 static int admission_error(void)
@@ -140,8 +188,11 @@ static int lock_runtime(audit_runtime_t **runtime, int *old_cancel)
 	if (!error && !g_runtime)
 		error = ENODEV;
 	if (error) {
-		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-			     *old_cancel);
+		int unlock_rc = unlock_scope(
+			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			*old_cancel);
+		if (unlock_rc)
+			return unlock_rc;
 		return -error;
 	}
 	logger_lockdep_assert_held(LOGGER_LOCK_AUDIT_OPERATION,
@@ -460,24 +511,36 @@ int audit_init(const audit_config_t *c)
 			&old_cancel);
 	if (rc)
 		return result(rc);
-	operation_lock_nested();
+	rc = operation_lock_nested();
+	if (rc) {
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(rc ? rc : control_rc);
+	}
 	if (g_runtime) {
-		operation_unlock_nested();
-		unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
-			     old_cancel);
-		return result(-EALREADY);
+		int operation_rc = operation_unlock_nested();
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(operation_rc ? operation_rc :
+			      control_rc ? control_rc : -EALREADY);
 	}
 	if (atomic_load_explicit(&g_generation, memory_order_relaxed) ==
 	    UINT64_MAX) {
-		operation_unlock_nested();
-		unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
-			     old_cancel);
-		return result(-EOVERFLOW);
+		int operation_rc = operation_unlock_nested();
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(operation_rc ? operation_rc :
+			      control_rc ? control_rc : -EOVERFLOW);
 	}
+	rc = operation_unlock_nested();
+	if (rc) {
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(rc ? rc : control_rc);
+	}
+	atomic_fetch_add_explicit(&g_generation, 1, memory_order_release);
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STARTING,
 			      memory_order_release);
-	atomic_fetch_add_explicit(&g_generation, 1, memory_order_release);
-	operation_unlock_nested();
 
 	audit_runtime_t *candidate = NULL;
 	audit_config_t config;
@@ -487,31 +550,55 @@ int audit_init(const audit_config_t *c)
 	if (!rc)
 		rc = create_runtime(&config, &candidate);
 	if (!rc) {
-		operation_lock_nested();
+		rc = operation_lock_nested();
+		if (rc) {
+			atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+					      memory_order_release);
+			(void)dispose_runtime(candidate);
+			int control_rc = unlock_scope(
+				&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+				old_cancel);
+			return result(rc ? rc : control_rc);
+		}
 		g_runtime =
-			candidate; /* START and its checkpoint have succeeded */
+			candidate; /* START 与检查点成功后才发布会话。 */
 		atomic_store_explicit(&g_policy, config.failure_policy,
 				      memory_order_release);
+		rc = operation_unlock_nested();
+		if (rc) {
+			int control_rc = unlock_scope(
+				&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
+				old_cancel);
+			return result(rc ? rc : control_rc);
+		}
 		atomic_store_explicit(&g_phase, AUDIT_STATE_RUNNING,
 				      memory_order_release);
-		operation_unlock_nested();
 	} else {
 		audit_status_t failed = { 0 };
 		if (candidate)
 			snapshot_runtime(candidate, &failed);
-		/* Failed initialization never emits a fake STOP. Keep the original
-         * failure even if cleanup hits another error. */
+		/* 初始化失败不伪造 STOP；清理再失败也保留原始错误。 */
 		(void)dispose_runtime(candidate);
 		failed.state = AUDIT_STATE_IDLE;
 		failed.error_code = -rc;
-		operation_lock_nested();
-		g_last_status = failed;
-		atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE,
-				      memory_order_release);
-		operation_unlock_nested();
+		int status_rc = operation_lock_nested();
+		if (!status_rc) {
+			g_last_status = failed;
+			status_rc = operation_unlock_nested();
+		}
+		if (status_rc) {
+			g_last_status = failed;
+			atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+					      memory_order_release);
+		} else {
+			atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE,
+					      memory_order_release);
+		}
 	}
-	unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
-		     old_cancel);
+	int control_rc = unlock_scope(
+		&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+	if (!rc)
+		rc = control_rc;
 	return result(rc);
 }
 
@@ -527,10 +614,21 @@ int audit_shutdown_status(void)
 		return result(rc);
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
 			      memory_order_release);
-	operation_lock_nested(); /* drains the in-flight operation */
+	rc = operation_lock_nested();
+	if (rc) {
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(rc ? rc : control_rc);
+	}
 	audit_runtime_t *s = g_runtime;
-	g_runtime = NULL;
 	audit_status_t final = g_last_status;
+	int operation_rc = operation_unlock_nested();
+	if (operation_rc) {
+		int control_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(operation_rc ? operation_rc : control_rc);
+	}
+	g_runtime = NULL;
 	rc = 0;
 	if (s) {
 		if (s->health == AUDIT_STATE_IO_FAILED ||
@@ -550,19 +648,31 @@ int audit_shutdown_status(void)
 		}
 		snapshot_runtime(s, &final);
 	}
-	operation_unlock_nested();
-	int close_rc = dispose_runtime(s); /* still holding the control mutex */
+	int close_rc = dispose_runtime(s); /* 此时仍持有 control mutex。 */
 	if (!rc)
 		rc = close_rc;
 	final.state = AUDIT_STATE_IDLE;
 	if (rc)
 		final.error_code = -rc;
-	operation_lock_nested();
-	g_last_status = final;
-	atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE, memory_order_release);
-	operation_unlock_nested();
-	unlock_scope(&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL,
-		     old_cancel);
+	int status_rc = operation_lock_nested();
+	if (!status_rc) {
+		g_last_status = final;
+		status_rc = operation_unlock_nested();
+	}
+	if (status_rc) {
+		g_last_status = final;
+		atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+				      memory_order_release);
+		if (!rc)
+			rc = status_rc;
+	} else {
+		atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE,
+				      memory_order_release);
+	}
+	int control_rc = unlock_scope(
+		&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+	if (!rc)
+		rc = control_rc;
 	return result(rc);
 }
 
@@ -583,8 +693,11 @@ int audit_write(const audit_event_t *e)
 	rc = lock_runtime(&s, &old_cancel);
 	if (!rc) {
 		rc = write_runtime(s, e);
-		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-			     old_cancel);
+		int unlock_rc = unlock_scope(
+			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			old_cancel);
+		if (!rc)
+			rc = unlock_rc;
 	}
 	return result(rc);
 }
@@ -615,8 +728,13 @@ int audit_begin(audit_event_t *e)
 		*e = next;
 		rc = write_runtime(s, &next);
 	}
-	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-		     old_cancel);
+	{
+		int unlock_rc = unlock_scope(
+			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			old_cancel);
+		if (!rc)
+			rc = unlock_rc;
+	}
 	return result(rc);
 }
 
@@ -644,8 +762,13 @@ int audit_end(audit_event_t *e, audit_result_t outcome, int error_code)
 		*e = next;
 		rc = write_runtime(s, &next);
 	}
-	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-		     old_cancel);
+	{
+		int unlock_rc = unlock_scope(
+			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			old_cancel);
+		if (!rc)
+			rc = unlock_rc;
+	}
 	return result(rc);
 }
 
@@ -664,8 +787,13 @@ int audit_flush(void)
 			s); /* no re-append; repair the committed head */
 	else if (logger_flush_instance_status(s->logger))
 		rc = fail_runtime(s, AUDIT_STATE_IO_FAILED, -errno);
-	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-		     old_cancel);
+	{
+		int unlock_rc = unlock_scope(
+			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			old_cancel);
+		if (!rc)
+			rc = unlock_rc;
+	}
 	return result(rc);
 }
 
@@ -699,9 +827,9 @@ int audit_get_status(audit_status_t *out)
 		*out = g_last_status;
 	else
 		out->state = (audit_state_t)phase;
-	unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-		     old_cancel);
-	return 0;
+	rc = unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
+			  old_cancel);
+	return result(rc);
 }
 
 audit_failure_policy_t audit_failure_policy(void)
@@ -738,9 +866,12 @@ int audit_instance_id_copy(char out[33])
 	int old_cancel;
 	int rc = lock_runtime(&s, &old_cancel);
 	if (!rc) {
-		memcpy(out, s->instance_id, 33);
-		unlock_scope(&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
-			     old_cancel);
+		char copy[33];
+		memcpy(copy, s->instance_id, sizeof(copy));
+		rc = unlock_scope(&g_operation_mu,
+				  LOGGER_LOCK_AUDIT_OPERATION, old_cancel);
+		if (!rc)
+			memcpy(out, copy, sizeof(copy));
 	}
 	return result(rc);
 }

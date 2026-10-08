@@ -257,6 +257,7 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	atomic_init(&q->wait_count, 0);
 	atomic_init(&q->producer_wake_signals, 0);
 	atomic_init(&q->force_wake_signals, 0);
+	atomic_init(&q->wait_mu_error, 0);
 
 	int rc = pthread_mutex_init(&q->wait_mu, NULL);
 	if (rc != 0) {
@@ -280,6 +281,10 @@ int logger_queue_destroy(logger_queue_t *q)
 {
 	if (!q)
 		return -EINVAL;
+	int wait_error = atomic_load_explicit(&q->wait_mu_error,
+						     memory_order_acquire);
+	if (wait_error)
+		return -wait_error;
 
 	/* Lifetime proof comes before storage release. If either synchronization
 	 * object still has users, intentionally retain all queue storage rather than
@@ -298,43 +303,72 @@ int logger_queue_destroy(logger_queue_t *q)
 	return 0;
 }
 
-void logger_queue_notify_if_waiting(logger_queue_t *q)
+int logger_queue_notify_if_waiting(logger_queue_t *q)
 {
-	/*
-	 * Must follow slot.seq release publication. The probe itself is an acq_rel
-	 * RMW: if it precedes a later worker arm, that arm acquires the publication
-	 * chain; if it observes waiting=1, this producer enters the mutex-coupled
-	 * signal path.
-	 */
+	/* 必须位于 slot.seq 的 release 发布之后。probe 使用 acq_rel RMW：
+	 * 若它先于 worker 后续 arm，arm 会取得发布链；若读到 waiting=1，
+	 * producer 则进入与 wait_mu 配对的 signal 路径。 */
 	if (!logger_queue_wait_probe_after_publish(q))
-		return;
+		return 0;
 
-	/*
-	 * waiting remains 1 until the slow-path winner holds wait_mu. Therefore the
-	 * worker either rechecks and disarms without sleeping, or cond_wait()
-	 * atomically releases wait_mu before this producer clears + signals.
-	 */
-	guard(pthread_mutex_queue_wait)(&q->wait_mu);
-	if (!logger_queue_wait_claim_signal(q))
-		return;
+	/* 慢路径拿到 wait_mu 前 waiting 保持为 1。worker 因此要么复查后清除
+	 * 状态并继续运行，要么先由 cond_wait 原子释放 wait_mu，再由 producer 清除并唤醒。 */
+	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
+	if (rc)
+		return rc;
+	if (!logger_queue_wait_claim_signal(q)) {
+		rc = RELEASE_ERR(pthread_mutex_queue_wait, &wait_guard);
+		if (rc)
+			atomic_store_explicit(&q->wait_mu_error, -rc,
+					      memory_order_release);
+		return rc;
+	}
 
-	(void)pthread_cond_signal(&q->wait_cv);
-	atomic_fetch_add_explicit(&q->producer_wake_signals, 1,
-				  memory_order_relaxed);
+	rc = pthread_cond_signal(&q->wait_cv);
+	if (!rc)
+		atomic_fetch_add_explicit(&q->producer_wake_signals, 1,
+					  memory_order_relaxed);
+	else
+		rc = -rc;
+	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait,
+				    &wait_guard);
+	if (!rc)
+		rc = unlock_rc;
+	if (unlock_rc)
+		atomic_store_explicit(&q->wait_mu_error, -unlock_rc,
+				      memory_order_release);
+	return rc;
 }
 
-void logger_queue_wake_force(logger_queue_t *q)
+int logger_queue_wake_force(logger_queue_t *q)
 {
-	/*
-	 * stop/shutdown 不能依赖 producer-side waiting hint。
-	 * running 已关闭后始终发送一次强制 wake；即使 worker 尚未真正 sleep，
-	 * 同一 mutex + predicate recheck 也保证它不会随后睡死。
-	 */
-	guard(pthread_mutex_queue_wait)(&q->wait_mu);
+	/* stop/shutdown 不依赖 producer 的 waiting 提示。关闭 running 后发送强制唤醒；
+	 * 即使 worker 尚未真正睡眠，同一互斥锁和条件复查也能防止其随后睡死。 */
+	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
+	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
+	if (rc)
+		return rc;
 	logger_queue_wait_disarm(q);
-	(void)pthread_cond_signal(&q->wait_cv);
-	atomic_fetch_add_explicit(&q->force_wake_signals, 1,
-				  memory_order_relaxed);
+	rc = pthread_cond_signal(&q->wait_cv);
+	if (!rc)
+		atomic_fetch_add_explicit(&q->force_wake_signals, 1,
+					  memory_order_relaxed);
+	else
+		rc = -rc;
+	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait,
+				    &wait_guard);
+	if (!rc)
+		rc = unlock_rc;
+	if (unlock_rc)
+		atomic_store_explicit(&q->wait_mu_error, -unlock_rc,
+				      memory_order_release);
+	return rc;
+}
+
+int logger_queue_wait_error(const logger_queue_t *q)
+{
+	return atomic_load_explicit(&q->wait_mu_error, memory_order_acquire);
 }
 
 int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
@@ -366,8 +400,9 @@ int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 						  spill_index);
 				atomic_store_explicit(&slot->seq, pos + 1,
 						      memory_order_release);
-				logger_queue_notify_if_waiting(q);
-				return 1;
+				int notify_rc =
+					logger_queue_notify_if_waiting(q);
+				return notify_rc ? notify_rc : 1;
 			}
 		} else if (diff > SIZE_MAX / 2) {
 			queue_spill_put(q, spill_index);

@@ -121,7 +121,8 @@ static void pthread_guard_scope(void)
 	pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 
 	{
-		guard(pthread_mutex)(&mu);
+		ACQUIRE(pthread_mutex_checked, cleanup)(&mu);
+		CHECK(ACQUIRE_ERR(pthread_mutex_checked, &cleanup) == 0);
 		CHECK(pthread_mutex_trylock(&mu) == EBUSY);
 	}
 	CHECK(pthread_mutex_trylock(&mu) == 0);
@@ -138,6 +139,13 @@ static void pthread_guard_scope(void)
 		ACQUIRE(pthread_mutex_try, busy)(&mu);
 		CHECK(ACQUIRE_ERR(pthread_mutex_try, &busy) == -EBUSY);
 	}
+	CHECK(pthread_mutex_unlock(&mu) == 0);
+	{
+		ACQUIRE(pthread_mutex_checked, released)(&mu);
+		CHECK(ACQUIRE_ERR(pthread_mutex_checked, &released) == 0);
+		CHECK(RELEASE_ERR(pthread_mutex, &released) == 0);
+	}
+	CHECK(pthread_mutex_trylock(&mu) == 0);
 	CHECK(pthread_mutex_unlock(&mu) == 0);
 	CHECK(pthread_mutex_destroy(&mu) == 0);
 }
