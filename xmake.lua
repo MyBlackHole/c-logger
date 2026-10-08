@@ -720,11 +720,29 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
-    -- test_lockdep.c must see the same debug contract as the linked regression
-    -- support archive; otherwise logger_lockdep.h intentionally compiles to
-    -- production no-op inline helpers in this test translation unit.
+    -- test_lockdep.c 必须与链接的回归支持库使用相同的调试契约；否则
+    -- logger_lockdep.h 会在该测试翻译单元中编译为生产用空操作内联函数。
     target("lockdep_regression")
         add_defines("LOGGER_ENABLE_LOCKDEP=1")
+        add_ldflags("-Wl,--wrap=pthread_mutex_unlock", {force = true})
+        add_tests("real_recursive", {runargs = "real-recursive", timeout = 10})
+        add_tests("real_abba", {runargs = "real-abba", timeout = 10})
+        add_tests("real_unlock_order", {runargs = "real-unlock", timeout = 10})
+        add_tests("mutex_trylock_failure",
+                  {runargs = "mutex-trylock", timeout = 10})
+        add_tests("trylock_success_paths",
+                  {runargs = "trylock-success", timeout = 10})
+        add_tests("trylock_success_order",
+                  {runargs = "trylock-success-order", timeout = 10})
+        add_tests("trywrlock_success_order",
+                  {runargs = "trywrlock-success-order", timeout = 10})
+        add_tests("rwlock_transitions", {runargs = "rwlock", timeout = 10})
+        add_tests("rwlock_trywrite_failure",
+                  {runargs = "rwlock-trywrite", timeout = 10})
+        add_tests("thread_local_tracking",
+                  {runargs = "thread-local", timeout = 10})
+        add_tests("cond_wait_reacquire",
+                  {runargs = "cond-wait", timeout = 10})
     target_end()
 
     target("lock_failure_regression")

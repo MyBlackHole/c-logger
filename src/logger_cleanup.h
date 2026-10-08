@@ -287,7 +287,19 @@ class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_mutex_lock(pthread_mutex_t *mu, logger_lock_class_t class_id)
 {
+	logger_lockdep_check_acquire(class_id, mu);
 	int rc = pthread_mutex_lock(mu);
+
+	if (!rc)
+		logger_lockdep_acquire(class_id, mu);
+	return rc;
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_mutex_trylock(pthread_mutex_t *mu,
+				logger_lock_class_t class_id)
+{
+	int rc = pthread_mutex_trylock(mu);
 
 	if (!rc)
 		logger_lockdep_acquire(class_id, mu);
@@ -298,12 +310,58 @@ static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
 			       logger_lock_class_t class_id)
 {
+	logger_lockdep_check_release(class_id, mu);
 	int rc = pthread_mutex_unlock(mu);
 
 	if (!rc)
 		logger_lockdep_release(class_id, mu);
 	else
 		logger_lockdep_abandon(class_id, mu);
+	return rc;
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_rwlock_lock(pthread_rwlock_t *rw,
+			      int (*lock_fn)(pthread_rwlock_t *))
+{
+	logger_lockdep_check_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
+	int rc = lock_fn(rw);
+	if (!rc)
+		logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
+	return rc;
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_rwlock_rdlock(pthread_rwlock_t *rw)
+{
+	return __cleanup_lockdep_rwlock_lock(rw, pthread_rwlock_rdlock);
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_rwlock_wrlock(pthread_rwlock_t *rw)
+{
+	return __cleanup_lockdep_rwlock_lock(rw, pthread_rwlock_wrlock);
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_rwlock_trywrlock(pthread_rwlock_t *rw)
+{
+	int rc = pthread_rwlock_trywrlock(rw);
+
+	if (!rc)
+		logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
+	return rc;
+}
+
+static CLEANUP_ALWAYS_INLINE int
+__cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
+{
+	logger_lockdep_check_release(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
+	int rc = pthread_rwlock_unlock(rw);
+	if (!rc)
+		logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
+	else
+		logger_lockdep_abandon(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	return rc;
 }
 
