@@ -163,9 +163,8 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	size_t n;
 	int rc = 0;
 
-	/* The acknowledged synchronous API (also used by Audit) must reject a
-	 * failed/truncated envelope before any sink can observe partial output.
-	 * Ordinary logging and worker batches retain best-effort formatting. */
+	/* 同步确认接口（Audit 也使用）必须在任何输出端看到部分内容前
+	 * 拒绝格式错误或被截断的记录；普通日志和 worker 批次维持尽力语义。 */
 	if (force_sync) {
 		rc = logger_format_line_checked(l, m, line, sizeof(line), &n);
 		if (rc)
@@ -173,7 +172,26 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	} else {
 		n = logger_format_line(l, m, line, sizeof(line));
 	}
-	guard(pthread_mutex_emit)(&l->emit_mu);
+	int sync_error = atomic_load_explicit(&l->synchronization_error,
+					     memory_order_acquire);
+	if (sync_error) {
+		logger_note_io_error(l, sync_error);
+		atomic_fetch_add_explicit(&l->failed_records, 1,
+					  memory_order_relaxed);
+		atomic_fetch_add_explicit(&l->sync_completed, 1,
+					  memory_order_release);
+		return -sync_error;
+	}
+	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+	rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
+	if (rc) {
+		logger_note_io_error(l, -rc);
+		atomic_fetch_add_explicit(&l->failed_records, 1,
+					  memory_order_relaxed);
+		atomic_fetch_add_explicit(&l->sync_completed, 1,
+					  memory_order_release);
+		return rc;
+	}
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };
 		rc = stderr_writev_all(&v, 1);
@@ -190,6 +208,12 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 					n) != 0 &&
 		    rc == 0)
 			rc = -(errno ? errno : EIO);
+	}
+	int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+	if (unlock_rc) {
+		logger_note_synchronization_error(l, unlock_rc);
+		if (!rc)
+			rc = unlock_rc;
 	}
 	if (rc < 0) {
 		logger_note_io_error(l, -rc);
@@ -216,7 +240,14 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		workspace->vec[i].iov_len = workspace->lens[i];
 	}
 
-	guard(pthread_mutex_emit)(&l->emit_mu);
+	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+	int lock_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
+	if (lock_rc) {
+		memset(workspace->failed, 1, count);
+		logger_note_io_error(l, -lock_rc);
+		logger_note_lifecycle_error(l, -lock_rc);
+		goto account_batch;
+	}
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		memcpy(workspace->copy, workspace->vec,
 		       count * sizeof(*workspace->vec));
@@ -257,6 +288,15 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 			}
 		}
 	}
+	int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+	if (unlock_rc) {
+		memset(workspace->failed, 1, count);
+		logger_note_io_error(l, -unlock_rc);
+		logger_note_synchronization_error(l, unlock_rc);
+	}
+
+account_batch:
+	;
 	uint64_t bad = 0;
 	for (size_t i = 0; i < count; ++i)
 		bad += workspace->failed[i];
@@ -282,20 +322,46 @@ void *logger_worker_main(void *p)
 			atomic_fetch_add_explicit(&l->consumer_records, n,
 						  memory_order_relaxed);
 			emit_batch(l, workspace, n);
+			atomic_fetch_add_explicit(&l->async_completed, n,
+						  memory_order_release);
+			if (atomic_load_explicit(&l->synchronization_error,
+						 memory_order_acquire))
+				break;
 
 			{
-				guard(pthread_mutex_progress)(&l->progress_mu);
-				atomic_fetch_add_explicit(&l->async_completed, n,
-							  memory_order_release);
+				ACQUIRE(pthread_mutex_progress_checked, progress_guard)(
+					&l->progress_mu);
+				int lock_rc = ACQUIRE_ERR(
+					pthread_mutex_progress_checked,
+					&progress_guard);
+				if (lock_rc) {
+					logger_note_lifecycle_error(l, -lock_rc);
+					continue;
+				}
 				l->completed_pos = atomic_load_explicit(
 					&l->q.dequeue_pos, memory_order_acquire);
 				pthread_cond_broadcast(&l->progress_cv);
+				int unlock_rc = RELEASE_ERR(
+					pthread_mutex_progress,
+					&progress_guard);
+				if (unlock_rc) {
+					logger_note_synchronization_error(l,
+								  unlock_rc);
+					break;
+				}
 			}
 			continue;
 		}
 		int stop;
 		{
-			guard(pthread_mutex_queue_wait)(&l->q.wait_mu);
+			ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(
+				&l->q.wait_mu);
+			int lock_rc = ACQUIRE_ERR(
+				pthread_mutex_queue_wait_checked, &wait_guard);
+			if (lock_rc) {
+				logger_note_lifecycle_error(l, -lock_rc);
+				break;
+			}
 			/*
 			 * waiting 必须在持有 wait_mu 时 publish，并且 publish 后重新检查
 			 * queue/running。这样 producer 如果在任一窗口发布 record：
@@ -336,26 +402,33 @@ void *logger_worker_main(void *p)
 			stop = !atomic_load_explicit(&l->running,
 						     memory_order_acquire) &&
 			       logger_queue_empty(&l->q);
+			int unlock_rc = RELEASE_ERR(
+				pthread_mutex_queue_wait, &wait_guard);
+			if (unlock_rc) {
+				logger_note_synchronization_error(l, unlock_rc);
+				break;
+			}
 		}
 		if (stop)
 			break;
 	}
-	/*
-	 * A reservation hole can leave completion behind when this executor
-	 * fails. Pair the sticky error with progress_mu before the final broadcast:
-	 * a waiter either sees the error or atomically waits before we notify it.
-	 * wait_mu is no longer held; instance locks must never nest here.
-	 * This notification is not a lifetime release: destruction still joins us.
-	 */
+	/* executor 失败可能留下未完成的 reservation。最终广播前再次检查
+	 * progress_mu：等待者要么读到 sticky error，要么在互斥区内进入等待。
+	 * 此处不再持有 wait_mu，也不允许嵌套实例锁；销毁仍必须 join worker。 */
 	if (atomic_load_explicit(&l->lifecycle_error, memory_order_acquire)) {
 		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
 		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
 
-		/* A second synchronization failure cannot erase the original error.
-		 * Never broadcast without ownership after a failed acquisition.
-		 */
-		if (!rc)
+		/* 后续同步失败不能覆盖原错误；未取得锁时绝不广播。 */
+		if (!rc) {
 			(void)pthread_cond_broadcast(&l->progress_cv);
+			int unlock_rc = RELEASE_ERR(
+				pthread_mutex_progress, &progress_guard);
+			if (unlock_rc)
+				logger_note_synchronization_error(l, unlock_rc);
+		} else {
+			logger_note_lifecycle_error(l, -rc);
+		}
 	}
 	logger_scope_worker_leave();
 	return NULL;

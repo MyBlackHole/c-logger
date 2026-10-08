@@ -64,6 +64,9 @@ static int finish(global_scope_t *scope, int rc)
 		if (!error)
 			logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME,
 					       &g_lifetime_lock);
+		else
+			logger_lockdep_abandon(LOGGER_LOCK_GLOBAL_LIFETIME,
+					       &g_lifetime_lock);
 		if (!rc && error)
 			rc = -error;
 	}
@@ -71,6 +74,9 @@ static int finish(global_scope_t *scope, int rc)
 		error = pthread_mutex_unlock(&g_control_mu);
 		if (!error)
 			logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL,
+					       &g_control_mu);
+		else
+			logger_lockdep_abandon(LOGGER_LOCK_GLOBAL_CONTROL,
 					       &g_control_mu);
 		if (!rc && error)
 			rc = -error;

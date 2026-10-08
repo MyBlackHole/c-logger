@@ -125,6 +125,9 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y
 
+      - name: 检查互斥锁错误处理门禁
+        run: python3 scripts/check_lock_error_policy.py
+
       - name: Run complete static suite
         shell: bash
         run: xmake test -j1

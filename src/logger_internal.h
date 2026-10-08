@@ -67,6 +67,8 @@ struct logger {
 	/* Internal synchronization/lifecycle failure; positive errno, sticky.
 	 * Distinct from backend first_error because it gates safe teardown. */
 	_Atomic int lifecycle_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
+	/* 解锁失败后所有权不确定；销毁必须保留对象，不能再次操作该锁。 */
+	_Atomic int synchronization_error;
 	/* 异步 queue：q 拥有 compact slots 与预分配 spill pool。
 	 * producer/consumer 顺序由 slot.seq atomic publication 协议保证；
 	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
@@ -101,6 +103,8 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t);
 void logger_worker_workspace_destroy(logger_worker_workspace_t *);
 void *logger_worker_main(void *);
 void logger_note_io_error(logger_t *, int);
+void logger_note_lifecycle_error(logger_t *, int);
+void logger_note_synchronization_error(logger_t *, int);
 /* Caller already owns an explicit/global cancellation+lifetime scope.
  * Returns 0/-errno and only writes out after acquiring emit_mu. */
 int logger_file_metrics_snapshot(logger_t *, logger_file_metrics_t *);
