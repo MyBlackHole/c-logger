@@ -67,7 +67,8 @@ static int allowed_after(logger_lock_class_t held, logger_lock_class_t next)
 	return 0;
 }
 
-void logger_lockdep_acquire(logger_lock_class_t class_id, const void *lock)
+void logger_lockdep_check_acquire(logger_lock_class_t class_id,
+				  const void *lock)
 {
 	if ((unsigned)class_id >= LOGGER_LOCK_CLASS_NR || !lock)
 		violation("invalid acquire", class_id, lock);
@@ -83,12 +84,16 @@ void logger_lockdep_acquire(logger_lock_class_t class_id, const void *lock)
 	}
 	if (state.depth == LOGGER_LOCKDEP_MAX_HELD)
 		violation("held-lock stack overflow", class_id, lock);
-
+}
+void logger_lockdep_acquire(logger_lock_class_t class_id, const void *lock)
+{
+	logger_lockdep_check_acquire(class_id, lock);
 	state.held[state.depth++] =
 		(logger_lockdep_entry_t){ .class_id = class_id, .lock = lock };
 }
 
-void logger_lockdep_release(logger_lock_class_t class_id, const void *lock)
+void logger_lockdep_check_release(logger_lock_class_t class_id,
+				  const void *lock)
 {
 	if (!state.depth)
 		violation("release without acquire", class_id, lock);
@@ -96,6 +101,11 @@ void logger_lockdep_release(logger_lock_class_t class_id, const void *lock)
 	logger_lockdep_entry_t *top = &state.held[state.depth - 1];
 	if (top->class_id != class_id || top->lock != lock)
 		violation("non-LIFO/wrong-owner release", class_id, lock);
+}
+
+void logger_lockdep_release(logger_lock_class_t class_id, const void *lock)
+{
+	logger_lockdep_check_release(class_id, lock);
 	--state.depth;
 }
 

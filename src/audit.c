@@ -81,21 +81,19 @@ static int lock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
 	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, old_cancel);
 	if (rc)
 		return -rc;
-	rc = pthread_mutex_lock(mu);
+	rc = __cleanup_lockdep_mutex_lock(mu, class_id);
 	if (rc) {
 		(void)pthread_setcancelstate(*old_cancel, NULL);
 		return -rc;
 	}
-	logger_lockdep_acquire(class_id, mu);
 	return 0;
 }
 
 static int unlock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
 			int old_cancel)
 {
-	int rc = pthread_mutex_unlock(mu);
+	int rc = __cleanup_lockdep_mutex_unlock(mu, class_id);
 	if (rc) {
-		logger_lockdep_abandon(class_id, mu);
 		_Atomic int *error = class_id == LOGGER_LOCK_AUDIT_OPERATION ?
 				     &g_operation_error :
 				     &g_control_error;
@@ -108,7 +106,6 @@ static int unlock_scope(pthread_mutex_t *mu, logger_lock_class_t class_id,
 		/* 所有权不确定时不恢复可取消状态，以免取消穿过仍持有的锁。 */
 		return -rc;
 	}
-	logger_lockdep_release(class_id, mu);
 	if (class_id == LOGGER_LOCK_AUDIT_CONTROL &&
 	    atomic_load_explicit(&g_operation_error, memory_order_acquire)) {
 		/* control 锁虽已释放，operation 锁解锁失败后仍可能由当前线程持有；
@@ -127,21 +124,19 @@ static int operation_lock_nested(void)
 					memory_order_acquire);
 	if (error)
 		return -error;
-	int rc = pthread_mutex_lock(&g_operation_mu);
+	int rc = __cleanup_lockdep_mutex_lock(
+		&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION);
 	if (rc)
 		return -rc;
-	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION,
-			       &g_operation_mu);
 	return 0;
 }
 
 static int operation_unlock_nested(void)
 {
 	/* 解锁失败后状态不确定；封闭 Audit，保留 runtime 且拒绝后续锁操作。 */
-	int rc = pthread_mutex_unlock(&g_operation_mu);
+	int rc = __cleanup_lockdep_mutex_unlock(
+		&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION);
 	if (rc) {
-		logger_lockdep_abandon(LOGGER_LOCK_AUDIT_OPERATION,
-				       &g_operation_mu);
 		int expected = 0;
 		(void)atomic_compare_exchange_strong_explicit(
 			&g_operation_error, &expected, rc, memory_order_release,
@@ -150,7 +145,6 @@ static int operation_unlock_nested(void)
 				      memory_order_release);
 		return -rc;
 	}
-	logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION, &g_operation_mu);
 	return 0;
 }
 

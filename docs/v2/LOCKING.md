@@ -145,7 +145,7 @@ signal/broadcast 只是通知，不是状态本身。
 - Audit control/operation 多锁；
 - cancellation restore 与锁释放顺序本身属于 contract 的路径。
 
-## 8. lockdep-style assertions 的实现边界
+## 8. lockdep 检查与实现边界
 
 不能通过对 raw normal `pthread_mutex_t` 调 `pthread_mutex_trylock()` 来假装实现 `lockdep_assert_held()`：
 
@@ -153,18 +153,26 @@ signal/broadcast 只是通知，不是状态本身。
 - normal mutex 的 self-try/owner 语义不是内核 lockdep；
 - 可能改变程序状态或把 debug helper 变成同步操作。
 
-2.0 如实现 lockdep-style assertions，应使用**显式 debug ownership tracking**，例如仅 test/debug build 记录：
+当前实现使用**显式 debug ownership tracking**，仅在 test/debug build 记录：
 
 ```text
 lock class
-owner thread id
-held depth
-acquire sequence/order
+lock object 地址
+线程本地持锁栈与深度
+获取顺序
 ```
 
-production build 应零或极低成本。
+可能阻塞的 tracked lock 在 pthread 获取前执行无状态锁序检查，成功后登记；trylock
+先执行 pthread 操作，仅成功时检查并登记。unlock 在 pthread 操作前验证当前线程持锁
+顺序，只有解锁成功后才移除记账。`pthread_cond_wait()` 返回时 mutex 已重新获取，TLS
+记账在等待期间保持不变。
 
-第一阶段只冻结 lock matrix 和 assertion contract，不在本 PR 中重写所有 pthread mutex。
+生产构建通过 `LOGGER_ENABLE_LOCKDEP=0` 将检查与记账编译为空操作。此机制使用固定锁
+类别关系，不是完整 Linux lockdep，也不观察未接入包装的 pthread 锁。跟踪时机和覆盖
+范围详见 `docs/v2/LOCKDEP.md`。
+
+lockdep 仅接入已建模的锁类别，不要求把项目所有 pthread mutex 替换成新的通用锁抽象。
+未接入跟踪包装的 pthread 锁仍遵守其原有调用契约。
 
 ## 9. callback/reentry
 

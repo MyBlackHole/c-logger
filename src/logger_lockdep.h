@@ -21,6 +21,8 @@ typedef enum {
 
 #if LOGGER_ENABLE_LOCKDEP
 
+void logger_lockdep_check_acquire(logger_lock_class_t, const void *);
+void logger_lockdep_check_release(logger_lock_class_t, const void *);
 void logger_lockdep_acquire(logger_lock_class_t, const void *);
 void logger_lockdep_release(logger_lock_class_t, const void *);
 void logger_lockdep_abandon(logger_lock_class_t, const void *);
@@ -30,8 +32,22 @@ const char *logger_lockdep_class_name(logger_lock_class_t);
 
 #else
 
+static inline void logger_lockdep_check_acquire(logger_lock_class_t class_id,
+						 const void *lock)
+{
+	(void)class_id;
+	(void)lock;
+}
+
+static inline void logger_lockdep_check_release(logger_lock_class_t class_id,
+						 const void *lock)
+{
+	(void)class_id;
+	(void)lock;
+}
+
 static inline void logger_lockdep_acquire(logger_lock_class_t class_id,
-					   const void *lock)
+						   const void *lock)
 {
 	(void)class_id;
 	(void)lock;

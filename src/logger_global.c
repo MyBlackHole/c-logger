@@ -1,4 +1,5 @@
 #include "logger_internal.h"
+#include "logger_cleanup.h"
 #include "logger_lockdep.h"
 
 #include <errno.h>
@@ -60,24 +61,13 @@ static int finish(global_scope_t *scope, int rc)
 {
 	int error;
 	if (scope->lifetime_locked) {
-		error = pthread_rwlock_unlock(&g_lifetime_lock);
-		if (!error)
-			logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME,
-					       &g_lifetime_lock);
-		else
-			logger_lockdep_abandon(LOGGER_LOCK_GLOBAL_LIFETIME,
-					       &g_lifetime_lock);
+		error = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		if (!rc && error)
 			rc = -error;
 	}
 	if (scope->control_locked) {
-		error = pthread_mutex_unlock(&g_control_mu);
-		if (!error)
-			logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL,
-					       &g_control_mu);
-		else
-			logger_lockdep_abandon(LOGGER_LOCK_GLOBAL_CONTROL,
-					       &g_control_mu);
+		error = __cleanup_lockdep_mutex_unlock(
+			&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
 		if (!rc && error)
 			rc = -error;
 	}
@@ -118,9 +108,9 @@ static int begin(global_scope_t *scope)
 
 static int lock_control(global_scope_t *scope)
 {
-	int rc = pthread_mutex_lock(&g_control_mu);
+	int rc = __cleanup_lockdep_mutex_lock(
+		&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
 	if (!rc) {
-		logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_CONTROL, &g_control_mu);
 		scope->control_locked = 1;
 	}
 	return -rc;
@@ -150,10 +140,9 @@ static int pin(global_scope_t *scope, int allow_bootstrap)
 	 * admission 关闭后，持续的 metrics/set/reopen 调用不能继续加入 rwlock reader 流。
 	 * 已经延迟的调用最多进入一次，并在拿到 lifetime pin 后重新校验 ticket。
 	 */
-	int rc = pthread_rwlock_rdlock(&g_lifetime_lock);
+	int rc = __cleanup_lockdep_rwlock_rdlock(&g_lifetime_lock);
 	if (rc)
 		return -rc;
-	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, &g_lifetime_lock);
 	scope->lifetime_locked = 1;
 	if (ticket != atomic_load_explicit(&g_ticket, memory_order_acquire))
 		return -ESHUTDOWN;
@@ -197,7 +186,7 @@ int logger_init(const logger_config_t *cfg)
 				      memory_order_release);
 		return finish(&scope, rc);
 	}
-	rc = pthread_rwlock_wrlock(&g_lifetime_lock);
+	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
 		(void)logger_destroy_status(candidate);
 		enum global_phase rollback =
@@ -206,7 +195,6 @@ int logger_init(const logger_config_t *cfg)
 				      memory_order_release);
 		return finish(&scope, -rc);
 	}
-	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, &g_lifetime_lock);
 	scope.lifetime_locked = 1;
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
@@ -245,21 +233,17 @@ int logger_shutdown_status(void)
 	 * 即使没有 logger 对象，也必须先关闭 admission 并等待该 reader 离开。 */
 	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPING),
 			      memory_order_release);
-	rc = pthread_rwlock_wrlock(&g_lifetime_lock);
+	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
 		/* 尚未修改 pointer/resource，因此 acquisition 失败时可以重新开放 admission。 */
 		atomic_store_explicit(&g_ticket, current, memory_order_release);
 		return finish(&scope, -rc);
 	}
-	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, &g_lifetime_lock);
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
 	g_logger = NULL;
-	int lifetime_unlock = pthread_rwlock_unlock(&g_lifetime_lock);
-	if (!lifetime_unlock)
-		logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME,
-				       &g_lifetime_lock);
+	(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 	/* 整个 I/O、worker join、close 和 owner release 期间持续持有 control。 */
 	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
 	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
@@ -413,19 +397,18 @@ int logger_global_stop_for_clean_fork(void)
 	global_scope_t scope;
 	if (begin(&scope))
 		return -errno;
-	int rc = pthread_mutex_trylock(&g_control_mu);
+	int rc = __cleanup_lockdep_mutex_trylock(
+		&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
 	if (rc) {
 		(void)finish(&scope, -rc);
 		return -rc;
 	}
-	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_CONTROL, &g_control_mu);
 	scope.control_locked = 1;
-	rc = pthread_rwlock_trywrlock(&g_lifetime_lock);
+	rc = __cleanup_lockdep_rwlock_trywrlock(&g_lifetime_lock);
 	if (rc) {
 		(void)finish(&scope, -rc);
 		return -rc;
 	}
-	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, &g_lifetime_lock);
 	scope.lifetime_locked = 1;
 	logger_t *l = g_logger;
 	unsigned expected_objects = l ? 1u : 0u;
@@ -447,10 +430,7 @@ int logger_global_stop_for_clean_fork(void)
 				      with_phase(current, G_STOPPING),
 				      memory_order_release);
 		g_logger = NULL;
-		int unlock_rc = pthread_rwlock_unlock(&g_lifetime_lock);
-		if (!unlock_rc)
-			logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME,
-					       &g_lifetime_lock);
+		(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		scope.lifetime_locked = 0;
 		rc = logger_dispose_internal(l);
 		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
