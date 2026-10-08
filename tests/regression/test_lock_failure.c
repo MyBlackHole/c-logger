@@ -2,19 +2,20 @@
 #include "audit_support.h"
 #include "logger_internal.h"
 
-static pthread_mutex_t *fail_mutex;
-static pthread_mutex_t *failed_mutex;
-static pthread_mutex_t *fail_unlock_mutex;
-static pthread_mutex_t *captured_mutex;
-static pthread_cond_t *fail_signal_cv;
-static int fail_after;
-static int capture_lock_after;
-static int fail_unlock_once;
-static int fail_signal_once;
-static int lock_failed;
-static int unlock_failed;
-static int signal_failed;
-static int invalid_unlock;
+/* 故障注入只作用于触发 API 的测试线程，不干扰 worker 的真实锁操作。 */
+static _Thread_local pthread_mutex_t *fail_mutex;
+static _Thread_local pthread_mutex_t *failed_mutex;
+static _Thread_local pthread_mutex_t *fail_unlock_mutex;
+static _Thread_local pthread_mutex_t *captured_mutex;
+static _Thread_local pthread_cond_t *fail_signal_cv;
+static _Thread_local int fail_after;
+static _Thread_local int capture_lock_after;
+static _Thread_local int fail_unlock_once;
+static _Thread_local int fail_signal_once;
+static _Thread_local int lock_failed;
+static _Thread_local int unlock_failed;
+static _Thread_local int signal_failed;
+static _Thread_local int invalid_unlock;
 
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __real_pthread_mutex_unlock(pthread_mutex_t *);
