@@ -596,6 +596,7 @@ if has_config("build_regression_tests") then
         {"crypto_chain_tool", "tests/regression/crypto_chain_tool.c"},
         {"audit_record_regression", "tests/regression/test_audit_record.c"},
         {"audit_sequence_regression", "tests/regression/test_audit_sequence.c"},
+        {"audit_system_regression", "tests/regression/test_audit_system_records.c"},
         {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
         {"audit_recovery_capacity", "tests/regression/test_audit_recovery_capacity.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
@@ -840,6 +841,25 @@ if has_config("build_regression_tests") then
             "genesis-not-one", "wrap"
         }) do
             add_tests("audit_sequence_" .. scenario,
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("audit_system_regression")
+        for _, scenario in ipairs({
+            "ordinary-genesis", "valid-stop", "after-stop", "repeat-stop",
+            "restart-after-stop", "restart-without-stop",
+            "restart-after-stop-cross", "after-stop-cross",
+            "anchored-stop-restart",
+            "start-actor", "start-source", "start-resource",
+            "start-empty-resource", "start-operation", "start-txn",
+            "start-failure", "start-error", "start-detail",
+            "start-empty-detail", "start-attempt", "start-seq2",
+            "stop-actor", "stop-source", "stop-resource",
+            "stop-operation", "stop-txn", "stop-failure", "stop-error",
+            "stop-detail", "stop-empty-detail", "stop-attempt", "stop-seq1"
+        }) do
+            add_tests("audit_system_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
     target_end()

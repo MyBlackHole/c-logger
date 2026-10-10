@@ -317,7 +317,8 @@ static int validate_segment_chain(segment_t *files, size_t count,
 	 * begin later only when the supplied checkpoint proves an anchor. */
 	if (genesis &&
 	    (memcmp(files[root].first_prev, zero, sizeof(zero)) ||
-	     files[root].first.seq != 1u)) {
+	     files[root].first.seq != 1u ||
+	     !files[root].first_is_start)) {
 		rc = -EBADMSG;
 		goto out;
 	}

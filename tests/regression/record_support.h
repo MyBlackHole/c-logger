@@ -21,7 +21,18 @@ static inline record_fixture_t record_fixture_instance(
 	record_fixture_t r = { 0 };
 	char payload[AUDIT_PAYLOAD_MAX + 1u], h[65], previous[65];
 	audit_event_t e = audit_test_event(event);
-	e.detail = "ordinary metadata";
+	if (!strcmp(event, "AUDIT_START")) {
+		e.actor = "system";
+		e.source = "local";
+		e.resource = "app";
+		e.operation = "audit_start";
+	} else if (!strcmp(event, "AUDIT_STOP")) {
+		e.actor = "system";
+		e.source = "local";
+		e.resource = "audit";
+		e.operation = "audit_stop";
+	} else
+		e.detail = "ordinary metadata";
 	size_t used;
 	CHECK(audit_payload_encode(instance, seq, &e, payload,
 				   sizeof(payload) - 140u, &used) == 0);

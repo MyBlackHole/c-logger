@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 	for (unsigned i = 0; i < archives; ++i) {
 		record_fixture_t record =
 			record_fixture(AUDIT_INTEGRITY_SHA256, (uint64_t)i + 1u,
-				       previous, "CAPACITY");
+				       previous, i ? "CAPACITY" : "AUDIT_START");
 		char path[128];
 		archive_path(path, i);
 		record_write(path, record.data, record.length);

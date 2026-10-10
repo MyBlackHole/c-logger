@@ -23,7 +23,7 @@ static void make_records(const char *mode)
 	const char *instance[4] = {
 		record_instance, record_instance, record_instance, record_instance
 	};
-	const char *event[4] = { "EVENT", "EVENT", "EVENT", "EVENT" };
+	const char *event[4] = { "AUDIT_START", "EVENT", "EVENT", "EVENT" };
 
 	if (is_mode(mode, "valid-restart-cross") ||
 	    is_mode(mode, "switch-no-start") ||
@@ -64,16 +64,19 @@ static void make_records(const char *mode)
 	} else if (is_mode(mode, "start-not-one")) {
 		event[1] = "AUDIT_START";
 	} else if (is_mode(mode, "genesis-not-one")) {
+		event[0] = "EVENT"; /* invalid complete genesis */
 		seq[0] = 2;
 		seq[1] = 3;
 		seq[2] = 4;
 		seq[3] = 5;
 	} else if (is_mode(mode, "anchored-suffix")) {
+		event[0] = "EVENT"; /* checkpoint-authenticated retained tail */
 		seq[0] = 7;
 		seq[1] = 8;
 		seq[2] = 9;
 		seq[3] = 10;
 	} else if (is_mode(mode, "wrap")) {
+		event[0] = "EVENT"; /* anchored large historical sequence */
 		seq[0] = UINT64_MAX - 1u;
 		seq[1] = UINT64_MAX;
 		seq[2] = 1;

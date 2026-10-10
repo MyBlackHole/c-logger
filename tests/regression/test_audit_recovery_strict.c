@@ -43,7 +43,8 @@ static void scenario(const char *mode, audit_integrity_t alg)
 	const unsigned char zero[32] = { 0 };
 	for (size_t i = 0; i < 20; ++i)
 		records[i] = record_fixture(
-			alg, i + 1u, i ? records[i - 1u].hash : zero, "EVENT");
+			alg, i + 1u, i ? records[i - 1u].hash : zero,
+			i ? "EVENT" : "AUDIT_START");
 	record_series("app.audit.log", records, 0, 3);
 	audit_ckpt_t cp = { .algorithm = (uint32_t)alg,
 			    .seq = 1,

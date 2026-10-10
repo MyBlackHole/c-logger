@@ -16,7 +16,8 @@ typedef struct {
 	uint64_t seq;
 	uint64_t txn;
 	char instance[33];
-	int is_start; /* canonical AUDIT_START event, not arbitrary user text */
+	int is_start, is_stop;
+	int bad_system; /* a named system event violates its fixed fields */
 	unsigned char previous[32];
 	unsigned char hash[32];
 } audit_record_view_t;
@@ -28,7 +29,7 @@ typedef struct {
 typedef struct {
 	char instance[33];
 	uint64_t seq;
-	int seen;
+	int seen, stopped;
 } audit_sequence_cursor_t;
 int audit_sequence_advance(audit_sequence_cursor_t *,
 			   const audit_record_view_t *);
