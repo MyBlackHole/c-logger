@@ -97,6 +97,7 @@ int logger_dispose_internal(logger_t *);
 int logger_dispose_internal_tracked(logger_t *, int *released);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 int logger_global_stop_for_clean_fork(void);
+int logger_global_lifetime_broken(void);
 #endif
 int logger_file_offset(logger_t *, uint64_t *);
 int logger_emit_status(logger_t *, const logger_message_t *, int);
