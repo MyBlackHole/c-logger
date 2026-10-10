@@ -92,8 +92,14 @@ static inline audit_config_t audit_defaults_cpp(void)
  * audit_init also fails with EAGAIN when the kernel CRNG is not ready; it never
  * blocks indefinitely or falls back to weaker randomness for the instance ID. */
 LOGGER_API int audit_init(const audit_config_t *);
-/* Always releases the local runtime. Returns -1/errno if STOP, its checkpoint,
- * or an earlier uncertain log/crypto operation failed. The void API is a wrapper. */
+/* Normally releases the local runtime. A backend I/O/close error may be
+ * reported after final free, allowing a later audit_init(). If the private
+ * logger's lifetime proof fails (for example, mutex/cond destroy failure),
+ * Audit instead retains the entire unpublished runtime and file leases,
+ * permanently rejects new sessions and repeated shutdown, and exposes
+ * AUDIT_STATE_STOPPING with a sticky error_code until process exit.
+ * Returns -1/errno for STOP/checkpoint/older I/O errors as before.
+ * The void API is a wrapper. See docs/v2/AUDIT_RETIRE_OWNERSHIP.md. */
 LOGGER_API int audit_shutdown_status(void);
 LOGGER_API void audit_shutdown(void);
 
@@ -108,7 +114,9 @@ typedef enum {
 	AUDIT_STATE_CRYPTO_FAILED /* appended: previous enum values unchanged */
 } audit_state_t;
 /* Snapshot only, not a transaction receipt. STARTING/STOPPING/FORKED expose no
- * session counters. In IDLE the most recent shutdown/init-failure is retained.
+ * session counters. STOPPING may expose a sticky error_code for a failed
+ * private Logger final-release proof; no recovery is allowed in that process.
+ * In IDLE the most recent shutdown/init-failure is retained.
  * committed_seq means confirmed strict-log commit, NOT checkpoint success.
  * An IO_FAILED operation may still have written/persisted bytes.
  * CRYPTO_FAILED precedes output for that record and does not advance its seq. */
