@@ -620,7 +620,8 @@ int logger_global_stop_for_clean_fork(void)
 		}
 	}
 out:
-	int finish_rc = finish(&scope, rc);
-	return finish_rc && !rc ? -(errno ? errno : EIO) : rc;
+	if (finish(&scope, rc) && !rc)
+		return -(errno ? errno : EIO);
+	return rc;
 }
 #endif
