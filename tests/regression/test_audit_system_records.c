@@ -181,8 +181,9 @@ static void run_case(const char *mode)
 		audit_record_view_t end;
 		CHECK(audit_record_parse_line(records[count - 1u].data,
 						 records[count - 1u].length, &end) == 0);
+		off_t active_size = file_size("app.audit.log");
 		CHECK(recovered == 0 && cp.seq == end.seq &&
-		      cp.offset == file_size("app.audit.log") &&
+		      active_size >= 0 && cp.offset == (uint64_t)active_size &&
 		      !memcmp(cp.hash, records[count - 1u].hash, 32));
 		audit_ckpt_t retry = cp;
 		CHECK(audit_recover_set_at(dirfd, "app", "app.audit.log",
