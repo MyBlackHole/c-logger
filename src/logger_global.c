@@ -513,13 +513,24 @@ int logger_global_stop_for_clean_fork(void)
 				      with_phase(current, G_STOPPING),
 				      memory_order_release);
 		g_logger = NULL;
-		(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
+		int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		scope.lifetime_locked = 0;
-		rc = logger_dispose_internal(l);
-		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
-				      memory_order_release);
+		if (unlock_rc) {
+			global_lock_poison(unlock_rc);
+			scope.proof_error = unlock_rc;
+			rc = -unlock_rc;
+		} else {
+			int released = 0;
+			rc = logger_dispose_internal_tracked(l, &released);
+			if (!released)
+				global_lock_poison(rc < 0 ? -rc : EUCLEAN);
+			else
+				atomic_store_explicit(
+					&g_ticket, with_phase(current, G_STOPPED),
+					memory_order_release);
+		}
 	}
-	(void)finish(&scope, rc);
-	return rc;
+	int finish_rc = finish(&scope, rc);
+	return finish_rc && !rc ? -(errno ? errno : EIO) : rc;
 }
 #endif
