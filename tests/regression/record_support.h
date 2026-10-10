@@ -13,17 +13,17 @@ typedef struct {
 	unsigned char hash[32];
 } record_fixture_t;
 
-static inline record_fixture_t record_fixture(audit_integrity_t alg,
-					      uint64_t seq,
-					      const unsigned char prev[32],
-					      const char *event)
+static inline record_fixture_t record_fixture_instance(
+		audit_integrity_t alg, uint64_t seq,
+		const unsigned char prev[32], const char *event,
+		const char instance[33])
 {
 	record_fixture_t r = { 0 };
 	char payload[AUDIT_PAYLOAD_MAX + 1u], h[65], previous[65];
 	audit_event_t e = audit_test_event(event);
 	e.detail = "ordinary metadata";
 	size_t used;
-	CHECK(audit_payload_encode(record_instance, seq, &e, payload,
+	CHECK(audit_payload_encode(instance, seq, &e, payload,
 				   sizeof(payload) - 140u, &used) == 0);
 	audit_hash_hex(prev, previous);
 	CHECK(snprintf(payload + used, sizeof(payload) - used, " prev=%s",
@@ -36,6 +36,16 @@ static inline record_fixture_t record_fixture(audit_integrity_t alg,
 	CHECK(n > 0 && (size_t)n < sizeof(r.data));
 	r.length = (size_t)n;
 	return r;
+}
+
+/* The default fixture deliberately remains unchanged for existing tests.
+ * Semantic tests can opt into distinct session instance IDs. */
+static inline record_fixture_t record_fixture(audit_integrity_t alg,
+					      uint64_t seq,
+					      const unsigned char prev[32],
+					      const char *event)
+{
+	return record_fixture_instance(alg, seq, prev, event, record_instance);
 }
 
 static inline void record_write(const char *path, const void *data, size_t n)
