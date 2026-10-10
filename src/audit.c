@@ -357,13 +357,27 @@ static int checkpoint_runtime(audit_runtime_t *s)
 	return 0;
 }
 
+/* The submission state is an internal receipt, not a new public ABI.
+ * NOT_SUBMITTED: encoding/validation failed before the backend was entered.
+ * UNCERTAIN: backend was entered but strict sync was not confirmed.
+ * COMMITTED: strict log append succeeded, regardless of checkpoint outcome.
+ */
+typedef enum {
+	AUDIT_NOT_SUBMITTED = 0,
+	AUDIT_SUBMISSION_UNCERTAIN,
+	AUDIT_RECORD_COMMITTED
+} audit_submission_state_t;
+
 /* Called either on a hidden candidate owned by init, or under operation_mu.
  * Validation/capacity failures have no output effects and do not poison the
  * session. Crypto failure also precedes output, but latches CRYPTO_FAILED until
  * shutdown/reinit: it is not a business input error. Backend errors are uncertain.
  */
-static int write_runtime(audit_runtime_t *s, const audit_event_t *event)
+static int write_runtime(audit_runtime_t *s, const audit_event_t *event,
+			 audit_submission_state_t *submission)
 {
+	if (submission)
+		*submission = AUDIT_NOT_SUBMITTED;
 	if (s->health != AUDIT_STATE_RUNNING)
 		return -(s->error ? s->error : EIO);
 	if (s->seq == UINT64_MAX)
@@ -376,10 +390,16 @@ static int write_runtime(audit_runtime_t *s, const audit_event_t *event)
 	int rc = encode_event(s, event, next, line, sizeof(line), hash);
 	if (rc)
 		return rc;
+	/* Once we call the synchronous backend, an error may follow a partial
+	 * or complete write. Callers must not treat the candidate as unissued. */
+	if (submission)
+		*submission = AUDIT_SUBMISSION_UNCERTAIN;
 	rc = logger_log_sync_status(s->logger, LOGGER_INFO, "AUDIT", NULL, 0,
 				    NULL, "%s", line);
 	if (rc)
 		return fail_runtime(s, AUDIT_STATE_IO_FAILED, rc);
+	if (submission)
+		*submission = AUDIT_RECORD_COMMITTED;
 
 	/* Record commit precedes checkpoint commit. Never leave the in-memory head
      * behind a confirmed log append, even when offset/checkpoint work fails. */
@@ -490,7 +510,7 @@ static int create_runtime(const audit_config_t *c, audit_runtime_t **out)
 				.resource = c->name,
 				.operation = "audit_start",
 				.result = AUDIT_SUCCESS };
-	return write_runtime(s, &start);
+	return write_runtime(s, &start, NULL);
 }
 
 int audit_init(const audit_config_t *c)
@@ -638,7 +658,7 @@ int audit_shutdown_status(void)
 					       .resource = "audit",
 					       .operation = "audit_stop",
 					       .result = AUDIT_SUCCESS };
-			rc = write_runtime(s, &stop);
+			rc = write_runtime(s, &stop, NULL);
 		}
 		snapshot_runtime(s, &final);
 	}
@@ -686,7 +706,7 @@ int audit_write(const audit_event_t *e)
 	int old_cancel;
 	rc = lock_runtime(&s, &old_cancel);
 	if (!rc) {
-		rc = write_runtime(s, e);
+		rc = write_runtime(s, e, NULL);
 		int unlock_rc = unlock_scope(
 			&g_operation_mu, LOGGER_LOCK_AUDIT_OPERATION,
 			old_cancel);
@@ -717,10 +737,20 @@ int audit_begin(audit_event_t *e)
 	else if (!next.transaction_id && s->next_txn == UINT64_MAX)
 		rc = -EOVERFLOW;
 	else {
-		if (!next.transaction_id)
-			next.transaction_id = ++s->next_txn;
-		*e = next;
-		rc = write_runtime(s, &next);
+		/* Allocate tentatively: pure preflight failure must neither change
+		 * the caller's event nor consume an automatic transaction ID. */
+		int automatic = !next.transaction_id;
+		if (automatic)
+			next.transaction_id = s->next_txn + 1;
+		audit_submission_state_t submission;
+		rc = write_runtime(s, &next, &submission);
+		if (submission != AUDIT_NOT_SUBMITTED) {
+			if (automatic)
+				s->next_txn = next.transaction_id;
+			/* On an I/O error this is an attempted transaction ID, NOT
+			 * proof that the corresponding record was committed. */
+			*e = next;
+		}
 	}
 	{
 		int unlock_rc = unlock_scope(
@@ -753,8 +783,12 @@ int audit_end(audit_event_t *e, audit_result_t outcome, int error_code)
 	if (s->health != AUDIT_STATE_RUNNING)
 		rc = -s->error;
 	else {
-		*e = next;
-		rc = write_runtime(s, &next);
+		audit_submission_state_t submission;
+		rc = write_runtime(s, &next, &submission);
+		/* Even when the strict backend failed, the record may be on disk.
+		 * Expose the attempted RESULT fields for explicit reconciliation. */
+		if (submission != AUDIT_NOT_SUBMITTED)
+			*e = next;
 	}
 	{
 		int unlock_rc = unlock_scope(
