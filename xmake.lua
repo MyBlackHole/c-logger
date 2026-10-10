@@ -633,7 +633,9 @@ if has_config("build_regression_tests") then
             {"audit_checkpoint_persist_at", "logger_log_sync_status", "write", "fsync",
              "logger_file_offset"}},
         {"audit_lifecycle_regression", "tests/regression/test_audit_lifecycle.c",
-            {"logger_destroy_status", "logger_log_sync_status", "pthread_mutex_lock"}},
+            {"logger_destroy_status", "logger_log_sync_status", "pthread_mutex_lock",
+             "pthread_cond_destroy", "pthread_mutex_destroy",
+             "logger_file_close_status"}},
         {"checkpoint_io_regression", "tests/regression/test_checkpoint_io.c",
             {"write", "fsync", "close", "renameat"}},
         {"crypto_failure_regression", "tests/regression/test_crypto_failure.c",
@@ -830,6 +832,9 @@ if has_config("build_regression_tests") then
     target("audit_lifecycle_regression")
         for _, scenario in ipairs({
             "init-gate", "stop-gate", "teardown-race",
+            "dispose-cond", "dispose-mutex", "dispose-no-final-release",
+            "init-rollback-retain", "close-error-finalized",
+            "teardown-failure-race",
             "generation", "fork-guard", "cancel"
         }) do
             add_tests("audit_" .. scenario .. "_regression",

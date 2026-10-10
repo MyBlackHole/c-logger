@@ -48,6 +48,10 @@ typedef struct {
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_operation_mu = PTHREAD_MUTEX_INITIALIZER;
 static audit_runtime_t *g_runtime; /* operation mutex; never exposed to callers */
+/* The controller alone owns an unpublished runtime whose private logger
+ * failed its final-release proof. Never close its file leases or free it. */
+static audit_runtime_t *g_retired; /* g_control_mu; no new session while set */
+static _Atomic int g_retire_error; /* first lifetime-proof error, permanent */
 static audit_status_t g_last_status;
 static _Atomic int g_phase = AUDIT_STATE_IDLE;
 static _Atomic int g_operation_error;
@@ -219,13 +223,42 @@ static int generate_instance_id(char out[33])
 	return 0;
 }
 
+static int retire_error(void)
+{
+	int error = atomic_load_explicit(&g_retire_error, memory_order_acquire);
+	return error ? error : EUCLEAN;
+}
+
 static int dispose_runtime(audit_runtime_t *s)
 {
 	if (!s)
 		return 0;
-	/* The active/state logger_file reservations retain cooperative ownership
-     * until all output teardown finishes. */
-	int rc = logger_destroy_status(s->logger) ? -errno : 0;
+	logger_lockdep_assert_held(LOGGER_LOCK_AUDIT_CONTROL, &g_control_mu);
+
+	/* A failed public destroy is ambiguous: backend I/O may have failed after
+	 * final free, or a synchronization/lifetime proof may have failed before
+	 * it. Only the private final-release receipt distinguishes these cases. */
+	logger_destroy_receipt_reset();
+	int rc = logger_destroy_status(s->logger) ? -(errno ? errno : EIO) : 0;
+	if (!logger_destroy_receipt_read()) {
+		/* The logger may still use its backend and lock objects. Retain the
+		 * entire Audit runtime, including active/checkpoint file leases.
+		 * This is an irreversible terminal state, not a retryable close. */
+		int error = rc < 0 ? -rc : EUCLEAN;
+		g_retired = s;
+		int expected = 0;
+		(void)atomic_compare_exchange_strong_explicit(
+			&g_retire_error, &expected, error,
+			memory_order_release, memory_order_relaxed);
+		atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+					      memory_order_release);
+		return -error;
+	}
+	s->logger = NULL;
+
+	/* A failed close does not undo the logger's final release. All file
+	 * descriptors are invalidated before close(); keep the first I/O error,
+	 * but finalize every remaining Audit-owned lease and the runtime. */
 	int other = logger_file_close_status(&s->reserved_log);
 	if (!rc)
 		rc = other;
@@ -525,6 +558,14 @@ int audit_init(const audit_config_t *c)
 			&old_cancel);
 	if (rc)
 		return result(rc);
+	if (g_retired) {
+		/* A previous controller could not prove the private logger free.
+		 * Do not touch the operation lock or construct another candidate. */
+		int error = retire_error();
+		int unlock_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(unlock_rc ? unlock_rc : -error);
+	}
 	rc = operation_lock_nested();
 	if (rc) {
 		int control_rc = unlock_scope(
@@ -591,10 +632,11 @@ int audit_init(const audit_config_t *c)
 		audit_status_t failed = { 0 };
 		if (candidate)
 			snapshot_runtime(candidate, &failed);
-		/* 初始化失败不伪造 STOP；清理再失败也保留原始错误。 */
+		/* A failed candidate disposal may be a terminal lifetime failure.
+		 * Keep the original construction error for this invocation. */
 		(void)dispose_runtime(candidate);
-		failed.state = AUDIT_STATE_IDLE;
-		failed.error_code = -rc;
+		failed.state = g_retired ? AUDIT_STATE_STOPPING : AUDIT_STATE_IDLE;
+		failed.error_code = g_retired ? retire_error() : -rc;
 		int status_rc = operation_lock_nested();
 		if (!status_rc) {
 			g_last_status = failed;
@@ -602,6 +644,10 @@ int audit_init(const audit_config_t *c)
 		}
 		if (status_rc) {
 			g_last_status = failed;
+			atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+					      memory_order_release);
+		} else if (g_retired) {
+			/* Never overwrite the terminal retire state with IDLE. */
 			atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
 					      memory_order_release);
 		} else {
@@ -626,6 +672,14 @@ int audit_shutdown_status(void)
 			    &old_cancel);
 	if (rc)
 		return result(rc);
+	if (g_retired) {
+		/* Repeating shutdown is not proof of recovery or permission to
+		 * run the same destructor on a partially torn-down object. */
+		int error = retire_error();
+		int unlock_rc = unlock_scope(
+			&g_control_mu, LOGGER_LOCK_AUDIT_CONTROL, old_cancel);
+		return result(unlock_rc ? unlock_rc : -error);
+	}
 	atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
 			      memory_order_release);
 	rc = operation_lock_nested();
@@ -665,9 +719,18 @@ int audit_shutdown_status(void)
 	int close_rc = dispose_runtime(s); /* 此时仍持有 control mutex。 */
 	if (!rc)
 		rc = close_rc;
-	final.state = AUDIT_STATE_IDLE;
-	if (rc)
-		final.error_code = -rc;
+	if (g_retired) {
+		/* Even if an earlier log/checkpoint error is returned to the
+		 * original caller, the terminal failure remains observable. */
+		final.state = AUDIT_STATE_STOPPING;
+		final.error_code = retire_error();
+		if (!rc)
+			rc = -final.error_code;
+	} else {
+		final.state = AUDIT_STATE_IDLE;
+		if (rc)
+			final.error_code = -rc;
+	}
 	int status_rc = operation_lock_nested();
 	if (!status_rc) {
 		g_last_status = final;
@@ -679,6 +742,9 @@ int audit_shutdown_status(void)
 				      memory_order_release);
 		if (!rc)
 			rc = status_rc;
+	} else if (g_retired) {
+		atomic_store_explicit(&g_phase, AUDIT_STATE_STOPPING,
+				      memory_order_release);
 	} else {
 		atomic_store_explicit(&g_phase, AUDIT_STATE_IDLE,
 				      memory_order_release);
@@ -841,6 +907,10 @@ int audit_get_status(audit_status_t *out)
 	int phase = atomic_load_explicit(&g_phase, memory_order_acquire);
 	if (phase == AUDIT_STATE_STARTING || phase == AUDIT_STATE_STOPPING) {
 		out->state = (audit_state_t)phase;
+		/* A failed final-release proof is sticky and observable without
+		 * taking a lock potentially held by the broken runtime. */
+		out->error_code = atomic_load_explicit(
+			&g_retire_error, memory_order_acquire);
 		return 0; /* no partial candidate/session data is exposed */
 	}
 	int old_cancel;
