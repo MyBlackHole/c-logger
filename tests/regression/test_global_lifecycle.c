@@ -20,6 +20,8 @@ static int admission_only;
 static _Thread_local int fail_rw_unlock, fail_control_unlock;
 static _Thread_local int fail_join, fail_cond_destroy;
 static _Thread_local int capture_control;
+static _Thread_local pthread_t rejected_worker;
+static _Thread_local int saw_rejected_join;
 static pthread_mutex_t *control_mutex;
 int __real_fsync(int);
 int __wrap_fsync(int fd)
@@ -99,7 +101,9 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 	if (fail_join) {
 		int error = fail_join;
 		fail_join = 0;
-		return error; /* worker is not joined: final free is forbidden */
+		rejected_worker = thread;
+		saw_rejected_join = 1;
+		return error; /* production join failed: final free is forbidden */
 	}
 	return __real_pthread_join(thread, result);
 }
@@ -471,7 +475,11 @@ static void *verify_poisoned_controller(void *arg)
 
 static void release_proof_failure(const char *kind)
 {
-	logger_config_t cfg = config_for("old.log", 1);
+	/* Global lock failures do not need a worker; only join/queue destroy
+	 * tests create an asynchronous executor that may remain unjoined. */
+	int asynchronous = !strcmp(kind, "join") ||
+			   !strcmp(kind, "cond-destroy");
+	logger_config_t cfg = config_for("old.log", asynchronous);
 	int error = EIO;
 	int lock_uncertain = 0;
 
@@ -515,6 +523,14 @@ static void release_proof_failure(const char *kind)
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state));
 	CHECK(old_state == (lock_uncertain ?
 				PTHREAD_CANCEL_DISABLE : PTHREAD_CANCEL_ENABLE));
+	/* Production deliberately kept the object because its join failed.
+	 * Test-only: reap the exact rejected worker after asserting BROKEN;
+	 * never call logger_destroy again or reset the poisoned controller.
+	 * This gives TSan an actual thread-happens-before edge at process exit. */
+	if (!strcmp(kind, "join")) {
+		CHECK(saw_rejected_join);
+		CHECK(!__real_pthread_join(rejected_worker, NULL));
+	}
 	/* A failed unlock can still own a real lock; never try to clean up
 	 * or reinitialize this test process. Process exit reclaims it. */
 }
