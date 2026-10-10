@@ -91,6 +91,10 @@ struct logger {
  * move 给同步 logger。 */
 logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);
 int logger_dispose_internal(logger_t *);
+/* Private teardown receipt: released=1 only after object census release and
+ * final free, even when backend I/O returns an error. On any lifetime-proof
+ * failure released remains 0; callers must not publish a healthy successor. */
+int logger_dispose_internal_tracked(logger_t *, int *released);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 int logger_global_stop_for_clean_fork(void);
 #endif
