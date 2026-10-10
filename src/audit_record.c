@@ -113,6 +113,31 @@ static int quoted(cursor_t *c, int nonempty)
 	return -EBADMSG;
 }
 
+/* Compare canonical spelling including quotes; no decoded allocation. */
+static int token_equals(const char *begin, const char *end, const char *text)
+{
+	size_t n = strlen(text);
+	return (size_t)(end - begin) == n + 2u &&
+	       begin[0] == '"' && end[-1] == '"' &&
+	       !memcmp(begin + 1, text, n);
+}
+
+/* The START resource is the trusted Audit session name from configuration.
+ * Its spelling is a nonempty, unescaped safe basename; STOP uses "audit". */
+static int system_start_resource(const char *begin, const char *end)
+{
+	if (end - begin <= 2 || begin[0] != '"' || end[-1] != '"')
+		return 0;
+	for (const char *p = begin + 1; p < end - 1; ++p) {
+		if (!((*p >= '0' && *p <= '9') ||
+		      (*p >= 'a' && *p <= 'z') ||
+		      (*p >= 'A' && *p <= 'Z') || *p == '_' ||
+		      *p == '-' || *p == '.'))
+			return 0;
+	}
+	return 1;
+}
+
 int audit_record_parse_payload(const char *s, size_t n, int chained,
 			       audit_record_view_t *output)
 {
@@ -140,28 +165,66 @@ int audit_record_parse_payload(const char *s, size_t n, int chained,
 	const char *event = c.p;
 	if (quoted(&c, 1))
 		return -EBADMSG;
-	/* System lifecycle markers are serialized as unescaped canonical names.
-	 * This private semantic bit is only used to validate a session switch. */
-	static const char start[] = "\"AUDIT_START\"";
-	r.is_start = is_result && (size_t)(c.p - event) == sizeof(start) - 1u &&
-		     !memcmp(event, start, sizeof(start) - 1u);
-	if (literal(&c, " actor=") || quoted(&c, 0) ||
-	    literal(&c, " source=") || quoted(&c, 0) ||
-	    literal(&c, " resource=") || quoted(&c, 0) ||
-	    literal(&c, " operation=") || quoted(&c, 1))
+	/* Reserved system names remain recognizable even when a record
+	 * disguises one by changing phase or fixed metadata. Keep parsing
+	 * (and independent hash verification) separate from semantics. */
+	r.is_start = token_equals(event, c.p, "AUDIT_START");
+	r.is_stop = token_equals(event, c.p, "AUDIT_STOP");
+	if (literal(&c, " actor="))
 		return -EBADMSG;
+	const char *actor = c.p;
+	if (quoted(&c, 0))
+		return -EBADMSG;
+	const char *actor_end = c.p;
+	if (literal(&c, " source="))
+		return -EBADMSG;
+	const char *source = c.p;
+	if (quoted(&c, 0))
+		return -EBADMSG;
+	const char *source_end = c.p;
+	if (literal(&c, " resource="))
+		return -EBADMSG;
+	const char *resource = c.p;
+	if (quoted(&c, 0))
+		return -EBADMSG;
+	const char *resource_end = c.p;
+	if (literal(&c, " operation="))
+		return -EBADMSG;
+	const char *operation = c.p;
+	if (quoted(&c, 1))
+		return -EBADMSG;
+	const char *operation_end = c.p;
+
+	int success = 0, zero_error = 0, has_detail = 0;
 	if (is_result) {
 		if (literal(&c, " result="))
 			return -EBADMSG;
-		if (literal(&c, c.p < c.end && *c.p == 'S' ? "SUCCESS" :
-							     "FAILURE") ||
-		    literal(&c, " error=") || signed_error(&c))
+		success = c.p < c.end && *c.p == 'S';
+		if (literal(&c, success ? "SUCCESS" : "FAILURE") ||
+		    literal(&c, " error="))
 			return -EBADMSG;
+		const char *error = c.p;
+		if (signed_error(&c))
+			return -EBADMSG;
+		zero_error = c.p - error == 1 && *error == '0';
 	}
 	if ((size_t)(c.end - c.p) >= 8 && !memcmp(c.p, " detail=", 8)) {
+		has_detail = 1;
 		c.p += 8;
 		if (quoted(&c, 0))
 			return -EBADMSG;
+	}
+	if (r.is_start || r.is_stop) {
+		int valid_resource = r.is_start ?
+			system_start_resource(resource, resource_end) :
+			token_equals(resource, resource_end, "audit");
+		r.bad_system =
+			!is_result || r.txn || !success || !zero_error ||
+			has_detail || !valid_resource ||
+			!token_equals(actor, actor_end, "system") ||
+			!token_equals(source, source_end, "local") ||
+			!token_equals(operation, operation_end,
+				      r.is_start ? "audit_start" : "audit_stop");
 	}
 	if (chained) {
 		if (literal(&c, " prev=") || hex(&c, r.previous, 32))
@@ -187,11 +250,14 @@ int audit_sequence_advance(audit_sequence_cursor_t *cursor,
 {
 	if (!cursor || !record)
 		return -EINVAL;
-	if (!record->seq || (record->is_start && record->seq != 1))
+	if (!record->seq || record->bad_system ||
+	    (record->seq == 1 && !record->is_start) ||
+	    (record->is_start && record->seq != 1) ||
+	    (record->is_stop && record->seq == 1))
 		return -EBADMSG;
 	if (cursor->seen) {
 		if (!memcmp(cursor->instance, record->instance, 32)) {
-			if (cursor->seq == UINT64_MAX ||
+			if (cursor->stopped || cursor->seq == UINT64_MAX ||
 			    record->seq != cursor->seq + 1u)
 				return -EBADMSG;
 		} else if (!record->is_start || record->seq != 1) {
@@ -200,6 +266,7 @@ int audit_sequence_advance(audit_sequence_cursor_t *cursor,
 	}
 	memcpy(cursor->instance, record->instance, sizeof(cursor->instance));
 	cursor->seq = record->seq;
+	cursor->stopped = record->is_stop;
 	cursor->seen = 1;
 	return 0;
 }
