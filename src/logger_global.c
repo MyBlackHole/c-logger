@@ -302,14 +302,23 @@ int logger_shutdown_status(void)
 			-EIO); /* STARTING/STOPPING 完全由 lifecycle controller 拥有 */
 	/* IDLE 状态仍可能存在被 pin 的 bootstrap stderr writer。
 	 * 即使没有 logger 对象，也必须先关闭 admission 并等待该 reader 离开。 */
-	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPING),
-			      memory_order_release);
+	uint64_t stopping = with_phase(current, G_STOPPING);
+	atomic_store_explicit(&g_ticket, stopping, memory_order_release);
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		/* 尚未修改 pointer/resource，因此 acquisition 失败时可以重新开放 admission。 */
-		atomic_store_explicit(&g_ticket, current, memory_order_release);
+		/* On failed acquire, reopen admission only if nobody poisoned this
+		 * generation while waiting for preexisting readers. */
+		(void)atomic_compare_exchange_strong_explicit(
+			&g_ticket, &stopping, current,
+			memory_order_release, memory_order_relaxed);
 		return finish(&scope, -rc);
 	}
+	/* A reader may discover an invalid unlock before we acquire writer. */
+	scope.lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison)
+		return finish(&scope, -poison);
+	scope.lifetime_locked = 0; /* successful path unlocks explicitly */
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
@@ -493,6 +502,11 @@ int logger_global_stop_for_clean_fork(void)
 		return -rc;
 	}
 	scope.lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison) {
+		(void)finish(&scope, -poison);
+		return -poison;
+	}
 	logger_t *l = g_logger;
 	unsigned expected_objects = l ? 1u : 0u;
 	unsigned expected_threads = 1u + (l && l->async_mode ? 1u : 0u);
