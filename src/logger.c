@@ -721,7 +721,7 @@ static int dispose_body(logger_t *l, int *released)
 	return rc;
 }
 
-int logger_dispose_internal_tracked(logger_t *l, int *released)
+static int logger_dispose_internal_tracked(logger_t *l, int *released)
 {
 	if (released)
 		*released = 0;
@@ -745,9 +745,22 @@ int logger_dispose_internal(logger_t *l)
 	return logger_dispose_internal_tracked(l, NULL);
 }
 
+static _Thread_local int destroy_receipt;
+
+void logger_destroy_receipt_reset(void)
+{
+	destroy_receipt = 0;
+}
+
+int logger_destroy_receipt_read(void)
+{
+	return destroy_receipt;
+}
+
 int logger_destroy_status(logger_t *l)
 {
-	int rc = logger_dispose_internal(l);
+	logger_destroy_receipt_reset();
+	int rc = logger_dispose_internal_tracked(l, &destroy_receipt);
 	if (rc) {
 		errno = -rc;
 		return -1;
