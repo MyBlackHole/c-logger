@@ -135,8 +135,18 @@ int audit_record_parse_payload(const char *s, size_t n, int chained,
 		return -EBADMSG;
 	int is_result = c.p < c.end && *c.p == 'R';
 	if (literal(&c, is_result ? "RESULT" : "ATTEMPT") ||
-	    literal(&c, " event=") || quoted(&c, 1) || literal(&c, " actor=") ||
-	    quoted(&c, 0) || literal(&c, " source=") || quoted(&c, 0) ||
+	    literal(&c, " event="))
+		return -EBADMSG;
+	const char *event = c.p;
+	if (quoted(&c, 1))
+		return -EBADMSG;
+	/* System lifecycle markers are serialized as unescaped canonical names.
+	 * This private semantic bit is only used to validate a session switch. */
+	static const char start[] = "\"AUDIT_START\"";
+	r.is_start = is_result && (size_t)(c.p - event) == sizeof(start) - 1u &&
+		     !memcmp(event, start, sizeof(start) - 1u);
+	if (literal(&c, " actor=") || quoted(&c, 0) ||
+	    literal(&c, " source=") || quoted(&c, 0) ||
 	    literal(&c, " resource=") || quoted(&c, 0) ||
 	    literal(&c, " operation=") || quoted(&c, 1))
 		return -EBADMSG;
@@ -165,6 +175,32 @@ int audit_record_parse_payload(const char *s, size_t n, int chained,
 	if (c.p != c.end)
 		return -EBADMSG;
 	*output = r;
+	return 0;
+}
+
+/* A new instance may start only at a canonical AUDIT_START seq=1.
+ * Otherwise a stable instance ID must advance by exactly one, even if the
+ * record crossed a rotated archive. The first record is intentionally
+ * unconstrained here: a caller may be validating an anchored retained tail. */
+int audit_sequence_advance(audit_sequence_cursor_t *cursor,
+			   const audit_record_view_t *record)
+{
+	if (!cursor || !record)
+		return -EINVAL;
+	if (!record->seq || (record->is_start && record->seq != 1))
+		return -EBADMSG;
+	if (cursor->seen) {
+		if (!memcmp(cursor->instance, record->instance, 32)) {
+			if (cursor->seq == UINT64_MAX ||
+			    record->seq != cursor->seq + 1u)
+				return -EBADMSG;
+		} else if (!record->is_start || record->seq != 1) {
+			return -EBADMSG;
+		}
+	}
+	memcpy(cursor->instance, record->instance, sizeof(cursor->instance));
+	cursor->seq = record->seq;
+	cursor->seen = 1;
 	return 0;
 }
 
