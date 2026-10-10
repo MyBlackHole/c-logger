@@ -250,9 +250,9 @@ int logger_init(const logger_config_t *cfg)
 	}
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		int released = 0;
-		(void)logger_dispose_internal_tracked(candidate, &released);
-		if (!released)
+		logger_destroy_receipt_reset();
+		(void)logger_destroy_status(candidate);
+		if (!logger_destroy_receipt_read())
 			global_lock_poison(EUCLEAN);
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
@@ -264,7 +264,8 @@ int logger_init(const logger_config_t *cfg)
 	 * This candidate was never published and must not become global. */
 	int poison = global_lock_error();
 	if (poison) {
-		(void)logger_dispose_internal_tracked(candidate, NULL);
+		logger_destroy_receipt_reset();
+		(void)logger_destroy_status(candidate);
 		return finish(&scope, -poison);
 	}
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
@@ -333,9 +334,9 @@ int logger_shutdown_status(void)
 	}
 	/* Writer lock release proves external readers drained. The internal
 	 * receipt distinguishes final free from an incomplete worker teardown. */
-	int released = 0;
-	rc = logger_dispose_internal_tracked(old, &released);
-	if (!released)
+	logger_destroy_receipt_reset();
+	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
+	if (!logger_destroy_receipt_read())
 		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
 	else
 		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
@@ -539,9 +540,9 @@ int logger_global_stop_for_clean_fork(void)
 			scope.proof_error = unlock_rc;
 			rc = -unlock_rc;
 		} else {
-			int released = 0;
-			rc = logger_dispose_internal_tracked(l, &released);
-			if (!released)
+			logger_destroy_receipt_reset();
+			rc = logger_destroy_status(l) ? -(errno ? errno : EIO) : 0;
+			if (!logger_destroy_receipt_read())
 				global_lock_poison(rc < 0 ? -rc : EUCLEAN);
 			else
 				atomic_store_explicit(
