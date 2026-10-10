@@ -817,6 +817,9 @@ if has_config("build_regression_tests") then
         for _, scenario in ipairs({
             "checkpoint-once", "offset-error", "checkpoint-persistent",
             "io-write", "io-partial", "io-fsync", "preflight",
+            "txn-preflight", "txn-begin-checkpoint", "txn-end-checkpoint",
+            "txn-begin-write", "txn-begin-partial", "txn-begin-fsync",
+            "txn-end-write", "txn-end-partial", "txn-end-fsync",
             "stop-error", "start-error"
         }) do
             add_tests("audit_" .. scenario .. "_regression",
