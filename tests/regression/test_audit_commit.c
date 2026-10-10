@@ -206,6 +206,143 @@ static void preflight(void)
 	CHECK(audit_shutdown_status() == 0);
 }
 
+/* A failed API result alone cannot indicate whether an Audit record was
+ * submitted. These tests assert event state, sequence, and disk bytes at
+ * each boundary rather than merely checking errno. */
+static void event_equal(const audit_event_t *a, const audit_event_t *b)
+{
+	CHECK(a->phase == b->phase && a->transaction_id == b->transaction_id);
+	CHECK(a->event == b->event && a->actor == b->actor &&
+	      a->source == b->source && a->resource == b->resource &&
+	      a->operation == b->operation && a->detail == b->detail);
+	CHECK(a->result == b->result && a->error_code == b->error_code);
+}
+
+static void transaction_preflight(void)
+{
+	char too_long[6000];
+	memset(too_long, 'x', sizeof(too_long) - 1);
+	too_long[sizeof(too_long) - 1] = 0;
+	audit_event_t e = audit_test_event("TX_PREFLIGHT");
+	e.error_code = 42;
+	e.result = AUDIT_FAILURE;
+	e.detail = too_long;
+	audit_event_t before = e;
+	off_t size = file_size("app.audit.log");
+
+	CHECK(audit_begin(&e) == -1 && errno == EOVERFLOW);
+	event_equal(&e, &before);
+	CHECK(file_size("app.audit.log") == size);
+	CHECK(status().state == AUDIT_STATE_RUNNING &&
+	      status().committed_seq == 1);
+
+	/* The failed begin did NOT consume the automatic transaction ID. */
+	e.detail = NULL;
+	CHECK(audit_begin(&e) == 0 && e.transaction_id == 1 &&
+	      e.phase == AUDIT_PHASE_ATTEMPT);
+	e.detail = too_long;
+	before = e;
+	size = file_size("app.audit.log");
+	CHECK(audit_end(&e, AUDIT_SUCCESS, 0) == -1 &&
+	      errno == EOVERFLOW);
+	event_equal(&e, &before);
+	CHECK(file_size("app.audit.log") == size);
+	CHECK(status().state == AUDIT_STATE_RUNNING &&
+	      status().committed_seq == 2);
+
+	e.detail = NULL;
+	CHECK(audit_end(&e, AUDIT_FAILURE, -42) == 0);
+	CHECK(e.transaction_id == 1 && e.phase == AUDIT_PHASE_RESULT &&
+	      e.result == AUDIT_FAILURE && e.error_code == -42);
+	CHECK(status().committed_seq == 3);
+	CHECK(audit_shutdown_status() == 0);
+	CHECK(count_event("TX_PREFLIGHT") == 2);
+	CHECK(audit_verify_file("app.audit.log") == 0);
+}
+
+static void transaction_checkpoint(int at_end)
+{
+	audit_event_t e = audit_test_event("TX_CHECKPOINT");
+	if (at_end)
+		CHECK(audit_begin(&e) == 0 && e.transaction_id == 1);
+	atomic_store(&cp_failures, 1);
+	if (at_end) {
+		CHECK(audit_end(&e, AUDIT_FAILURE, -17) == -1 &&
+		      errno == EIO);
+		CHECK(e.transaction_id == 1 && e.phase == AUDIT_PHASE_RESULT &&
+		      e.result == AUDIT_FAILURE && e.error_code == -17);
+	} else {
+		CHECK(audit_begin(&e) == -1 && errno == EIO);
+		CHECK(e.transaction_id == 1 &&
+		      e.phase == AUDIT_PHASE_ATTEMPT);
+	}
+
+	audit_status_t st = status();
+	CHECK(st.state == AUDIT_STATE_CHECKPOINT_FAILED &&
+	      st.checkpoint_dirty && st.error_code == EIO);
+	CHECK(st.committed_seq == (at_end ? 3u : 2u) &&
+	      st.checkpoint_seq == (at_end ? 2u : 1u));
+	off_t size = file_size("app.audit.log");
+	CHECK(count_event("TX_CHECKPOINT") == (at_end ? 2u : 1u));
+	CHECK(audit_flush() == 0);
+	CHECK(file_size("app.audit.log") == size); /* checkpoint only */
+	if (!at_end)
+		CHECK(audit_end(&e, AUDIT_SUCCESS, 0) == 0);
+	CHECK(audit_shutdown_status() == 0);
+	CHECK(count_event("TX_CHECKPOINT") == 2);
+	CHECK(audit_verify_file("app.audit.log") == 0);
+}
+
+static void transaction_uncertain(const char *mode, int at_end)
+{
+	int expected;
+	if (!strcmp(mode, "write")) {
+		atomic_store(&io_mode, 1);
+		expected = ENOSPC;
+	} else if (!strcmp(mode, "partial")) {
+		atomic_store(&io_mode, 2);
+		expected = EIO;
+	} else {
+		CHECK(!strcmp(mode, "fsync"));
+		atomic_store(&io_mode, 3);
+		expected = EIO;
+	}
+
+	/* For an end failure, the attempt is already confirmed and the
+	 * candidate result is what may or may not have reached disk. */
+	audit_event_t e = audit_test_event("TX_UNCERTAIN");
+	if (at_end) {
+		/* Begin must not be subject to the injected backend failure. */
+		atomic_store(&io_mode, 0);
+		CHECK(audit_begin(&e) == 0 && e.transaction_id == 1);
+		atomic_store(&io_mode, !strcmp(mode, "write") ? 1 :
+					 !strcmp(mode, "partial") ? 2 : 3);
+		CHECK(audit_end(&e, AUDIT_FAILURE, -19) == -1 &&
+		      errno == expected);
+		CHECK(e.transaction_id == 1 && e.phase == AUDIT_PHASE_RESULT &&
+		      e.result == AUDIT_FAILURE && e.error_code == -19);
+	} else {
+		CHECK(audit_begin(&e) == -1 && errno == expected);
+		CHECK(e.transaction_id == 1 &&
+		      e.phase == AUDIT_PHASE_ATTEMPT);
+	}
+	CHECK(status().state == AUDIT_STATE_IO_FAILED &&
+	      status().committed_seq == (at_end ? 2u : 1u));
+	atomic_store(&io_mode, 0);
+	/* The attempted ID is not evidence of commit. The failed runtime
+	 * never reopens admission, even if the failing syscall is healthy. */
+	audit_event_t before = e;
+	CHECK(audit_end(&e, AUDIT_FAILURE, -20) == -1 &&
+	      errno == expected);
+	event_equal(&e, &before);
+	CHECK(audit_flush() == -1 && errno == expected);
+	CHECK(audit_shutdown_status() == -1 && errno == expected);
+	audit_config_t c = audit_test_config();
+	CHECK(audit_init(&c) == 0); /* reconcile only after shutdown/reinit */
+	CHECK(audit_shutdown_status() == 0);
+	CHECK(audit_verify_file("app.audit.log") == 0);
+}
+
 static void stop_error(void)
 {
 	atomic_store(&stop_cp_failure, 1);
@@ -261,6 +398,16 @@ int main(int argc, char **argv)
 		uncertain(argv[1]);
 	else if (!strcmp(argv[1], "preflight"))
 		preflight();
+	else if (!strcmp(argv[1], "txn-preflight"))
+		transaction_preflight();
+	else if (!strcmp(argv[1], "txn-begin-checkpoint"))
+		transaction_checkpoint(0);
+	else if (!strcmp(argv[1], "txn-end-checkpoint"))
+		transaction_checkpoint(1);
+	else if (!strncmp(argv[1], "txn-begin-", 10))
+		transaction_uncertain(argv[1] + 10, 0);
+	else if (!strncmp(argv[1], "txn-end-", 8))
+		transaction_uncertain(argv[1] + 8, 1);
 	else if (!strcmp(argv[1], "stop-error"))
 		stop_error();
 #endif

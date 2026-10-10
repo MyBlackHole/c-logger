@@ -124,6 +124,15 @@ LOGGER_API int audit_get_status(audit_status_t *);
 /* Raw-fork inherited Audit state is invalidated internally by the shared
  * process guard. Reinitialization in the child returns ECHILD until exec. */
 LOGGER_API int audit_write(const audit_event_t *);
+/* 事务事件在纯校验/编码错误（如 EINVAL、EOVERFLOW）时保持原样，
+ * 自动生成的 transaction_id 也不消耗。若严格日志后端已被调用，
+ * 即使返回 IO_FAILED，event 也携带本次尝试的 transaction_id/phase/
+ * result；此时它只是尝试标识，不代表已提交，禁止盲目重试。
+ * 若 strict log 已确认持久化而 checkpoint 失败，函数虽然返回 -1，
+ * event 仍是已提交的事件快照；audit_get_status() 中 committed_seq
+ * 已前进、checkpoint_dirty 为真，audit_flush() 只修复 checkpoint。
+ * 不改变公开结构体/函数签名；详见 docs/v2/AUDIT_TRANSACTION_SUBMISSION.md。
+ */
 LOGGER_API int audit_begin(audit_event_t *event);
 LOGGER_API int audit_end(audit_event_t *event, audit_result_t result,
 			 int error_code);
