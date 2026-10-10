@@ -19,8 +19,14 @@
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;
 static logger_t *g_logger; /* 由 lifetime lock 保护；绝不把 owning pointer 返回给应用 */
+/* Controller-owned unpublished/retired instance, protected by g_control_mu.
+ * A failed final-release proof deliberately retains the allocation here.
+ * This is a real owner, not a sanitizer-only leak suppression or a refcount. */
+static logger_t *g_retired;
 
-enum global_phase { G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED };
+enum global_phase {
+	G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED, G_BROKEN
+};
 #define PHASE_BITS 3u
 #define PHASE_MASK UINT64_C(7)
 /* generation 与 phase 放在同一个 atomic ticket 中。
@@ -28,6 +34,8 @@ enum global_phase { G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED };
  * 每次真实 init 尝试都会消费一个 generation，即使 candidate 构造失败。
  */
 static _Atomic uint64_t g_ticket;
+/* A failed lock release or incomplete teardown invalidates global lifetime. */
+static _Atomic int g_lock_error;
 static _Thread_local int g_in_global;
 
 typedef struct {
@@ -35,6 +43,7 @@ typedef struct {
 	int saved_errno;
 	int control_locked;
 	int lifetime_locked;
+	int proof_error; /* current thread may still hold an unverified lock */
 } global_scope_t;
 
 static enum global_phase phase_of(uint64_t ticket)
@@ -52,6 +61,54 @@ static uint64_t with_phase(uint64_t ticket, enum global_phase phase)
 	return (ticket & ~PHASE_MASK) | (uint64_t)phase;
 }
 
+static int global_lock_error(void)
+{
+	return atomic_load_explicit(&g_lock_error, memory_order_acquire);
+}
+
+/* Publish the sticky error before the broken phase. A CAS preserves a newer
+ * generation if another controller was already waiting on the lock. */
+static void global_lock_poison(int error)
+{
+	if (!error)
+		return;
+	int expected = 0;
+	(void)atomic_compare_exchange_strong_explicit(
+		&g_lock_error, &expected, error,
+		memory_order_release, memory_order_relaxed);
+	uint64_t ticket = atomic_load_explicit(&g_ticket, memory_order_acquire);
+	while (phase_of(ticket) != G_BROKEN &&
+	       !atomic_compare_exchange_weak_explicit(
+		       &g_ticket, &ticket, with_phase(ticket, G_BROKEN),
+		       memory_order_acq_rel, memory_order_acquire)) {
+	}
+}
+
+/* An init rollback must never undo another thread's proof failure. */
+static void rollback_ticket(uint64_t ticket, enum global_phase phase)
+{
+	(void)atomic_compare_exchange_strong_explicit(
+		&g_ticket, &ticket, with_phase(ticket, phase),
+		memory_order_release, memory_order_relaxed);
+}
+
+/* Called with Global control ownership and an unpublished candidate.
+ * The same receipt also covers finalization errors that accompany a
+ * successful free; only actual incomplete release retains this owner. */
+static int retire_candidate(logger_t *candidate)
+{
+	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_CONTROL,
+				   &g_control_mu);
+	g_retired = candidate;
+	logger_destroy_receipt_reset();
+	int rc = logger_destroy_status(candidate) ? -(errno ? errno : EIO) : 0;
+	if (logger_destroy_receipt_read())
+		g_retired = NULL;
+	else
+		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
+	return rc;
+}
+
 /* cancellation 恢复生效前，必须先释放全部资源和 lifetime pin。
  * 应用的 cancellation cleanup handler 随后仍可能调用 Logger。
  * 这里是 cancellation deferral，不是 rollback，也不是 I/O deadline。
@@ -60,16 +117,30 @@ static uint64_t with_phase(uint64_t ticket, enum global_phase phase)
 static int finish(global_scope_t *scope, int rc)
 {
 	int error;
+	if (scope->proof_error) {
+		/* A manual unlock already failed. Retain outer locks and keep
+		 * cancellation disabled; repeating unlock cannot prove ownership. */
+		errno = scope->proof_error;
+		return -1;
+	}
 	if (scope->lifetime_locked) {
 		error = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
-		if (!rc && error)
-			rc = -error;
+		if (error) {
+			global_lock_poison(error);
+			/* The lifetime pin may still be held. Do not unlock the
+			 * controller, clear TLS reentry, or resume cancellation. */
+			errno = error;
+			return -1;
+		}
 	}
 	if (scope->control_locked) {
 		error = __cleanup_lockdep_mutex_unlock(
 			&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
-		if (!rc && error)
-			rc = -error;
+		if (error) {
+			global_lock_poison(error);
+			errno = error;
+			return -1;
+		}
 	}
 	error = rc < 0 ? -rc : scope->saved_errno;
 	g_in_global = 0;
@@ -94,6 +165,11 @@ static int begin(global_scope_t *scope)
 		errno = EDEADLK;
 		return -1;
 	}
+	int poison = global_lock_error();
+	if (poison) {
+		errno = poison;
+		return -1;
+	}
 	*scope = (global_scope_t){ .saved_errno = errno };
 	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					&scope->old_cancel);
@@ -112,6 +188,9 @@ static int lock_control(global_scope_t *scope)
 		&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
 	if (!rc) {
 		scope->control_locked = 1;
+		int poison = global_lock_error();
+		if (poison)
+			return -poison;
 	}
 	return -rc;
 }
@@ -125,6 +204,8 @@ static int phase_error(uint64_t ticket)
 		return EAGAIN;
 	case G_RUNNING:
 		return 0;
+	case G_BROKEN:
+		return global_lock_error() ? global_lock_error() : EIO;
 	default:
 		return ESHUTDOWN;
 	}
@@ -144,6 +225,9 @@ static int pin(global_scope_t *scope, int allow_bootstrap)
 	if (rc)
 		return -rc;
 	scope->lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison)
+		return -poison;
 	if (ticket != atomic_load_explicit(&g_ticket, memory_order_acquire))
 		return -ESHUTDOWN;
 	if (phase_of(ticket) == G_RUNNING && !g_logger)
@@ -168,12 +252,20 @@ int logger_init(const logger_config_t *cfg)
 	uint64_t old = atomic_load_explicit(&g_ticket, memory_order_acquire);
 	if (phase_of(old) == G_RUNNING)
 		return finish(&scope, -EALREADY);
+	/* An incompletely retired object must never have a successor, even if
+	 * its generation ticket were to be mishandled by another path. */
+	if (g_retired)
+		return finish(&scope, -EUCLEAN);
 	if (generation_of(old) == (UINT64_MAX >> PHASE_BITS))
 		return finish(&scope,
 			      -EOVERFLOW); /* generation 绝不回绕复用 */
 	uint64_t ticket = ((generation_of(old) + 1u) << PHASE_BITS) |
 			  G_STARTING;
-	atomic_store_explicit(&g_ticket, ticket, memory_order_release);
+	if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &old, ticket,
+		    memory_order_release, memory_order_acquire))
+		return finish(&scope, -(global_lock_error() ?
+					global_lock_error() : EIO));
 	logger_t *candidate = logger_create(cfg);
 	if (!candidate) {
 		rc = -(errno ? errno : EIO);
@@ -182,25 +274,39 @@ int logger_init(const logger_config_t *cfg)
 		 */
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
-		atomic_store_explicit(&g_ticket, with_phase(ticket, rollback),
-				      memory_order_release);
+		rollback_ticket(ticket, rollback);
 		return finish(&scope, rc);
 	}
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		(void)logger_destroy_status(candidate);
+		(void)retire_candidate(candidate);
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
-		atomic_store_explicit(&g_ticket, with_phase(ticket, rollback),
-				      memory_order_release);
+		rollback_ticket(ticket, rollback);
 		return finish(&scope, -rc);
 	}
 	scope.lifetime_locked = 1;
+	/* A bootstrap reader can poison the lifetime during construction.
+	 * This candidate was never published and must not become global. */
+	int poison = global_lock_error();
+	if (poison) {
+		(void)retire_candidate(candidate);
+		return finish(&scope, -poison);
+	}
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	g_logger = candidate;
-	atomic_store_explicit(&g_ticket, with_phase(ticket, G_RUNNING),
-			      memory_order_release);
+	if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &ticket, with_phase(ticket, G_RUNNING),
+		    memory_order_release, memory_order_acquire)) {
+		/* A concurrent reader may have poisoned the lifetime after the
+		 * earlier check. Nothing was published to an admitted reader:
+		 * the writer pin is still held, so retire this candidate. */
+		g_logger = NULL;
+		int error = global_lock_error();
+		(void)retire_candidate(candidate);
+		return finish(&scope, -(error ? error : EIO));
+	}
 	return finish(&scope, 0);
 }
 
@@ -231,23 +337,64 @@ int logger_shutdown_status(void)
 			-EIO); /* STARTING/STOPPING 完全由 lifecycle controller 拥有 */
 	/* IDLE 状态仍可能存在被 pin 的 bootstrap stderr writer。
 	 * 即使没有 logger 对象，也必须先关闭 admission 并等待该 reader 离开。 */
-	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPING),
-			      memory_order_release);
+	uint64_t stopping = with_phase(current, G_STOPPING);
+	if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &current, stopping,
+		    memory_order_release, memory_order_acquire))
+		return finish(&scope, -(global_lock_error() ?
+					global_lock_error() : EIO));
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		/* 尚未修改 pointer/resource，因此 acquisition 失败时可以重新开放 admission。 */
-		atomic_store_explicit(&g_ticket, current, memory_order_release);
+		/* On failed acquire, reopen admission only if nobody poisoned this
+		 * generation while waiting for preexisting readers. */
+		(void)atomic_compare_exchange_strong_explicit(
+			&g_ticket, &stopping, current,
+			memory_order_release, memory_order_relaxed);
 		return finish(&scope, -rc);
 	}
+	/* A reader may discover an invalid unlock before we acquire writer. */
+	scope.lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison)
+		return finish(&scope, -poison);
+	scope.lifetime_locked = 0; /* successful path unlocks explicitly */
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
+	/* Unpublish under writer lock; the controller retains the only owner
+	 * until the last teardown resource has been proven released. */
+	g_retired = old;
 	g_logger = NULL;
-	(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
-	/* 整个 I/O、worker join、close 和 owner release 期间持续持有 control。 */
+	int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
+	if (unlock_rc) {
+		/* Lifetime ownership is uncertain: retain the old allocation and
+		 * the outer control lock. Neither STOPPED nor final free is legal. */
+		global_lock_poison(unlock_rc);
+		scope.proof_error = unlock_rc;
+		return finish(&scope, -unlock_rc);
+	}
+	/* Writer lock release proves external readers drained. The internal
+	 * receipt distinguishes final free from an incomplete worker teardown. */
+	logger_destroy_receipt_reset();
 	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
-	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
-			      memory_order_release);
+	if (!logger_destroy_receipt_read())
+		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
+	else {
+		g_retired = NULL;
+		/* A late reader release failure must not be erased by STOPPED.
+		 * Backend I/O failure may still return with final free complete. */
+		if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &stopping, with_phase(current, G_STOPPED),
+		    memory_order_release, memory_order_acquire)) {
+			int error = global_lock_error();
+			if (!error) {
+				error = EUCLEAN;
+				global_lock_poison(error);
+			}
+			if (!rc)
+				rc = -error;
+		}
+	}
 	return finish(&scope, rc);
 }
 
@@ -392,6 +539,11 @@ void logger_global_write(logger_level_t level, const char *module,
 }
 
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
+int logger_global_lifetime_broken(void)
+{
+	return global_lock_error() != 0;
+}
+
 int logger_global_stop_for_clean_fork(void)
 {
 	global_scope_t scope;
@@ -410,6 +562,11 @@ int logger_global_stop_for_clean_fork(void)
 		return -rc;
 	}
 	scope.lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison) {
+		(void)finish(&scope, -poison);
+		return -poison;
+	}
 	logger_t *l = g_logger;
 	unsigned expected_objects = l ? 1u : 0u;
 	unsigned expected_threads = 1u + (l && l->async_mode ? 1u : 0u);
@@ -426,17 +583,45 @@ int logger_global_stop_for_clean_fork(void)
 	if (!rc) {
 		uint64_t current =
 			atomic_load_explicit(&g_ticket, memory_order_acquire);
-		atomic_store_explicit(&g_ticket,
-				      with_phase(current, G_STOPPING),
-				      memory_order_release);
+		if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &current, with_phase(current, G_STOPPING),
+		    memory_order_release, memory_order_acquire)) {
+			rc = -(global_lock_error() ? global_lock_error() : EIO);
+			goto out;
+		}
+		g_retired = l;
 		g_logger = NULL;
-		(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
+		int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		scope.lifetime_locked = 0;
-		rc = logger_dispose_internal(l);
-		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
-				      memory_order_release);
+		if (unlock_rc) {
+			global_lock_poison(unlock_rc);
+			scope.proof_error = unlock_rc;
+			rc = -unlock_rc;
+		} else {
+			logger_destroy_receipt_reset();
+			rc = logger_destroy_status(l) ? -(errno ? errno : EIO) : 0;
+			if (!logger_destroy_receipt_read())
+				global_lock_poison(rc < 0 ? -rc : EUCLEAN);
+			else {
+				g_retired = NULL;
+				uint64_t stopping = with_phase(current, G_STOPPING);
+				if (!atomic_compare_exchange_strong_explicit(
+				    &g_ticket, &stopping, with_phase(current, G_STOPPED),
+				    memory_order_release, memory_order_acquire)) {
+					int error = global_lock_error();
+					if (!error) {
+						error = EUCLEAN;
+						global_lock_poison(error);
+					}
+					if (!rc)
+						rc = -error;
+				}
+			}
+		}
 	}
-	(void)finish(&scope, rc);
+out:
+	if (finish(&scope, rc) && !rc)
+		return -(errno ? errno : EIO);
 	return rc;
 }
 #endif

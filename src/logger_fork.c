@@ -61,6 +61,12 @@ pid_t logger_fork_reinit(void)
 	if (fork_error)
 		rc = -fork_error;
 done:
+	/* A failed global lock release may leave this thread holding a lock.
+	 * Do not undo the global scope's cancellation quarantine. */
+	if (logger_global_lifetime_broken()) {
+		errno = rc < 0 ? -rc : EIO;
+		return -1;
+	}
 	(void)pthread_setcancelstate(old_cancel, NULL);
 	if (rc) {
 		errno = -rc;

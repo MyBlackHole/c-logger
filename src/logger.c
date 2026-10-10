@@ -600,10 +600,13 @@ logger_t *logger_create_reserved_file(const logger_config_t *input,
 	return create_entry(input, reserved);
 }
 
-static int dispose_body(logger_t *l)
+static int dispose_body(logger_t *l, int *released)
 {
-	if (!l)
+	if (!l) {
+		if (released)
+			*released = 1;
 		return 0;
+	}
 
 	/* 按生命周期顺序先停止发布和执行，再证明 worker 与同步对象无人使用，
 	 * 最后释放依赖存储。证明失败时保留半退役对象，避免把不变量错误变成 UAF。 */
@@ -710,26 +713,54 @@ static int dispose_body(logger_t *l)
 	if (release_rc)
 		return release_rc;
 
+	/* This receipt is written before free: free itself cannot fail. It is not
+	 * inferred from errno or the process-wide live_objects census. */
+	if (released)
+		*released = 1;
 	free(l);
 	return rc;
 }
 
-int logger_dispose_internal(logger_t *l)
+static int logger_dispose_internal_tracked(logger_t *l, int *released)
 {
+	if (released)
+		*released = 0;
 	/* NULL destruction retains its no-registration/no-resource behavior. */
-	if (!l)
-		return reject_access() ? -errno : 0;
+	if (!l) {
+		int rc = reject_access() ? -errno : 0;
+		if (!rc && released)
+			*released = 1;
+		return rc;
+	}
 	logger_scope_t scope;
 	int rc = logger_scope_begin(&scope);
 	if (rc)
 		return rc;
-	rc = dispose_body(l);
+	rc = dispose_body(l, released);
 	return logger_scope_end(&scope, rc);
+}
+
+int logger_dispose_internal(logger_t *l)
+{
+	return logger_dispose_internal_tracked(l, NULL);
+}
+
+static _Thread_local int destroy_receipt;
+
+void logger_destroy_receipt_reset(void)
+{
+	destroy_receipt = 0;
+}
+
+int logger_destroy_receipt_read(void)
+{
+	return destroy_receipt;
 }
 
 int logger_destroy_status(logger_t *l)
 {
-	int rc = logger_dispose_internal(l);
+	logger_destroy_receipt_reset();
+	int rc = logger_dispose_internal_tracked(l, &destroy_receipt);
 	if (rc) {
 		errno = -rc;
 		return -1;

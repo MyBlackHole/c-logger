@@ -652,7 +652,9 @@ if has_config("build_regression_tests") then
              "pthread_create", "write", "close", "vsnprintf", "vfprintf",
              "logger_vlog_internal"}},
         {"global_lifecycle_regression", "tests/regression/test_global_lifecycle.c",
-            {"pthread_mutex_lock", "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
+            {"pthread_mutex_lock", "pthread_mutex_unlock",
+             "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
+             "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
              "logger_create", "logger_destroy_status", "logger_file_write",
              "logger_file_reopen", "dprintf", "fsync"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
@@ -1267,6 +1269,16 @@ if has_config("build_regression_tests") then
         }) do
             add_tests("global_error_" .. scenario,
                       {runargs = {"acquire-error", scenario}, timeout = 20})
+        end
+        for _, scenario in ipairs({
+            "reader", "writer", "control", "join", "cond-destroy"
+        }) do
+            add_tests("global_proof_" .. scenario,
+                      {runargs = {"release-proof", scenario}, timeout = 20})
+        end
+        for _, scenario in ipairs({"writer", "acquire-fail"}) do
+            add_tests("global_proof_handoff_" .. scenario,
+                      {runargs = {"proof-handoff", scenario}, timeout = 20})
         end
     target_end()
 

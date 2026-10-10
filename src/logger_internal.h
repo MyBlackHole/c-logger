@@ -91,8 +91,14 @@ struct logger {
  * move 给同步 logger。 */
 logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);
 int logger_dispose_internal(logger_t *);
+/* Current-thread final-release receipt for controllers calling the normal
+ * logger_destroy_status() entry (including link-time wrappers). Reset before
+ * the call; a receipt is set only after final census release and free. */
+void logger_destroy_receipt_reset(void);
+int logger_destroy_receipt_read(void);
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
 int logger_global_stop_for_clean_fork(void);
+int logger_global_lifetime_broken(void);
 #endif
 int logger_file_offset(logger_t *, uint64_t *);
 int logger_emit_status(logger_t *, const logger_message_t *, int);
