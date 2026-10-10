@@ -210,9 +210,11 @@ out:
 typedef struct {
 	char *name;
 	unsigned char first_prev[32], last_hash[32];
-	uint64_t end, seq;
-	int has_records;
-	int visited;
+	/* First/last are kept for semantic edges; archive filenames never define
+	 * order. A retained first record can start at a non-one sequence. */
+	audit_sequence_cursor_t first, last;
+	uint64_t end;
+	int first_is_start, visited;
 } segment_t;
 
 typedef struct {
@@ -278,7 +280,7 @@ static int validate_segment_chain(segment_t *files, size_t count,
 
 	size_t edge = 0;
 	for (size_t i = 0; i < count; ++i) {
-		if (!files[i].has_records)
+		if (!files[i].last.seen)
 			continue;
 		memcpy(first_edges[edge].hash, files[i].first_prev,
 		       sizeof(first_edges[edge].hash));
@@ -293,7 +295,7 @@ static int validate_segment_chain(segment_t *files, size_t count,
 
 	size_t root = count, roots = 0;
 	for (size_t i = 0; i < count; ++i) {
-		if (!files[i].has_records)
+		if (!files[i].last.seen)
 			continue;
 		size_t predecessors =
 			segment_edge_matches(last_edges, nonempty,
@@ -311,7 +313,11 @@ static int validate_segment_chain(segment_t *files, size_t count,
 		rc = -EBADMSG;
 		goto out;
 	}
-	if (genesis && memcmp(files[root].first_prev, zero, sizeof(zero))) {
+	/* A full genesis chain must start at seq=1. A retained suffix can
+	 * begin later only when the supplied checkpoint proves an anchor. */
+	if (genesis &&
+	    (memcmp(files[root].first_prev, zero, sizeof(zero)) ||
+	     files[root].first.seq != 1u)) {
 		rc = -EBADMSG;
 		goto out;
 	}
@@ -334,10 +340,23 @@ static int validate_segment_chain(segment_t *files, size_t count,
 			rc = -EBADMSG;
 			goto out;
 		}
+		if (successors) {
+			/* Digest edge already matches; validate the session edge too.
+			 * The scanner validated each segment's internal records. */
+			audit_sequence_cursor_t sequence = files[root].last;
+			audit_record_view_t first = {
+				.seq = files[follow].first.seq,
+				.is_start = files[follow].first_is_start
+			};
+			memcpy(first.instance, files[follow].first.instance, 33);
+			rc = audit_sequence_advance(&sequence, &first);
+			if (rc)
+				goto out;
+		}
 		root = successors ? follow : count;
 	}
 	if (visited != nonempty ||
-	    (files[active_index].has_records && last != active_index)) {
+	    (files[active_index].last.seen && last != active_index)) {
 		rc = -EBADMSG;
 		goto out;
 	}
@@ -459,16 +478,22 @@ static int scan_segment(FILE *f, segment_t *file, const audit_ckpt_t *cp,
 		int rc = audit_record_parse_line(line, length, &record);
 		if (rc)
 			return rc;
-		if (!file->has_records)
+		int first_record = !file->last.seen;
+		if (first_record)
 			memcpy(file->first_prev, record.previous, 32);
 		rc = audit_record_verify(&record,
-					 file->has_records ? file->last_hash :
+					 file->last.seen ? file->last_hash :
 							     record.previous,
 					 digest, file->last_hash);
 		if (rc)
 			return rc;
-		file->has_records = 1;
-		file->seq = record.seq;
+		rc = audit_sequence_advance(&file->last, &record);
+		if (rc)
+			return rc;
+		if (first_record) {
+			file->first = file->last;
+			file->first_is_start = record.is_start;
+		}
 		if (file->end > INT64_MAX - length)
 			return -EOVERFLOW;
 		file->end += length;
@@ -478,7 +503,7 @@ static int scan_segment(FILE *f, segment_t *file, const audit_ckpt_t *cp,
 	}
 	/* offset=0/nonzero hash represents the boundary after an archived segment
      * when the active path had not yet been created at the last recovery. */
-	if (!cp->offset && file->has_records && cp->seq == file->seq &&
+	if (!cp->offset && file->last.seen && cp->seq == file->last.seq &&
 	    !memcmp(cp->hash, file->last_hash, 32))
 		++*anchors;
 	return 0;
@@ -657,7 +682,7 @@ int audit_recover_set_at(int dirfd, const char *name,
 			rc = -errno;
 		if (rc)
 			goto done;
-		nonempty += (unsigned)files[i].has_records;
+		nonempty += (unsigned)files[i].last.seen;
 	}
 	if ((!genesis && anchors != 1) || (genesis && anchors)) {
 		rc = -EBADMSG;
@@ -671,7 +696,7 @@ int audit_recover_set_at(int dirfd, const char *name,
 		goto done;
 	if (last < count) {
 		memcpy(next.hash, files[last].last_hash, 32);
-		next.seq = files[last].seq;
+		next.seq = files[last].last.seq;
 	}
 	next.offset = files[active_index].end;
 	if (tail_length) {
