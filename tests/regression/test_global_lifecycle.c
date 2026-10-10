@@ -19,6 +19,10 @@ static int admission_only;
  * deliberately uncertain. Every poison scenario runs in its own process. */
 static _Thread_local int fail_rw_unlock, fail_control_unlock;
 static _Thread_local int fail_join, fail_cond_destroy;
+static _Thread_local int handoff_reader, handoff_writer;
+static _Atomic int handoff_reader_at_unlock, handoff_writer_at_lock;
+static _Atomic int handoff_release_reader, handoff_release_writer;
+static _Atomic int handoff_fail_writer;
 static _Thread_local int capture_control;
 static _Thread_local pthread_t rejected_worker;
 static _Thread_local int saw_rejected_join;
@@ -89,6 +93,16 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 }
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
+	if (handoff_reader) {
+		handoff_reader = 0;
+		/* Synthetic error after a real release: a caller seeing a
+		 * nonzero return must still treat ownership as unknown, while
+		 * the other real pthread thread can safely acquire the lock. */
+		atomic_store(&handoff_reader_at_unlock, 1);
+		wait_flag(&handoff_release_reader);
+		CHECK(__real_pthread_rwlock_unlock(rw) == 0);
+		return EIO;
+	}
 	if (fail_rw_unlock) {
 		int error = fail_rw_unlock;
 		fail_rw_unlock = 0;
@@ -134,6 +148,11 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 }
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 {
+	if (handoff_writer) {
+		handoff_writer = 0;
+		atomic_store(&handoff_writer_at_lock, 1);
+		wait_flag(&handoff_release_writer);
+	}
 	if (note_writer) {
 		note_writer = 0;
 		atomic_store(&writer_waiting, 1);
@@ -473,6 +492,66 @@ static void *verify_poisoned_controller(void *arg)
 	return NULL;
 }
 
+/* Reader has acquired the lifetime pin before reaching release.
+ * The controller closes admission, pauses before acquiring writer, then
+ * the reader returns a synthetic unlock error. Both interleavings must
+ * preserve BROKEN: writer success must not unpublish, and failed writer
+ * acquisition must not roll back the already-poisoned generation. */
+static void *handoff_reader_thread(void *arg)
+{
+	call_result_t *r = arg;
+	handoff_reader = 1;
+	r->rc = logger_flush_status();
+	r->error = errno;
+	atomic_store(&r->done, 1);
+	return NULL;
+}
+
+static void *handoff_shutdown_thread(void *arg)
+{
+	handoff_writer = 1;
+	if (atomic_load(&handoff_fail_writer))
+		fail_writer = EDEADLK;
+	return shutdown_call(arg);
+}
+
+static void unlock_shutdown_handoff(int acquire_fails)
+{
+	logger_config_t cfg = config_for("old.log", 0);
+	CHECK(logger_init(&cfg) == 0);
+	atomic_store(&handoff_fail_writer, acquire_fails);
+
+	pthread_t reader, controller;
+	call_result_t a = { 0 }, b = { 0 };
+	CHECK(!pthread_create(&reader, NULL, handoff_reader_thread, &a));
+	wait_flag(&handoff_reader_at_unlock);
+	/* Reader still owns the lock; shutdown must close admission first. */
+	CHECK(!pthread_create(&controller, NULL, handoff_shutdown_thread,
+				 &b));
+	wait_flag(&handoff_writer_at_lock);
+
+	/* For this controlled error, the real unlock succeeds. The injected
+	 * error is returned only after the reader has released that pin. */
+	atomic_store(&handoff_release_reader, 1);
+	CHECK(!pthread_join(reader, NULL));
+	CHECK(a.rc == -1 && a.error == EIO);
+
+	atomic_store(&handoff_release_writer, 1);
+	CHECK(!pthread_join(controller, NULL));
+	if (acquire_fails)
+		CHECK(b.rc == -1 && b.error == EDEADLK);
+	else
+		CHECK(b.rc == -1 && b.error == EIO);
+
+	/* The reader's poison wins even if writer acquires successfully.
+	 * The one live instance is still owned by the Global controller. */
+	CHECK(logger_process_object_count() == 1);
+	all_rejected(EIO);
+	logger_config_t replacement = config_for("new.log", 0);
+	CHECK(logger_init(&replacement) == -1 && errno == EIO);
+	CHECK(access("new.log", F_OK) == -1 && errno == ENOENT);
+}
+
 static void release_proof_failure(const char *kind)
 {
 	/* Global lock failures do not need a worker; only join/queue destroy
@@ -649,6 +728,9 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "release-proof")) {
 		CHECK(argc == 3);
 		release_proof_failure(argv[2]);
+	} else if (!strcmp(argv[1], "proof-handoff")) {
+		CHECK(argc == 3);
+		unlock_shutdown_handoff(!strcmp(argv[2], "acquire-fail"));
 	} else if (!strcmp(argv[1], "shutdown-error"))
 		shutdown_error(0);
 	else if (!strcmp(argv[1], "shutdown-fsync"))
