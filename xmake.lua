@@ -47,9 +47,10 @@ set_allowedplats("linux")
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
-local abi_version = "1"
-local symbol_version = "LOGGER_1.0"
-local abi_manifest = "abi/logger-1.0.symbols"
+-- Audit removal is an ABI break. Never reuse the released SONAME 1.
+local abi_version = "2"
+local symbol_version = "LOGGER_2.0"
+local abi_manifest = "abi/logger-2.0.symbols"
 local release_candidate = version_major == "0"
 
 local function cmake_bool(value)
@@ -68,7 +69,7 @@ find_dependency(Threads)
 set(Logger_FOUND TRUE)
 set(Logger_VERSION "%s")
 set(Logger_ABI_VERSION "%s")
-set(Logger_CRYPTO_IMPLEMENTATION "builtin-sha256")
+set(Logger_CRYPTO_IMPLEMENTATION "none")
 set(Logger_RELEASE_CANDIDATE %s)
 set(Logger_shared_FOUND %s)
 set(Logger_static_FOUND %s)
@@ -158,7 +159,7 @@ libdir=${prefix}/lib
 includedir=${prefix}/include/logger
 
 Name: prod-c-logger
-Description: Host-owned Logger and Audit (builtin SHA-256), %s
+Description: Host-owned C Logger, %s
 Version: %s
 Libs: -L${libdir} -llogger
 Libs.private: -pthread
