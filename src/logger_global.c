@@ -19,6 +19,10 @@
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;
 static logger_t *g_logger; /* 由 lifetime lock 保护；绝不把 owning pointer 返回给应用 */
+/* Controller-owned unpublished/retired instance, protected by g_control_mu.
+ * A failed final-release proof deliberately retains the allocation here.
+ * This is a real owner, not a sanitizer-only leak suppression or a refcount. */
+static logger_t *g_retired;
 
 enum global_phase {
 	G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED, G_BROKEN
@@ -231,6 +235,10 @@ int logger_init(const logger_config_t *cfg)
 	uint64_t old = atomic_load_explicit(&g_ticket, memory_order_acquire);
 	if (phase_of(old) == G_RUNNING)
 		return finish(&scope, -EALREADY);
+	/* An incompletely retired object must never have a successor, even if
+	 * its generation ticket were to be mishandled by another path. */
+	if (g_retired)
+		return finish(&scope, -EUCLEAN);
 	if (generation_of(old) == (UINT64_MAX >> PHASE_BITS))
 		return finish(&scope,
 			      -EOVERFLOW); /* generation 绝不回绕复用 */
@@ -250,9 +258,12 @@ int logger_init(const logger_config_t *cfg)
 	}
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
+		g_retired = candidate; /* never published; controller owns it */
 		logger_destroy_receipt_reset();
 		(void)logger_destroy_status(candidate);
-		if (!logger_destroy_receipt_read())
+		if (logger_destroy_receipt_read())
+			g_retired = NULL;
+		else
 			global_lock_poison(EUCLEAN);
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
@@ -264,8 +275,13 @@ int logger_init(const logger_config_t *cfg)
 	 * This candidate was never published and must not become global. */
 	int poison = global_lock_error();
 	if (poison) {
+		g_retired = candidate;
 		logger_destroy_receipt_reset();
 		(void)logger_destroy_status(candidate);
+		if (logger_destroy_receipt_read())
+			g_retired = NULL;
+		else
+			global_lock_poison(EUCLEAN);
 		return finish(&scope, -poison);
 	}
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
@@ -323,6 +339,9 @@ int logger_shutdown_status(void)
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
+	/* Unpublish under writer lock; the controller retains the only owner
+	 * until the last teardown resource has been proven released. */
+	g_retired = old;
 	g_logger = NULL;
 	int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 	if (unlock_rc) {
@@ -338,9 +357,11 @@ int logger_shutdown_status(void)
 	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
 	if (!logger_destroy_receipt_read())
 		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
-	else
+	else {
+		g_retired = NULL;
 		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
 					      memory_order_release);
+	}
 	return finish(&scope, rc);
 }
 
@@ -532,6 +553,7 @@ int logger_global_stop_for_clean_fork(void)
 		atomic_store_explicit(&g_ticket,
 				      with_phase(current, G_STOPPING),
 				      memory_order_release);
+		g_retired = l;
 		g_logger = NULL;
 		int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		scope.lifetime_locked = 0;
@@ -544,10 +566,12 @@ int logger_global_stop_for_clean_fork(void)
 			rc = logger_destroy_status(l) ? -(errno ? errno : EIO) : 0;
 			if (!logger_destroy_receipt_read())
 				global_lock_poison(rc < 0 ? -rc : EUCLEAN);
-			else
+			else {
+				g_retired = NULL;
 				atomic_store_explicit(
 					&g_ticket, with_phase(current, G_STOPPED),
 					memory_order_release);
+			}
 		}
 	}
 	int finish_rc = finish(&scope, rc);
