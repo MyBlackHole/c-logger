@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 	CHECK(dirfd >= 0);
 	const unsigned char zero[32] = { 0 };
 	record_fixture_t r =
-		record_fixture(AUDIT_INTEGRITY_SHA256, 1, zero, "EVENT");
+		record_fixture(AUDIT_INTEGRITY_SHA256, 1, zero, "AUDIT_START");
 	record_write("app.audit.log", r.data, r.length);
 	const char tail[] = "partial-crash-record";
 	record_append("app.audit.log", tail, sizeof(tail) - 1u);
