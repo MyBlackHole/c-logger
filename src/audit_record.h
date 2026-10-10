@@ -25,7 +25,13 @@ typedef struct {
 /* Continuity is session-scoped, not file-scoped: normal restart creates
  * a fresh 128-bit instance ID and starts at seq=1 with AUDIT_START.
  * Archive rotation does not reset the instance or sequence. The first
- * record may be an anchored suffix, so the caller establishes genesis. */
+ * record may be an anchored suffix, so the caller establishes genesis.
+ *
+ * This cursor validates sequence/session lifecycle only. It deliberately
+ * does not infer transaction pairing from txn/phase: audit_write() can emit
+ * standalone ATTEMPT or RESULT records, and the current disk schema does not
+ * identify whether a record came from audit_write(), audit_begin(), or
+ * audit_end(). See docs/v2/AUDIT_TRANSACTION_SEMANTICS.md. */
 typedef struct {
 	char instance[33];
 	uint64_t seq;

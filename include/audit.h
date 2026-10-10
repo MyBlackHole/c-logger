@@ -131,12 +131,25 @@ typedef struct {
 LOGGER_API int audit_get_status(audit_status_t *);
 /* Raw-fork inherited Audit state is invalidated internally by the shared
  * process guard. Reinitialization in the child returns ECHILD until exec. */
+/* audit_write() writes one independently valid event. transaction_id and phase
+ * are caller-supplied correlation metadata; audit_write() does not establish or
+ * enforce a BEGIN/END pairing, and a nonzero transaction_id is not proof that
+ * the corresponding ATTEMPT/RESULT exists. Verification checks record syntax,
+ * hash/sequence continuity and system lifecycle semantics, not business pairing.
+ * See docs/v2/AUDIT_TRANSACTION_SEMANTICS.md before relying on pair completeness. */
 LOGGER_API int audit_write(const audit_event_t *);
-/* 事务事件在纯校验/编码错误（如 EINVAL、EOVERFLOW）时保持原样，
+/* audit_begin()/audit_end() are synchronous submission helpers, not a durable
+ * in-memory transaction registry. The caller must reuse the intended event
+ * identity and reconcile uncertain I/O using the documented submission contract.
+ * Current on-disk records cannot distinguish these helpers from audit_write().
+ * The API therefore does not promise global transaction-ID uniqueness or pair
+ * completeness; see docs/v2/AUDIT_TRANSACTION_SEMANTICS.md.
+ *
+ * 事务事件在纯校验/编码错误（如 EINVAL、EOVERFLOW）时保持原样，
  * 自动生成的 transaction_id 也不消耗。若严格日志后端已被调用，
  * 即使返回 IO_FAILED，event 也携带本次尝试的 transaction_id/phase/
  * result；此时它只是尝试标识，不代表已提交，禁止盲目重试。
- * 若 strict log 已确认持久化而 checkpoint 失败，函数虽然返回 -1，
+ * 若 strict log 已确认持久化而 checkpoint 提交失败，函数虽然返回 -1，
  * event 仍是已提交的事件快照；audit_get_status() 中 committed_seq
  * 已前进、checkpoint_dirty 为真，audit_flush() 只修复 checkpoint。
  * 不改变公开结构体/函数签名；详见 docs/v2/AUDIT_TRANSACTION_SUBMISSION.md。
