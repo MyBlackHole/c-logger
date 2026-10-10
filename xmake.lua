@@ -10,6 +10,12 @@ option("build_shared")
     set_description("Build the production logger as a shared library")
 option_end()
 
+option("legacy_audit")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Temporary opt-in legacy Audit compatibility")
+option_end()
+
 option("legacy_fork")
     set_default(false)
     set_showmenu(true)
@@ -167,6 +173,13 @@ Cflags: -I${includedir}%s
     target:add("installfiles", pc_file, {prefixdir = "lib/pkgconfig"})
 end
 
+local audit_sources = {
+    "src/audit.c", "src/audit_record.c", "src/audit_integrity.c",
+    "src/audit_recovery.c", "src/audit_verify.c"
+}
+local audit_compat = has_config("legacy_audit") or has_config("build_tests") or
+    has_config("build_private_tests") or has_config("build_regression_tests")
+
 local logger_sources = {
     "src/logger.c",
     "src/logger_global.c",
@@ -180,11 +193,6 @@ local logger_sources = {
     "src/logger_file_rename.c",
     "src/logger_syslog.c",
     "src/logger_worker.c",
-    "src/audit.c",
-    "src/audit_record.c",
-    "src/audit_integrity.c",
-    "src/audit_recovery.c",
-    "src/audit_verify.c",
     "src/console.c"
 }
 
@@ -196,6 +204,11 @@ target("logger")
 
     for _, source in ipairs(logger_sources) do
         add_files(source)
+    end
+    if audit_compat then
+        for _, source in ipairs(audit_sources) do
+            add_files(source)
+        end
     end
     if has_config("legacy_fork") then
         add_files("src/logger_fork.c")
@@ -238,8 +251,11 @@ target("logger")
         }
     })
     add_includedirs("include", "$(builddir)/generated", {public = true})
-    add_headerfiles("include/logger.h", "include/audit.h", "include/console.h",
+    add_headerfiles("include/logger.h", "include/console.h",
                     "include/logger_export.h", {prefixdir = "logger"})
+    if audit_compat then
+        add_headerfiles("include/audit.h", {prefixdir = "logger"})
+    end
     add_installfiles("$(builddir)/generated/logger_version.h",
                      {prefixdir = "include/logger"})
     if has_config("legacy_fork") then
@@ -364,7 +380,7 @@ xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
     set_title(package_title)
-    set_description("Host-owned C Logger and Audit, builtin SHA-256")
+    set_description("Host-owned C Logger (legacy Audit opt-in)")
     set_basename(package_basename)
     add_targets("logger")
     after_package(function (package)
@@ -426,6 +442,9 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         set_kind("static")
         set_default(false)
         for _, source in ipairs(logger_sources) do
+            add_files(source)
+        end
+        for _, source in ipairs(audit_sources) do
             add_files(source)
         end
         if has_config("legacy_fork") then
@@ -566,6 +585,9 @@ if has_config("build_regression_tests") then
         set_kind("static")
         set_default(false)
         for _, source in ipairs(logger_sources) do
+            add_files(source)
+        end
+        for _, source in ipairs(audit_sources) do
             add_files(source)
         end
         if has_config("legacy_fork") then

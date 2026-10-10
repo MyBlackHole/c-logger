@@ -5,8 +5,10 @@
 
 
 仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
-保留文件/标准错误/Syslog、同步/异步、Console 与完整 Audit。当前软件版本为 **1.0.0**，
+保留文件/标准错误/Syslog、同步/异步和 Console。2.0 默认构建不再包含 Audit。当前根版本仍为 **1.0.0**，
 默认 ABI 为 Production v1：SONAME 1 / `LOGGER_1.0` / 62-symbol public C ABI。
+
+> **开发分支兼容性警告：** 这是 Audit 移除的第一阶段，默认构建移除了 Audit 符号与安装头文件，但旧 ABI/打包/CI 仍在迁移中；不可作为 SONAME 1 的正式发布。参见 [迁移方案](docs/v2/AUDIT_REMOVAL.md)。
 
 ## 构建与安装
 
