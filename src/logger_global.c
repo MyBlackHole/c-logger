@@ -20,7 +20,9 @@ static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;
 static logger_t *g_logger; /* 由 lifetime lock 保护；绝不把 owning pointer 返回给应用 */
 
-enum global_phase { G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED };
+enum global_phase {
+	G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED, G_BROKEN
+};
 #define PHASE_BITS 3u
 #define PHASE_MASK UINT64_C(7)
 /* generation 与 phase 放在同一个 atomic ticket 中。
@@ -28,6 +30,8 @@ enum global_phase { G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED };
  * 每次真实 init 尝试都会消费一个 generation，即使 candidate 构造失败。
  */
 static _Atomic uint64_t g_ticket;
+/* A failed lock release or incomplete teardown invalidates global lifetime. */
+static _Atomic int g_lock_error;
 static _Thread_local int g_in_global;
 
 typedef struct {
@@ -35,6 +39,7 @@ typedef struct {
 	int saved_errno;
 	int control_locked;
 	int lifetime_locked;
+	int proof_error; /* current thread may still hold an unverified lock */
 } global_scope_t;
 
 static enum global_phase phase_of(uint64_t ticket)
@@ -52,6 +57,37 @@ static uint64_t with_phase(uint64_t ticket, enum global_phase phase)
 	return (ticket & ~PHASE_MASK) | (uint64_t)phase;
 }
 
+static int global_lock_error(void)
+{
+	return atomic_load_explicit(&g_lock_error, memory_order_acquire);
+}
+
+/* Publish the sticky error before the broken phase. A CAS preserves a newer
+ * generation if another controller was already waiting on the lock. */
+static void global_lock_poison(int error)
+{
+	if (!error)
+		return;
+	int expected = 0;
+	(void)atomic_compare_exchange_strong_explicit(
+		&g_lock_error, &expected, error,
+		memory_order_release, memory_order_relaxed);
+	uint64_t ticket = atomic_load_explicit(&g_ticket, memory_order_acquire);
+	while (phase_of(ticket) != G_BROKEN &&
+	       !atomic_compare_exchange_weak_explicit(
+		       &g_ticket, &ticket, with_phase(ticket, G_BROKEN),
+		       memory_order_acq_rel, memory_order_acquire)) {
+	}
+}
+
+/* An init rollback must never undo another thread's proof failure. */
+static void rollback_ticket(uint64_t ticket, enum global_phase phase)
+{
+	(void)atomic_compare_exchange_strong_explicit(
+		&g_ticket, &ticket, with_phase(ticket, phase),
+		memory_order_release, memory_order_relaxed);
+}
+
 /* cancellation 恢复生效前，必须先释放全部资源和 lifetime pin。
  * 应用的 cancellation cleanup handler 随后仍可能调用 Logger。
  * 这里是 cancellation deferral，不是 rollback，也不是 I/O deadline。
@@ -60,16 +96,30 @@ static uint64_t with_phase(uint64_t ticket, enum global_phase phase)
 static int finish(global_scope_t *scope, int rc)
 {
 	int error;
+	if (scope->proof_error) {
+		/* A manual unlock already failed. Retain outer locks and keep
+		 * cancellation disabled; repeating unlock cannot prove ownership. */
+		errno = scope->proof_error;
+		return -1;
+	}
 	if (scope->lifetime_locked) {
 		error = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
-		if (!rc && error)
-			rc = -error;
+		if (error) {
+			global_lock_poison(error);
+			/* The lifetime pin may still be held. Do not unlock the
+			 * controller, clear TLS reentry, or resume cancellation. */
+			errno = error;
+			return -1;
+		}
 	}
 	if (scope->control_locked) {
 		error = __cleanup_lockdep_mutex_unlock(
 			&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
-		if (!rc && error)
-			rc = -error;
+		if (error) {
+			global_lock_poison(error);
+			errno = error;
+			return -1;
+		}
 	}
 	error = rc < 0 ? -rc : scope->saved_errno;
 	g_in_global = 0;
@@ -94,6 +144,11 @@ static int begin(global_scope_t *scope)
 		errno = EDEADLK;
 		return -1;
 	}
+	int poison = global_lock_error();
+	if (poison) {
+		errno = poison;
+		return -1;
+	}
 	*scope = (global_scope_t){ .saved_errno = errno };
 	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					&scope->old_cancel);
@@ -112,6 +167,9 @@ static int lock_control(global_scope_t *scope)
 		&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
 	if (!rc) {
 		scope->control_locked = 1;
+		int poison = global_lock_error();
+		if (poison)
+			return -poison;
 	}
 	return -rc;
 }
@@ -125,6 +183,8 @@ static int phase_error(uint64_t ticket)
 		return EAGAIN;
 	case G_RUNNING:
 		return 0;
+	case G_BROKEN:
+		return global_lock_error() ? global_lock_error() : EIO;
 	default:
 		return ESHUTDOWN;
 	}
@@ -144,6 +204,9 @@ static int pin(global_scope_t *scope, int allow_bootstrap)
 	if (rc)
 		return -rc;
 	scope->lifetime_locked = 1;
+	int poison = global_lock_error();
+	if (poison)
+		return -poison;
 	if (ticket != atomic_load_explicit(&g_ticket, memory_order_acquire))
 		return -ESHUTDOWN;
 	if (phase_of(ticket) == G_RUNNING && !g_logger)
