@@ -1276,6 +1276,10 @@ if has_config("build_regression_tests") then
             add_tests("global_proof_" .. scenario,
                       {runargs = {"release-proof", scenario}, timeout = 20})
         end
+        for _, scenario in ipairs({"writer", "acquire-fail"}) do
+            add_tests("global_proof_handoff_" .. scenario,
+                      {runargs = {"proof-handoff", scenario}, timeout = 20})
+        end
     target_end()
 
     target("global_cancel_regression")
