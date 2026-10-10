@@ -123,7 +123,6 @@ static void run_case(const char *mode)
 	const unsigned char zero[32] = { 0 };
 	audit_ckpt_t cp = { .algorithm = AUDIT_INTEGRITY_SHA256 };
 	if (!genesis) {
-		cp.seq = records[0].length ? 1u : 0u;
 		/* The retained suffix is anchored by an explicit checkpoint, not
 		 * by a presumed genesis sequence. */
 		audit_record_view_t first;
