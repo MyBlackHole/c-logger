@@ -484,6 +484,11 @@ void logger_global_write(logger_level_t level, const char *module,
 }
 
 #if LOGGER_ENABLE_LEGACY_FORK_HELPER
+int logger_global_lifetime_broken(void)
+{
+	return global_lock_error() != 0;
+}
+
 int logger_global_stop_for_clean_fork(void)
 {
 	global_scope_t scope;
