@@ -595,6 +595,7 @@ if has_config("build_regression_tests") then
         {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"},
         {"crypto_chain_tool", "tests/regression/crypto_chain_tool.c"},
         {"audit_record_regression", "tests/regression/test_audit_record.c"},
+        {"audit_sequence_regression", "tests/regression/test_audit_sequence.c"},
         {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
         {"audit_recovery_capacity", "tests/regression/test_audit_recovery_capacity.c"},
         {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
@@ -825,6 +826,20 @@ if has_config("build_regression_tests") then
             "stop-error", "start-error"
         }) do
             add_tests("audit_" .. scenario .. "_regression",
+                      {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("audit_sequence_regression")
+        for _, scenario in ipairs({
+            "valid-rotation", "valid-genesis", "valid-restart-cross",
+            "valid-restart-within", "anchored-suffix",
+            "gap-within", "duplicate-within", "gap-cross",
+            "duplicate-cross", "switch-no-start", "switch-not-one",
+            "switch-within-no-start", "same-id-reset", "start-not-one",
+            "genesis-not-one", "wrap"
+        }) do
+            add_tests("audit_sequence_" .. scenario,
                       {runargs = scenario, timeout = 20})
         end
     target_end()

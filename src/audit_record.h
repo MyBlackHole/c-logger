@@ -16,9 +16,22 @@ typedef struct {
 	uint64_t seq;
 	uint64_t txn;
 	char instance[33];
+	int is_start; /* canonical AUDIT_START event, not arbitrary user text */
 	unsigned char previous[32];
 	unsigned char hash[32];
 } audit_record_view_t;
+
+/* Continuity is session-scoped, not file-scoped: normal restart creates
+ * a fresh 128-bit instance ID and starts at seq=1 with AUDIT_START.
+ * Archive rotation does not reset the instance or sequence. The first
+ * record may be an anchored suffix, so the caller establishes genesis. */
+typedef struct {
+	char instance[33];
+	uint64_t seq;
+	int seen;
+} audit_sequence_cursor_t;
+int audit_sequence_advance(audit_sequence_cursor_t *,
+			   const audit_record_view_t *);
 
 enum audit_line_result {
 	AUDIT_LINE_EOF = 0,
