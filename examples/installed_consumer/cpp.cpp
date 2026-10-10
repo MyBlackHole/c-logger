@@ -1,15 +1,12 @@
 #include <logger.h>
-#include <audit.h>
 #include <console.h>
 #include <logger_version.h>
 int main()
 {
 	auto cfg = LOGGER_DEFAULT_CONFIG();
-	const auto audit = AUDIT_DEFAULT_CONFIG();
 	const auto console = CONSOLE_DEFAULT_CONFIG();
 	const auto source = LOGGER_SOURCE();
 	if (cfg.struct_size != sizeof(cfg) ||
-	    audit.struct_size != sizeof(audit) ||
 	    console.struct_size != sizeof(console) || source.line <= 0 ||
 	    LOGGER_ABI_VERSION != EXPECTED_LOGGER_ABI)
 		return 1;

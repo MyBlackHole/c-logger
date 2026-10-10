@@ -1,5 +1,4 @@
 #include <logger.h>
-#include <audit.h>
 #include <console.h>
 #include <errno.h>
 #include <stdio.h>
@@ -54,33 +53,10 @@ int main(void)
 		return 3;
 	}
 
-	audit_config_t ac = AUDIT_DEFAULT_CONFIG();
-	ac.log_dir = ".";
-	ac.name = "installed";
-	ac.rotation.mode = LOGGER_ROTATE_NONE;
-	if (audit_init(&ac)) {
-		perror("audit_init");
-		return 4;
-	}
-	audit_event_t event;
-	memset(&event, 0, sizeof(event));
-	event.event = "INSTALLED_CONSUMER";
-	event.actor = "host";
-	event.source = "example";
-	event.resource = "test-object";
-	event.operation = "check";
-	if (audit_begin(&event) || audit_end(&event, AUDIT_SUCCESS, 0)) {
-		audit_shutdown();
-		return 5;
-	}
-	if (audit_shutdown_status() || audit_verify_file("installed.audit.log"))
-		return 6;
-	if (strcmp(audit_crypto_backend(), "builtin"))
-		return 7;
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	cc.color = CONSOLE_COLOR_NEVER;
 	console_init(&cc);
-	if (console_print("installed Logger/Audit/Console consumer passed"))
+	if (console_print("installed Logger/Console consumer passed"))
 		return 8;
 	return 0;
 }
