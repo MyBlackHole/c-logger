@@ -67,8 +67,9 @@ static int verify_from(const char *path, const char *anchor, char final_hex[65],
 		}
 		audit_record_view_t record;
 		rc = audit_record_parse_line(line, length, &record);
-		if (!rc && !sequence.seen && !anchor && record.seq != 1u)
-			rc = -EBADMSG; /* complete genesis must start at seq=1 */
+		if (!rc && !sequence.seen && !anchor &&
+		    (record.seq != 1u || !record.is_start))
+			rc = -EBADMSG; /* complete genesis starts with AUDIT_START */
 		if (!rc)
 			rc = audit_record_verify(&record, prev, digest, prev);
 		if (!rc)
