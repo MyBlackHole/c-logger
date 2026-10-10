@@ -245,20 +245,28 @@ int logger_init(const logger_config_t *cfg)
 		 */
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
-		atomic_store_explicit(&g_ticket, with_phase(ticket, rollback),
-				      memory_order_release);
+		rollback_ticket(ticket, rollback);
 		return finish(&scope, rc);
 	}
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		(void)logger_destroy_status(candidate);
+		int released = 0;
+		(void)logger_dispose_internal_tracked(candidate, &released);
+		if (!released)
+			global_lock_poison(EUCLEAN);
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
-		atomic_store_explicit(&g_ticket, with_phase(ticket, rollback),
-				      memory_order_release);
+		rollback_ticket(ticket, rollback);
 		return finish(&scope, -rc);
 	}
 	scope.lifetime_locked = 1;
+	/* A bootstrap reader can poison the lifetime during construction.
+	 * This candidate was never published and must not become global. */
+	int poison = global_lock_error();
+	if (poison) {
+		(void)logger_dispose_internal_tracked(candidate, NULL);
+		return finish(&scope, -poison);
+	}
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	g_logger = candidate;
@@ -306,11 +314,23 @@ int logger_shutdown_status(void)
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
 	g_logger = NULL;
-	(void)__cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
-	/* 整个 I/O、worker join、close 和 owner release 期间持续持有 control。 */
-	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
-	atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
-			      memory_order_release);
+	int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
+	if (unlock_rc) {
+		/* Lifetime ownership is uncertain: retain the old allocation and
+		 * the outer control lock. Neither STOPPED nor final free is legal. */
+		global_lock_poison(unlock_rc);
+		scope.proof_error = unlock_rc;
+		return finish(&scope, -unlock_rc);
+	}
+	/* Writer lock release proves external readers drained. The internal
+	 * receipt distinguishes final free from an incomplete worker teardown. */
+	int released = 0;
+	rc = logger_dispose_internal_tracked(old, &released);
+	if (!released)
+		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
+	else
+		atomic_store_explicit(&g_ticket, with_phase(current, G_STOPPED),
+					      memory_order_release);
 	return finish(&scope, rc);
 }
 
