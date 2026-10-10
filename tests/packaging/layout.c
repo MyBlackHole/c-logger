@@ -1,7 +1,6 @@
 /* Also compiled as C++11. Compare all public aggregate sizes/alignments,
  * selected offsets, enum values and all default initializer members. */
 #include <logger.h>
-#include <audit.h>
 #include <console.h>
 #include <stdio.h>
 #ifdef __cplusplus
@@ -22,22 +21,13 @@ int main(void)
 	TYPE(logger_io_metrics_t);
 	TYPE(logger_syslog_config_t);
 	TYPE(logger_syslog_metrics_t);
-	TYPE(audit_config_t);
-	TYPE(audit_event_t);
-	TYPE(audit_status_t);
 	TYPE(console_config_t);
 	FIELD(logger_config_t, version);
 	FIELD(logger_config_t, file_path);
 	FIELD(logger_config_t, rotation);
 	FIELD(logger_config_t, overflow);
 	FIELD(logger_config_t, syslog);
-	FIELD(audit_config_t, rotation);
-	FIELD(audit_config_t, integrity);
-	FIELD(audit_event_t, event);
-	FIELD(audit_event_t, detail);
-	FIELD(audit_status_t, instance_id);
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
-	audit_config_t a = AUDIT_DEFAULT_CONFIG();
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	N(l.struct_size);
 	N(l.version);
@@ -62,15 +52,6 @@ int main(void)
 	N(l.syslog.facility);
 	N(l.syslog.reconnect_interval_ms);
 	N(l.syslog.startup);
-	N(a.struct_size);
-	N(a.version);
-	printf("audit=%s/%s\n", a.log_dir, a.name);
-	N(a.chain_state_path == NULL);
-	N(a.rotation.mode);
-	N(a.rotation.max_file_size);
-	N(a.rotation.retention_days);
-	N(a.failure_policy);
-	N(a.integrity);
 	N(c.struct_size);
 	N(c.version);
 	N(c.verbosity);

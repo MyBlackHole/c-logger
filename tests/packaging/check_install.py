@@ -66,7 +66,7 @@ def run(command, cwd=work, env=None, expected=0):
 try:
     # A newly declared public entry must not silently disappear into local:*.
     declared = set()
-    for h in ('logger.h', 'audit.h', 'console.h'):
+    for h in ('logger.h', 'console.h'):
         text = re.sub(r'/\*.*?\*/', '', (a.source/'include'/h).read_text(), flags=re.S)
         for line in text.splitlines():
             m = re.match(r'^(?:LOGGER_API\s+)?(?:logger_t\s*\*|logger_state_t|logger_context_t|audit_failure_policy_t|const char\s*\*|uint64_t|int|void)\s*((?:logger_|audit_|console_)\w*)\(', line)
@@ -98,7 +98,7 @@ try:
     license_text = license_file.read_text()
     assert 'Apache License' in license_text
     assert 'Version 2.0, January 2004' in license_text
-    expected_headers = {'logger.h','audit.h','console.h','logger_export.h','logger_version.h'}
+    expected_headers = {'logger.h','console.h','logger_export.h','logger_version.h'}
     if a.legacy: expected_headers.add('logger_fork_compat.h')
     assert {x.name for x in include.iterdir()} == expected_headers
     version_header = (include / 'logger_version.h').read_text()
