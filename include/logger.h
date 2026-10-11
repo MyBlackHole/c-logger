@@ -334,7 +334,13 @@ LOGGER_API int logger_destroy_status(logger_t *);
  * Never retry a freed pointer just because final I/O returned an error. */
 LOGGER_API void logger_destroy(logger_t *);
 LOGGER_API logger_state_t logger_get_state(const logger_t *);
-/* Input strings must be valid for the duration of the call. Async records
+/* Ordinary void logging keeps at most 4095 message bytes. If formatting
+ * exceeds that bound, the retained text ends with " [truncated]". This is a
+ * byte boundary, not a UTF-8 code-point guarantee; no per-record allocation is
+ * added. Text is NUL-terminated, not binary-safe. If metadata exhausts the ordinary output line, that line also ends
+ * with the marker before LF. logger_log_sync_status() instead rejects overflow with
+ * -EOVERFLOW and emits no record. Metadata bounds below are separate.
+ * Input strings must be valid for the duration of the call. Async records
  * snapshot only metadata required by detail/include_*; when module/source are
  * required they are copied as module (127 bytes), source basename (255) and
  * function (127). DEBUG context is copied only when that detail can emit it.

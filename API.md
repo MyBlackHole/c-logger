@@ -41,7 +41,12 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 ## 普通日志字符串寿命
 
 调用者的 fmt/source/context 输入必须在对应调用期间有效，不得并发修改。
-用户消息仍通过 `vsnprintf` 复制。元数据现在按不可变的 `detail/include_*` 需求采集：
+用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（包括全局 bootstrap）最多保留4095字节正文，
+超限时正文尾部明确替换为 ` [truncated]`；未超限正文保持原字节。边界按字节处理，
+不承诺保留UTF-8码点。接口使用NUL终止的C字符串文本，内嵌NUL不是二进制消息接口。同步普通输出若因过长元数据耗尽整行缓冲，也在LF前放置同一标记。
+需要完整正文确认时使用 `logger_log_sync_status()`，超限返回
+`-EOVERFLOW` 且不输出。该行为不新增堆分配或截断计数ABI，原有输出指标仍统计实际发出的记录。
+元数据现在按不可变的 `detail/include_*` 需求采集：
 只有最终格式真正会使用的模块/上下文/源信息才进入异步队列；需要保留的
 模块/源文件基础名/函数继续做有界快照，入队后不再保留业务 DSO 的源信息指针。
 容量（不含 NUL）：模块 127、基础文件名 255、函数 127 字节。
@@ -56,7 +61,8 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 
 全局 `logger_init/LOG_*/logger_shutdown` 保留便利用法；业务 `.so` 不应偷偷调用。
 全局生命周期遵循 docs/GLOBAL_LIFECYCLE.md；显式实例仍由宿主独占销毁。
-Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。
+Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
+关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局handler、mask或既有pending信号。
 
 ## Fork 与兼容
 

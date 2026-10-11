@@ -530,6 +530,8 @@ void logger_global_write(logger_level_t level, const char *module,
 			if (n < 0)
 				rc = -EILSEQ;
 			else {
+				if ((size_t)n >= sizeof(text))
+					logger_text_mark_truncated(text, sizeof(text));
 				/* Bootstrap diagnostics need the same thread-local SIGPIPE
 				 * protection as initialized stderr sinks. Keep the historical
 				 * bytes without a second unbounded printf allocation. */

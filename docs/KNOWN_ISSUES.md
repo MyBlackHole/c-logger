@@ -19,7 +19,7 @@
 - Syslog仅支持本地非阻塞Unix datagram；不提供磁盘重试队列、失败记录重放、远端持久确认或绝对I/O时限。重连仅由后续日志触发。
 - Logger/Console不是信号安全API。raw fork继承运行时拒绝使用，优先fork+exec；不支持vfork后调用、跨调用longjmp/pthread_exit、宿主取消私有worker或回调等待环。
 - 支持延迟取消或入口前已禁用取消；ASYNC+ENABLE不在一般API支持契约内。取消延期期间底层文件/stdio和锁操作仍可能阻塞。
-- Logger的stderr与bootstrap路径保护调用线程免受本次写入新产生SIGPIPE的默认终止，保留宿主handler、mask和既有pending信号。Console的stdio管道行为另由公开Console合同定义，不能由Logger测试推导。
+- Logger的stderr与bootstrap路径保护调用线程免受本次写入新产生SIGPIPE的默认终止，保留宿主handler、mask和既有pending信号。Console的stdio路径也采用线程局部保护，关闭管道返回-1/EPIPE；更早的格式错误保留首错。均不改变宿主全局信号处置。
 - 普通日志不提供审计事务、哈希链、不可变存储或可信锚点。
 
 ## 持久性证据范围
