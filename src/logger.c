@@ -1031,8 +1031,13 @@ int logger_flush_instance_status(logger_t *l)
 		/* reservation->notification 与 wait->sync 整段都处于 cancellation
 		 * disabled scope；等待 worker progress 时不能持有 emit_mu。 */
 		rc = logger_wait_for_output(l);
-		int sync_rc;
-		{
+		/* An in-flight worker may have lost its emit_mu release proof while
+		 * we waited. Never reacquire a known-unproven lock. Ordinary backend
+		 * errors still require the best-effort final sync below. */
+		int sync_error = atomic_load_explicit(&l->synchronization_error,
+						      memory_order_acquire);
+		int sync_rc = sync_error ? -sync_error : 0;
+		if (!sync_error) {
 			ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 			sync_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 			if (!sync_rc)

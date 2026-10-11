@@ -409,6 +409,29 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+    -- GNU --wrap can intercept the actual production archive, not a DSO's
+    -- internal libc calls. Shared configurations run the separate white-box
+    -- target below; do not label that as production DSO interception.
+    if not has_config("build_shared") then
+        target("flush_release_proof_production_test")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_flush_release_proof.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"logger_create", "pthread_mutex_lock",
+                                      "pthread_mutex_unlock", "pthread_rwlock_wrlock",
+                                      "fsync"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({"explicit-proof", "explicit-cancel",
+                                        "global-proof", "global-cancel",
+                                        "io-error", "wait-error"}) do
+                add_tests(scenario, {runargs = scenario, timeout = 15})
+            end
+        target_end()
+    end
     -- This public-API test must cover the actual shipped library in both
     -- shared and static builds, not only the white-box support archive.
     target("stderr_sigpipe_production_test")
@@ -650,6 +673,9 @@ if has_config("build_regression_tests") then
         -- Link-time interception parity, group A: queue/flush and Audit I/O/state.
         {"queue_notify_regression", "tests/regression/test_queue_notify.c",
             {"pthread_cond_wait"}},
+        {"flush_release_proof_regression", "tests/regression/test_flush_release_proof.c",
+            {"logger_create", "pthread_mutex_lock", "pthread_mutex_unlock",
+             "pthread_rwlock_wrlock", "fsync"}},
         {"flush_pending_regression", "tests/regression/test_flush_pending.c",
             {"logger_format_line", "pthread_cond_wait", "fsync"}},
         {"flush_watermark_regression", "tests/regression/test_flush_watermark.c",
@@ -826,6 +852,14 @@ if has_config("build_regression_tests") then
             add_tests(name, {timeout = 15})
         target_end()
     end
+
+    target("flush_release_proof_regression")
+        for _, scenario in ipairs({"explicit-proof", "explicit-cancel",
+                                    "global-proof", "global-cancel",
+                                    "io-error", "wait-error"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 15})
+        end
+    target_end()
 
     target("queue_notify_regression")
         add_tests("queue_notify_wait_error",
