@@ -73,32 +73,31 @@ typedef enum {
 	LOGGER_OVERFLOW_SYNC = 1
 } logger_overflow_policy_t;
 typedef struct {
-	uint64_t dropped[6]; /* queue-full DROP only; excludes sync fallback */
+	uint64_t dropped[6]; /* 仅统计队列满时的 DROP；不含同步回退 */
 	uint64_t queue_high_watermark;
 	uint64_t enqueued;
 	uint64_t sync_fallbacks;
 	uint64_t consumer_batches;
-	uint64_t consumer_records; /* dequeued records, not output completion */
+	uint64_t consumer_records; /* 已出队的记录数，并非已完成输出的记录数 */
 } logger_metrics_t;
-/* Separate extension: logger_metrics_t retains its original binary layout.
- * Live snapshots may span concurrent updates. After flush with producers
- * quiesced, completed == emitted + failed. Failed means not confirmed across
- * every selected output (a partial batch may contain already-written bytes). */
+/* 独立扩展：logger_metrics_t 保留原有二进制布局。
+ * 实时快照可能跨越并发更新。生产者停止产生日志后执行 flush，
+ * 有 completed == emitted + failed。失败表示未能确认所有选定输出均成功
+ * （部分完成的批次中可能已有字节写入）。 */
 typedef struct {
 	uint64_t async_completed;
 	uint64_t sync_completed;
 	uint64_t emitted_records;
 	uint64_t failed_records;
-	int first_error; /* positive errno; never cleared within an instance */
+	int first_error; /* 正值 errno；在实例存续期间不会清除 */
 } logger_io_metrics_t;
 
-/* Unified low-overhead observability snapshot.
+/* 统一的低开销可观测性快照。
  *
- * This does not replace logger_metrics_t/logger_io_metrics_t: those layouts stay
- * frozen for existing callers. Diagnostics adds current queue/worker state and
- * objective lifetime observations without acquiring backend locks, performing
- * I/O, flushing, reconnecting or clearing errors. Live fields are race-free
- * approximate snapshots and may span concurrent updates.
+ * 此快照不替代 logger_metrics_t/logger_io_metrics_t：
+ * 这些布局为现有调用者保持不变。诊断信息增加当前队列/工作线程状态及
+ * 生命周期内的客观观测结果，不获取后端锁，不执行 I/O、刷新、重连或
+ * 清除错误。实时字段是无数据竞争的近似快照，可能跨越并发更新。
  */
 typedef enum {
 	LOGGER_DIAG_DROPS_OBSERVED = 1u << 0,
@@ -144,11 +143,11 @@ typedef struct {
 	uint64_t force_wake_signals;
 } logger_diagnostics_t;
 
-/* Coherent File backend snapshot, taken under the instance output mutex.
- * Counters cover only the selected file sink; stderr/Syslog are separate.
- * bytes_written includes partial bytes committed before a later write failure.
- * last_error is the latest file operation result (0 after a successful file
- * operation); specialized last_* errors retain the latest failure in that class.
+/* 一致的 File 后端快照，在实例的输出互斥锁保护下获取。
+ * 计数器仅覆盖选定的文件输出端；stderr/Syslog 单独统计。
+ * bytes_written 包括后续写入失败前已提交的部分字节。
+ * last_error 是最近一次文件操作的结果（文件操作成功后为 0）；
+ * 各类 last_* 错误字段保留该类别最近一次失败。
  */
 typedef struct {
 	uint64_t write_operations;
@@ -180,17 +179,17 @@ typedef struct {
 	int last_reopen_error;
 } logger_file_metrics_t;
 
-/* Local Unix datagram Syslog. No per-sink spool or blocking retry queue.
- * REQUIRED preserves create-time connection failure; DEFERRED permits only
- * transient endpoint unavailability and exposes it in metrics/sticky status.
+/* 本地 Unix 数据报 Syslog。没有每个输出端的暂存区或阻塞重试队列。
+ * REQUIRED 保留创建时的连接失败；DEFERRED 仅允许端点暂时不可用，
+ * 并通过指标和不会自动清除的错误状态暴露该情况。
  */
 typedef enum {
 	LOGGER_SYSLOG_START_REQUIRED = 0,
 	LOGGER_SYSLOG_START_DEFERRED = 1
 } logger_syslog_start_t;
-/* Namespaced facility values avoid requiring <syslog.h>, whose LOG_* macros
- * conflict with the legacy global convenience macros. Other standard facility
- * numbers 0..23 are accepted as (number * 8). */
+/* 带命名空间的 facility 值避免依赖 <syslog.h>，其中的 LOG_* 宏
+ * 会与旧版全局便捷宏冲突。其他标准 facility 编号 0..23
+ * 以 (number * 8) 的形式接受。 */
 #define LOGGER_SYSLOG_FACILITY_USER (1u << 3)
 #define LOGGER_SYSLOG_FACILITY_LOCAL0 (16u << 3)
 #define LOGGER_SYSLOG_FACILITY_LOCAL1 (17u << 3)
@@ -201,9 +200,9 @@ typedef enum {
 #define LOGGER_SYSLOG_FACILITY_LOCAL6 (22u << 3)
 #define LOGGER_SYSLOG_FACILITY_LOCAL7 (23u << 3)
 typedef struct {
-	const char *path; /* NULL: /dev/log; copied at create */
-	unsigned facility; /* namespaced facility or standard number * 8 */
-	uint32_t reconnect_interval_ms; /* 0: 1000 ms; otherwise 1..60000 */
+	const char *path; /* NULL：/dev/log；创建时复制 */
+	unsigned facility; /* 带命名空间的 facility 或标准编号 * 8 */
+	uint32_t reconnect_interval_ms; /* 0：1000 ms；其他值为 1..60000 */
 	logger_syslog_start_t startup;
 } logger_syslog_config_t;
 #ifdef __cplusplus
@@ -224,11 +223,12 @@ static inline logger_syslog_config_t logger_syslog_defaults_cpp(void)
 				   .startup = LOGGER_SYSLOG_START_REQUIRED })
 #endif
 
-/* Snapshot taken under the output mutex. connected is a local association,
- * NOT a peer health check. send success is NOT durable delivery acknowledgement.
- * failed_records includes backpressure, cooldown rejection and format errors;
- * backpressure_records/cooldown_records are subsets. Initial deferred failures
- * change last_error and the instance's sticky first_error, not record counts.
+/* 在输出互斥锁保护下获取快照。connected 表示本地关联，
+ * 并非对端健康检查。发送成功并非持久化送达确认。
+ * failed_records 包括背压、冷却期拒绝及格式错误；
+ * backpressure_records/cooldown_records 是其子集。
+ * 初始延迟连接失败会改变 last_error 和实例的粘滞 first_error，
+ * 不改变记录计数。
  */
 typedef struct {
 	uint64_t submitted_records;
@@ -236,15 +236,15 @@ typedef struct {
 	uint64_t failed_records;
 	uint64_t backpressure_records;
 	uint64_t cooldown_records;
-	uint64_t connect_attempts; /* one socket+connect cycle, including initial */
+	uint64_t connect_attempts; /* 一轮 socket+connect，包括首次连接 */
 	uint64_t connect_failures;
-	uint64_t reconnect_successes; /* successful cycles after the initial cycle */
-	uint64_t send_attempts; /* syscall count, including bounded EINTR retry */
+	uint64_t reconnect_successes; /* 首轮之后成功的连接轮次 */
+	uint64_t send_attempts; /* 系统调用次数，包括有界 EINTR 重试 */
 	uint64_t interrupted_calls;
 	uint64_t close_failures;
 	int connected;
-	int last_error; /* latest operation; cleared by a successful send */
-	int last_close_error; /* latest cleanup failure; not cleared by send */
+	int last_error; /* 最近一次操作结果；发送成功后清除 */
+	int last_close_error; /* 最近一次清理失败；不会因发送而清除 */
 } logger_syslog_metrics_t;
 
 #define LOGGER_CONFIG_VERSION 1u
@@ -263,49 +263,46 @@ typedef struct {
 	int include_pid, include_tid, include_source;
 	const char *ident;
 	logger_overflow_policy_t overflow[6];
-	/* Part of the v1 structure. Future extensions are appended after the
-	 * current structure and must be zero when passed to an older library. */
+	/* v1 结构的一部分。未来扩展追加在当前结构之后，
+	 * 传给旧版库时必须为零。 */
 	logger_syslog_config_t syslog;
 } logger_config_t;
 #define LOGGER_CONFIG_SIZE 144u
-/* Ownership/threading:
- * - logger_create() returns an owned instance; logger_destroy() releases it.
- * - cfg is borrowed only during create; do not mutate it concurrently.
- * - a business .so borrows its host's instance; only the owner destroys it.
- * - each async instance has its own worker and queue. Merely loading the .so
- *   starts no worker, opens no log and does not initialize the global facade.
- * - logging/level/metrics/flush may be called concurrently while the instance
- *   is alive.
- * - the owner must stop/join all explicit-instance users before destroy.
- * Errors: pointer-returning creation uses NULL + errno; int public operations
- * use 0 on success and -1 with errno unless explicitly documented otherwise.
+/* 所有权与线程约定：
+ * - logger_create() 返回具有所有权的实例；logger_destroy() 释放它。
+ * - cfg 仅在创建期间借用；不得并发修改。
+ * - 业务 .so 借用宿主的实例；仅所有者可以销毁。
+ * - 每个异步实例拥有独立的工作线程和队列。仅加载 .so 不会启动工作
+ *   线程、打开日志或初始化全局门面。
+ * - 在实例存续期间，日志记录、级别设置、指标查询和刷新可以并发调用。
+ * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
+ * 错误约定：返回指针的创建操作使用 NULL + errno；除非另有明确说明，
+ * 返回 int 的公开操作成功时返回 0，失败时返回 -1 并设置 errno。
  */
-/* Regular files are single-owner targets (<basename>.logger.lock). A second
- * independent owner returns EBUSY: share one live instance instead. Directory
- * resolution is bound at creation; final symlinks/hardlinks are rejected.
- * Internal rotation requires non-overwriting rename support. See
- * docs/FILE_BACKEND.md for compatibility, resource costs and platform limits. */
-/* Explicit calls protect library-owned resources from thread cancellation until
- * their critical work/va_end/unlocks have finished. No rollback/I/O deadline is
- * implied. Same-thread nested resource operations (including another instance,
- * Console and callbacks from an async worker) are rejected with EDEADLK before
- * locks/side effects; status-returning sync_log keeps its -errno convention.
- * This is not signal-safety or general asynchronous-cancellation safety.
+/* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
+ * 所有者会收到 EBUSY：应共享同一个存活实例。目录解析在创建时绑定；
+ * 拒绝最终路径组件为符号链接或硬链接的情况。
+ * 内部轮转需要支持不覆盖目标的重命名。兼容性、资源开销及平台限制见
+ * docs/FILE_BACKEND.md。 */
+/* 显式调用会保护库拥有的资源，直到关键工作、va_end 和解锁完成，
+ * 在此之前不受线程取消影响。这不意味着支持回滚或 I/O 时限。
+ * 同一线程内嵌套的资源操作（包括另一实例、Console 及异步工作线程
+ * 的回调）在加锁或产生副作用前以 EDEADLK 拒绝；返回状态的 sync_log
+ * 保持 -errno 约定。这不保证信号安全或一般的异步取消安全。
  *
- * create has a deferred-cancellation checkpoint before handing off the pointer:
- * a pending request disposes any unreturned candidate. With cancellation ENABLED
- * and type ASYNCHRONOUS it fails ENOTSUP before allocating instance/backend
- * resources (process-guard registration may occur); disable
- * cancellation across pointer ownership transfer instead. The caller owns any
- * successfully returned pointer and must arrange cleanup for later cancellation.
+ * create 在交出指针前设有延迟取消检查点：待处理的取消请求会销毁
+ * 尚未返回的候选实例。取消处于 ENABLED 且类型为 ASYNCHRONOUS 时，
+ * 在分配实例/后端资源之前以 ENOTSUP 失败（可能已注册进程保护）；
+ * 应在指针所有权转移期间禁用取消。调用者拥有所有成功返回的指针，
+ * 并且必须为之后的取消安排清理。
  */
 LOGGER_API logger_t *logger_create(const logger_config_t *);
 LOGGER_API void logger_context_set(const logger_context_t *);
 LOGGER_API void logger_context_clear(void);
 LOGGER_API logger_context_t logger_context_get(void);
 
-/* Explicit secret-handling helpers. The logger does not inspect arbitrary
- * printf text for secrets. Callers must redact before logging sensitive data. */
+/* 显式的秘密信息处理辅助函数。日志器不会检查任意 printf 文本中的
+ * 秘密信息。调用者必须先脱敏，再记录敏感数据。 */
 LOGGER_API const char *logger_redact(void);
 LOGGER_API int logger_mask_secret(const char *value, char *out, size_t out_size,
 				  size_t visible_prefix, size_t visible_suffix);
@@ -317,46 +314,44 @@ LOGGER_API void logger_log_source(logger_t *, logger_level_t, logger_source_t,
 #endif
 	;
 
-/* Exclusive owner only: first stop/join every borrower. Returns 0 or -1+errno.
- * Ordinary final I/O/close failure still consumes and frees the instance.
- * A lifecycle-proof failure (worker join / synchronization teardown / internal
- * census invariant) also consumes public ownership, but may intentionally
- * retain the retired allocation internally rather than risk UAF. In every case
- * except pre-entry rejection (for example ECHILD/EDEADLK), never retry or reuse
- * a pointer once teardown has actually started.
- * NULL succeeds. Cancellation is deferred across teardown. No implicit refcount. */
+/* 仅限独占所有者：先停止并等待所有借用者结束。返回 0 或 -1+errno。
+ * 普通的最终 I/O/关闭失败仍会消耗并释放实例。
+ * 生命周期安全性校验失败（工作线程等待结束、同步设施销毁或内部计数
+ * 不变量）也会消耗公开所有权，但可能有意在内部保留已退役的分配，
+ * 以免发生 UAF。除进入前被拒绝（如 ECHILD/EDEADLK）外，
+ * 一旦销毁已实际开始，任何情况下都不得重试或复用该指针。
+ * NULL 视为成功。销毁期间延迟取消。没有隐式引用计数。 */
 LOGGER_API int logger_destroy_status(logger_t *);
-/* Compatibility wrapper, discards teardown status. */
-/* A pending cancellation at the end of dispose may run host cleanup after the
- * pointer was freed. Remove it from host cleanup ownership BEFORE invoking
- * destroy at a valid exclusive-owner boundary, or disable cancellation across
- * pointer clearing + disposal. Nested/child rejection occurs before disposal.
- * Never retry a freed pointer just because final I/O returned an error. */
+/* 兼容包装函数，丢弃销毁状态。 */
+/* 释放结束时待处理的取消可能在指针已释放后触发宿主清理。
+ * 在有效的独占所有权边界调用 destroy 之前，必须先从宿主清理责任中
+ * 移除此指针，或在清空指针并释放期间禁用取消。嵌套调用/子进程拒绝
+ * 发生在释放之前。不得仅因最终 I/O 返回错误而重试已释放的指针。 */
 LOGGER_API void logger_destroy(logger_t *);
 LOGGER_API logger_state_t logger_get_state(const logger_t *);
-/* Ordinary void logging keeps at most 4095 message bytes. If formatting
- * exceeds that bound, the retained text ends with " [truncated]". This is a
- * byte boundary, not a UTF-8 code-point guarantee; no per-record allocation is
- * added. Text is NUL-terminated, not binary-safe. If metadata exhausts the ordinary output line, that line also ends
- * with the marker before LF. logger_log_sync_status() instead rejects overflow with
- * -EOVERFLOW and emits no record. Metadata bounds below are separate.
- * Input strings must be valid for the duration of the call. Async records
- * snapshot only metadata required by detail/include_*; when module/source are
- * required they are copied as module (127 bytes), source basename (255) and
- * function (127). DEBUG context is copied only when that detail can emit it.
- * Longer source labels are visibly shortened with '~'; no queued pointer needed
- * by later formatting retains storage from an unloadable business .so.
- * This does NOT permit unloading liblogger itself or the callback provider
- * before outstanding calls and logger workers have finished. */
+/* 普通 void 日志操作最多保留 4095 字节的消息。格式化超出此上限时，
+ * 保留的文本以 " [truncated]" 结尾。这是字节边界，不保证 UTF-8 码点
+ * 完整；不会增加逐记录分配。文本以 NUL 结尾，不支持二进制安全。
+ * 若元数据耗尽普通输出行的空间，该行也会在 LF 前以此标记结尾。
+ * logger_log_sync_status() 则以 -EOVERFLOW 拒绝溢出，不输出记录。
+ * 下文的元数据上限单独计算。
+ * 输入字符串必须在整个调用期间有效。异步记录仅对 detail/include_*
+ * 所需的元数据建立快照；需要 module/source 时，会复制模块名
+ * （127 字节）、源文件基本名（255 字节）和函数名（127 字节）。
+ * 仅当该详细级别能够输出 DEBUG 上下文时，才复制该上下文。
+ * 较长的来源标签会用 '~' 明示缩短；后续格式化所需的任何排队指针，
+ * 均不会保留指向可卸载业务 .so 中存储空间的引用。
+ * 这不允许在未完成的调用及日志工作线程结束前卸载 liblogger 本身
+ * 或回调提供方。 */
 LOGGER_API void logger_log(logger_t *, logger_level_t, const char *,
 			   const char *, int, const char *, const char *, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 7, 8)))
 #endif
 	;
-/* Advanced synchronous status path. Returns 0 or negative errno internally;
- * retained for compatibility; new application code should normally use
- * logger_log()/LOG_* and logger_flush_instance(). */
+/* 高级同步状态路径。内部返回 0 或负值 errno；
+ * 为兼容性保留；新应用代码通常应使用
+ * logger_log()/LOG_* 和 logger_flush_instance()。 */
 LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
 				      const char *, int, const char *,
 				      const char *, ...)
@@ -364,76 +359,75 @@ LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
 	__attribute__((format(printf, 7, 8)))
 #endif
 	;
-/* Status flush waits for the queue reservation watermark captured at entry,
- * including batches already dequeued but not yet emitted, then fsyncs the file
- * backend. Concurrent calls may also be included; queue-full drops are NOT
- * accepted records. Successful sync logging calls preceding flush are covered.
- * Returns 0, or -1 + errno. Earlier output/sync failures remain sticky.
- * An executor lifecycle failure also terminates an in-flight wait with that
- * error; it does not acknowledge or replay unfinished reservations. A caller
- * entering after admission closes is rejected with ESHUTDOWN. Failure is not
- * proof of quiescence: stop/join all borrowers before destroying the instance.
- * This is not a remote syslog persistence acknowledgement or an I/O timeout.
- * Explicit-instance lifetime must be protected by the caller throughout. */
+/* 返回状态的 flush 等待进入时捕获的队列预留水位，包括已经出队但
+ * 尚未输出的批次，然后对文件后端执行 fsync。并发调用也可能被纳入；
+ * 因队列满而丢弃的记录不属于已接受记录。flush 之前成功的同步日志
+ * 调用也在保障范围内。返回 0，或 -1 + errno。此前的输出/同步失败
+ * 仍保留在错误状态中，不会自动清除。
+ * 执行器生命周期失败也会以该错误终止正在进行的等待；不会确认或
+ * 重放未完成的预留。停止接纳后进入的调用者会收到 ESHUTDOWN。
+ * 失败并不证明已静止：销毁实例前须停止并等待所有借用者结束。
+ * 这不是远端 syslog 持久化确认，也不提供 I/O 超时。
+ * 调用者必须始终保护显式实例的生命周期。 */
 LOGGER_API int logger_flush_instance_status(logger_t *);
-/* Compatibility wrapper: same wait, discards status; NULL is a no-op. */
+/* 兼容包装函数：执行相同等待，丢弃状态；NULL 时不执行操作。 */
 LOGGER_API void logger_flush_instance(logger_t *);
 LOGGER_API int logger_reopen_instance(logger_t *);
 LOGGER_API void logger_set_instance_level(logger_t *, logger_level_t);
 LOGGER_API uint64_t logger_dropped(const logger_t *);
 LOGGER_API void logger_get_metrics(const logger_t *, logger_metrics_t *);
 LOGGER_API void logger_get_io_metrics(const logger_t *, logger_io_metrics_t *);
-/* Lock-free/backend-lock-free observability snapshot. Invalid/reentrant/child
- * access returns a zeroed snapshot and follows existing metrics errno behavior.
- * The caller must still protect the logger_t lifetime against concurrent destroy. */
+/* 无锁且不获取后端锁的可观测性快照。无效、重入或子进程访问返回
+ * 全零快照，并遵循现有指标接口的 errno 行为。调用者仍须保护
+ * logger_t 的生命周期，避免并发销毁。 */
 LOGGER_API void logger_get_diagnostics(const logger_t *, logger_diagnostics_t *);
-/* Coherent File backend snapshot. 0 / -1+errno; ENOTSUP when file output is not
- * selected. No flush/fsync/reopen is performed and the snapshot is read-only. */
+/* 一致的 File 后端快照。返回 0 或 -1+errno；未选择文件输出时返回
+ * ENOTSUP。不执行 flush/fsync/reopen，快照为只读。 */
 LOGGER_API int logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
-/* Live instance required; same external lifetime protection as other controls.
- * 0 / -1+errno. ENOTSUP if Syslog is not selected; output unchanged on error.
- * This does not connect, retry, flush, or reset sticky I/O errors. */
+/* 要求实例存活；与其他控制操作一样，由外部保护生命周期。
+ * 返回 0 或 -1+errno。未选择 Syslog 时返回 ENOTSUP；出错时输出不变。
+ * 不执行连接、重试、刷新，也不重置粘滞 I/O 错误。 */
 LOGGER_API int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *);
-/* Optional application-global facade. Concurrent data/control calls pin one
- * generation and never silently operate on a newer instance. During startup:
- * EAGAIN; during/after shutdown or on a stale pin: ESHUTDOWN; no initial
- * instance: ENODEV (LOG_* alone retains the legacy bootstrap stderr fallback).
- * Nested global calls on the same thread fail EDEADLK. Not signal-safe.
- * Global calls defer cancellation until all library locks/pins are released;
- * cancellation does not roll back output or a completed init/shutdown, nor
- * impose an I/O timeout. Explicit-instance operations use the inner cancellation/reentry scope above.
+/* 可选的应用全局门面。并发的数据/控制调用固定一个代次，绝不会
+ * 静默操作更新的实例。启动期间返回 EAGAIN；关闭期间、关闭之后或
+ * 固定的代次已失效时返回 ESHUTDOWN；没有初始实例时返回 ENODEV
+ * （仅 LOG_* 保留旧版启动阶段的 stderr 回退）。
+ * 同一线程内嵌套的全局调用以 EDEADLK 失败。不保证信号安全。
+ * 全局调用将取消延迟到所有库锁释放及代次保护解除之后；取消不会
+ * 回滚输出或已完成的初始化/关闭，也不会施加 I/O 超时。
+ * 显式实例操作使用上述内部取消/重入作用域。
  */
 LOGGER_API int logger_init(const logger_config_t *);
-/* Serializes admission closure, drain, join, close and owner release. Same
- * generation repeated shutdown succeeds; a delayed shutdown never destroys a
- * newer generation (ESHUTDOWN). On I/O failure the old instance is still freed;
- * the error is returned once to the controller, not a retryable pointer.
- * Unlike void wrapper, permits checking the final synchronization/close result.
+/* 将停止接纳、排空、等待线程结束、关闭和释放所有权串行化。
+ * 对同一代次重复关闭会成功；延迟的关闭绝不会销毁更新的代次
+ * （ESHUTDOWN）。I/O 失败时仍会释放旧实例；错误仅向控制者返回
+ * 一次，不返回可重试的指针。与 void 包装函数不同，
+ * 此接口允许检查最终同步/关闭结果。
  */
 LOGGER_API int logger_shutdown_status(void);
 LOGGER_API void logger_shutdown(void);
-/* same guarantee for the global facade */
+/* 全局门面提供相同保证 */
 LOGGER_API int logger_flush_status(void);
-LOGGER_API void logger_flush(void); /* compatibility wrapper; no error return */
+LOGGER_API void logger_flush(void); /* 兼容包装函数；不返回错误 */
 LOGGER_API int logger_reopen(void);
-/* Raw fork contract (library does not manage the host process):
- * - fork before any library runtime use while truly single-threaded, OR fork+exec.
- *   After async initialization the process is already multithreaded.
- * - pthread_atfork installs an internal child invalidation guard. Inherited
- *   Logger/Console runtimes are never repaired in place: constructors and
- *   status APIs reject with ECHILD until exec; void operations no-op/set errno.
- * - do not use vfork, signal handlers or arbitrary post-fork library calls.
- *   Parent descriptors/queues remain unchanged; child fds live until exec/_exit.
+/* 直接调用 fork 的约定（库不管理宿主进程）：
+ * - 在使用任何库运行时之前、进程确实为单线程时 fork，或使用 fork+exec。
+ *   异步初始化之后，进程已经是多线程。
+ * - pthread_atfork 安装内部子进程失效保护。继承的 Logger/Console
+ *   运行时绝不原地修复：执行 exec 前，构造函数及状态 API 均以
+ *   ECHILD 拒绝；void 操作不执行实际操作并设置 errno。
+ * - 不得使用 vfork、信号处理函数或任意 fork 后的库调用。
+ *   父进程描述符/队列保持不变；子进程 fd 保留到 exec/_exit。
  */
-/* The library never calls fork or scans the host's thread list. */
+/* 库绝不调用 fork，也不扫描宿主的线程列表。 */
 
 LOGGER_API void logger_set_level(logger_level_t);
 LOGGER_API uint64_t logger_global_dropped(void);
 LOGGER_API void logger_get_global_metrics(logger_metrics_t *);
 LOGGER_API void logger_get_global_io_metrics(logger_io_metrics_t *);
 LOGGER_API void logger_get_global_diagnostics(logger_diagnostics_t *);
-/* Same snapshot through the current global generation. Returns 0/-1+errno and
- * preserves global admission/generation semantics. */
+/* 通过当前全局代次获取相同快照。返回 0/-1+errno，
+ * 并保持全局接纳/代次语义。 */
 LOGGER_API int logger_get_global_file_metrics(logger_file_metrics_t *);
 LOGGER_API void logger_global_write(logger_level_t, const char *, const char *,
 				    int, const char *, const char *, ...)

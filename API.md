@@ -11,17 +11,17 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 - `logger_log()`、`logger_log_source()`、`LOGGER_LOG/INFO/...` 使用指定实例。
 - `logger_flush_instance_status()` 返回 0 / -1 + errno，等待既定完成水位并同步文件。
   不代表远端 syslog 已持久化，也不提供阻塞 I/O 超时。
-- `logger_destroy_status()` 是独占 owner 的关闭/释放接口；调用前先停止并 join 所有使用者。
-  排空、join、同步、关闭后端后释放内存；普通 I/O 失败仍释放实例，返回 -1 + errno，
+- `logger_destroy_status()` 是独占所有者的关闭/释放接口；调用前先停止所有使用者并等待其线程退出。
+  排空、等待线程退出、同步、关闭后端后释放内存；普通 I/O 失败仍释放实例，返回 -1 + errno，
   不能重试旧指针。NULL 在原进程中成功；ECHILD 拒绝继承状态，不碰旧资源。
-  同步对象销毁/join等释放证明失败时，优先保留内部容器而不冒险释放；这不授权重试旧句柄。
+  同步对象销毁/等待线程退出等释放证明失败时，优先保留内部容器而不冒险释放；这不授权重试旧句柄。
   极少发生的 pthread 取消状态设置失败也会在处置前返回。
-- `logger_destroy()`、`logger_flush_instance()` 保留为丢弃状态的兼容 wrapper。
+- `logger_destroy()`、`logger_flush_instance()` 保留为丢弃状态的兼容包装接口。
 - `logger_log_sync_status()` 保留历史 `0/-errno` 约定，不能和 POSIX 风格状态接口混淆。
-- Live metrics 是并发近似快照，不是单笔业务提交证明。
+- 实时指标是并发近似快照，不是单笔业务提交证明。
 
-生命周期中不得在仍有 caller/worker 使用句柄时 free、重建或卸载库。
-不增加 init 引用计数，不隐式夺取借用句柄所有权。
+生命周期中不得在仍有调用方/工作线程使用句柄时释放内存、重建或卸载库。
+不增加初始化引用计数，不隐式夺取借用句柄所有权。
 
 ## 诊断与可观测性
 
@@ -31,17 +31,17 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 
 `logger_get_global_diagnostics()` 使用现有全局代次/生命周期固定机制；不会越过
 STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别由
-`logger_get_file_metrics()` / `logger_get_syslog_metrics()` 提供，因为 backend
+`logger_get_file_metrics()` / `logger_get_syslog_metrics()` 提供，因为后端
 计数器由 `emit_mu` 保护。文件快照不执行 write/fsync/rotation/reopen，只读取
 累计事实；全局门面可用 `logger_get_global_file_metrics()` 通过当前代次固定机制
-读取同一份 File 状态。
+读取同一份文件后端状态。
 
 问题发现与采样语义见 [OBSERVABILITY.md](docs/OBSERVABILITY.md)。
 
 ## 普通日志字符串寿命
 
 调用者的 fmt/source/context 输入必须在对应调用期间有效，不得并发修改。
-用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（包括全局 bootstrap）最多保留4095字节正文，
+用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（包括全局启动回退输出）最多保留4095字节正文，
 超限时正文尾部明确替换为 ` [truncated]`；未超限正文保持原字节。边界按字节处理，
 不承诺保留UTF-8码点。接口使用NUL终止的C字符串文本，内嵌NUL不是二进制消息接口。同步普通输出若因过长元数据耗尽整行缓冲，也在LF前放置同一标记。
 需要完整正文确认时使用 `logger_log_sync_status()`，超限返回
@@ -53,33 +53,34 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 超限在末尾以 `~` 标识缩短，按字节而不是 Unicode 代码点处理；这是有意的可见边界变化。
 仅作为元数据标签，不能拿被缩短的字符串作业务标识或安全判据。
 
-不新增每条日志的堆分配。私有 record 增加 512 字节；内部输出行缓冲变为 5120 字节，
+不新增每条日志的堆分配。私有记录结构增加 512 字节；内部输出行缓冲变为 5120 字节，
 容量 >=2 时保留 LF+NUL，0/1 容量也有界处理。正常长度的原有输出字节保持不变。
 运行时变更 TZ 的缓存语义未在本轮设计。
 
 ## 全局与 Console
 
 全局 `logger_init/LOG_*/logger_shutdown` 保留便利用法；业务 `.so` 不应偷偷调用。
-全局生命周期遵循 docs/GLOBAL_LIFECYCLE.md；显式实例仍由宿主独占销毁。
+全局生命周期的阶段性设计演进见 `docs/GLOBAL_LIFECYCLE.md`；当前 2.0 约束以
+[所有权规范](docs/v2/OWNERSHIP.md)、[内存模型](docs/v2/MEMORY_MODEL.md)和
+[取消与重入作用域](docs/EXPLICIT_CONSOLE_SCOPE.md)为准。显式实例仍由宿主独占销毁。
 Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
-关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局handler、mask或既有pending信号。
+关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局信号处理函数、屏蔽字或既有待处理信号。
 
-## Fork 边界
+## fork 边界
 
 库保留 PID/atfork 误用防护，但不替宿主 fork 或检查全进程线程列表。
-一般 raw fork 的 ECHILD 契约不变。第三方选择 worker 内首次初始化或 exec 后初始化等合法生命周期。
-不提供重绑 child 进程身份的 helper；已初始化运行时的 child 必须 exec。
+一般原始 fork 的 ECHILD 契约不变。第三方选择工作线程内首次初始化或 exec 后初始化等合法生命周期。
+不提供重新绑定子进程身份的辅助接口；已初始化运行时的子进程必须执行 exec。
 
 ## 跨库句柄和配置
 
 借入 logger_t 时，创建/调用/销毁必须使用同一个实际 Logger 实现；不要在多个 SDK 中各自
-静态嵌入不同副本，然后跨副本传递 opaque pointer。宿主已有另一套日志系统时，使用 callback ABI。
+静态嵌入不同副本，然后跨副本传递不透明指针。宿主已有另一套日志系统时，使用回调 ABI。
 
 Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
-`struct_size/version` 合同。当前已知结构必须完整存在；未来更大的结构只有在未知 tail
-全部为 0 时才被旧库接受，未知非零语义返回 `E2BIG`。不支持的 version 返回
-`EPROTONOSUPPORT`，过短结构返回 `EINVAL`。pre-v1 zero/zero、旧 prefix 和历史
-old-header consumer 均不进入当前兼容合同。
+`struct_size/version` 合同。当前已知结构必须完整存在；未来更大的结构只有在未知尾部
+全部为 0 时才被旧库接受，未知非零语义返回 `E2BIG`。不支持的版本返回
+`EPROTONOSUPPORT`，过短结构返回 `EINVAL`。v1 之前的双零配置、旧短前缀和历史旧头文件消费方均不进入当前兼容合同。
 
 结构体本身在 init/create 期间复制为内部快照；其中的字符串指针只在该调用期间借用，
 调用者必须保证其有效且不被并发修改。完整规则见 `docs/UAPI.md`。
@@ -104,8 +105,8 @@ old-header consumer 均不进入当前兼容合同。
 
 ## Syslog 非阻塞修订
 
-本地数据报 Syslog 现在使用非阻塞、执行时关闭的套接字；发生背压时会形成明确可见的失败记录，
-绝不会隐式转化为重放队列。`logger_config_t` 的 `syslog` 字段沿用当前已知布局；pre-v1 短前缀不再受支持。未来扩展遵守 `docs/UAPI.md` 的尾部追加与未知零尾规则。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
+本地数据报 Syslog 现在使用非阻塞、执行 `exec` 时关闭的套接字；发生背压时会形成明确可见的失败记录，
+绝不会隐式转化为重放队列。`logger_config_t` 的 `syslog` 字段沿用当前已知布局；v1 之前的短前缀不再受支持。未来扩展遵守 `docs/UAPI.md` 的尾部追加与未知零尾规则。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
 启动策略默认是 REQUIRED；DEFERRED 会显式接受临时端点故障，并记录粘滞错误状态。重连由单调时钟
 冷却周期节流，只由后续日志记录触发，不会由刷新/销毁触发。重连成功也绝不会清除实例历史上的
 `first_error`。
@@ -116,10 +117,11 @@ old-header consumer 均不进入当前兼容合同。
 
 ## 全局门面代次与取消（本轮更新）
 
-默认 Logger 仍仅用于宿主便利层。所有 global 数据/控制入口统一准入和 generation
+默认 Logger 仍仅用于宿主便利层。所有全局数据/控制入口统一准入和代次
 复核，旧调用不会操作新实例。`logger_shutdown_status()` 返回最终处置错误；原
-`logger_shutdown()` 保留兼容。拒绝状态、启动 fallback、取消延迟和重入边界见
-[GLOBAL_LIFECYCLE.md](docs/GLOBAL_LIFECYCLE.md)。显式实例/Console 的作用域规则见下一节。
+`logger_shutdown()` 保留兼容。拒绝状态、启动回退、取消延迟和重入边界的阶段性演进见
+[全局生命周期设计记录](docs/GLOBAL_LIFECYCLE.md)，该记录不替代上述当前 2.0 规范。
+显式实例/Console 的当前作用域规则见下一节。
 
 ## 显式实例/Console 的取消与重入加固
 

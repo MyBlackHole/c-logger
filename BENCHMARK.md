@@ -1,8 +1,8 @@
-> 注意：历史性能数字不再作为有效发布基线。本轮修复丢失唤醒及输出完成口径；此前将所有超时归于 CPU throttling 没有充分依据。新版 `bench_matrix` 等待实际输出水位，并使用 emitted 而不是 attempted 计算有效端到端吞吐；本轮不据此宣称性能收益。
+> 注意：历史性能数字不再作为有效发布基线。本轮修复丢失唤醒及输出完成口径；此前将所有超时归于 CPU 限流没有充分依据。新版 `bench_matrix` 等待实际输出水位，并使用实际输出数（emitted）而不是尝试数（attempted）计算有效端到端吞吐；本轮不据此宣称性能收益。
 
 # 基准测试方法
 
-`bench_matrix` 测量异步生产者路径以及完整排空耗时。默认后端为 `/dev/null`，因此该基准主要衡量
+`bench_matrix` 测量异步生产者路径以及从生产开始到输出尝试全部完成的耗时。默认后端为 `/dev/null`，因此该基准主要衡量
 Logger 格式化、MPSC 竞争以及消费者/后端数据路径，而不是存储硬件性能。
 
 测试矩阵：
@@ -14,18 +14,26 @@ Logger 格式化、MPSC 竞争以及消费者/后端数据路径，而不是存�
 
 指标：
 
-- 生产者吞吐：尝试写入记录数 / 生产者完成时间
-- 端到端吞吐：尝试写入记录数 / 最终排空与销毁时间
+- 生产者吞吐：`attempted / producer_seconds`，即尝试写入记录数除以生产者完成时间
+- 端到端吞吐：`emitted_records / end_to_end_seconds`，即实际输出记录数除以从生产开始到输出尝试全部完成的时间；不包含后续销毁耗时，也不表示持久化确认
 - 入队与丢弃记录数
 - 队列高水位
 - 消费者处理记录数与批次数
 
-Run:
+当前运行入口（Xmake）：
 
 ```sh
-cmake --build build --target bench_matrix
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build --build_shared=n --build_tests=y \
+  --build_private_tests=y --build_regression_tests=y
+xmake -j4 bench_matrix
 BENCH_RECORDS=10000 scripts/benchmark.sh
 ```
+
+过去的 `cmake --build build --target bench_matrix` 仅适用于仍含对应 CMake 构建描述的
+历史提交，不是当前主线入口。当前测试配置见 [测试指南](TESTING.md)，
+矩阵驱动脚本为 `scripts/benchmark.sh`；可用 `BUILD_DIR` 指定构建目录，
+或用 `BENCH_BIN` 指定已构建的可执行文件。
 
 结果以 CSV 和 JSONL 输出。性能门禁应比较来自同一机器、同一编译器、同一优化级别、同一 CPU 亲和性和同一后端的结果。
 不要把不同主机上的数字直接判定为性能回归。
