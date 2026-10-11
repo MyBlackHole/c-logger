@@ -7,7 +7,7 @@ int main(void)
 	c.verbosity = CONSOLE_NORMAL;
 	console_init(&c);
 	if (console_print("id=%d\n", 42))
-		return 1; /* stdout result channel */
+		return 1; /* stdout 结果通道 */
 	if (console_info("operation completed"))
 		return 2;
 	if (console_warn("certificate expires soon"))

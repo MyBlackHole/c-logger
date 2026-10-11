@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-/* Syscall wrappers exist only in this test executable. No production hook. */
+/* 系统调用包装函数只存在于此测试可执行文件。不含生产钩子。 */
 static int inject_socket, inject_connect, inject_send, inject_clock,
 	inject_close;
 static unsigned send_interrupts, sends, connects, sockets, closes;

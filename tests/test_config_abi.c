@@ -59,8 +59,9 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
-	/* Future callers may append zero fields, but unknown nonzero options
-	 * must fail closed. Exercise this through the production Logger API. */
+	/* 未来调用者可以追加零字段，但未知非零选项必须保守拒绝。
+	 * 通过生产 Logger API 测试此行为。
+	 */
 	struct future_logger_config {
 		logger_config_t config;
 		uint64_t tail;

@@ -2,8 +2,9 @@
 #include "logger_internal.h"
 #include "support.h"
 
-/* Test-only link wrappers. EIO is synthetic; cond_wait keeps the mutex held.
- * No object is freed while the worker or an external borrower can reach it. */
+/* 仅供测试的链接包装函数。EIO 为合成错误；cond_wait 保持互斥锁被持有。
+ * 工作线程或外部借用者仍能访问对象时，不释放任何对象。
+ */
 enum scenario {
 	NORMAL,
 	SYNC,
@@ -49,7 +50,7 @@ static void *worker_entry(void *unused)
 
 	atomic_store_explicit(&worker_returned, 1, memory_order_release);
 	if (selected == WORKER_LIVE) {
-		/* The trampoline deliberately retains a borrow until rollback joins. */
+		/* 跳板函数有意保留借用，直到回滚回收线程。 */
 		wait_flag(&allow_exit);
 		logger_t *l = worker_arg;
 		CHECK(atomic_load_explicit(&l->state, memory_order_acquire) ==
@@ -181,7 +182,7 @@ static void test_late_failure(logger_t *l)
 	CHECK(atomic_load_explicit(&l->lifecycle_error,
 				   memory_order_acquire) == EIO);
 
-	/* Only calls entering after failure are tested. In-flight flush is #124. */
+	/* 只测试失败后进入的调用。进行中的刷新见 #124。 */
 	errno = 0;
 	logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "rejected");
 	CHECK(errno == ESHUTDOWN);
@@ -217,8 +218,9 @@ static void test_early_failure(logger_t *l, int error)
 		CHECK(atomic_load_explicit(&candidate->lifecycle_error,
 					   memory_order_acquire) == EIO);
 		CHECK(file_size("out.log") == 0);
-		/* Reap the test thread, not the retained library object. Static roots
-		 * retain that tombstone; do not retry a partially torn-down object. */
+		/* 回收测试线程，不回收被保留的库对象。静态根引用
+		 * 保留该墓碑；不要重试部分拆除的对象。
+		 */
 		if (selected == JOIN_ERROR)
 			CHECK(__real_pthread_join(worker, NULL) == 0);
 		return;
@@ -259,7 +261,7 @@ int main(int argc, char **argv)
 	}
 	if (selected != JOIN_ERROR && selected != DESTROY_ERROR)
 		leave_temp(dir);
-	/* Retain the on-disk fixture too if the object deliberately owns its fd. */
+	/* 若对象有意拥有其 fd，也保留磁盘夹具。 */
 	printf("worker startup: %s PASS (create=%u join=%u joined=%u freed=%u)\n",
 	       argv[1], create_calls, join_calls, joined, freed);
 	return 0;
