@@ -64,8 +64,9 @@ static inline int file_contains(const char *path, const char *needle)
 static inline void leave_temp(char *path)
 {
 	CHECK(unlink("out.log") == 0);
-	/* The backend never unlinks a live coordination inode. Test owner has
-     * already destroyed its logger; remove the persistent fixture here. */
+	/* 后端绝不删除存活的协调 inode。测试所有者已销毁其 logger；
+	 * 在此移除持久化测试夹具。
+	 */
 	CHECK(unlink("out.log.logger.lock") == 0);
 	CHECK(chdir("/") == 0);
 	CHECK(rmdir(path) == 0);

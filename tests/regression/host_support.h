@@ -1,8 +1,9 @@
 #ifndef HOST_TEST_SUPPORT_H
 #define HOST_TEST_SUPPORT_H
 #include "support.h"
-/* Runtime log lines are bounded by LOGGER_LINE_MAX (currently 5120). Search
- * ALL lines, not the first 32 KiB of a concurrent/drain test's output file. */
+/* 运行时日志行受 LOGGER_LINE_MAX 限制（当前为 5120）。
+ * 搜索所有行，而不是并发或排空测试输出文件的前 32 KiB。
+ */
 static inline int log_contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "rb");

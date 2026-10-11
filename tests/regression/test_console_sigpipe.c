@@ -6,8 +6,9 @@
 #include <sys/wait.h>
 #include <wchar.h>
 
-/* No wrappers or private entry points: run against the shipped static/DSO
- * library. Each child starts before the parent has entered the runtime. */
+/* 不使用包装函数或私有入口：针对交付的静态库或 DSO 运行。
+ * 每个子进程都在父进程进入运行时前启动。
+ */
 static int report_fd = STDERR_FILENO;
 #undef CHECK
 #define CHECK(expr)                                                       \
@@ -42,8 +43,9 @@ static const output_fn outputs[] = {
 
 static int output(unsigned api)
 {
-	/* The function-pointer type intentionally has no printf attribute: %m
-	 * is the supported libc extension under test, not an ISO format. */
+	/* 函数指针类型有意不带 printf 属性：%m 是被测的受支持 libc 扩展，
+	 * 不是 ISO 格式。
+	 */
 	if (api < sizeof(outputs) / sizeof(outputs[0]))
 		return outputs[api]("message %s %d errno=%m", "text", 42);
 	const char *fmt = "message %s %d errno=%m";
@@ -134,8 +136,9 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 		CHECK(setlocale(LC_CTYPE, "C") != NULL);
 		rc = outputs[api]("prefix %lc", (wint_t)0x100);
 	} else if (host_flush) {
-		/* Even an empty Console write must protect its fflush of bytes
-		 * that the host had already placed in the shared FILE buffer. */
+		/* 即使 Console 写入为空，也必须保护其 fflush，
+		 * 因为宿主可能已将字节放入共享 FILE 缓冲区。
+		 */
 		rc = console_print("%s", "");
 	} else {
 		rc = output(api);

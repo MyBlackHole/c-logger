@@ -8,11 +8,11 @@
 #ifdef __cplusplus
 #define ABI_ASSERT(expr) static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) alignof(type)
-/* The exported ABI is C. GCC format attributes on declarations are not part of
- * the C function type, but C++ type-trait comparisons warn when those
- * attributes are discarded. Exact function types are therefore frozen by the
- * C11 translation unit below; C++11 independently freezes layouts, numeric
- * constants and default initializers. */
+/* 导出 ABI 为 C。声明上的 GCC 格式属性不是 C 函数类型的一部分，
+ * 但 C++ 类型特征比较会在这些属性被丢弃时发出警告。
+ * 因此精确函数类型由下方 C11 编译单元冻结；C++11 独立冻结
+ * 布局、数值常量与默认初始化器。
+ */
 #define ABI_FN(name, ret, ...) \
 	static_assert(true, "C function types are checked by the C11 contract")
 #else
@@ -31,7 +31,7 @@
 #define ABI_FIELD(type, field, offset_) \
 	ABI_ASSERT(offsetof(type, field) == (offset_))
 
-/* Linux/ELF x86_64 current ABI 2 aggregate layout contract. */
+/* Linux/ELF x86_64 当前 ABI 2 聚合类型布局契约。 */
 ABI_TYPE(logger_config_t, 144, 8);
 ABI_FIELD(logger_config_t, struct_size, 0);
 ABI_FIELD(logger_config_t, version, 4);
@@ -169,7 +169,7 @@ ABI_FIELD(console_config_t, version, 4);
 ABI_FIELD(console_config_t, verbosity, 8);
 ABI_FIELD(console_config_t, color, 12);
 
-/* Numeric API contract. */
+/* 数值 API 契约。 */
 ABI_ASSERT(LOGGER_TRACE == 0);
 ABI_ASSERT(LOGGER_DEBUG == 1);
 ABI_ASSERT(LOGGER_INFO == 2);
@@ -224,7 +224,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* Exact public function type contract: 47 default production exports. */
+/* 精确公开函数类型契约：47 个默认生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);

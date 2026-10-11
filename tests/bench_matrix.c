@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "logger_internal.h" /* private completion-only wait：/dev/null 无 fsync contract */
+#include "logger_internal.h" /* 私有的仅等待完成接口：/dev/null 无 fsync 契约 */
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
@@ -85,8 +85,9 @@ int main(int argc, char **argv)
 	for (uint64_t i = 0; i < started; ++i)
 		pthread_join(threads[i], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &producer_end);
-	/* 不轮询 dequeue counter，也不重复统计 fallback；/dev/null 不执行 fsync。
-	 * 这里等待实际 backend attempt 全部完成。 */
+	/* 不轮询出队计数器，也不重复统计回退；/dev/null 不执行 fsync。
+	 * 这里等待实际后端尝试全部完成。
+	 */
 	int rc = logger_wait_for_output(l);
 	clock_gettime(CLOCK_MONOTONIC, &output_end);
 	logger_metrics_t m;

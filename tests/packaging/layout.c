@@ -1,5 +1,6 @@
-/* Also compiled as C++11. Compare all public aggregate sizes/alignments,
- * selected offsets, enum values and all default initializer members. */
+/* 也按 C++11 编译。比较全部公开聚合类型的大小与对齐、
+ * 选定偏移、枚举值以及全部默认初始化器成员。
+ */
 #include <logger.h>
 #include <console.h>
 #include <stdio.h>

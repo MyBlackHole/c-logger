@@ -3,8 +3,9 @@
 #include "console.h"
 #include "support.h"
 #include <stdint.h>
-/* These tests use a real application-supplied FILE callback. No --wrap;
- * shared builds link and execute the production DSO. */
+/* 这些测试使用应用提供的真实 FILE 回调。不使用 --wrap；
+ * 共享构建链接并执行生产 DSO。
+ */
 static _Atomic int entered, release_io, cleanup_seen, arm, config_run;
 static _Atomic unsigned writes, escapes;
 static int reentry;
