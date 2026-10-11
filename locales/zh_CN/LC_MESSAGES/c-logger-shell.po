@@ -1,0 +1,19 @@
+msgid ""
+msgstr "Project-Id-Version: c-logger-shell\nReport-Msgid-Bugs-To: https://github.com/MyBlackHole/c-logger/issues\nPOT-Creation-Date: 2026-10-11 00:00+0000\nPO-Revision-Date: 2026-10-11 00:00+0000\nLast-Translator: c-logger contributors\nLanguage-Team: Simplified Chinese\nLanguage: zh_CN\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\nPlural-Forms: nplurals=1; plural=0;\n"
+
+msgid "BUILD_SHARED must be y or n"
+msgstr "BUILD_SHARED 必须为 y 或 n"
+
+#, sh-format
+msgid "profile '$profile' is a compatibility alias; running the complete Xmake suite"
+msgstr "配置 '$profile' 是兼容别名；将运行完整 Xmake 测试集"
+
+msgid "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned}"
+msgstr "用法：scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned}"
+
+msgid "bench_matrix not found; build it with: xmake -j4 bench_matrix"
+msgstr "未找到 bench_matrix；请使用以下命令构建：xmake -j4 bench_matrix"
+
+#, sh-format
+msgid "wrote $csv and $json"
+msgstr "已写入 $csv 和 $json"
