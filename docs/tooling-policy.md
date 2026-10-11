@@ -49,3 +49,6 @@ core/unix/security 范围，移除 C++ modernize/google/performance 等宽泛选
 可靠接入前必须固定 analyzer 版本、生成真实 compile_commands.json、列明生产/测试
 宏与平台组合、验证选中的检查及头文件覆盖，并为抑制项给出理由。禁止自动 `--fix`
 制造大面积改动；格式工具也不证明线程安全、ownership、ABI 或所有故障路径正确。
+
+工具人读帮助与诊断的语言选择、翻译目录维护及当前覆盖边界见
+[工具输出国际化](tool-output-i18n.md)。
