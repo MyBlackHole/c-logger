@@ -131,8 +131,10 @@ Audit 常驻约 5 个文件/目录/锁 fd；检查点/证据临时 I/O 另计。
 `validation/file_backend/environment.txt`。因此本轮通过的是调用顺序、错误传播、
 命名空间操作、资源清理和真实进程退出后的恢复验证，**不是介质掉电持久化验收**。
 Linux OverlayFS 文档说明 volatile 模式省略对上层文件系统的同步，不能保证
-系统崩溃后的数据留存。发布前仍需在常规 ext4/XFS 等真实目标文件系统、非 volatile
-挂载、可信存储栈上补充 VM/设备故障或掉电测试。本库不能用更多 fsync 抵消文件系统
-主动关闭持久化的挂载策略。
+系统崩溃后的数据留存。普通 Logger 基本 API 发布验收保留参数/返回值、并发、资源、
+轮转、正常 flush/关闭语义和进程 SIGKILL 故障回归；VM/设备故障或掉电测试为可选
+扩展，不要求每次发布补跑。若部署另外要求介质掉电保证，应在其真实目标文件系统、
+非 volatile 挂载与存储栈上另行验证。既有 flush/fsync 契约不变；本库不能用更多
+fsync 抵消文件系统主动关闭持久化的挂载策略。
 
 参考：https://docs.kernel.org/filesystems/overlayfs.html#volatile-mount
