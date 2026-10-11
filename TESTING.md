@@ -1,5 +1,9 @@
 # Testing
 
+> main 的生产目标始终为 Audit-free ABI 2。下文的 Audit/crypto 条目是未安装支持库的历史回归，
+> 不属于当前产品能力；普通 Logger 的生产链接测试、文件 crash、安装消费与制品隔离必须独立通过。
+> 旧 v1 ABI snapshot 只保护历史记录，不证明当前 ABI 2 的正式发布合同。
+
 Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` 注册，CI 与本地开发使用同一
 目标/测试 定义。下游安装包仍使用真实 CMake 消费方 验证 `find_package(Logger ...)`，
 但项目自身不再依赖 CTest。

@@ -4,11 +4,13 @@
 > 2.0 public API/ABI 尚未冻结，当前 `main` 不应被当作 2.0 release 使用。根 `VERSION` 在 #108 冻结 2.0 public contract 前仍保持已发布版本值，避免提前制造伪 2.0 release identity。
 
 
-仅内置 SHA-256，无 OpenSSL/SM3。宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；
-保留文件/标准错误/Syslog、同步/异步和 Console。2.0 默认构建不再包含 Audit。当前根版本仍为 **1.0.0**，
-默认 ABI 为 Production v1：SONAME 1 / `LOGGER_1.0` / 62-symbol public C ABI。
+宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
+当前生产目标始终不编译或安装 Audit，启用测试也不会改变这一边界；生产库没有摘要算法依赖。
+当前开发 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47-symbol public C ABI**。
 
-> **开发分支兼容性警告：** 这是 Audit 移除的第一阶段，默认构建移除了 Audit 符号与安装头文件，但旧 ABI/打包/CI 仍在迁移中；不可作为 SONAME 1 的正式发布。参见 [迁移方案](docs/v2/AUDIT_REMOVAL.md)。
+> **发布身份仍待收敛：** 根 `VERSION` 暂保留 `1.0.0`，不代表当前 main 与已发布 v1 二进制兼容。
+> 不得用当前 main 替换 SONAME 1 的正式包。2.0 发布身份、文档与最终验收尚未冻结，参见
+> [迁移状态](docs/v2/AUDIT_REMOVAL.md)和[当前限制](docs/KNOWN_ISSUES.md)。
 
 ## 构建与安装
 
@@ -28,12 +30,12 @@ xmake -j4 logger
 xmake install -o /opt/logger/"$(cat VERSION)"-static logger
 ```
 
-共享产物使用 `liblogger.so.<VERSION>`，SONAME 固定为 `liblogger.so.1`；静态产物为
+共享产物使用 `liblogger.so.<VERSION>`，开发 ABI 的 SONAME 为 `liblogger.so.2`；静态产物为
 `liblogger.a`。生产库默认关闭故障注入，并使用隐藏可见性 +
-`LOGGER_1.0` ELF 符号版本。
+`LOGGER_2.0` ELF 符号版本。
 
-Production v1 ABI 允许列表唯一由 `abi/logger-1.0.symbols` 维护。新增 public API 必须经过
-ABI review 并保持 1.x 向后兼容；删除、重排或改变既有 ABI 语义必须进入新的 ABI major。
+当前开发 ABI 允许列表由 `abi/logger-2.0.symbols` 维护；变更必须经过 ABI review。
+已发布 v1 的允许列表与 `release/1.x` 仅用于历史维护，不能证明当前 ABI 2 产物兼容 v1。
 
 ## 下游接入
 
@@ -98,9 +100,7 @@ xmake test -j1
 xmake pack -f targz -o xpack-out
 ```
 
-XPack 自动生成 TGZ 与同名 SHA-256。正式 GitHub Release 由
-`.github/workflows/release-publish.yml` 生成，只发布通过 发布验证 的 XPack
-共享库/静态库 产物。
+XPack 自动生成 TGZ 与同名 SHA-256。XPack 的构建成功不是正式发布授权；当前 main 的发布身份尚未完成迁移，不能将开发产物作为正式 v1/2.0 发布。
 
 发布工程细节见 [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md)。
 
@@ -164,12 +164,10 @@ xmake test 'fork_reinit_regression/*' -j1
 - [已知限制](docs/KNOWN_ISSUES.md)
 - [变更清单](CHANGELOG.md)
 
-Audit 是独立安全审计子系统；普通日志 回调 返回不是 Audit 持久化回执。
-当前 QEMU/原始磁盘 ext4 + XFS 断电、Sanitizer、ABI、打包和基准测试门禁用于证明库本身的
-发布合同；它们不构成任意服务器、RAID/HBA/NVMe/SATA 易失缓存组合的物理掉电认证。
-需要更强物理介质保证的部署应单独做目标存储栈 qualification。Production v1 的支持/不支持
-范围与正式发布判定见
-[docs/V1_RELEASE_CRITERIA.md](docs/V1_RELEASE_CRITERIA.md)。
+普通日志不提供业务审计事务、哈希链或远端持久确认。旧 Audit 用户应继续使用 `release/1.x`，
+或迁移至独立审计组件。私有支持库中残留的历史 Audit 测试不属于当前安装产品。
+文件后端进程崩溃与 QEMU/raw ext4+XFS 门禁用于验证受控存储路径；它们不等于任意服务器、
+RAID/HBA/NVMe/SATA 易失缓存组合的物理断电认证。目标部署需另做存储栈 qualification。
 
 ## 许可证
 
