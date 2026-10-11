@@ -29,7 +29,7 @@ int main(void)
 	LOGGER_INFO(storage, "storage", "volume opened id=%s", "vol-1");
 	LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
 
-	/* Stop/join every thread using these pointers before destroy. */
+	/* 销毁前停止并回收使用这些指针的每个线程。 */
 	logger_destroy(storage);
 	logger_destroy(network);
 	return 0;

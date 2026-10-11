@@ -4,8 +4,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* This is an example business ABI, not another Logger API. The business .so
- * has NO binary dependency on liblogger and owns NO logger, thread or fd. */
+/* 这是示例业务 ABI，不是另一个 Logger API。业务 .so
+ * 对 liblogger 没有二进制依赖，也不拥有任何 logger、线程或 fd。
+ */
 typedef struct example_sdk example_sdk_t;
 typedef enum {
 	EXAMPLE_LOG_DEBUG,
@@ -18,22 +19,24 @@ typedef struct {
 	const char *file;
 	const char *function;
 	int line;
-	const char *message; /* borrowed during callback, UTF-8/text, no NUL */
+	const char *message; /* 回调期间借用，UTF-8 文本，不含 NUL */
 	size_t message_len;
 } example_log_record_t;
 typedef void (*example_log_fn)(void *user, const example_log_record_t *record);
 typedef struct {
-	const char *name; /* copied by example_sdk_create */
-	example_log_fn log; /* NULL disables diagnostic logs, no fallback */
-	void *log_user; /* borrowed; example_sdk_destroy NEVER frees it */
+	const char *name; /* 由 example_sdk_create 复制 */
+	example_log_fn log; /* NULL 禁用诊断日志，无回退 */
+	void *log_user; /* 借用；example_sdk_destroy 绝不释放它 */
 } example_sdk_options_t;
 int example_sdk_create(const example_sdk_options_t *, example_sdk_t **out);
-/* Concurrent run calls are allowed. Logging is synchronous to the caller,
- * with no business lock held. The callback must be thread-safe; no C++ exception
- * or longjmp may escape it. It must not destroy the active SDK instance. */
+/* 允许并发 run 调用。日志相对于调用者同步，
+ * 不持有业务锁。回调必须线程安全；C++ 异常或 longjmp 不得逃逸。
+ * 它不得销毁活跃的 SDK 实例。
+ */
 int example_sdk_run(example_sdk_t *, unsigned task);
-/* Owner stops/joins ALL callers first. No more callbacks after destroy returns.
- * Real asynchronous SDKs also need to stop/join their own work here. */
+/* 所有者先停止并回收全部调用线程。销毁返回后不再有回调。
+ * 真实异步 SDK 也需要在此停止并回收自己的工作。
+ */
 void example_sdk_destroy(example_sdk_t *);
 #ifdef __cplusplus
 }

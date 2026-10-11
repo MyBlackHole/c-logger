@@ -1,5 +1,5 @@
 #include <logger.h>
-/* This function is the SDK's ABI, not part of Logger. */
+/* 此函数是 SDK 的 ABI，不属于 Logger。 */
 int plugin_run(void)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();

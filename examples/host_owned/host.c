@@ -23,7 +23,7 @@ int main(int argc, char **argv)
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = argv[2];
 	cfg.detail = LOGGER_DETAIL_DEBUG;
-	cfg.async_mode = 1; /* HOST explicitly chooses background logging. */
+	cfg.async_mode = 1; /* 宿主显式选择后台日志。 */
 	cfg.queue_capacity = 1024;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	logger = logger_create(&cfg);
@@ -47,8 +47,9 @@ int main(int argc, char **argv)
 	}
 	result = 0;
 cleanup:
-	/* This example has no business threads. A real host stops/joins callers
-     * FIRST. Plugin instances borrow the logger and never destroy it. */
+	/* 此示例没有业务线程。真实宿主先停止并回收调用线程。
+	 * 插件实例借用 logger，绝不销毁它。
+	 */
 	plugin.destroy(second);
 	plugin.destroy(first);
 	if (logger) {
@@ -63,11 +64,11 @@ cleanup:
 		fprintf(stderr, "unload SDK: %s\n", dlerror());
 		result = 1;
 	}
-	/* Logger library and host callback code remain loaded until after destroy. */
+	/* Logger 库与宿主回调代码保持加载，直到销毁之后。 */
 	if (logger_destroy_status(logger)) {
 		perror("logger_destroy_status");
 		result = 1;
 	}
-	logger = NULL; /* freed even on a normal teardown I/O error */
+	logger = NULL; /* 即使普通拆除 I/O 出错也已释放 */
 	return result;
 }

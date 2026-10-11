@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "logger.h" /* declarations only; this executable does NOT link logger */
+#include "logger.h" /* 仅有声明；此可执行文件不链接 logger */
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,8 +49,7 @@ int main(int argc, char **argv)
 		for (int j = 0; j < 10; ++j)
 			log_fn(l, LOGGER_INFO, "dlclose", __FILE__, __LINE__,
 			       __func__, "n=%d j=%d", n, j);
-		CHECK(destroy_fn(l) ==
-		      0); /* no calls/workers left before dlclose */
+		CHECK(destroy_fn(l) == 0); /* dlclose 前不再有调用或工作线程 */
 		l = NULL;
 		CHECK(dlclose(handle) == 0);
 	}

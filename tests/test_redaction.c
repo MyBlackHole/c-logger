@@ -18,7 +18,7 @@ int main(void)
 	if (logger_mask_secret("abc", b, sizeof(b), 3, 0))
 		return 5;
 	if (strcmp(b, "***"))
-		return 6; /* helper refuses full disclosure */
+		return 6; /* 辅助函数拒绝完整披露 */
 	errno = 0;
 	char tiny[3];
 	if (logger_mask_secret(secret, tiny, sizeof(tiny), 0, 0) == 0 ||

@@ -43,7 +43,7 @@ int example_sdk_run(example_sdk_t *sdk, unsigned task)
 		errno = EINVAL;
 		return -1;
 	}
-	/* No logger init, global writer registration or implicit file creation. */
+	/* 不初始化 logger、不注册全局写者，也不隐式创建文件。 */
 	if (sdk->log) {
 		char message[128];
 		int n = snprintf(message, sizeof(message), "sdk=%s task=%u",
@@ -58,7 +58,7 @@ int example_sdk_run(example_sdk_t *sdk, unsigned task)
 		};
 		sdk->log(sdk->log_user, &record);
 	}
-	/* Real business errors are returned independently of diagnostic logging. */
+	/* 真实业务错误独立于诊断日志返回。 */
 	return 0;
 }
 
