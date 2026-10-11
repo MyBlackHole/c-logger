@@ -10,7 +10,7 @@
 #define RECORDS 100
 #define PAYLOAD "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-static int verify_file(const char *path, unsigned char seen[RECORDS])
+static int verify_file(const char *path, unsigned int *next)
 {
 	FILE *file = fopen(path, "r");
 	if (!file)
@@ -23,7 +23,7 @@ static int verify_file(const char *path, unsigned char seen[RECORDS])
 		char expected[128];
 		unsigned int id;
 		if (!record || sscanf(record, "record=%u", &id) != 1 ||
-		    id >= RECORDS || seen[id]) {
+		    id >= RECORDS || id != *next) {
 			rc = -1;
 			break;
 		}
@@ -33,7 +33,7 @@ static int verify_file(const char *path, unsigned char seen[RECORDS])
 			rc = -1;
 			break;
 		}
-		seen[id] = 1;
+		(*next)++;
 	}
 	if (ferror(file))
 		rc = -1;
@@ -43,46 +43,40 @@ static int verify_file(const char *path, unsigned char seen[RECORDS])
 	return rc;
 }
 
-/* Only this invocation can populate the private directory. Slot order across
- * files is irrelevant; every emitted sequence must survive exactly once. */
+/* Archive names contain UTC timestamps, so alphasort gives rotation order.
+ * Check archives first, then the active tail, with one consecutive sequence. */
+static int select_archive(const struct dirent *entry)
+{
+	const char *name = entry->d_name;
+	size_t length = strlen(name);
+	return !strncmp(name, "rotation.", 9) && length > 13 &&
+	       !strcmp(name + length - 5, "Z.log");
+}
+
 static int verify_directory(const char *directory)
 {
-	DIR *dir = opendir(directory);
-	if (!dir)
+	struct dirent **archives = NULL;
+	int count = scandir(directory, &archives, select_archive, alphasort);
+	if (count < 0)
 		return -1;
-	unsigned char seen[RECORDS] = { 0 };
-	unsigned int active = 0, archives = 0;
-	int rc = 0;
-	struct dirent *entry;
-	errno = 0;
-	while ((entry = readdir(dir))) {
-		const char *name = entry->d_name;
-		size_t length = strlen(name);
-		if (!strcmp(name, "rotation.log"))
-			active++;
-		else if (!strncmp(name, "rotation.", 9) && length > 13 &&
-			 !strcmp(name + length - 5, "Z.log"))
-			archives++;
-		else
-			continue; /* Dot entries and the backend's ownership lock. */
-		char path[512];
-		int n = snprintf(path, sizeof(path), "%s/%s", directory, name);
+	unsigned int next = 0;
+	int rc = count ? 0 : -1;
+	char path[512];
+	for (int i = 0; i < count; i++) {
+		unsigned int before = next;
+		int n = snprintf(path, sizeof(path), "%s/%s", directory,
+				 archives[i]->d_name);
 		if (n < 0 || (size_t)n >= sizeof(path) ||
-		    verify_file(path, seen)) {
+		    verify_file(path, &next) || next == before)
 			rc = -1;
-			break;
-		}
-		errno = 0;
+		free(archives[i]);
 	}
-	if (errno)
+	free(archives);
+	int n = snprintf(path, sizeof(path), "%s/rotation.log", directory);
+	if (n < 0 || (size_t)n >= sizeof(path) || verify_file(path, &next))
 		rc = -1;
-	if (closedir(dir))
+	if (next != RECORDS)
 		rc = -1;
-	if (active != 1 || !archives)
-		rc = -1;
-	for (unsigned int i = 0; i < RECORDS; i++)
-		if (!seen[i])
-			rc = -1;
 	return rc;
 }
 

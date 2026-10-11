@@ -56,11 +56,18 @@ int logger_shutdown_status(void)
 		if (i == 50 && !strcmp(mode, "missing"))
 			continue;
 		int id = i == 50 && !strcmp(mode, "duplicate") ? 49 : i;
+		if (!strcmp(mode, "reordered"))
+			id = i == 50 ? 51 : (i == 51 ? 50 : i);
+		if (!strcmp(mode, "reversed-files"))
+			id = (i + 50) % 100;
 		const char *payload =
 			i == 50 && !strcmp(mode, "corrupt") ?
 				"corrupt" :
 				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-		FILE *file = files[1] && i < 50 ? files[1] : files[0];
+		FILE *file = files[1] && i < 50 &&
+					     strcmp(mode, "empty-archive") ?
+				     files[1] :
+				     files[0];
 		if (fprintf(file, "fixture record=%d %s\n", id, payload) < 0)
 			rc = -1;
 	}
