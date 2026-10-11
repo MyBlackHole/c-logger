@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -55,11 +56,30 @@ class CasOrderTests(unittest.TestCase):
             "stopped": "&g_ticket, &stopping, with_phase(current, G_STOPPED),",
         }
         for name, args in calls.items():
-            with self.subTest(transition=name):
-                root = self.fixture()
-                old = args + "\n\t\t    memory_order_acq_rel, memory_order_acquire"
-                self.replace(root, old, old.replace("memory_order_acq_rel", "memory_order_release"))
-                self.run_gate(root, 1, "未获准的 C11 内存序组合 release/acquire")
+            for layout in ("原始", "单行", "逐词换行"):
+                with self.subTest(transition=name, layout=layout):
+                    root = self.fixture()
+                    path = root / "src/logger_global.c"
+                    # 四个参数锚点独立列出；只放宽 token 之间的空白，
+                    # 不依赖被测扫描器，也不放宽唯一匹配断言。
+                    tokens = re.findall(r"\w+|[^\w\s]", args +
+                                        " memory_order_acq_rel, memory_order_acquire")
+                    pattern = r"\s*".join(re.escape(token) for token in tokens)
+                    matches = list(re.finditer(pattern, path.read_text()))
+                    self.assertEqual(len(matches), 1, (name, layout))
+                    old = matches[0].group()
+                    if layout != "原始":
+                        separator = " " if layout == "单行" else "\n\t"
+                        formatted = separator.join(tokens)
+                        self.replace(root, old, formatted)
+                        old = formatted
+                    # 排版变化自身仍通过；只回退目标调用的 success order
+                    # 后必须失败，避免测试定位失效被误当成已检出回退。
+                    self.run_gate(root, 0, "处已评审调用通过")
+                    self.assertEqual(old.count("memory_order_acq_rel"), 1)
+                    self.replace(root, old, old.replace("memory_order_acq_rel",
+                                                       "memory_order_release"))
+                    self.run_gate(root, 1, "未获准的 C11 内存序组合 release/acquire")
 
     def test_order_pair_matrix(self):
         # 独立列出期望组合，包括拒绝 failure 为 release/acq_rel 的情况。
