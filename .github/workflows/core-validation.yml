@@ -162,5 +162,6 @@ jobs:
           test -n "$artifact"
           python3 scripts/check_production_artifact.py "$artifact"
           python3 scripts/check_release_abi.py "$artifact" \
+            --abi-version 2 --symbol-version LOGGER_2.0 \
             --machine 'Advanced Micro Devices X86-64' \
             --elf-class ELF64
