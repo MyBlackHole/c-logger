@@ -409,6 +409,19 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+    target("message_truncation_production_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_message_truncation.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, scenario in ipairs({"explicit-sync", "explicit-async", "global",
+                                    "bootstrap", "status", "metadata-sync",
+                                    "metadata-async"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
     -- GNU --wrap can intercept the actual production archive, not a DSO's
     -- internal libc calls. Shared configurations run the separate white-box
     -- target below; do not label that as production DSO interception.

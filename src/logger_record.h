@@ -8,6 +8,19 @@
 #define LOGGER_MESSAGE_MAX 4096
 #define LOGGER_LINE_MAX 5120
 
+/* Ordinary void logging retains a bounded byte prefix, visibly marked.
+ * The status-returning path rejects oversized text instead of using this. */
+static inline void logger_text_mark_truncated(char *text, size_t capacity)
+{
+	static const char marker[] = " [truncated]";
+	if (capacity >= sizeof(marker))
+		memcpy(text + capacity - sizeof(marker), marker, sizeof(marker));
+	else if (capacity >= 2) {
+		text[capacity - 2] = '~';
+		text[capacity - 1] = '\0';
+	}
+}
+
 enum {
 	LOGGER_RECORD_META_MODULE = 1u << 0,
 	LOGGER_RECORD_META_CONTEXT = 1u << 1,

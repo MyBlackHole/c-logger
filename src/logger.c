@@ -181,6 +181,8 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	size_t stored = (size_t)formatted < sizeof(m.text) ?
 				(size_t)formatted :
 				sizeof(m.text) - 1u;
+	if ((size_t)formatted >= sizeof(m.text))
+		logger_text_mark_truncated(m.text, sizeof(m.text));
 	m.text_len = (uint16_t)stored;
 
 	if (!l->async_mode) {

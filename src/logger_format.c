@@ -18,7 +18,7 @@ const char *logger_basename(const char *path)
 }
 
 /* cap reserves space for LF; used counts stored, not would-have-written bytes.
- * The ordinary logger may ignore truncation; acknowledged output must not. */
+ * Ordinary output marks truncation; acknowledged output rejects it. */
 static int append(char *out, size_t cap, size_t *used, const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 4, 5)))
@@ -131,11 +131,13 @@ static int format_line(const logger_t *l, const logger_message_t *m,
 		return -EOVERFLOW;
 
 	size_t used = 0;
-	int rc;
+	int rc, truncated = 0;
 #define ADD(...) do { \
 	rc = append(out, cap - 1, &used, __VA_ARGS__); \
 	if (strict && rc) \
 		return rc; \
+	if (rc == -EOVERFLOW) \
+		truncated = 1; \
 } while (0)
 	ADD("%s.%06ld%s %-5s", timestamp.date, m->ts.tv_nsec / 1000L,
 	    timestamp.zone, logger_level_name(m->level));
@@ -161,6 +163,8 @@ static int format_line(const logger_t *l, const logger_message_t *m,
 	}
 	ADD(" %s", m->text);
 #undef ADD
+	if (truncated)
+		logger_text_mark_truncated(out, cap - 1);
 	out[used++] = '\n';
 	out[used] = 0;
 	*length = used;
