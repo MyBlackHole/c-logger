@@ -175,6 +175,21 @@ prod-c-logger-<VERSION>-Linux-x86_64-static.tar.gz
 XPack 是当前 CI 工具链生成的 native Linux/x86_64 候选二进制，不捆绑 glibc，也不代表任意
 Linux 发行版、内核 或 CPU 自动兼容。
 
+发布验证与正式发布的 package job 固定在 Ubuntu 20.04 / glibc 2.31 / GCC 9 用户态构建，
+与 2.0 支持矩阵的最低部署基线一致。GitHub runner 仍使用 Ubuntu 24.04；构建工具和
+完整 suite 在 20.04 container 内运行。任意较新宿主上的本地 `xmake pack` 产物不能
+据此宣称支持 glibc 2.31，必须另做同等基线构建和解包验收。
+
+最终 TGZ 解包后，shared DSO 的 ELF/SONAME/符号门禁强制 `--max-glibc 2.31`。
+shared/static 两种包都在基线上重新链接并运行 C、C++11、pkg-config 消费方与 PIC SDK
+模块/loader，并检查这些最终 ELF 的直接 GLIBC 版本需求不超过 2.31。`liblogger.a` 本身
+没有最终动态 ABI；它不捆绑 libc，也不保证在新系统链接的应用能部署到旧 glibc。
+部署基线证明还依赖真实基线运行，不能只看 archive 或只检查数字版本。
+
+随后 Ubuntu 24.04 job 下载并消费同一份基线 TGZ，保留新系统兼容证据，不重新构建 Logger。
+新系统链接的消费方允许依赖本机 glibc；包内 shared DSO 仍受 2.31 ceiling 约束。
+正式发布必须同时通过基线打包和新系统消费检查；显式现存 v2 tag 授权门禁保持不变。
+
 ## Release validation
 
 `.github/workflows/release-validation.yml` 对 共享库/静态库 matrix 分别执行：

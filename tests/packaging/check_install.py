@@ -30,7 +30,14 @@ p.add_argument('--includedir', default='include')
 p.add_argument('--abi-version', default='2')
 p.add_argument('--symbol-version', default='LOGGER_2.0')
 p.add_argument('--abi-manifest', default='abi/logger-2.0.symbols')
+p.add_argument('--max-glibc', help='Deployment ceiling for the packaged shared library')
+p.add_argument('--max-consumer-glibc',
+               help='Ceiling for final consumer ELFs, including static-library consumers; '
+                    'set when linking on the supported baseline, not on newer userlands')
 a = p.parse_args()
+for ceiling in (a.max_glibc, a.max_consumer_glibc):
+    if ceiling and not re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', ceiling):
+        p.error('GLIBC ceilings must be dotted numeric versions, e.g. 2.31')
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
 version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
 assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), version
@@ -166,6 +173,21 @@ try:
          '-o',exe]+flags)
     pe['LD_LIBRARY_PATH']=str(pkg_lib)
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
+    consumer_glibc = []
+    if a.max_consumer_glibc:
+        # liblogger.a itself cannot establish a GLIBC floor. Inspect final
+        # executables and the PIC SDK DSO after linking on the baseline, and
+        # retain their reports alongside the runtime checks above.
+        for linked in [cb/'logger_consumer', cb/'logger_cpp',
+                       cb/'libinstalled_plugin.so', cb/'plugin_loader', exe]:
+            # The shared plugin can import only Logger and have no direct
+            # libc calls; liblogger.so is inspected separately below. A plugin
+            # embedding liblogger.a must still expose and pass its GLIBC needs.
+            extra = (['--allow-no-glibc-for', 'liblogger.so.'+a.abi_version] if a.kind=='shared' and
+                     linked == cb/'libinstalled_plugin.so' else [])
+            result = run([sys.executable, a.source/'scripts/check_consumer_glibc.py',
+                          linked, '--max-glibc', a.max_consumer_glibc]+extra)
+            consumer_glibc.append(json.loads(result))
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()
     for requested,component,success in [(version,a.kind,True),('1.0.0',a.kind,False),
@@ -185,6 +207,7 @@ try:
         layouts.append(run([ex]))
     assert layouts[0]==layouts[1]
     (work/'public-layout.txt').write_text(layouts[0])
+    shared_abi = None
     if a.kind=='shared':
         dso=lib/'liblogger.so'
         soname_link = lib / ('liblogger.so.' + a.abi_version)
@@ -194,8 +217,9 @@ try:
         argv=[sys.executable,a.source/'scripts/check_release_abi.py',dso,
               '--manifest',abi_manifest,
               '--abi-version',a.abi_version,
-              '--symbol-version',a.symbol_version]
-        run(argv)
+              '--symbol-version',a.symbol_version,
+              '--machine','Advanced Micro Devices X86-64','--elf-class','ELF64']
+        shared_abi = json.loads(run(argv+(['--max-glibc',a.max_glibc] if a.max_glibc else [])))
         # A deliberately impossible GLIBC ceiling must cause a failing gate.
         run(argv+['--max-glibc','2.0'],expected=1)
         names=[n for n in abi_manifest.read_text().splitlines()
@@ -212,6 +236,10 @@ try:
         install_check = 'Xmake staged install'
     report={'passed':True,'kind':a.kind,'version':version,'abi_version':a.abi_version,
             'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
+            'packaged_glibc_ceiling':a.max_glibc if a.kind=='shared' else None,
+            'packaged_shared_abi':shared_abi,
+            'consumer_glibc_ceiling':a.max_consumer_glibc,
+            'consumer_glibc':consumer_glibc,
             'install_driver':'xmake',
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',

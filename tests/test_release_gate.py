@@ -169,17 +169,20 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertLess(prepare.index('id: gate'), prepare.index('id: version'))
         self.assertLess(prepare.index('id: gate'), prepare.index('gh release'))
         self.assertIn('authorized: ${{ steps.gate.outputs.authorized }}', prepare)
-        for name in ('package', 'publish', 'release-already-exists'):
+        for name in ('package', 'consume-modern', 'publish', 'release-already-exists'):
             job = section(WORKFLOW, name + ':', 2)
             condition = section(job, 'if: >-', 4)
             self.assertIn("needs.prepare.result == 'success'", condition)
             self.assertIn("needs.prepare.outputs.authorized == 'true'", condition)
             self.assertNotIn('always()', condition)
-            self.assertIn('needs: ' + ('[prepare, package]' if name == 'publish' else 'prepare'), job)
+            dependencies = {'publish': '[prepare, package, consume-modern]',
+                            'consume-modern': '[prepare, package]'}
+            self.assertIn('needs: ' + dependencies.get(name, 'prepare'), job)
             if name != 'release-already-exists':
                 self.assertIn('ref: ${{ needs.prepare.outputs.source_sha }}', job)
             if name == 'publish':
                 self.assertIn("needs.package.result == 'success'", condition)
+                self.assertIn("needs.consume-modern.result == 'success'", condition)
         self.assertNotIn('source_ref', WORKFLOW)
         self.assertNotIn('continue-on-error:', WORKFLOW)
         self.assertNotIn('--target', WORKFLOW)
@@ -189,6 +192,29 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertNotRegex(WORKFLOW, r'gh api.*(?:git/refs|/git/tags)')
         self.assertIn('".github/workflows/release-publish.yml"',
                       (ROOT / '.github/workflows/core-validation.yml').read_text())
+
+    def test_release_packages_and_final_consumers_use_supported_baseline(self):
+        for name in ('release-validation', 'release-publish'):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / '.github/workflows' / (name + '.yml')).read_text()
+                package = section(workflow, 'package:', 2)
+                self.assertIn('image: ubuntu:20.04', section(package, 'container:', 4))
+                self.assertLess(package.index('apt-get install'), package.index('actions/checkout@'))
+                self.assertIn('--toolchain=gcc', package)
+                self.assertIn("= 'glibc 2.31'", package)
+                self.assertIn('f|config|test|install|run|pack)', package)
+                self.assertIn('xmake test -j1', package)
+                self.assertIn('xmake pack -f targz', package)
+                install = section(package, '- name: Verify packaged install tree', 6)
+                self.assertIn('--installed-prefix "$prefix"', install)
+                self.assertIn('--max-glibc 2.31', install)
+                self.assertIn('--max-consumer-glibc 2.31', install)
+                modern = section(workflow, 'consume-modern:', 2)
+                self.assertIn('runs-on: ubuntu-24.04', modern)
+                self.assertIn('actions/download-artifact@', modern)
+                self.assertIn('--installed-prefix "$prefix" --max-glibc 2.31', modern)
+                self.assertNotIn('--max-consumer-glibc', modern)
+                self.assertNotIn('xmake f ', modern)
 
     def test_every_multiline_shell_parses(self):
         blocks = re.findall(r'^        run: ([|]|>-)\n((?:          .*\n|\n)+)',
