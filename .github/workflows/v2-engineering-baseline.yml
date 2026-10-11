@@ -132,4 +132,17 @@ jobs:
 
       - name: 运行完整静态库测试集
         shell: bash
-        run: xmake test -j1
+        run: |
+          set -euo pipefail
+          mkdir -p v2-test-evidence
+          git rev-parse HEAD > v2-test-evidence/SOURCE_COMMIT
+          xmake test -v -j1 2>&1 | tee v2-test-evidence/tests.log
+
+      - name: 保留完整测试输出与源码身份
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-test-output-${{ matrix.toolchain }}
+          path: v2-test-evidence/
+          if-no-files-found: warn
+          retention-days: 14
