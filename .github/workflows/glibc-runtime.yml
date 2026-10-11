@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "xmake.lua"
+      - "VERSION"
       - ".github/workflows/glibc-runtime.yml"
       - "src/**"
       - "include/**"
@@ -11,7 +13,7 @@ on:
       - "scripts/check.sh"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
-      - "tests/packaging/**"
+      - "tests/**"
       - "examples/installed_consumer/**"
   push:
     branches: [main]
@@ -25,7 +27,7 @@ on:
       - "scripts/check.sh"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
-      - "tests/packaging/**"
+      - "tests/**"
       - "examples/installed_consumer/**"
 
 permissions:

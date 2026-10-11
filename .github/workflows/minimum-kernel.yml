@@ -8,12 +8,11 @@ on:
       - "scripts/run_min_kernel_vm.sh"
       - "scripts/min-kernel/**"
       - "tests/integration/test_min_kernel_runtime.c"
-      - "src/audit.c"
-      - "src/logger_file.c"
-      - "src/logger_file_rename.c"
-      - "src/logger_process.c"
-      - "include/audit.h"
-      - "include/logger.h"
+      - "xmake.lua"
+      - "VERSION"
+      - "src/**"
+      - "include/**"
+      - "abi/logger-2.0.symbols"
 
 permissions:
   contents: read

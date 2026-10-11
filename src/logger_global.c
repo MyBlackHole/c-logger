@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 /* 只有 lifecycle control 操作获取 g_control_mu。
@@ -528,10 +529,25 @@ void logger_global_write(logger_level_t level, const char *module,
 			int n = vsnprintf(text, sizeof(text), fmt, ap);
 			if (n < 0)
 				rc = -EILSEQ;
-			else if (dprintf(STDERR_FILENO, "%-5s [%s] %s\n",
-					 logger_level_name(level),
-					 module ? module : "app", text) < 0)
-				rc = -(errno ? errno : EIO);
+			else {
+				/* Bootstrap diagnostics need the same thread-local SIGPIPE
+				 * protection as initialized stderr sinks. Keep the historical
+				 * bytes without a second unbounded printf allocation. */
+				char name[6];
+				(void)snprintf(name, sizeof(name), "%-5s",
+					       logger_level_name(level));
+				const char *tag = module ? module : "app";
+				struct iovec vec[] = {
+					{ .iov_base = name, .iov_len = 5 },
+					{ .iov_base = " [", .iov_len = 2 },
+					{ .iov_base = (void *)tag, .iov_len = strlen(tag) },
+					{ .iov_base = "] ", .iov_len = 2 },
+					{ .iov_base = text, .iov_len = strlen(text) },
+					{ .iov_base = "\n", .iov_len = 1 }
+				};
+				rc = logger_stderr_writev_all(vec,
+						(int)(sizeof(vec) / sizeof(vec[0])));
+			}
 		}
 		va_end(ap);
 	}

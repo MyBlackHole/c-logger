@@ -211,7 +211,8 @@ int __wrap_logger_file_reopen(logger_file_t *f)
 		verify_reentry();
 	return __real_logger_file_reopen(f);
 }
-int __wrap_dprintf(int fd, const char *fmt, ...)
+int __real_logger_stderr_writev_all(struct iovec *, int);
+int __wrap_logger_stderr_writev_all(struct iovec *vec, int count)
 {
 	if (atomic_exchange(&pause_bootstrap, 0)) {
 		atomic_store(&entered, 1);
@@ -219,11 +220,7 @@ int __wrap_dprintf(int fd, const char *fmt, ...)
 	}
 	if (atomic_exchange(&recurse_bootstrap, 0))
 		verify_reentry();
-	va_list ap;
-	va_start(ap, fmt);
-	int rc = vdprintf(fd, fmt, ap);
-	va_end(ap);
-	return rc;
+	return __real_logger_stderr_writev_all(vec, count);
 }
 
 static void *delayed_call(void *p)

@@ -115,14 +115,11 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 	}
 	return __real_pthread_rwlock_rdlock(rw);
 }
-int __wrap_dprintf(int fd, const char *fmt, ...)
+int __real_logger_stderr_writev_all(struct iovec *, int);
+int __wrap_logger_stderr_writev_all(struct iovec *vec, int count)
 {
 	rendezvous(P_BOOTSTRAP);
-	va_list ap;
-	va_start(ap, fmt);
-	int rc = vdprintf(fd, fmt, ap);
-	va_end(ap);
-	return rc;
+	return __real_logger_stderr_writev_all(vec, count);
 }
 static void cleanup(void *unused)
 {
