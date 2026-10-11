@@ -1,31 +1,31 @@
 # 当前开发限制与生产验收边界
 
-本页针对 main 的 Audit-free ABI 2 开发产物。旧 Production v1 验收和限制保存在
+本页针对 main 的不含 Audit 的 ABI 2 开发产物。旧生产版 v1 验收和限制保存在
 [历史记录](https://github.com/MyBlackHole/c-logger/blob/8326825547a0698de9ed2599659f498f644ea925/docs/V1_KNOWN_ISSUES_HISTORY.md)，不作为当前版本已通过的证据。
 
 ## 尚未完成的发布事项
 
-- 根 VERSION=2.0.0，与SONAME 2 / LOGGER_2.0和安装/打包元数据一致；这是ABI 2开发身份，不是正式release或v1兼容承诺。
-- 2.0公开API/ABI最终冻结和精确提交的完整发布验收尚需完成。发布门禁只接受显式现存v2 tag；CI通过不等于正式release授权。
-- Audit/crypto源码和专用测试已退役；private/regression支持库仍用于普通Logger故障与锁检测，不能进入安装产物。
-- 每次生产候选必须在精确提交上验证GCC/Clang、shared/static、ASan/UBSan、TSan、安装消费、制品隔离和平台门禁。旧提交上的成功不能移用。
+- 根 VERSION=2.0.0，与 SONAME 2 / LOGGER_2.0 和安装/打包元数据一致；这是 ABI 2 开发身份，不是正式发布或 v1 兼容承诺。
+- 2.0 公开 API/ABI 最终冻结和精确提交的完整发布验收尚需完成。发布门禁只接受显式现存 v2 标签；CI 通过不等于正式发布授权。
+- Audit/密码学模块源码和专用测试已退役；私有/回归支持库仍用于普通 Logger 故障与锁检测，不能进入安装产物。
+- 每次生产候选必须在精确提交上验证 GCC/Clang、共享/静态、ASan/UBSan、TSan、安装消费、制品隔离和平台门禁。旧提交上的成功不能移用。
 
 ## 运行与部署边界
 
-- 平台限定Linux x86_64/ELF64、kernel >=5.10、glibc >=2.31；GCC >=9、Clang >=10，公共头文件支持C++11。musl、AArch64和32位不在当前支持范围。
-- 宿主拥有显式logger实例。销毁/卸载前必须停止并join所有借用者；原始指针不支持并发destroy、跨静态库副本使用或销毁后重试。
-- 文件目录必须可信，文件末级symlink/hardlink被拒绝。锁只是协作协议，不抵抗不合作writer、恶意目录/锁inode替换；不支持NFS/SMB等网络文件系统。
-- 内部轮换要求RENAME_NOREPLACE，不做覆盖式降级。错误可能发生在部分字节已写入后，业务重试可能重复；检查flush/destroy状态与粘滞错误。
-- Syslog仅支持本地非阻塞Unix datagram；不提供磁盘重试队列、失败记录重放、远端持久确认或绝对I/O时限。重连仅由后续日志触发。
-- Logger/Console不是信号安全API。raw fork继承运行时拒绝使用，优先fork+exec；不支持vfork后调用、跨调用longjmp/pthread_exit、宿主取消私有worker或回调等待环。
-- 支持延迟取消或入口前已禁用取消；ASYNC+ENABLE不在一般API支持契约内。取消延期期间底层文件/stdio和锁操作仍可能阻塞。
-- Logger的stderr与bootstrap路径保护调用线程免受本次写入新产生SIGPIPE的默认终止，保留宿主handler、mask和既有pending信号。Console的stdio路径也采用线程局部保护，关闭管道返回-1/EPIPE；更早的格式错误保留首错。均不改变宿主全局信号处置。
+- 平台限定 Linux x86_64/ELF64、内核 >=5.10、glibc >=2.31；GCC >=9、Clang >=10，公共头文件支持 C++11。musl、AArch64 和 32 位不在当前支持范围。
+- 宿主拥有显式 Logger 实例。销毁/卸载前必须停止并 join 所有借用者；原始指针不支持并发销毁、跨静态库副本使用或销毁后重试。
+- 文件目录必须可信，文件末级符号链接/硬链接被拒绝。锁只是协作协议，不抵抗不合作写入者、恶意目录/锁 inode 替换；不支持 NFS/SMB 等网络文件系统。
+- 内部轮换要求 RENAME_NOREPLACE，不做覆盖式降级。错误可能发生在部分字节已写入后，业务重试可能重复；检查 flush/销毁状态与已锁存错误。
+- Syslog 仅支持本地非阻塞 Unix 数据报；不提供磁盘重试队列、失败记录重放、远端持久确认或绝对 I/O 时限。重连仅由后续日志触发。
+- Logger/Console 不是信号安全 API。原始 fork 继承运行时拒绝使用，优先 fork+exec；不支持 vfork 后调用、跨调用 longjmp/pthread_exit、宿主取消私有工作线程或回调等待环。
+- 支持延迟取消或入口前已禁用取消；ASYNC+ENABLE 不在一般 API 支持契约内。取消延期期间底层文件/stdio 和锁操作仍可能阻塞。
+- Logger 的 stderr 与启动输出路径保护调用线程免受本次写入新产生 SIGPIPE 的默认终止，保留宿主处理器、信号屏蔽字和既有待处理信号。Console 的 stdio 路径也采用线程局部保护，关闭管道返回-1/EPIPE；更早的格式错误保留首错。均不改变宿主全局信号处置。
 - 普通日志不提供审计事务、哈希链、不可变存储或可信锚点。
 
 ## 持久性证据范围
 
-进程crash和QEMU/raw ext4+XFS掉电测试验证受控虚拟存储路径，不证明物理控制器/磁盘易失缓存、
-RAID/HBA或具体部署介质的断电安全。必须保留普通文件轮换切断点；历史Audit测试的成功不替代普通Logger验证。
-最低kernel/glibc要有实际guest/runtime证据，不能仅从ELF符号版本推导kernel兼容性。
+进程崩溃和 QEMU/原始 ext4+XFS 掉电测试验证受控虚拟存储路径，不证明物理控制器/磁盘易失缓存、
+RAID/HBA 或具体部署介质的断电安全。必须保留普通文件轮换切断点；历史 Audit 测试的成功不替代普通 Logger 验证。
+最低内核/glibc 要有实际虚拟机/运行时证据，不能仅从 ELF 符号版本推导内核兼容性。
 
 当前设计权威与支持细则见 [v2/README.md](v2/README.md)、[v2/SUPPORT_MATRIX.md](v2/SUPPORT_MATRIX.md)。
