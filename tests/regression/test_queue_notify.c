@@ -42,9 +42,15 @@ int main(int argc, char **argv)
 		atomic_store(&fail_wait, 1);
 		atomic_store(&release_wait, 1);
 		logger_queue_wake_force(&l->q);
+		/* 错误先发布，STOPPING 随后发布；观察到前者不保证后者已完成。
+		 * 有界等待两个最终谓词，仍分别校验错误、状态和关闭释放结果。
+		 */
 		for (int i = 0; i < 5000; ++i) {
 			if (atomic_load_explicit(&l->lifecycle_error,
-						 memory_order_acquire) == EIO)
+						 memory_order_acquire) == EIO &&
+			    atomic_load_explicit(&l->state,
+						 memory_order_acquire) ==
+				    LOGGER_STATE_STOPPING)
 				break;
 			nap_ms();
 		}

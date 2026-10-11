@@ -132,4 +132,19 @@ jobs:
 
       - name: 运行完整静态库测试集
         shell: bash
-        run: xmake test -j1
+        run: |
+          set -euo pipefail
+          mkdir -p v2-test-evidence
+          # 默认 checkout 使用事件 SHA；归档下载模式可能没有 .git。
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf '%s\n' "$GITHUB_SHA" > v2-test-evidence/SOURCE_COMMIT
+          xmake test -v -j1 2>&1 | tee v2-test-evidence/tests.log
+
+      - name: 保留完整测试输出与源码身份
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-test-output-${{ matrix.toolchain }}
+          path: v2-test-evidence/
+          if-no-files-found: warn
+          retention-days: 14
