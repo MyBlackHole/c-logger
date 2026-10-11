@@ -49,7 +49,13 @@ static inline console_config_t console_defaults_cpp(void)
  * These are defensive errors, not a general async-signal-safe console API.
  * Console setters/init are process-global configuration operations.
  * Print functions return 0 on success, -1 on stdio failure with errno set by
- * the underlying libc operation where available. */
+ * the underlying libc operation where available. Output/flush failures on a
+ * closed pipe return -1/EPIPE instead of terminating the host with SIGPIPE.
+ * This uses only the calling thread's signal mask, restores its prior mask,
+ * preserves already-pending SIGPIPE, and does not change the process handler.
+ * FILE buffering/error state and the normal flush of host-buffered data are
+ * retained; an earlier stdio error takes precedence over a later EPIPE.
+ * Direct host writes/flushes outside Console are not protected. */
 /* Console operations defer cancellation while formatting/holding internal
  * mutexes and FILE operations, restore the caller's policy after release, and
  * reject same-thread Logger/Console callback recursion with EDEADLK. Not a

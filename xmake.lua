@@ -423,6 +423,20 @@ if has_config("build_tests") then
             add_tests(scenario, {runargs = scenario, timeout = 15})
         end
     target_end()
+    target("console_sigpipe_production_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_console_sigpipe.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, scenario in ipairs({"closed", "preblocked", "pending", "handler",
+                                    "ignored", "healthy", "first-error",
+                                    "host-buffer", "host-flush", "thread-local", "cancel",
+                                    "large-output"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
 end
 
 
@@ -681,6 +695,8 @@ if has_config("build_regression_tests") then
              "logger_stderr_writev_all"}},
 
         -- Link-time interception parity, group C: explicit instance/Console scope.
+        {"console_sigpipe_guard_regression", "tests/regression/test_console_sigpipe_guard.c",
+            {"pthread_mutex_lock", "pthread_mutex_unlock", "pthread_sigmask", "sigpending"}},
         {"explicit_scope_regression", "tests/regression/test_explicit_scope.c",
             {"logger_file_write", "logger_file_reopen", "logger_queue_push",
              "pthread_cond_wait", "pthread_create", "close", "fflush",
@@ -1348,6 +1364,17 @@ if has_config("build_regression_tests") then
         }) do
             add_tests("global_cancel_" .. scenario,
                       {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("console_sigpipe_guard_regression")
+        for _, api in ipairs({"print", "source"}) do
+            for _, failure in ipairs({"mask", "pending"}) do
+                for _, outcome in ipairs({"recover", "unlock"}) do
+                    add_tests(api .. "-" .. failure .. "-" .. outcome,
+                              {runargs = {api, failure, outcome}, timeout = 10})
+                end
+            end
         end
     target_end()
 

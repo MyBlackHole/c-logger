@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "logger_internal.h"
 #include "logger_cleanup.h"
+#include "logger_sigpipe.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -75,54 +76,10 @@ void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
 }
 
 
-static int stderr_sigpipe_guard_begin(sigset_t *old_mask, int *was_pending)
-{
-	sigset_t block, pending;
-	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
-		return -(errno ? errno : EINVAL);
-	int rc = pthread_sigmask(SIG_BLOCK, &block, old_mask);
-	if (rc != 0)
-		return -rc;
-	if (sigpending(&pending) != 0) {
-		int error = errno ? errno : EIO;
-		(void)pthread_sigmask(SIG_SETMASK, old_mask, NULL);
-		return -error;
-	}
-	int member = sigismember(&pending, SIGPIPE);
-	if (member < 0) {
-		int error = errno ? errno : EINVAL;
-		(void)pthread_sigmask(SIG_SETMASK, old_mask, NULL);
-		return -error;
-	}
-	*was_pending = member;
-	return 0;
-}
-
-static void stderr_sigpipe_consume_new(int was_pending)
-{
-	if (was_pending)
-		return;
-	sigset_t block, pending;
-	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
-		return;
-	if (sigpending(&pending) != 0 || sigismember(&pending, SIGPIPE) != 1)
-		return;
-	struct timespec timeout = { 0 };
-	for (;;) {
-		int rc = sigtimedwait(&block, NULL, &timeout);
-		if (rc == SIGPIPE || (rc < 0 && errno == EAGAIN))
-			return;
-		if (rc < 0 && errno == EINTR)
-			continue;
-		return;
-	}
-}
-
 int logger_stderr_writev_all(struct iovec *v, int count)
 {
-	sigset_t old_mask;
-	int was_pending = 0;
-	int result = stderr_sigpipe_guard_begin(&old_mask, &was_pending);
+	logger_sigpipe_guard_t sigpipe_guard;
+	int result = logger_sigpipe_begin(&sigpipe_guard);
 	if (result)
 		return result;
 
@@ -149,12 +106,7 @@ int logger_stderr_writev_all(struct iovec *v, int count)
 			v[first].iov_len -= left;
 		}
 	}
-	if (result == -EPIPE)
-		stderr_sigpipe_consume_new(was_pending);
-	int restore = pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
-	if (!result && restore)
-		result = -restore;
-	return result;
+	return logger_sigpipe_end(&sigpipe_guard, result, result == -EPIPE);
 }
 
 int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)

@@ -82,6 +82,16 @@ Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Lo
 - 所有 fmt=NULL 返回 EINVAL，包括被级别过滤的消息。
 - 非法配置/枚举不改变已有配置，void 设置接口/init 通过 errno 报告 EINVAL。
 - stdio 输出失败后即使后续 fflush 也失败，保留第一次错误。
+- Console 自身的 stdout/stderr 写入和 fflush 使用线程局部 SIGPIPE guard：关闭读取端的
+  pipe 返回 -1/errno=EPIPE，不因该次输出终止宿主。已有首错优先，例如格式化 EILSEQ 后的
+  fflush 再遇 EPIPE，仍返回 EILSEQ，同时处理这次写入产生的 SIGPIPE。
+- guard 不改变进程全局 signal disposition，不修改其他线程的 mask；返回前恢复调用线程的
+  完整原 mask。调用前已 pending 的 SIGPIPE 保留；仅在观察到 EPIPE 且进入时无 pending
+  SIGPIPE 时消费新信号。标准信号不能区分同一窗口内外部投递的 SIGPIPE 与写入生成信号；
+  这不是一个管理宿主显式 signal 投递的接口。
+- 保留原 fprintf/vfprintf/fputc/fflush 路径、FILE buffer 和 ferror 状态，不切换为 raw fd
+  输出，也不增加可增长的中间格式缓冲。既有 fflush 仍可能刷新宿主预先放入相同 FILE 的
+  数据；宿主在 Console 外直接写入或刷新该 FILE 时自行负责 SIGPIPE 策略。
 - console_debug_源信息 消息 3072 字节（含 NUL）、合成字段 4096 字节（含 NUL）；超限返回
   EOVERFLOW，在写出诊断前拒绝，而不静默截断。
 - TTY 自动探测不覆盖供 printf `%m` 使用的 errno；成功操作恢复入口 errno。
