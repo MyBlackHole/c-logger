@@ -5,6 +5,8 @@
 c-logger 使用显式线程本地（TLS）持锁栈检查项目锁契约。Debug/test 构建启用
 lockdep；生产构建通过 `LOGGER_ENABLE_LOCKDEP=0` 将检查与记账编译为空操作。
 
+当前实现仅跟踪以下六种锁类；Audit 锁及专属回归已退役。
+
 ## 跟踪的锁类别
 
 - Global control
@@ -13,19 +15,15 @@ lockdep；生产构建通过 `LOGGER_ENABLE_LOCKDEP=0` 将检查与记账编译�
 - instance progress
 - queue wait
 - Console
-- Audit control
-- Audit operation
 
 允许的嵌套关系来自 `docs/v2/LOCKING.md`：
 
 ```text
 Global control -> Global lifetime -> one instance lock
 Global control --------------------> one instance lock
-Audit control  -> Audit operation  -> one instance lock
-Audit control  --------------------> one instance lock
 ```
 
-第二、四条只用于 controller 独占的 candidate 或已完成 unpublish/drain 的对象。
+第二条只用于 controller 独占的 candidate 或已完成 unpublish/drain 的对象。
 instance 锁之间禁止嵌套；Console 当前不允许与其他跟踪锁嵌套。
 
 ## 检查与记账时机
@@ -47,14 +45,12 @@ instance 锁之间禁止嵌套；Console 当前不允许与其他跟踪锁嵌套
 
 - Global 的 `g_control_mu` 与 `g_lifetime_lock`：分别使用 mutex 包装和共享
   `LOGGER_LOCK_GLOBAL_LIFETIME` 类的 rwlock 包装。
-- Audit 的 control/operation mutex：覆盖 cancellation-aware scope 和 controller
-  内的 operation 嵌套获取。
 - instance emit、progress、queue-wait 和 Console mutex：通过显式锁类别 guard 接入；
   `logger_sync_outputs_locked()` 在调用点断言 emit 锁已持有。
 
 这些检查分别由 `logger_lockdep_check_acquire()` 和
 `logger_lockdep_check_release()` 提供。检查函数本身不改变 TLS 状态；成功获取/释放
-后的 tracker API 才更新持锁栈。关系矩阵、Global/Audit 锁图和条件变量约束见
+后的 tracker API 才更新持锁栈。关系矩阵、Global 锁图和条件变量约束见
 `docs/v2/LOCKING.md`。
 
 ## 诊断与边界

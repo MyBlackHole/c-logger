@@ -80,6 +80,15 @@ xmake test -g crash-verifier -j1
 `scripts/check_crash_matrix.py` 核对精确八项并输出 JSON、JUnit 和原始日志。
 `crash-verifier` 用正负向 mutation fixture 验证验收器不会放过缺失、重复或损坏。
 
+### Rotation 记录完整性与反例
+
+`rotation_test` 每次使用独立 `mkdtemp` 目录，检查 status shutdown，要求产生 archive，
+并按 archive 名时间序加 active 尾部逐条验证 100 条完整记录连续且恰好出现一次。
+`xmake test -g rotation-verifier` 将同一测试链接到测试专用替代实现：有效 fixture 必须通过；
+无输出、仅 active、空 archive、缺失、重复、内容损坏、记录/文件倒序与 shutdown 失败必须拒绝。每项分别在干净目录和
+预放旧 active/archive 的目录执行，旧文件不得影响结果或被删除。替代实现不链接生产库、
+不安装，也不进入 XPack；真实 rotation 测试仍分别链接 static/shared 生产产物。
+
 ### Raw fork 防御
 
 生产链接的 `fork_test` / `fork_guard_test` 与白盒 `process_fork_regression` 持续验证
@@ -191,10 +200,28 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 7. PIC SDK 模块；
 8. pkg-config 消费方；
 9. 精确版本/组件s 失败关闭；
-10. 当前 public layout/default/function type 和 config 负向合同。
+10. 当前 public layout/default/function type 和 config 负向合同；
+11. 显式安装文档清单、`docs/v2/` 权威与全部 Markdown 相对文件链接的 relocation 验证。
+
+`tests/packaging/test_installed_docs.py` 包含缺失 v2 文档、缺失传递链接、越界链接、
+意外安装历史 Audit 文档等负向 fixture；发布检查通过 `check_install.py` 使用同一验收器。
 
 `examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
 测试资产，不代表项目重新依赖 CMake 构建。
+
+## CAS 内存序门禁
+
+启用 `build_tests` 时，`xmake test -g cas-order -j1` 注册并运行静态清单检查和负向 mutation。
+`validation/cas_orders.tsv` 记录 `src/` 与 `include/` 中每个直接 CAS 的对象、desired 表达式、
+strong/weak、success/failure order、数量和理由，不依赖行号。新增、删除或改变 CAS 时须同步
+评审清单，不能自动接受扫描结果。检查器拒绝不在保守 C11 允许表中的 pair（包括
+release/acquire）、隐式 order、order 别名和未经评审的 compiler CAS builtin。
+
+Mutation 在临时源码副本中逐处恢复四个 global lifecycle 的 release/acquire，确认门禁失败；
+也验证非法 failure order、合法但未评审的 order 变化、清单漂移和新增调用会失败。
+这是未经预处理的词法门禁，检查所有源码分支，不是完整 C 解析器、happens-before 证明或运行时
+UB 检测；生命周期故障/并发回归仍须独立运行。保守 pair 选择消除 C11 可移植性契约疑义，
+不宣称旧 pair 已复现 UB。
 
 ## 工程 gate
 

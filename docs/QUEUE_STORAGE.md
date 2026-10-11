@@ -263,28 +263,38 @@ workflow 输出完整 raw samples、Markdown summary 和 Actions artifact。实�
 
 普通 enqueue 不再无条件执行 `pthread_mutex_lock + pthread_cond_signal`。
 
+当前协议在同一个 `consumer_waiting` atomic 上使用 acq_rel RMW handoff，已移除旧双 SC fence 协议。
+初始化后，只要 producer/worker/force-wake 仍可能并发，所有 waiting 修改都必须经过这些 RMW helper。
+
 worker 在 queue 空时：
 
 ```text
-wait_mu
-  -> publish consumer_waiting=1
-  -> SC fence
+lock wait_mu
+  -> exchange(consumer_waiting, 1, acq_rel)  // 准备等待
   -> recheck queue/running
-  -> cond_wait
+  -> still empty/running ? cond_wait : do not sleep
+  -> exchange(consumer_waiting, 0, acq_rel)  // 结束等待
+  -> unlock wait_mu
 ```
 
-producer 在 record release-publish 后先执行 SC fence，再读取 `consumer_waiting`：
+producer 在 record 的 `slot.seq` release-publish 后执行
+`fetch_or(consumer_waiting, 0, acq_rel)` probe；虽然数值不变，它仍是 RMW，不能替换成普通 load：
 
-- 0：worker 正在运行或尚未准备睡眠，直接返回；
-- 1：进入 `wait_mu` slow path，只有一个 producer exchange 成功并 signal。
+- 返回 0：不获取 `wait_mu`；该 RMW 的 publication chain 仍可传给后续 worker arm；
+- 返回 1：进入 `wait_mu` slow path，执行 `exchange(consumer_waiting, 0, acq_rel)`；
+  只有取得旧值 1 的 producer 才 signal，旧值 0 表示该 wait cycle 已被其他 resolver 处理。
 
-shutdown/stop 使用独立 force wake，不依赖 hint。
+shutdown/stop 先关闭 `running`，再持 `wait_mu` 通过 acq_rel RMW disarm 并无条件 force signal，
+不依赖 producer 的 waiting probe。
+
+这里的 publication chain 必须包括当前 dequeue head 的 producer；后续 slot 先发布不保证
+head 已可消费。关闭 head reservation gap 的 producer 仍须在发布后执行自己的 RMW probe。
+完整 C11 happens-before、MPSC chain、condvar wait-entry 和 resolver 证明见
+[QUEUE_WAKEUP_PROOF.md](v2/QUEUE_WAKEUP_PROOF.md)。litmus、wait-entry regression 与 TSan 是证据，不能替代该证明。
 
 benchmark 私有字段同时报告 `queue_wait_count`、`queue_producer_wake_signals` 和
 `queue_force_wake_signals`。上一版实现每个成功 enqueue 都 signal，因此 tuning
 baseline 的 producer signal 数等于 enqueued；candidate 可以直接计算 signal reduction。
 
-
-SC fence 是 correctness protocol 的一部分，不是可随意删除的性能细节。它防止 worker 和
-producer 在 store-buffering 交错下同时读到对方的旧状态；如果未来要替换该 barrier，
-必须重新证明 lost-wakeup 不可能，并用 wait-entry regression + TSan 验证。
+RMW handoff 是 correctness protocol 的一部分；不能用 plain load/store 或添加 fence 来替代。
+任何替换都必须重新证明 lost-wakeup 不可能，并保留上述验证边界。

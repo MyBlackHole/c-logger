@@ -1,7 +1,7 @@
 # 当前开发限制与生产验收边界
 
 本页针对 main 的 Audit-free ABI 2 开发产物。旧 Production v1 验收和限制保存在
-[历史记录](V1_KNOWN_ISSUES_HISTORY.md)，不作为当前版本已通过的证据。
+[历史记录](https://github.com/MyBlackHole/c-logger/blob/8326825547a0698de9ed2599659f498f644ea925/docs/V1_KNOWN_ISSUES_HISTORY.md)，不作为当前版本已通过的证据。
 
 ## 尚未完成的发布事项
 

@@ -54,4 +54,4 @@ GCC 9 是 Ubuntu 20.04 的工程基线；Clang 10 是 2.0 的最低目标版本�
 
 - 新增 VLA 通过 `-Wvla` 暴露，并在正常 `-Werror` target 中成为错误；
 - production library 及其同源 test/regression support archive 对超过 24 KiB 的单函数 stack frame 发出诊断；历史 test executable 不在这一轮被强制重写；这是用户态初始 guardrail，不等于 Linux kernel stack 大小；
-- 24 KiB 阈值当前 Clang 10 已测得 `src/audit.c:create_runtime()` 约 19,464B；在 #105 Audit 重构和 2.0 stack inventory 后应收紧，但扩大阈值必须有 review 依据。
+- 24 KiB 是当前编译门禁阈值，不是当前源码的实测最大栈帧。最初设值参考的 Audit 函数已退役；后续收紧必须基于普通 Logger 的新 stack inventory，扩大阈值仍须 review 依据。

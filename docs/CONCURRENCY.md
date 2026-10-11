@@ -72,44 +72,48 @@ release-store slot.seq
 
 MPSC payload 发布 与 工作线程 sleep/wakeup 是两个独立协议。
 
+当前使用同一个 `consumer_waiting` atomic 上的 acq_rel RMW handoff；旧双 SC fence 协议已移除。
+初始化后所有并发 waiting 修改均为 acq_rel RMW，不能用 plain load/store 替换 helper。
+
 工作线程 只有在 drain 发现 队列 为空后才进入 wait protocol：
 
 ```text
 lock wait_mu
-  ->
-consumer_waiting = 1 (release)
-  ->
-SC fence
-  ->
-recheck queue + running
-  ->
-still empty/running ? cond_wait : do not sleep
+  -> exchange(consumer_waiting, 1, acq_rel)  // 准备等待
+  -> recheck queue + running
+  -> still empty/running ? cond_wait : do not sleep
+  -> exchange(consumer_waiting, 0, acq_rel)  // 结束等待
+  -> unlock wait_mu
 ```
 
-生产者 先完成 `slot.seq` release 发布，再执行 SC fence，然后：
+生产者 完成 `slot.seq` release 发布后，执行 `fetch_or(consumer_waiting, 0, acq_rel)` probe：
 
 ```text
-consumer_waiting == 0
-    -> 直接返回，不碰 wait_mu
+probe old == 0
+    -> 直接返回，不碰 wait_mu；RMW 仍参与 publication handoff chain
 
-consumer_waiting == 1
+probe old == 1
     -> lock wait_mu
-    -> exchange waiting 1 -> 0
-    -> 成功者 signal 一次
+    -> exchange(consumer_waiting, 0, acq_rel)
+    -> old == 1 时 signal 一次；old == 0 时已有 resolver 处理该 wait cycle
+    -> unlock wait_mu
 ```
 
-两个 SC fence 构成 store-buffering handshake，因此不能同时出现
-“工作线程 看不到新 record”和“生产者 看不到 等待状态”。
+同一 atomic 的 RMW modification order 给出两类情况：
 
-所以 发布 落在任意窗口时都不会丢 wakeup：
+- head producer 的 publish/probe 在 worker arm 之前：arm acquire 取得该 RMW chain，
+  随后的 slot acquire recheck 必须看到 head publication；
+- worker arm 在 head producer probe 之前：尚未被 resolver 清除时，probe 观察到 1，
+  producer 持 `wait_mu` claim 后 signal；同一 mutex 与 cond_wait 的原子释放/等待衔接，防止 wait-entry 丢唤醒。
 
-- 生产者 没看到 等待状态 时，工作线程 的二次 recheck 必须看到已 发布 record；
-- 工作线程 的二次 recheck 没看到 record 时，生产者 必须观察到 等待状态 并在
-  `pthread_cond_wait()` 原子释放 mutex 后取得 `wait_mu` 唤醒信号。
+多个生产者的 RMW 构成传递链。若 probe 看到 intervening clear 后的 0，则该 wait cycle
+已由 producer signal claim、worker disarm 或 force wake 处理，不能把任意 plain store 0 加入协议。
+后续 slot 的 publication 不保证当前 dequeue head 已可消费；关闭 head reservation gap 的
+producer 仍须执行自己的 publish/probe。
 
-多个 生产者 同时观察到 等待状态=1 时，只有一个能通过 exchange 消费通知 所有权。
-
-stop/shutdown 不依赖这个 hint，而是设置 `running=false` 后执行独立 强制唤醒。
+stop/shutdown 先关闭 `running`，再持 `wait_mu` 执行 acq_rel RMW disarm 并无条件 force signal。
+完整 C11 证明与失败/进度边界见 [QUEUE_WAKEUP_PROOF.md](v2/QUEUE_WAKEUP_PROOF.md)；
+litmus、wait-entry regression 与 TSan 不能替代 happens-before 证明。
 
 private diagnostics：
 

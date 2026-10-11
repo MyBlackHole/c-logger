@@ -237,12 +237,20 @@ target("logger")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
-        target:add("installfiles", "LICENSE", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
-                   {prefixdir = "share/doc/prod_c_logger"})
-        for _, doc in ipairs(os.files(path.join(os.projectdir(), "docs", "*.md"))) do
-            if path.filename(doc):sub(1, 7) ~= "HISTORY" then
-                target:add("installfiles", doc,
-                           {prefixdir = "share/doc/prod_c_logger/docs"})
+        -- 显式列出当前文档及其链接依赖。
+        -- 递归通配会把已退役的 Audit/密码模块设计记录也装入发布包。
+        local doc_manifest = path.join(os.projectdir(), "docs", "INSTALL_MANIFEST.txt")
+        for line in io.lines(doc_manifest) do
+            local doc = line:trim()
+            if doc ~= "" and doc:sub(1, 1) ~= "#" then
+                local source = path.join(os.projectdir(), doc)
+                assert(os.isfile(source), "安装文档缺失：" .. doc)
+                local prefix = "share/doc/prod_c_logger"
+                local subdir = path.directory(doc)
+                if subdir ~= "." then
+                    prefix = path.join(prefix, subdir)
+                end
+                target:add("installfiles", source, {prefixdir = prefix})
             end
         end
         target:add("installfiles", "examples/installed_consumer/CMakeLists.txt",
@@ -346,6 +354,25 @@ xpack_end()
 
 
 if has_config("build_tests") then
+    for _, spec in ipairs({
+        {"cas_order_test", "scripts/check_cas_orders.py", "inventory"},
+        {"cas_order_mutation_test", "tests/test_cas_orders.py", "mutations"}
+    }) do
+        target(spec[1])
+            set_kind("phony")
+            set_default(false)
+            add_tests(spec[3], {group = "cas-order", timeout = 30})
+            on_test(function (target, opt)
+                local script = path.join(os.projectdir(), spec[2])
+                local code, errors = os.execv("python3", {script}, {
+                    try = true,
+                    timeout = opt.run_timeout or 30000
+                })
+                return code == 0, errors
+            end)
+        target_end()
+    end
+
     target("version_identity_test")
         set_kind("phony")
         set_default(false)
@@ -374,6 +401,30 @@ if has_config("build_tests") then
         on_test(function (target, opt)
             local script = path.join(os.projectdir(), "tests", "test_release_gate.py")
             local code, errors = os.execv("python3", {script}, {
+                try = true,
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+
+    target("rotation_mutation_binary")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_rotation.c", "tests/rotation_mutation_mock.c")
+        add_includedirs("include")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+    target_end()
+
+    target("rotation_mutation_test")
+        set_kind("phony")
+        set_default(false)
+        add_deps("rotation_mutation_binary")
+        add_tests("reject_broken_output", {group = "rotation-verifier", timeout = 60})
+        on_test(function (target, opt)
+            local binary = path.absolute(target:dep("rotation_mutation_binary"):targetfile())
+            local script = path.join(os.projectdir(), "tests", "test_rotation_mutations.py")
+            local code, errors = os.execv("python3", {script, "--binary", binary}, {
                 try = true,
                 timeout = opt.run_timeout or 60000
             })

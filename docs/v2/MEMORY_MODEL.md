@@ -1,6 +1,8 @@
 # c-logger 2.0 C11 内存模型
 
-状态：**#103 第一阶段设计基线**。
+状态：**#103 设计基线，适用于当前 Audit-free ABI 2**。
+
+当前设计入口见 [README.md](README.md)；已退役 Audit publication/failure-policy 不再是本版本协议或测试证据。
 
 2.0 的用户态并发首先服从 ISO C11 data-race rules。Linux 内核中的 publication、RCU、seqcount、barrier 等思想可以借鉴，但不能直接复制 kernel-only memory-model 假设。
 
@@ -80,7 +82,7 @@ producer payload writes
 
 ## 4. Queue：slot reuse
 
-consumer 完成 slot payload 读取后：
+consumer 将完整 record 复制到 worker batch，并归还该 record 的 spill 后，即发布 slot 可复用；此时尚未执行 backend 输出：
 
 ```c
 atomic_store_explicit(&slot->seq, pos + q->cap, memory_order_release);
@@ -107,7 +109,7 @@ producer CAS 0 -> 1 (acq_rel)
 
 consumer 通过 slot.seq acquire 后才读 spill text。
 
-consumer 完成读取后：
+consumer 将 spill 正文复制到独立 worker batch 后，在 slot 可复用之前归还 block：
 
 ```text
 spill_used release clear
@@ -204,7 +206,9 @@ owner release-store running=0
 
 - condition wait 必须 `while (predicate not satisfied) pthread_cond_wait(...)`；
 - 不能把一次 signal/broadcast 当成 completion 本身；
-- queue dequeue 只表示 consumer 已取得记录，不等于 backend 输出完成。
+- queue dequeue 只表示 consumer 已复制记录并归还 slot/spill，不等于 backend 输出完成；
+- worker 在 `emit_batch()` 返回后推进 `async_completed`，同步协议正常时再持 `progress_mu` 推进 `completed_pos`；
+- backend I/O 失败也会推进完成进度并记录错误；完成不是成功或持久化证明。
 
 当前 flush watermark 是 predicate-based progress，不等同于 Linux one-shot `completion`。
 
@@ -215,6 +219,13 @@ owner release-store running=0
 `g_ticket` 是 generation + phase admission token。
 
 `g_logger` 是普通 pointer，真正由 `g_lifetime_lock` 保护。
+
+Global init 的 STARTING/RUNNING 及 shutdown 的 STOPPING/STOPPED ticket CAS
+统一使用 success=`memory_order_acq_rel`、failure=`memory_order_acquire`。这样保留成功路径的
+release publication 与失败路径的 acquire 观察，不依赖历史 C11 “failure 不强于 success”
+对 release/acquire 组合的解释歧义。这是契约/可移植性修复，不是已复现 UB 的结论。
+`g_ticket` 仍只负责 generation/admission，不提供 `g_logger` 的 lifetime pin；
+atomic-order 静态检查不能替代 happens-before 与 lifetime 证明。
 
 publish：
 
@@ -250,64 +261,7 @@ publish STOPPING ticket
 
 不能把该模型直接替换成 `atomic g_logger + refcount_inc_not_zero()`，因为 caller 在 CAS refcount 前仍需要证明 pointer/refcount storage 没被 free。
 
-## 11. Audit publication
-
-`g_runtime` 是普通 pointer，由 Audit `g_operation_mu` 保护。
-
-`g_phase` 是 admission/state atomic；`g_generation` 用于拒绝跨 shutdown/reinit 的延迟调用。
-
-成功 init 的顺序是：
-
-```text
-build complete candidate
-    -> lock operation
-    -> g_runtime = candidate
-    -> store policy
-    -> g_phase = RUNNING (release)
-    -> unlock operation
-```
-
-operation caller 在使用 `g_runtime` 前必须通过 phase/generation gate 并取得 `g_operation_mu`。
-
-## 12. Audit failure policy：fail-closed publication
-
-`audit_failure_policy()` 使用 generation-stable snapshot，避免把旧 session 的 RUNNING phase 与下一代 policy 配对：
-
-```text
-generation = load g_generation acquire
-phase = load g_phase acquire
-if phase != RUNNING:
-    return AUDIT_FAIL_DENY
-
-policy = load g_policy acquire
-
-if generation != load g_generation acquire:
-    return AUDIT_FAIL_DENY
-
-return policy
-```
-
-init 的 publication 顺序：
-
-```text
-publish STARTING
-    -> increment generation (release)
-    -> build candidate
-    -> store g_policy (release)
-    -> store g_phase = RUNNING (release)
-```
-
-关键关系：
-
-1. 如果 phase acquire 观察到当前代 RUNNING，则该代 policy store 已经发生；
-2. 如果调用在第一次 phase load 后跨越 shutdown/reinit，而 policy load 观察到下一代 policy，则该 policy 的 release/acquire 会使之前的 generation increment 对后续 generation load 可见，generation mismatch 因而 fail closed；
-3. 如果 generation 在调用期间变化，无论 policy 读到旧值还是新值，都不会把结果作为稳定 session policy 返回。
-
-STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅与同一 generation 的稳定 RUNNING snapshot 匹配时返回配置 policy。
-
-该协议由 Audit lifecycle regression 验证 STARTING、RUNNING、STOPPING、IDLE 和 fork-child 边界；跨代压力继续由 Audit concurrency + TSan 覆盖。
-
-## 13. Console config
+## 11. Console config
 
 `g_config` 把 verbosity + color 放在一个 atomic snapshot 中。
 
@@ -315,7 +269,7 @@ STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅�
 
 如果未来配置拆成多个字段，则必须重新设计 coherent snapshot，不能用多个 relaxed atomic 假装事务。
 
-## 14. Process atomics
+## 12. Process atomics
 
 `owner_pid/forked_child/live_objects` 属于 process guard，不是 object lifetime publication。
 
@@ -323,9 +277,9 @@ STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅�
 - `owner_pid` 是 process identity；
 - `forked_child` 是 inherited-runtime rejection bit。
 
-它们不能被当作 Logger/Audit pointer reclamation primitive。
+它们不能被当作 Logger pointer reclamation primitive。
 
-## 15. Metrics atomics
+## 13. Metrics atomics
 
 纯统计计数默认使用 relaxed。
 
@@ -333,7 +287,7 @@ STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅�
 
 不要因为 diagnostics 读取用了 acquire 就推断其他普通字段随之安全；普通字段仍需要各自的 lifetime/lock contract。
 
-## 16. seqcount 结论
+## 14. seqcount 结论
 
 当前不引入 seqcount。
 
@@ -346,7 +300,7 @@ STARTING、STOPPING、IDLE 和 fork child 统一返回 `AUDIT_FAIL_DENY`。仅�
 
 以后如需 seqcount-like 方案，必须先给出 C11 合法的数据表示，不能照搬 kernel seqcount 对普通 payload 的假设。
 
-## 17. RCU/SRCU 结论
+## 15. RCU/SRCU 结论
 
 当前不引入 RCU/SRCU。
 
@@ -362,7 +316,7 @@ Global 可能是未来候选，但在 #104 决定 Global facade/object model 前
 - pointer publication；
 - benchmark 证明 rwlock 是真实瓶颈。
 
-## 18. Review checklist
+## 16. Review checklist
 
 任何新的 lockless/atomic protocol 必须回答：
 
