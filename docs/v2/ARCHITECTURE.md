@@ -1,19 +1,21 @@
-# c-logger 2.0 Architecture
+<a id="c-logger-20-architecture"></a>
+
+# c-logger 2.0 架构
 
 状态：**未冻结**。
 
-本文件只建立 2.0 architecture authority；具体对象模型由 #104 设计并冻结。
+本文件只建立 2.0 架构权威入口；具体对象模型由 #104 设计并冻结。
 
 设计必须遵循：
 
 ```text
-requirements
- -> object model
- -> ownership graph
- -> lifetime
- -> concurrency
- -> choose primitive
- -> implementation
+需求
+ -> 对象模型
+ -> 所有权图
+ -> 生命周期
+ -> 并发
+ -> 选择原语
+ -> 实现
 ```
 
-在 #104 完成前，不预设 Logger 必须 refcounted，不预设 Global 必须 RCU，不预设 Queue 必须 lock-free。
+在 #104 完成前，不预设 Logger 必须采用引用计数，不预设 Global 必须采用 RCU，不预设队列必须满足无锁（lock-free）进度保证。

@@ -48,12 +48,12 @@ join 或同步对象清理失败继续采用保守保留策略，不覆盖原始
 POSIX 条件变量会自然返回该错误。注入的清理错误不执行非法 destroy。保守保留
 场景留存静态可达的对象及临时文件，进程退出时结束测试；不重试部分销毁对象。
 
-`run_worker_startup.sh BUILD_DIR [address,undefined|thread]` 链接该 checkout
+`run_worker_startup.sh BUILD_DIR [address,undefined|thread]` 链接该检出树
 构建的生产静态库，输出源码提交、工作区状态及归档哈希。核心 CI 在普通、
 ASan/UBSan、TSan 配置运行九个场景；配置或执行失败不能作为通过。
 
 测试必须使用正确性断言：旧代码在五个工作线程先失败场景下失败，正常／同步／
-线程创建失败／构造先提交为对照。修复后记录状态、返回值、join 与 final free
+线程创建失败／构造先提交为对照。修复后记录状态、返回值、join 与最终释放内存的
 顺序、进程对象计数、拒绝入队和输出结果。单独等待超时不代替状态转换证明。
 
 ## 参考
