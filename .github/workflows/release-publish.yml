@@ -154,11 +154,25 @@ jobs:
       needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
       needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:20.04
     strategy:
       fail-fast: false
       matrix:
         kind: [shared, static]
     steps:
+      - name: Install baseline build and inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ca-certificates cmake curl file git pkg-config \
+            python3 binutils
+          rm -rf /var/lib/apt/lists/*
+
+
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
@@ -193,6 +207,40 @@ jobs:
         with:
           xmake-version: "3.1.1"
 
+      - name: Enable Xmake in root-owned container
+        shell: bash
+        run: |
+          set -euo pipefail
+          real_xmake="$(command -v xmake)"
+          wrapper="$RUNNER_TEMP/xmake-root-bin"
+          mkdir -p "$wrapper"
+          cat > "$wrapper/xmake" <<EOF
+          #!/bin/sh
+          case "\${1:-}" in
+            f|config|test|install|run|pack)
+              task="\$1"
+              shift
+              exec "$real_xmake" "\$task" --root "\$@"
+              ;;
+            *)
+              exec "$real_xmake" --root "\$@"
+              ;;
+          esac
+          EOF
+          chmod +x "$wrapper/xmake"
+          echo "$wrapper" >> "$GITHUB_PATH"
+
+      - name: Verify release build baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.31'
+          test "$(gcc -dumpversion | cut -d. -f1)" = 9
+          getconf GNU_LIBC_VERSION
+          gcc --version
+          python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
+
       - name: Configure authoritative release build
         shell: bash
         run: |
@@ -202,7 +250,7 @@ jobs:
           else
             shared=n
           fi
-          xmake f -m release -o xmake-build \
+          xmake f -m release -o xmake-build --toolchain=gcc \
             --build_shared="$shared" \
             --build_tests=y \
             --build_private_tests=y \
@@ -234,6 +282,7 @@ jobs:
           python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
           --machine 'Advanced Micro Devices X86-64'
           --elf-class ELF64
+          --max-glibc 2.31
 
       - name: Build authoritative XPack TGZ
         run: xmake pack -f targz -o xpack-out
@@ -271,7 +320,9 @@ jobs:
             --cc cc \
             --cxx c++ \
             --cmake cmake \
-            --installed-prefix "$prefix"
+            --installed-prefix "$prefix" \
+            --max-glibc 2.31 \
+            --max-consumer-glibc 2.31
 
       - uses: actions/upload-artifact@v4
         with:
@@ -281,11 +332,59 @@ jobs:
             xpack-out/prod-c-logger-${{ needs.prepare.outputs.version }}-*-${{ matrix.kind }}.tar.gz.sha256
           if-no-files-found: error
 
-  publish:
+  consume-modern:
+    name: packaged consumer ubuntu-24.04 (${{ matrix.kind }})
     needs: [prepare, package]
     if: >-
       needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
       needs.package.result == 'success' && needs.prepare.outputs.release_complete != 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [shared, static]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prod-c-logger-*-${{ matrix.kind }}
+          path: xpack-out
+          merge-multiple: true
+
+      - name: Consume the baseline-built package on a newer userland
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          python3 scripts/check_release_assets.py --directory xpack-out \
+            --version "$version" --kind "${{ matrix.kind }}"
+          package="$(find xpack-out -maxdepth 1 -type f -name "prod-c-logger-${version}-*-${{ matrix.kind }}.tar.gz" -print -quit)"
+          test -n "$package"
+          mkdir unpack
+          tar -xzf "$package" -C unpack
+          header="$(find unpack -type f -path '*/include/logger/logger.h' -print -quit)"
+          test -n "$header"
+          prefix="$(dirname "$(dirname "$(dirname "$header")")")"
+          if [ "${{ matrix.kind }}" = shared ]; then
+            artifact="$prefix/lib/liblogger.so.${version}"
+          else
+            artifact="$prefix/lib/liblogger.a"
+          fi
+          # The library retains its 2.31 ceiling. Consumers linked here use
+          # this newer userland and are not claimed to deploy on glibc 2.31.
+          python3 tests/packaging/check_install.py \
+            --source . --build consumer-check --artifact "$artifact" \
+            --kind "${{ matrix.kind }}" --cc cc --cxx c++ --cmake cmake \
+            --installed-prefix "$prefix" --max-glibc 2.31
+
+  publish:
+    needs: [prepare, package, consume-modern]
+    if: >-
+      needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
+      needs.package.result == 'success' && needs.consume-modern.result == 'success' &&
+      needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
