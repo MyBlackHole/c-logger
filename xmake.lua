@@ -290,7 +290,32 @@ target("bench_logger")
     add_files("tests/bench_logger.c")
     add_deps("logger")
     add_cflags("-std=gnu11", {force = true})
+    if is_mode("release") then
+        set_optimize("fastest")
+        add_defines("NDEBUG")
+    end
 target_end()
+
+-- 私有输出水位及队列布局只存在于静态链接边界；不扩大共享库 ABI。
+-- 直接复用生产目标，不能用开启锁诊断的回归支持库替代性能测量。
+if not has_config("build_shared") then
+    target("bench_matrix")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/bench_matrix.c")
+        add_deps("logger")
+        add_includedirs("src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        if is_mode("release") then
+            set_optimize("fastest")
+            add_defines("NDEBUG")
+        end
+        if has_config("build_tests") then
+            add_tests("production_benchmark_accounting_smoke",
+                      {runargs = {"4", "1000", "64"}, timeout = 15})
+        end
+    target_end()
+end
 
 target("current_abi_contract_c")
     set_kind("binary")
@@ -690,7 +715,7 @@ if has_config("build_regression_tests") then
              "pthread_mutex_destroy", "logger_process_object_release"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
-        {"bench_matrix", "tests/bench_matrix.c"},
+        {"bench_matrix_accounting_regression", "tests/bench_matrix.c"},
 
         -- Link-time interception parity, group A: queue/flush and I/O accounting.
         {"queue_notify_regression", "tests/regression/test_queue_notify.c",
@@ -966,7 +991,8 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
-    target("bench_matrix")
+    -- 保留原支持库上的计数断言，在共享/静态配置均执行；不用于性能报告。
+    target("bench_matrix_accounting_regression")
         add_tests("benchmark_accounting_smoke",
                   {runargs = {"4", "1000", "64"}, timeout = 15})
     target_end()

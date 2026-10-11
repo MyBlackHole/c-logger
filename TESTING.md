@@ -181,11 +181,24 @@ VM/断电测试及其专用程序、运行脚本和 CI 已移除，不再提供�
 
 ## 队列基准测试
 
-当前候选版本的 `bench_matrix` 由 Xmake 构建。两个冻结历史基线提交继续用各自
+当前候选版本的 `bench_matrix` 由 Xmake 构建，直接链接真实生产静态 `logger`，
+release 下同时优化库和驱动；无需启用私有或回归测试。私有队列观测接口不导出到
+共享 DSO，因此共享配置不提供此目标。公开 API 的 `bench_logger` 支持两种配置。
+具体运行命令与测量边界见源码树中的 `BENCHMARK.md`（不随生产包安装）。
+
+原 `benchmark_accounting_smoke` 转移到 `bench_matrix_accounting_regression`，
+继续在静态/共享回归配置中使用原支持库和同一组计数断言，不作为性能测量。
+静态 `build_tests` 配置另注册生产链接的 `production_benchmark_accounting_smoke`。
+`python3 tests/scripts/test_benchmark_build.py` 在临时源码副本实际构建并检查优化、
+宏、链接命令和 ELF 依赖，运行小样本及两个配置的回归 smoke；还检查共享配置拒绝
+私有基准。`xmake-parity` 的 `aux-targets` 执行此检查并上传构建证据。
+
+两个冻结历史基线提交继续用各自
 提交中原有的 CMake 构建，以保证历史基准可重现，而不是用今天的构建描述重解释过去数据。
 
 `queue-benchmark` CI 保持原线程数、记录大小、重复次数、内存缩减阈值与比较
-脚本不变。
+脚本的确定性内存门槛不变。吞吐只作观察；历史构建与当前生产配置未证明等价，
+不能把比较比值当作单项源码优化收益或生产性能达标证明。
 
 ## 安装与发布包验证
 

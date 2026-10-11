@@ -24,8 +24,8 @@ Logger 格式化、MPSC 竞争以及消费者/后端数据路径，而不是存�
 
 ```sh
 export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-xmake f -m release -o build --build_shared=n --build_tests=y \
-  --build_private_tests=y --build_regression_tests=y
+xmake f -m release -o build --build_shared=n \
+  --build_tests=n --build_private_tests=n --build_regression_tests=n
 xmake -j4 bench_matrix
 BENCH_RECORDS=10000 scripts/benchmark.sh
 ```
@@ -34,6 +34,21 @@ BENCH_RECORDS=10000 scripts/benchmark.sh
 历史提交，不是当前主线入口。当前测试配置见 [测试指南](TESTING.md)，
 矩阵驱动脚本为 `scripts/benchmark.sh`；可用 `BUILD_DIR` 指定构建目录，
 或用 `BENCH_BIN` 指定已构建的可执行文件。
+
+`bench_matrix` 直接链接真实生产静态目标 `logger`；release 模式下库和基准驱动均使用
+`-O3 -DNDEBUG`，生产库保持 `LOGGER_ENABLE_LOCKDEP=0`、故障注入关闭。
+不需要启用测试支持库。该基准使用私有输出水位与队列布局，只在 `--build_shared=n`
+配置提供，不能作为公开 API 或共享 DSO 性能验收。共享配置下不会回退到测试库。
+
+`bench_matrix_accounting_regression` 保留原计数守恒 smoke，在启用
+`build_regression_tests` 的静态/共享配置中均链接原回归支持库；它验证功能，不提供
+生产性能数据。`bench_logger` 使用公开 API，静态/共享均直接链接生产目标，release
+驱动也启用优化；其输出是生产者 attempted 速率，不是输出完成吞吐或持久化吞吐。
+
+release 目录名本身不证明优化或链接口径。复核时保留 `xmake -rvD bench_matrix`
+实际编译/链接命令、源码版本、编译器、配置与产物哈希。Debug/sanitizer 构建只作诊断。
+本次构建修正前的 Xmake 基准链接了未优化且启用锁诊断的回归支持库，不可与修正后的
+生产基准混作同口径数据，也不能把两者差值归因于某项生产源码优化。
 
 结果以 CSV 和 JSONL 输出。性能门禁应比较来自同一机器、同一编译器、同一优化级别、同一 CPU 亲和性和同一后端的结果。
 不要把不同主机上的数字直接判定为性能回归。

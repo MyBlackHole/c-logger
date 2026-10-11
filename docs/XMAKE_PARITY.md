@@ -396,10 +396,18 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 
 ## Queue benchmark authority
 
-`.github/workflows/queue-benchmark.yml` 的**当前 candidate** 已改由 Xmake 构建
-`bench_matrix`，仍使用同一 `logger_regression_support`、同一 benchmark source 和原比较
-脚本/阈值。两个冻结 baseline ref 继续使用各自历史 commit 内的 CMake 构建，这是有意保留
-的历史重现方式：删除当前源码树的 CMake 不应改写过去基准二进制的构建定义。
+`.github/workflows/queue-benchmark.yml` 的**当前 candidate** 由 Xmake 构建
+`bench_matrix`，直接链接真实生产静态目标 `logger`，release 下库与基准驱动均启用优化。
+它使用私有观测接口，只在静态配置提供，不作为共享 DSO 性能验收。
+
+迁移初期曾链接 `logger_regression_support`，该库未优化且启用锁诊断，不能代表生产
+性能。原源码和计数断言现由 `bench_matrix_accounting_regression` 继续覆盖，静态/共享
+回归配置均运行；原支持库配置未变。
+
+两个冻结 baseline ref 继续使用各自历史 commit 内的 CMake 构建，这是有意保留的
+历史重现方式。工作流保留原矩阵及确定性内存阈值，并用 `--build-configs-differ`
+明确构建口径不等价：吞吐只保留观察值，不计算比值，不冒称生产源码优化收益。
+
 
 ## 迁移完成
 

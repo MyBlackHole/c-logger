@@ -16,6 +16,7 @@ on:
       - "abi/logger-2.0.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "scripts/compare_queue_benchmark.py"
       - "scripts/check_release_assets.py"
       - "tests/packaging/check_install.py"
       - "examples/installed_consumer/**"
@@ -36,6 +37,7 @@ on:
       - "abi/logger-2.0.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
+      - "scripts/compare_queue_benchmark.py"
       - "scripts/check_release_assets.py"
       - "examples/installed_consumer/**"
       - "docs/XMAKE_PARITY.md"
@@ -213,6 +215,16 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
+
+      - name: 验证生产基准构建与回归边界
+        run: python3 tests/scripts/test_benchmark_build.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-build-evidence
+          path: benchmark-build-evidence/
+          if-no-files-found: error
 
       - name: 配置辅助目标
         run: xmake f -m release --build_shared=n --build_regression_tests=y
