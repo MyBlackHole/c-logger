@@ -40,6 +40,8 @@ local abi_version = "2"
 local symbol_version = "LOGGER_2.0"
 local abi_manifest = "abi/logger-2.0.symbols"
 local release_candidate = version_major == "0"
+-- Package identity describes this development tree, not release approval.
+local package_identity = "ABI " .. abi_version .. " development"
 
 local function cmake_bool(value)
     return value and "TRUE" or "FALSE"
@@ -144,8 +146,7 @@ Version: %s
 Libs: -L${libdir} -llogger
 Libs.private: -pthread
 Cflags: -I${includedir}%s
-]], release_candidate and "controlled-production candidate" or "Production v1",
-       project_version, pc_definitions)
+]], package_identity, project_version, pc_definitions)
     local pc_file = path.join(generated, "logger.pc")
     writefile(pc_file, pc)
 
@@ -223,8 +224,16 @@ target("logger")
                      {prefixdir = "include/logger"})
 
     on_load(function (target)
+        local source_version = io.readfile(path.join(os.projectdir(), "VERSION")):trim()
+        if not source_version:match("^%d+%.%d+%.%d+$") then
+            raise("VERSION must contain MAJOR.MINOR.PATCH")
+        end
         if project_version == "0.0.0" or not version_major then
             raise("export LOGGER_PROJECT_VERSION=$(cat VERSION) before invoking Xmake")
+        end
+        if project_version ~= source_version then
+            raise("LOGGER_PROJECT_VERSION must exactly match VERSION (%s); " ..
+                  "export LOGGER_PROJECT_VERSION=$(cat VERSION)", source_version)
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
@@ -319,9 +328,7 @@ target_end()
 local package_kind = has_config("build_shared") and "shared" or "static"
 local package_basename =
     "prod-c-logger-" .. project_version .. "-Linux-x86_64-" .. package_kind
-local package_title = release_candidate
-    and ("c-logger " .. project_version .. " controlled production candidate")
-    or ("c-logger " .. project_version .. " Production v1")
+local package_title = "c-logger " .. project_version .. " " .. package_identity
 xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
@@ -339,6 +346,20 @@ xpack_end()
 
 
 if has_config("build_tests") then
+    target("version_identity_test")
+        set_kind("phony")
+        set_default(false)
+        add_tests("single_source", {group = "version-identity", timeout = 60})
+        on_test(function (target, opt)
+            local script = path.join(os.projectdir(), "tests", "test_version_identity.py")
+            local code, errors = os.execv("python3", {script, "--xmake", os.programfile()}, {
+                try = true,
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+
     target("release_gate_test")
         set_kind("phony")
         set_default(false)

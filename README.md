@@ -1,15 +1,15 @@
 # C Logger — 2.0 开发主线 / Production v1 已发布
 
 > `main` 已进入 2.0 架构重构阶段；Production v1 由 `release/1.x` 维护，正式发布基线仍是 `v1.0.0`。\
-> 2.0 public API/ABI 尚未冻结，当前 `main` 不应被当作 2.0 release 使用。根 `VERSION` 在 #108 冻结 2.0 public contract 前仍保持已发布版本值，避免提前制造伪 2.0 release identity。
+> 根 `VERSION=2.0.0` 标识当前 ABI 2 开发产物；2.0 public API/ABI 尚未最终冻结，当前 `main` 不应被当作 2.0 正式 release 使用。
 
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
 当前开发 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47-symbol public C ABI**。
 
-> **发布身份仍待收敛：** 根 `VERSION` 暂保留 `1.0.0`，不代表当前 main 与已发布 v1 二进制兼容。
-> 不得用当前 main 替换 SONAME 1 的正式包。2.0 发布身份、文档与最终验收尚未冻结，参见
+> **开发身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
+> 不得用当前 main 替换 SONAME 1 的正式包。2.0 最终合同与发布验收尚未完成，参见
 > [迁移状态](docs/v2/AUDIT_REMOVAL.md)和[当前限制](docs/KNOWN_ISSUES.md)。
 
 ## 构建与安装
@@ -100,7 +100,8 @@ xmake test -j1
 xmake pack -f targz -o xpack-out
 ```
 
-XPack 自动生成 TGZ 与同名 SHA-256。XPack 的构建成功不是正式发布授权；当前 main 的发布身份尚未完成迁移，不能将开发产物作为正式 v1/2.0 发布。
+XPack 自动生成 TGZ 与同名 SHA-256，标题标识 `ABI 2 development`。版本号对齐和构建成功均不是正式发布授权。
+普通 main push 不触发发布；正式发布要求另行批准的现存 v2 tag、最终合同冻结和精确提交的完整验收。
 
 发布工程细节见 [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md)。
 

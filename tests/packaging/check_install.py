@@ -100,12 +100,23 @@ try:
     expected_headers = {'logger.h','console.h','logger_export.h','logger_version.h'}
     assert {x.name for x in include.iterdir()} == expected_headers
     version_header = (include / 'logger_version.h').read_text()
+    for component, expected in [('MAJOR', version_major), ('MINOR', version_minor),
+                                ('PATCH', version_patch)]:
+        assert re.search(r'^#define LOGGER_VERSION_' + component + r'\s+' +
+                         str(expected) + r'\s*$', version_header, re.M)
+    assert re.search(r'^#define LOGGER_VERSION_STRING\s+"' + re.escape(version) +
+                     r'"\s*$', version_header, re.M)
     assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*$', version_header, re.M)
     expected_candidate_macro = '1' if expected_release_candidate else '0'
     assert re.search(r'^#define LOGGER_RELEASE_CANDIDATE\s+' + expected_candidate_macro + r'\s*$', version_header, re.M)
     cmake_config = (config_dir / 'LoggerConfig.cmake').read_text()
+    assert re.search(r'^set\(Logger_VERSION "' + re.escape(version) + r'"\)$', cmake_config, re.M)
+    assert re.search(r'^set\(Logger_ABI_VERSION "' + re.escape(a.abi_version) + r'"\)$', cmake_config, re.M)
     expected_candidate_cmake = 'TRUE' if expected_release_candidate else 'FALSE'
     assert re.search(r'^set\(Logger_RELEASE_CANDIDATE\s+' + expected_candidate_cmake + r'\)$', cmake_config, re.M)
+    pc = (pc_dir / 'logger.pc').read_text()
+    assert re.search(r'^Description: Host-owned C Logger, ABI ' +
+                     re.escape(a.abi_version) + r' development$', pc, re.M)
     for x in prefix.rglob('*'):
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()
@@ -157,7 +168,8 @@ try:
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
     # Exact candidate version/components fail closed. No guessed compatibility.
     q=work/'query';q.mkdir()
-    for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
+    for requested,component,success in [(version,a.kind,True),('1.0.0',a.kind,False),
+        (next_patch,a.kind,False),
         (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
         (version,'invented',False),(version,'legacy_fork',False)]:
         (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
@@ -198,11 +210,12 @@ try:
         install_check = 'preinstalled package tree'
     else:
         install_check = 'Xmake staged install'
-    report={'passed':True,'kind':a.kind,'abi_version':a.abi_version,
+    report={'passed':True,'kind':a.kind,'version':version,'abi_version':a.abi_version,
             'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
             'install_driver':'xmake',
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',
+                      'VERSION/header/CMake/pkg-config identity',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
                       'version/components rejection','current C/C++ layouts and defaults','production isolation']}
     (work/'RESULT.json').write_text(json.dumps(report,indent=2))

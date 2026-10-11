@@ -17,13 +17,13 @@ main
 - `v1.0.0` tag/release 永久保持不可变，不允许把 tag 改指向新提交。
 - 2.0 不在 `main` 维护双 runtime path 或 compatibility DSO；需要旧版行为时使用 1.x 分支/发布。
 - 在 #108 完成 2.0 public API/UAPI/ABI 冻结之前，不把 `main` 产物称为 2.0 正式发布。
-- 根 `VERSION` 暂不提前切成 2.0.0；正式切换 VERSION/SONAME/symbol node 属于 #108 的 ABI 冻结步骤。
+- 根 `VERSION=2.0.0` 与 SONAME 2 / `LOGGER_2.0` 对齐开发身份；版本号迁移不代表 #108 的最终合同冻结或正式发布批准。
 
 2.0 的设计权威位于 `docs/v2/`；现有根目录和 `docs/` 下的 v1 架构/ABI文档继续作为 Production v1 历史与维护依据。
 
 已发布 Production v1 为 **1.0.0**，历史 ABI 为 SONAME 1 / `LOGGER_1.0`、62符号。
-当前 main 的开发 ABI 为 SONAME 2 / `LOGGER_2.0`、47符号；根 VERSION 仍待独立发布身份
-迁移，不能把当前开发包作为已发布 v1 的兼容替代。
+当前 main 的开发身份为 VERSION 2.0.0、SONAME 2 / `LOGGER_2.0`、47符号；XPack 标题与
+pkg-config 描述均标识 `ABI 2 development`，不能把当前开发包作为已发布 v1 的兼容替代。
 
 ## 构建权威
 
@@ -44,7 +44,8 @@ CMake 不再是项目 构建/测试/安装/打包 系统。发布包仍生成 CM
 export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 ```
 
-如果没有导出版本，Xmake 会拒绝生产构建，避免生成 `0.0.0` artifact。
+Xmake 在配置阶段校验根 `VERSION` 的格式，并要求导出的版本与其精确一致；缺失、非法
+或旧的环境变量均失败关闭，避免生成 `0.0.0` 或版本身份错误的 artifact。
 
 ## ABI 契约
 
@@ -61,8 +62,9 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 新增/删除 public API 必须显式重新打开 ABI 评审，并同步更新 public header、冻结清单和语义 ABI
 contract。禁止使用 glob 代替显式 allowlist。
 
-`VERSION=1.0.0` 起，安装元数据与生成头文件的 release-candidate 标志为 false/0；
-0.x 历史发布继续作为 candidate 记录保留。
+安装元数据与生成头文件的 release-candidate 标志沿用 major 为 0 时 true/1 的历史规则；
+当前 2.0.0 为 false/0。该标志只区分历史 0.x candidate，不证明 API/ABI 已冻结、验证通过
+或已获正式发布授权；0.x 历史发布继续作为 candidate 记录保留。
 
 ### 当前 semantic ABI 契约
 
@@ -70,7 +72,7 @@ contract。禁止使用 glob 代替显式 allowlist。
 数值常量、配置默认值与精确 C 函数类型；现有断言完整保留。当前 ELF 门禁使用
 `abi/logger-2.0.symbols` 的47符号、SONAME 2与 `LOGGER_2.0`，两个门禁互相独立。
 `abi/LOGGER_1_0_CONTRACT.md` 与 `abi/logger-1.0.symbols` 仅保留历史记录，旧snapshot不再
-进入当前CI。此改名和清理不修改 VERSION、正式发布workflow或tag/release策略。
+进入当前CI。semantic ABI 门禁独立于软件包版本身份与正式 tag/release 授权。
 
 ## Shared build
 
@@ -110,7 +112,7 @@ xmake install -o /opt/logger/current logger
 安装树：
 
 ```text
-<prefix>/include/logger/{logger.h,audit.h,console.h,logger_export.h,logger_version.h}
+<prefix>/include/logger/{logger.h,console.h,logger_export.h,logger_version.h}
 <prefix>/lib/liblogger.so.<VERSION>（或 liblogger.a）
 <prefix>/lib/cmake/Logger/{LoggerConfig.cmake,LoggerConfigVersion.cmake,LoggerTargets*.cmake}
 <prefix>/lib/pkgconfig/logger.pc
@@ -121,8 +123,7 @@ Xmake `-o <prefix>` 是安装根。CMake 风格 `DESTDIR` CLI 不是当前项目
 staged install 和最终 XPack 解包树直接做 relocation/消费方 验证，因此不需要保留旧安装
 driver 作为 oracle。
 
-不要把 共享库/静态库 或 default/legacy 两种变体覆盖安装到同一 prefix。一个 prefix 描述一个
-确定的链接/feature 组合。
+不要把共享库和静态库覆盖安装到同一 prefix。一个 prefix 描述一个确定的链接变体。
 
 ## 下游 CMake / pkg-config
 
@@ -192,7 +193,7 @@ Linux 发行版、内核 或 CPU 自动兼容。
 12. production isolation。
 
 测试实现见 `tests/packaging/check_install.py`。该脚本直接读取 `VERSION` 和
-`abi/logger-1.0.symbols`，不维护第二份发布 version/ABI 清单。
+`abi/logger-2.0.symbols`，不维护第二份发布 version/ABI 清单。
 
 ## Crash / 断电 / Sanitizer / 基准测试
 
@@ -202,29 +203,34 @@ Linux 发行版、内核 或 CPU 自动兼容。
 - `vm-powercut`：ext4 + XFS 各8个普通 Logger QEMU SIGKILL + raw-disk reboot/recovery 切断点；
   新旧矩阵与三个纯 Audit checkpoint 点的退役原因见 [crash 合同](LOGGER_CRASH_CONTRACT.md)；
 - `xmake-parity` Sanitizer：ASan+UBSan 与 TSan 的完整 static suite；
-- `queue-benchmark`：当前 Production v1 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
+- `queue-benchmark`：当前 ABI 2 candidate 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
 
 这些 gate 证明指定虚拟环境中的实现行为，不替代实际服务器、电源、控制器/device volatile
 cache、实际目标 挂载/存储栈 或最低 内核/glibc 验收。
 
 ## GitHub Release
 
-`.github/workflows/release-publish.yml` 由 `main` 上的 `VERSION` / 发布 notes 变更触发。
+`.github/workflows/release-publish.yml` 只接受显式 `v2.*` tag push，或指定现存 `v2.x.y`
+tag 的手动 `workflow_dispatch`。普通 `main` push、`VERSION`、发布 notes 与 workflow
+变更均不触发发布。阶段 A 门禁与阶段 B 版本身份迁移的顺序及线上复核要求见
+[发布安全](RELEASE_SAFETY.md)。
 
 流程：
 
-1. 读取 `VERSION`；
-2. 要求 `docs/RELEASE_NOTES_<VERSION>.md` 存在；
-3. 解析 `v<VERSION>` tag/发布 状态；已有 tag 时锁定该 tag 对应 commit，重试不能改用更新后的 `main` 源码；
+1. 从远端获取精确的现存 tag，锁定 commit SHA 与 tag 对象 ID；拒绝缺失 tag、branch 和非规范 v2 版本；
+2. 从锁定 commit 读取 `VERSION`，验证它与 tag、ABI 2、`LOGGER_2.0` 和当前符号清单一致；
+3. 要求 `docs/RELEASE_NOTES_<VERSION>.md` 存在，并检查该 tag 的 release 状态；dispatch 分支的版本和源码不参与构建；
 4. 已有 release 只有在标题、prerelease/stable 分类、四个 asset 与 SHA-256 全部正确时才视为完成并跳过；
 5. 发布 缺失或不完整时，共享库/静态库 分别执行完整 Xmake 发布 suite；
 6. 生成并验证 XPack + SHA-256，汇总四个 authoritative 发布资产；
-7. 0.x 发布使用 prerelease；1.x+ 使用 stable Production release；已有 release 不完整时使用
-   `gh release upload --clobber` 并通过 API 归一化 prerelease 标志；
+7. 构建前和首次 release 写操作前重新验证远端 tag 的 commit SHA 与对象 ID；创建 release
+   必须使用 `--verify-tag`，已有 release 的修复同样经过来源复核；
 8. 发布后重新下载远端四个 asset，并再次执行数量、SHA-256、release class/title 校验。
 
-`workflow_dispatch` 因而是幂等恢复入口：完整 发布 不会重复发布，不完整 发布 会从既有 tag 的源码重建并修复。
-发布新代码仍必须先递增 `VERSION`；不能把同一 tag 改指向另一份源码。
+`workflow_dispatch` 是已获授权发布的幂等恢复入口：完整 release 不会重复发布，不完整
+release 从既有 tag 的源码重建并修复。当前开发树没有 2.0.0 release notes；不得为验证门禁
+创建正式 tag、触发 dispatch 或试发 release。未来正式发布仍需最终合同冻结、精确 SHA 全部门禁
+和单独批准；不能把同一 tag 改指向另一份源码。
 
 ## Fork 制品边界
 
