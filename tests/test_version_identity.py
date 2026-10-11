@@ -12,6 +12,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 PARSER = argparse.ArgumentParser(description=__doc__)
 PARSER.add_argument('--xmake', default='xmake')
+PARSER.add_argument('--xmake-root', action='store_true',
+                    help='Forward the outer Xmake invocation\'s explicit --root option')
 ARGS, UNITTEST_ARGS = PARSER.parse_known_args()
 XMAKE = shutil.which(ARGS.xmake)
 if XMAKE is None:
@@ -41,7 +43,10 @@ class VersionIdentityTests(unittest.TestCase):
         env.pop('XMAKE_PROJECT_DIR', None)
         if exported is not None:
             env['LOGGER_PROJECT_VERSION'] = exported
-        return subprocess.run([XMAKE, 'f', '-c', '-m', 'release', '-o', str(self.build),
+        command = [XMAKE, 'f']
+        if ARGS.xmake_root:
+            command.append('--root')
+        return subprocess.run(command + ['-c', '-m', 'release', '-o', str(self.build),
                                '--build_shared=n', '--build_tests=n',
                                '--build_private_tests=n', '--build_regression_tests=n'],
                               cwd=self.source, env=env, text=True,

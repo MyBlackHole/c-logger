@@ -351,8 +351,15 @@ if has_config("build_tests") then
         set_default(false)
         add_tests("single_source", {group = "version-identity", timeout = 60})
         on_test(function (target, opt)
+            import("core.base.option")
             local script = path.join(os.projectdir(), "tests", "test_version_identity.py")
-            local code, errors = os.execv("python3", {script, "--xmake", os.programfile()}, {
+            local args = {script, "--xmake", os.programfile()}
+            -- CI's root-container wrapper grants --root to this invocation;
+            -- os.programfile() resolves the real binary, bypassing that wrapper.
+            if option.get("root") then
+                table.insert(args, "--xmake-root")
+            end
+            local code, errors = os.execv("python3", args, {
                 try = true,
                 timeout = opt.run_timeout or 60000
             })
@@ -684,7 +691,8 @@ if has_config("build_regression_tests") then
             {"logger_file_write", "logger_file_reopen", "logger_queue_push",
              "pthread_cond_wait", "pthread_create", "close", "fflush",
              "vfprintf", "vsnprintf", "pthread_mutex_lock",
-             "pthread_setcancelstate", "logger_format_line"}},
+             "pthread_setcancelstate", "logger_format_line",
+             "logger_get_file_metrics"}},
 
         -- Link-time interception parity, group D: syslog backend/fault/config/compat.
         {"syslog_backend_regression", "tests/regression/test_syslog_backend.c"},
