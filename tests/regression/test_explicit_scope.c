@@ -25,7 +25,10 @@ static _Atomic int point, entered, release_call, cancel_disabled;
 static _Atomic int hold_worker, worker_entered, release_worker, cleanup_seen;
 static _Atomic int returned, create_fail, cancel_setup_fail, stdio_fail,
 	flush_fail;
+static _Atomic int file_metrics_calls;
+static _Atomic int file_metrics_locks;
 static _Thread_local int actor;
+static _Thread_local int in_file_metrics;
 static logger_t *log_instance;
 static const char *scenario, *nested;
 static char socket_dir[] = "/tmp/logger-scope-XXXXXX";
@@ -227,12 +230,24 @@ int __wrap_vsnprintf(char *out, size_t n, const char *fmt, va_list ap)
 	probe(P_FORMAT);
 	return __real_vsnprintf(out, n, fmt, ap);
 }
+int __real_logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
+int __wrap_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
+{
+	atomic_fetch_add(&file_metrics_calls, 1);
+	in_file_metrics = 1;
+	int rc = __real_logger_get_file_metrics(l, out);
+	in_file_metrics = 0;
+	return rc;
+}
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	int rc = __real_pthread_mutex_lock(mu);
-	if (!rc && actor && log_instance && mu == &log_instance->emit_mu)
+	if (!rc && actor && log_instance && mu == &log_instance->emit_mu) {
+		if (in_file_metrics)
+			atomic_fetch_add(&file_metrics_locks, 1);
 		probe(P_LOCK);
+	}
 	return rc;
 }
 int __real_pthread_setcancelstate(int, int *);
@@ -327,6 +342,9 @@ static void *caller(void *unused)
 	else if (!strcmp(scenario, "syslog-metrics")) {
 		logger_syslog_metrics_t metrics;
 		CHECK(!logger_get_syslog_metrics(log_instance, &metrics));
+	} else if (!strcmp(scenario, "file-metrics")) {
+		logger_file_metrics_t metrics;
+		CHECK(!logger_get_file_metrics(log_instance, &metrics));
 	} else if (!strcmp(scenario, "source"))
 		logger_log_source(log_instance, LOGGER_INFO, LOGGER_SOURCE(),
 				  "operation-record");
@@ -402,6 +420,16 @@ static void cancel_case(void)
 	pthread_t t;
 	CHECK(!pthread_create(&t, NULL, caller, NULL));
 	wait_flag(&entered);
+	if (!strcmp(scenario, "file-metrics")) {
+		/* Logging also takes emit_mu; it must not satisfy this case. */
+		int calls = atomic_load(&file_metrics_calls);
+		if (calls != 1)
+			fprintf(stderr,
+				"file-metrics getter calls: %d (expected 1)\n",
+				calls);
+		CHECK(calls == 1);
+		CHECK(atomic_load(&file_metrics_locks) == 1);
+	}
 	CHECK(!pthread_cancel(t));
 	for (int i = 0; i < 10; ++i)
 		nap_ms();
@@ -414,6 +442,10 @@ static void cancel_case(void)
 	void *result;
 	CHECK(!pthread_join(t, &result));
 	CHECK(result == PTHREAD_CANCELED && atomic_load(&cleanup_seen));
+	if (!strcmp(scenario, "file-metrics")) {
+		CHECK(atomic_load(&file_metrics_calls) == 1);
+		CHECK(atomic_load(&file_metrics_locks) == 1);
+	}
 	if (log_instance) {
 		CHECK(!logger_flush_instance_status(log_instance));
 		CHECK(!logger_destroy_status(log_instance));
