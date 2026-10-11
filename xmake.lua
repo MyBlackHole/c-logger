@@ -339,6 +339,20 @@ xpack_end()
 
 
 if has_config("build_tests") then
+    target("release_gate_test")
+        set_kind("phony")
+        set_default(false)
+        add_tests("explicit_tag", {group = "release-gate", timeout = 60})
+        on_test(function (target, opt)
+            local script = path.join(os.projectdir(), "tests", "test_release_gate.py")
+            local code, errors = os.execv("python3", {script}, {
+                try = true,
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+
     -- Production-linked core tests.
     local logger_tests = {
         {"test_logger", "tests/test_logger.c", 60},

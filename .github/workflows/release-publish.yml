@@ -2,12 +2,14 @@ name: release-publish
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v2.x.y tag to publish or repair (never a branch)"
+        required: true
+        type: string
   push:
-    branches: [main]
-    paths:
-      - "VERSION"
-      - "docs/RELEASE_NOTES_*.md"
-      - ".github/workflows/release-publish.yml"
+    tags:
+      - "v2.*"
 
 permissions:
   contents: write
@@ -18,6 +20,11 @@ concurrency:
 
 jobs:
   prepare:
+    # Defense in depth if someone later broadens the workflow trigger.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref_type == 'tag' &&
+       startsWith(github.ref, 'refs/tags/v2.') && github.event.deleted == false)
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -27,13 +34,57 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
       release_exists: ${{ steps.existing.outputs.release_exists }}
       release_complete: ${{ steps.existing.outputs.release_complete }}
-      tag_exists: ${{ steps.existing.outputs.tag_exists }}
-      source_ref: ${{ steps.existing.outputs.source_ref }}
-      source_sha: ${{ steps.existing.outputs.source_sha }}
+      authorized: ${{ steps.gate.outputs.authorized }}
+      source_sha: ${{ steps.gate.outputs.source_sha }}
+      source_tag_oid: ${{ steps.gate.outputs.source_tag_oid }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Require an explicit existing release tag
+        id: gate
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+          EVENT_DELETED: ${{ github.event.deleted }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              test "$GITHUB_REF_TYPE" = tag
+              test "$EVENT_DELETED" = false
+              tag="$GITHUB_REF_NAME"
+              test "$GITHUB_REF" = "refs/tags/$tag"
+              ;;
+            workflow_dispatch)
+              tag="$REQUESTED_TAG"
+              ;;
+            *)
+              echo "release requires an explicit tag push or manual tag selection" >&2
+              exit 1
+              ;;
+          esac
+          [[ "$tag" =~ ^v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          # Fetch the exact remote tag; a stale local tag or a branch is not enough.
+          git fetch --no-tags --force origin \
+            "refs/tags/$tag:refs/release-check/selected"
+          source_tag_oid="$(git rev-parse --verify refs/release-check/selected)"
+          source_sha="$(git rev-parse --verify 'refs/release-check/selected^{commit}')"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$source_sha" = "$GITHUB_SHA"
+          fi
+          # All build inputs now come from this commit, never the dispatch branch.
+          git checkout --detach "$source_sha"
+          test "$(cat VERSION)" = "${tag#v}"
+          grep -Fxq 'local abi_version = "2"' xmake.lua
+          grep -Fxq 'local symbol_version = "LOGGER_2.0"' xmake.lua
+          grep -Fxq 'local abi_manifest = "abi/logger-2.0.symbols"' xmake.lua
+          test -s abi/logger-2.0.symbols
+          grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' abi/logger-2.0.symbols
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "source_tag_oid=$source_tag_oid" >> "$GITHUB_OUTPUT"
+          echo "authorized=true" >> "$GITHUB_OUTPUT"
 
       - name: Resolve release version
         id: version
@@ -70,30 +121,10 @@ jobs:
           title="${{ steps.version.outputs.title }}"
           expected_prerelease="${{ steps.version.outputs.prerelease }}"
 
-          git fetch --tags --force
-          if source_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
-            tag_exists=true
-            source_ref="refs/tags/${tag}"
-            tag_version="$(git show "${tag}:VERSION")"
-            if [ "$tag_version" != "$version" ]; then
-              echo "tag $tag contains VERSION=$tag_version, expected $version" >&2
-              exit 1
-            fi
-          else
-            tag_exists=false
-            source_sha="$GITHUB_SHA"
-            source_ref="$GITHUB_SHA"
-          fi
-
           release_exists=false
           release_complete=false
           if gh release view "$tag" >/dev/null 2>&1; then
             release_exists=true
-            if [ "$tag_exists" != true ]; then
-              echo "release $tag exists but its git tag cannot be resolved" >&2
-              exit 1
-            fi
-
             metadata="$(gh release view "$tag" --json assets,isPrerelease,name)"
             asset_count="$(jq -r '.assets | length' <<<"$metadata")"
             release_name="$(jq -r '.name' <<<"$metadata")"
@@ -115,14 +146,13 @@ jobs:
 
           echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
           echo "release_complete=$release_complete" >> "$GITHUB_OUTPUT"
-          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
-          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
   package:
     name: xpack (${{ matrix.kind }})
     needs: prepare
-    if: needs.prepare.outputs.release_complete != 'true'
+    if: >-
+      needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
+      needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -131,7 +161,25 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Verify pinned release source
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          SOURCE_TAG_OID: ${{ needs.prepare.outputs.source_tag_oid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(cat VERSION)" = "$RELEASE_VERSION"
+          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
+          git fetch --no-tags --force origin \
+            "refs/tags/$RELEASE_TAG:refs/release-check/selected"
+          test "$(git rev-parse --verify refs/release-check/selected)" = "$SOURCE_TAG_OID"
+          test "$(git rev-parse --verify 'refs/release-check/selected^{commit}')" = "$SOURCE_SHA"
 
       - name: Export project version
         shell: bash
@@ -235,12 +283,14 @@ jobs:
 
   publish:
     needs: [prepare, package]
-    if: needs.prepare.outputs.release_complete != 'true'
+    if: >-
+      needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
+      needs.package.result == 'success' && needs.prepare.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Download validated XPack assets
         uses: actions/download-artifact@v4
@@ -267,7 +317,10 @@ jobs:
           title="${{ needs.prepare.outputs.title }}"
           prerelease="${{ needs.prepare.outputs.prerelease }}"
 
+          [[ "$tag" =~ ^v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.source_sha }}"
           test "$(cat VERSION)" = "$version"
+          test "$tag" = "v$version"
           shopt -s nullglob
           assets=(
             release-assets/prod-c-logger-${version}-*-shared.tar.gz
@@ -285,20 +338,21 @@ jobs:
             prerelease_args=(--prerelease)
           fi
 
+          # Recheck immediately before the first release mutation. No tag creation.
+          git fetch --no-tags --force origin \
+            "refs/tags/$tag:refs/release-check/selected"
+          test "$(git rev-parse --verify refs/release-check/selected)" = \
+            "${{ needs.prepare.outputs.source_tag_oid }}"
+          test "$(git rev-parse --verify 'refs/release-check/selected^{commit}')" = \
+            "${{ needs.prepare.outputs.source_sha }}"
+
           if [ "${{ needs.prepare.outputs.release_exists }}" = true ]; then
             gh release edit "$tag" \
               --title "$title" \
               --notes-file "$notes"
             gh release upload "$tag" --clobber "${assets[@]}"
-          elif [ "${{ needs.prepare.outputs.tag_exists }}" = true ]; then
-            gh release create "$tag" \
-              --title "$title" \
-              --notes-file "$notes" \
-              "${prerelease_args[@]}" \
-              "${assets[@]}"
           else
-            gh release create "$tag" \
-              --target "${{ needs.prepare.outputs.source_sha }}" \
+            gh release create "$tag" --verify-tag \
               --title "$title" \
               --notes-file "$notes" \
               "${prerelease_args[@]}" \
@@ -321,7 +375,9 @@ jobs:
 
   release-already-exists:
     needs: prepare
-    if: needs.prepare.outputs.release_complete == 'true'
+    if: >-
+      needs.prepare.result == 'success' && needs.prepare.outputs.authorized == 'true' &&
+      needs.prepare.outputs.release_complete == 'true'
     runs-on: ubuntu-24.04
     steps:
       - run: echo "${{ needs.prepare.outputs.tag }} already exists with the complete validated asset set; nothing to publish."

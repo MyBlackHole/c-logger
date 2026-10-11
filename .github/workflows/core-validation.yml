@@ -12,6 +12,7 @@ on:
       - "scripts/check_release_abi.py"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/core-validation.yml"
+      - ".github/workflows/release-publish.yml"
 
 permissions:
   contents: read
