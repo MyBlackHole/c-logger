@@ -42,7 +42,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require an explicit existing release tag
+      - name: 要求显式指定已存在的发布标签
         id: gate
         env:
           REQUESTED_TAG: ${{ inputs.tag }}
@@ -86,7 +86,7 @@ jobs:
           echo "source_tag_oid=$source_tag_oid" >> "$GITHUB_OUTPUT"
           echo "authorized=true" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve release version
+      - name: 解析发布版本
         id: version
         shell: bash
         run: |
@@ -109,7 +109,7 @@ jobs:
           echo "title=$title" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve release recovery state
+      - name: 解析发布恢复状态
         id: existing
         env:
           GH_TOKEN: ${{ github.token }}
@@ -161,7 +161,7 @@ jobs:
       matrix:
         kind: [shared, static]
     steps:
-      - name: Install baseline build and inspection tools
+      - name: 安装基线构建与检查工具
         shell: bash
         run: |
           set -euo pipefail
@@ -177,7 +177,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
-      - name: Verify pinned release source
+      - name: 验证固定的发布源码
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -195,19 +195,19 @@ jobs:
           test "$(git rev-parse --verify refs/release-check/selected)" = "$SOURCE_TAG_OID"
           test "$(git rev-parse --verify 'refs/release-check/selected^{commit}')" = "$SOURCE_SHA"
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
           test "$(cat VERSION)" = "${{ needs.prepare.outputs.version }}"
           echo "LOGGER_PROJECT_VERSION=${{ needs.prepare.outputs.version }}" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Enable Xmake in root-owned container
+      - name: 在 root 所有的容器中启用 Xmake
         shell: bash
         run: |
           set -euo pipefail
@@ -230,7 +230,7 @@ jobs:
           chmod +x "$wrapper/xmake"
           echo "$wrapper" >> "$GITHUB_PATH"
 
-      - name: Verify release build baseline
+      - name: 验证发布构建基线
         shell: bash
         run: |
           set -euo pipefail
@@ -241,7 +241,7 @@ jobs:
           gcc --version
           python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
 
-      - name: Configure authoritative release build
+      - name: 配置权威发布构建
         shell: bash
         run: |
           set -euo pipefail
@@ -256,10 +256,10 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
 
-      - name: Run complete Xmake release suite
+      - name: 运行完整 Xmake 发布测试集
         run: xmake test -j1
 
-      - name: Locate production artifact
+      - name: 定位生产产物
         id: artifact
         shell: bash
         run: |
@@ -273,10 +273,10 @@ jobs:
           test -n "$artifact"
           echo "path=$artifact" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect production artifact
+      - name: 检查生产产物
         run: python3 scripts/check_production_artifact.py "${{ steps.artifact.outputs.path }}"
 
-      - name: Inspect shared ABI
+      - name: 检查共享库 ABI
         if: matrix.kind == 'shared'
         run: >-
           python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
@@ -284,17 +284,17 @@ jobs:
           --elf-class ELF64
           --max-glibc 2.31
 
-      - name: Build authoritative XPack TGZ
+      - name: 构建权威 XPack TGZ 包
         run: xmake pack -f targz -o xpack-out
 
-      - name: Verify XPack asset
+      - name: 验证 XPack 资产
         run: >-
           python3 scripts/check_release_assets.py
           --directory xpack-out
           --version "${{ needs.prepare.outputs.version }}"
           --kind "${{ matrix.kind }}"
 
-      - name: Verify packaged install tree
+      - name: 验证打包后的安装目录树
         shell: bash
         run: |
           set -euo pipefail
@@ -353,7 +353,7 @@ jobs:
           path: xpack-out
           merge-multiple: true
 
-      - name: Consume the baseline-built package on a newer userland
+      - name: 在较新的用户态环境中使用基线构建的包
         shell: bash
         run: |
           set -euo pipefail
@@ -391,20 +391,20 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
-      - name: Download validated XPack assets
+      - name: 下载已验证的 XPack 资产
         uses: actions/download-artifact@v4
         with:
           pattern: prod-c-logger-${{ needs.prepare.outputs.version }}-*
           path: release-assets
           merge-multiple: true
 
-      - name: Verify complete release asset set
+      - name: 验证完整发布资产集合
         run: >-
           python3 scripts/check_release_assets.py
           --directory release-assets
           --version "${{ needs.prepare.outputs.version }}"
 
-      - name: Publish or repair GitHub release
+      - name: 发布或修复 GitHub 发布版本
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash

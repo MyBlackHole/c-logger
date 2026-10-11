@@ -38,7 +38,7 @@ jobs:
       matrix:
         kind: [shared, static]
     steps:
-      - name: Install baseline build and inspection tools
+      - name: 安装基线构建与检查工具
         shell: bash
         run: |
           set -euo pipefail
@@ -52,12 +52,12 @@ jobs:
 
       - uses: actions/checkout@v5
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Enable Xmake in root-owned container
+      - name: 在 root 所有的容器中启用 Xmake
         shell: bash
         run: |
           set -euo pipefail
@@ -80,7 +80,7 @@ jobs:
           chmod +x "$wrapper/xmake"
           echo "$wrapper" >> "$GITHUB_PATH"
 
-      - name: Verify release build baseline
+      - name: 验证发布构建基线
         shell: bash
         run: |
           set -euo pipefail
@@ -91,7 +91,7 @@ jobs:
           gcc --version
           python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
 
-      - name: Resolve version
+      - name: 解析版本
         id: version
         shell: bash
         run: |
@@ -101,7 +101,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Configure Xmake release candidate
+      - name: 配置 Xmake 发布候选版本
         shell: bash
         run: |
           set -euo pipefail
@@ -116,16 +116,16 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
 
-      - name: Verify current Logger and Console semantic ABI contract
+      - name: 验证当前 Logger 与 Console 的语义 ABI 契约
         run: |
           xmake -j2 current_abi_contract_c current_abi_contract_cpp
           xmake run current_abi_contract_c
           xmake run current_abi_contract_cpp
 
-      - name: Run complete Xmake release suite
+      - name: 运行完整 Xmake 发布测试集
         run: xmake test -j1
 
-      - name: Locate production artifact
+      - name: 定位生产产物
         id: artifact
         shell: bash
         run: |
@@ -139,10 +139,10 @@ jobs:
           test -n "$artifact"
           echo "path=$artifact" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect production artifact
+      - name: 检查生产产物
         run: python3 scripts/check_production_artifact.py "${{ steps.artifact.outputs.path }}"
 
-      - name: Inspect shared ABI
+      - name: 检查共享库 ABI
         if: matrix.kind == 'shared'
         run: >-
           python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
@@ -150,17 +150,17 @@ jobs:
           --elf-class ELF64
           --max-glibc 2.31
 
-      - name: Build authoritative XPack TGZ
+      - name: 构建权威 XPack TGZ 包
         run: xmake pack -f targz -o xpack-out
 
-      - name: Verify release asset naming and SHA-256
+      - name: 验证发布资产命名与 SHA-256
         run: >-
           python3 scripts/check_release_assets.py
           --directory xpack-out
           --version "${{ steps.version.outputs.version }}"
           --kind "${{ matrix.kind }}"
 
-      - name: Verify packaged install tree
+      - name: 验证打包后的安装目录树
         shell: bash
         run: |
           set -euo pipefail
@@ -214,7 +214,7 @@ jobs:
           path: xpack-out
           merge-multiple: true
 
-      - name: Consume the baseline-built package on a newer userland
+      - name: 在较新的用户态环境中使用基线构建的包
         shell: bash
         run: |
           set -euo pipefail

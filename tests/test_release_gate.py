@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise the actual release workflow shell against isolated local Git fixtures.
+"""使用隔离的本地 Git 夹具执行实际发布工作流中的 shell 脚本。
 
-Python 3.8+, Bash and Git only. These tests never contact GitHub or run a real gh
-command. Structural assertions are deliberately strict; YAML syntax validation
-is a separate check (see docs/RELEASE_SAFETY.md).
+仅需 Python 3.8+、Bash 和 Git。这些测试不会联系 GitHub，也不会运行真实 gh
+命令。结构断言有意保持严格；YAML 语法验证单独执行
+（见 docs/RELEASE_SAFETY.md）。
 """
 import os
 from pathlib import Path
@@ -38,9 +38,9 @@ def script(name):
     return '\n'.join(line[10:] for line in body.splitlines()) + '\n'
 
 
-GATE = script('Require an explicit existing release tag')
-PIN = script('Verify pinned release source')
-PUBLISH = script('Publish or repair GitHub release')
+GATE = script('要求显式指定已存在的发布标签')
+PIN = script('验证固定的发布源码')
+PUBLISH = script('发布或修复 GitHub 发布版本')
 
 
 def command(args, cwd, env=None, check=True):
@@ -85,7 +85,7 @@ class Fixture:
                         EVENT_DELETED='false', GITHUB_OUTPUT=str(self.output),
                         RELEASE_TAG=TAG, RELEASE_VERSION=VERSION,
                         SOURCE_SHA=self.sha, SOURCE_TAG_OID=self.oid)
-        # A fake gh is the only possible release client even on the positive path.
+        # 即使在成功路径中，唯一可能使用的发布客户端也是假 gh。
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         fake = self.bin / 'gh'
@@ -205,7 +205,7 @@ class ReleaseGateTests(unittest.TestCase):
                 self.assertIn('f|config|test|install|run|pack)', package)
                 self.assertIn('xmake test -j1', package)
                 self.assertIn('xmake pack -f targz', package)
-                install = section(package, '- name: Verify packaged install tree', 6)
+                install = section(package, '- name: 验证打包后的安装目录树', 6)
                 self.assertIn('--installed-prefix "$prefix"', install)
                 self.assertIn('--max-glibc 2.31', install)
                 self.assertIn('--max-consumer-glibc 2.31', install)
@@ -232,7 +232,7 @@ class ReleaseGateTests(unittest.TestCase):
         fixture = self.fixture()
         cases = [dict(GITHUB_EVENT_NAME=event) for event in
                  ('pull_request', 'schedule', 'release', 'repository_dispatch', '')]
-        cases += [dict(GITHUB_EVENT_NAME='push'),  # Any main file or workflow merge.
+        cases += [dict(GITHUB_EVENT_NAME='push'),  # 任意 main 文件或工作流合并。
                   dict(GITHUB_EVENT_NAME='push', GITHUB_REF_TYPE='tag',
                        GITHUB_REF_NAME=TAG, GITHUB_REF='refs/tags/' + TAG, EVENT_DELETED='true'),
                   dict(GITHUB_EVENT_NAME='push', GITHUB_REF_TYPE='tag',
@@ -340,7 +340,7 @@ class ReleaseGateTests(unittest.TestCase):
             fixture = self.fixture()
             fixture.assets()
             result = fixture.run(fixture.publish_script(exists))
-            # Stop at the first fake gh call. No publish workflow or release is run.
+            # 在首次调用假 gh 时停止，不运行发布工作流或执行发布。
             self.assertEqual(result.returncode, 71, result.stderr)
             logged = fixture.gh_log.read_text()
             self.assertIn('release ' + ('edit' if exists else 'create') + ' ' + TAG, logged)
