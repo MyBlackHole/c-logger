@@ -1,0 +1,22 @@
+file	operation	object	desired	success	failure	count	rationale
+src/console.c	weak	&g_config	next	relaxed	relaxed	1	打包的标量配置；CAS 不发布其他存储。
+src/logger.c	weak	&l->queue_high_watermark	depth	relaxed	relaxed	1	尽力维护数值高水位，不承担正文发布。
+src/logger.c	strong	&l->lifecycle_error	error	release	relaxed	2	构造及运行阶段首次生命周期错误发布；失败时的期望值不再使用。
+src/logger.c	strong	&l->state	LOGGER_STATE_RUNNING	acq_rel	acquire	1	只允许从 CREATED 发布 RUNNING；失败 acquire 观察 worker 发布的 STOPPING。
+src/logger.c	strong	&l->lifecycle_error	join_rc	release	relaxed	1	发布 join 失败诊断；失败时的期望值不再使用。
+src/logger.c	strong	&l->first_error	error	release	relaxed	1	发布首个 I/O 错误；失败时的期望值不再使用。
+src/logger.c	strong	&l->synchronization_error	error	release	relaxed	1	发布首个同步证明错误；失败时的期望值不再使用。
+src/logger_global.c	strong	&g_lock_error	error	release	relaxed	1	在 G_BROKEN 前发布首个全局锁错误；失败时的期望值不再使用。
+src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN)	acq_rel	acquire	1	发布 G_BROKEN 且不覆盖新一代 ticket；每次重试以 acquire 观察。
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase)	release	relaxed	1	只回滚持有的 ticket；失败时的期望值不再使用。
+src/logger_global.c	strong	&g_ticket	ticket	acq_rel	acquire	1	发布新一代 STARTING；使用无歧义的 acq_rel 成功序并保留 acquire 失败序。
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,G_RUNNING)	acq_rel	acquire	1	在写锁保护下发布 RUNNING；保留 acquire 失败序且不依赖 release/acquire 歧义。
+src/logger_global.c	strong	&g_ticket	stopping	acq_rel	acquire	1	以 STOPPING 关闭准入；使用无歧义的 acq_rel 成功序并保留 acquire 失败序。
+src/logger_global.c	strong	&g_ticket	current	release	relaxed	1	仅在取得写锁失败且 ticket 未变时恢复准入；失败值不再使用。
+src/logger_global.c	strong	&g_ticket	with_phase(current,G_STOPPED)	acq_rel	acquire	1	仅在最终释放回执确认后发布 STOPPED；无歧义地保留 acquire 失败序。
+src/logger_process.c	strong	&owner_pid	current	release	relaxed	1	在 atfork 注册前发布 PID；失败观察只比较 PID 标量。
+src/logger_process.c	weak	&live_objects	n+1	acq_rel	relaxed	1	有界对象计数递增；成功 RMW 保持计数顺序，失败只重试标量。
+src/logger_process.c	weak	&live_objects	n-1	acq_rel	acquire	1	有界对象计数递减并检查下溢；以 acquire 观察重试结果。
+src/logger_queue.c	weak	&q->spill_used[word]	desired	acq_rel	relaxed	1	在 release 清位后取得 spill 独占复用权；失败只选择另一个位。
+src/logger_queue.c	weak	&q->enqueue_pos	pos+1	relaxed	relaxed	1	只预留唯一队列位置；正文由独立 slot.seq release/acquire 发布。
+src/logger_worker.c	strong	&l->lifecycle_error	wait_rc	release	relaxed	1	发布 worker 等待失败；失败时的期望值不再使用。
