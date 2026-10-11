@@ -201,8 +201,9 @@ static int bind_path(logger_file_t *f, const char *path)
 	return 0;
 }
 
-int logger_file_reserve(logger_file_t *f, const char *path,
-			logger_rotation_config_t rotation, mode_t mode)
+/* Reserve Logger file ownership before creating or opening the active file. */
+static int logger_file_reserve(logger_file_t *f, const char *path,
+			       logger_rotation_config_t rotation, mode_t mode)
 {
 	if (!f) {
 		errno = EINVAL;
@@ -294,7 +295,7 @@ static void install_fd(logger_file_t *f, int fd, const struct stat *st, int day)
 	f->switch_error = 0;
 }
 
-int logger_file_open_reserved(logger_file_t *f)
+static int logger_file_open_reserved(logger_file_t *f)
 {
 	if (!f || f->dir_fd < 0 || f->fd >= 0) {
 		errno = EINVAL;
@@ -330,7 +331,6 @@ int logger_file_sync(logger_file_t *f)
 {
 	if (!f || f->fd < 0)
 		return -EBADF;
-	logger_fault_crash_if_requested("before_audit_fsync");
 	int rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
@@ -464,7 +464,7 @@ static int retention(logger_file_t *f, time_t now)
 	if (!f->rotation.retention_days)
 		return 0;
 	/* A separate directory description avoids sharing readdir's offset with
-     * the bound directory or an Audit scanner. */
+     * the bound directory. */
 	int fd __free(close_fd) =
 		openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0)
@@ -774,21 +774,4 @@ int logger_file_writev(logger_file_t *f, struct iovec *v, int count, size_t n,
 	} else
 		f->metrics.last_error = 0;
 	return rc;
-}
-
-int logger_file_offset_get(logger_file_t *f, uint64_t *out)
-{
-	if (!f || !out) {
-		errno = EINVAL;
-		return -1;
-	}
-	if (f->detached) {
-		errno = f->switch_error ? f->switch_error : EIO;
-		return -1;
-	}
-	off_t x = lseek(f->fd, 0, SEEK_END);
-	if (x < 0)
-		return -1;
-	*out = (uint64_t)x;
-	return 0;
 }

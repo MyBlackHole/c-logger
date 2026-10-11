@@ -10,10 +10,8 @@ on:
       - "include/**"
       - "abi/logger-2.0.symbols"
       - "tests/packaging/**"
-      - "tests/compat/**"
       - "examples/installed_consumer/**"
       - "scripts/check_release_abi.py"
-      - "scripts/check_v1_abi_snapshot.py"
       - "scripts/check_release_assets.py"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/release-validation.yml"
@@ -47,9 +45,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Verify frozen v1 ABI snapshot
-        run: python3 scripts/check_v1_abi_snapshot.py
-
       - name: Configure Xmake release candidate
         shell: bash
         run: |
@@ -65,11 +60,11 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
 
-      - name: Verify Production v1 semantic ABI contract
+      - name: Verify current Logger and Console semantic ABI contract
         run: |
-          xmake -j2 v1_abi_contract_c v1_abi_contract_cpp
-          xmake run v1_abi_contract_c
-          xmake run v1_abi_contract_cpp
+          xmake -j2 current_abi_contract_c current_abi_contract_cpp
+          xmake run current_abi_contract_c
+          xmake run current_abi_contract_cpp
 
       - name: Run complete Xmake release suite
         run: xmake test -j1

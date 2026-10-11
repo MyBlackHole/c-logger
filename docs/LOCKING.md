@@ -99,29 +99,8 @@ sync backend
 
 `g_config` 使用 atomic snapshot，不依赖 `g_console_mu`。
 
-Console lock 与 Logger/Audit 锁没有允许的嵌套关系；不要在持有该锁时调用可能重入
+Console lock 与 Logger 锁没有允许的嵌套关系；不要在持有该锁时调用可能重入
 Logger/Console 的外部 callback。
-
-## Audit locking
-
-Audit 使用两级 in-process 锁：
-
-```text
-g_control_mu
-    ->
-g_operation_mu
-    ->
-Audit private logger instance locks
-```
-
-- Audit `g_control_mu`：init/shutdown/controller；
-- Audit `g_operation_mu`：已 publish runtime、sequence/hash、transaction 操作；
-- 持有 operation lock 的 Audit 路径可能调用 private logger，因此 instance lock 位于其后。
-
-Audit 还存在 persistent writer-lock fd。它是跨进程 ownership/exclusivity 机制，
-**不是 pthread lock**，不能代替进程内 mutex。
-
-Audit lock 路径还包含 cancellation policy，因此本轮不机械迁移到 guard。
 
 ## guard 使用规则
 
@@ -162,7 +141,6 @@ if (rc)
 以下情况保持显式锁管理，直到整个协议一起重构：
 
 - global 多锁 hierarchy；
-- Audit control/operation 多锁；
 - unlock error 会参与返回值；
 - 锁 ownership 需要跨 lexical scope；
 - pthread cancellation handler 需要显式参与；

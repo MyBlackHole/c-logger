@@ -5,7 +5,7 @@
 
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
-当前生产目标始终不编译或安装 Audit，启用测试也不会改变这一边界；生产库没有摘要算法依赖。
+当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
 当前开发 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47-symbol public C ABI**。
 
 > **发布身份仍待收敛：** 根 `VERSION` 暂保留 `1.0.0`，不代表当前 main 与已发布 v1 二进制兼容。
@@ -145,14 +145,13 @@ Host: logger_create → SDK instances borrow → stop/join SDK callers
 - [File backend](docs/FILE_BACKEND.md)
 - [Syslog backend](docs/SYSLOG_BACKEND.md)
 - [可观测性与问题发现](docs/OBSERVABILITY.md)
-- [内置摘要契约](docs/BUILTIN_CRYPTO.md)
 - [平台基线](docs/PLATFORM_BASELINE.md)
 - [Production v1 支持范围与发布准入](docs/V1_RELEASE_CRITERIA.md)
 - [已知限制](docs/KNOWN_ISSUES.md)
 - [变更清单](CHANGELOG.md)
 
 普通日志不提供业务审计事务、哈希链或远端持久确认。旧 Audit 用户应继续使用 `release/1.x`，
-或迁移至独立审计组件。私有支持库中残留的历史 Audit 测试不属于当前安装产品。
+或迁移至独立审计组件。历史专用源码和测试已退役，普通 Logger 的失败、锁、格式与生命周期覆盖独立保留。
 文件后端进程崩溃与 QEMU/raw ext4+XFS 门禁用于验证受控存储路径；它们不等于任意服务器、
 RAID/HBA/NVMe/SATA 易失缓存组合的物理断电认证。目标部署需另做存储栈 qualification。
 

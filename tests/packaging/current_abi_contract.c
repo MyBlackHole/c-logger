@@ -30,7 +30,7 @@
 #define ABI_FIELD(type, field, offset_) \
 	ABI_ASSERT(offsetof(type, field) == (offset_))
 
-/* Linux/ELF x86_64 Production v1 aggregate layout contract. */
+/* Linux/ELF x86_64 current ABI 2 aggregate layout contract. */
 ABI_TYPE(logger_config_t, 144, 8);
 ABI_FIELD(logger_config_t, struct_size, 0);
 ABI_FIELD(logger_config_t, version, 4);

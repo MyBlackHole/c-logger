@@ -154,13 +154,7 @@ Cflags: -I${includedir}%s
     target:add("installfiles", pc_file, {prefixdir = "lib/pkgconfig"})
 end
 
-local audit_sources = {
-    "src/audit.c", "src/audit_record.c", "src/audit_integrity.c",
-    "src/audit_recovery.c", "src/audit_verify.c"
-}
--- Production is always Audit-free, regardless of enabled test suites.
--- Retired Audit code remains only in uninstalled private/regression archives
--- until the historical tests have been fully retired.
+-- Production and uninstalled support archives use only Logger sources.
 local logger_sources = {
     "src/logger.c",
     "src/logger_global.c",
@@ -281,18 +275,18 @@ target("bench_logger")
     add_cflags("-std=gnu11", {force = true})
 target_end()
 
-target("v1_abi_contract_c")
+target("current_abi_contract_c")
     set_kind("binary")
     set_default(false)
-    add_files("tests/packaging/v1_abi_contract.c")
+    add_files("tests/packaging/current_abi_contract.c")
     add_deps("logger")
     add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
 target_end()
 
-target("v1_abi_contract_cpp")
+target("current_abi_contract_cpp")
     set_kind("binary")
     set_default(false)
-    add_files("tests/packaging/v1_abi_contract.cpp")
+    add_files("tests/packaging/current_abi_contract.cpp")
     add_deps("logger")
     add_cxxflags("-std=c++11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
 target_end()
@@ -387,6 +381,35 @@ if has_config("build_tests") then
         end
     target_end()
 
+    -- These wrappers require the true production static archive; the shared
+    -- configuration must not claim DSO-internal interception.
+    if not has_config("build_shared") then
+        target("logger_format_production_test")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_logger_format.c")
+            add_deps("logger")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"clock_gettime", "localtime_r", "strftime"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({"normal", "cache-hit", "localtime", "date", "zone",
+                                        "bad-date", "bad-zone", "cached-bad", "truncation"}) do
+                add_tests(scenario, {runargs = scenario, timeout = 15})
+            end
+        target_end()
+        target("format_checked_production_test")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_format_checked.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            add_ldflags("-Wl,--wrap=vsnprintf", "-Wl,--wrap=__vsnprintf_chk", {force = true})
+            add_tests("default", {timeout = 15})
+        target_end()
+    end
+
     -- GNU --wrap can intercept the actual production archive, not a DSO's
     -- internal libc calls. Shared configurations run the separate white-box
     -- target below; do not label that as production DSO interception.
@@ -450,9 +473,6 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         for _, source in ipairs(logger_sources) do
             add_files(source)
         end
-        for _, source in ipairs(audit_sources) do
-            add_files(source)
-        end
         add_files("src/logger_fault.c")
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         add_cflags("-Wvla", "-Wframe-larger-than=24576", {force = true})
@@ -480,21 +500,6 @@ if has_config("build_private_tests") then
         add_tests("file_fsync", {
             runargs = "logger",
             runenvs = {LOGGER_FAULT_POINT = "file_fsync", LOGGER_FAULT_ERRNO = "5"},
-            timeout = 10
-        })
-        add_tests("state_write", {
-            runargs = "audit",
-            runenvs = {LOGGER_FAULT_POINT = "state_write", LOGGER_FAULT_ERRNO = "5"},
-            timeout = 10
-        })
-        add_tests("state_fsync", {
-            runargs = "audit",
-            runenvs = {LOGGER_FAULT_POINT = "state_fsync", LOGGER_FAULT_ERRNO = "5"},
-            timeout = 10
-        })
-        add_tests("state_rename", {
-            runargs = "audit",
-            runenvs = {LOGGER_FAULT_POINT = "state_rename", LOGGER_FAULT_ERRNO = "5"},
             timeout = 10
         })
     target_end()
@@ -547,33 +552,6 @@ if has_config("build_private_tests") then
         add_tests("default", {timeout = 5})
     target_end()
 
-    -- Historical Audit-only regression, outside the ordinary Logger crash gate.
-    target("audit_rotation_crash_regression")
-        set_kind("binary")
-        set_default(false)
-        add_files("tests/regression/test_audit_rotation_crash.c")
-        add_deps("logger_test_support")
-        add_includedirs("src", "tests/regression")
-        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        add_ldflags("-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
-        add_tests("rotation_crash_sha256", {
-            runargs = {"rotation", "sha256"},
-            timeout = 30
-        })
-    target_end()
-
-    target("file_audit_regression")
-        set_kind("binary")
-        set_default(false)
-        add_files("tests/regression/test_file_audit.c")
-        add_deps("logger_test_support")
-        add_includedirs("src", "tests/regression")
-        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        for _, scenario in ipairs({"logger-busy", "state-busy", "audit-busy", "cwd"}) do
-            add_tests("file_audit_" .. scenario, {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
     -- The QEMU guest deliberately links only the test-support archive.
     target("vm_powercut_guest")
         set_kind("binary")
@@ -596,9 +574,6 @@ if has_config("build_regression_tests") then
         for _, source in ipairs(logger_sources) do
             add_files(source)
         end
-        for _, source in ipairs(audit_sources) do
-            add_files(source)
-        end
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0", {force = true})
         add_cflags("-Wvla", "-Wframe-larger-than=24576", {force = true})
@@ -617,23 +592,10 @@ if has_config("build_regression_tests") then
         {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
         {"global_flush_regression", "tests/regression/test_global_flush.c"},
         {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
-        {"crypto_vectors_test", "tests/test_crypto_vectors.c"},
-        {"audit_concurrency_regression", "tests/regression/test_audit_concurrency.c"},
-        {"crypto_contract_regression", "tests/regression/test_crypto_contract.c"},
-        {"crypto_chain_tool", "tests/regression/crypto_chain_tool.c"},
-        {"audit_record_regression", "tests/regression/test_audit_record.c"},
-        {"audit_sequence_regression", "tests/regression/test_audit_sequence.c"},
-        {"audit_system_regression", "tests/regression/test_audit_system_records.c"},
-        {"audit_recovery_strict_regression", "tests/regression/test_audit_recovery_strict.c"},
-        {"audit_recovery_capacity", "tests/regression/test_audit_recovery_capacity.c"},
-        {"audit_reader_regression", "tests/regression/test_audit_reader.c"},
-        {"sha256_only_regression", "tests/regression/test_sha256_only.c"},
         {"lock_failure_regression", "tests/regression/test_lock_failure.c",
             {"pthread_mutex_lock", "pthread_mutex_unlock", "pthread_cond_signal"}},
 
         -- Default-static parity needed by the full sanitizer profile.
-        {"production_isolation_regression", "tests/regression/test_fault_isolation.c",
-            {"connect"}},
         {"source_ownership_regression", "tests/regression/test_source_ownership.c",
             {"logger_format_line"}},
         {"destroy_status_regression", "tests/regression/test_destroy_status.c",
@@ -647,7 +609,7 @@ if has_config("build_regression_tests") then
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
         {"bench_matrix", "tests/bench_matrix.c"},
 
-        -- Link-time interception parity, group A: queue/flush and Audit I/O/state.
+        -- Link-time interception parity, group A: queue/flush and I/O accounting.
         {"queue_notify_regression", "tests/regression/test_queue_notify.c",
             {"pthread_cond_wait"}},
         {"flush_release_proof_regression", "tests/regression/test_flush_release_proof.c",
@@ -661,23 +623,6 @@ if has_config("build_regression_tests") then
             {"logger_format_line", "write", "writev", "fsync"}},
         {"resource_cleanup_regression", "tests/regression/test_resource_cleanup.c",
             {"free"}},
-        {"audit_commit_regression", "tests/regression/test_audit_commit.c",
-            {"audit_checkpoint_persist_at", "logger_log_sync_status", "write", "fsync",
-             "logger_file_offset"}},
-        {"audit_lifecycle_regression", "tests/regression/test_audit_lifecycle.c",
-            {"logger_destroy_status", "logger_log_sync_status", "pthread_mutex_lock",
-             "pthread_cond_destroy", "pthread_mutex_destroy",
-             "logger_file_close_status"}},
-        {"checkpoint_io_regression", "tests/regression/test_checkpoint_io.c",
-            {"write", "fsync", "close", "renameat"}},
-        {"crypto_failure_regression", "tests/regression/test_crypto_failure.c",
-            {"audit_digest_provider"}},
-        {"audit_tail_io_regression", "tests/regression/test_audit_tail_io.c",
-            {"write", "fsync", "ftruncate"}},
-        {"audit_dirfd_regression", "tests/regression/test_audit_dirfd.c",
-            {"stat"}},
-        {"audit_entropy_regression", "tests/regression/test_audit_entropy.c",
-            {"getrandom"}},
 
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
@@ -725,8 +670,6 @@ if has_config("build_regression_tests") then
             {"logger_destroy_status", "pthread_mutex_lock"}},
         {"file_legacy_probe", "tests/regression/test_file_legacy_probe.c",
             {"clock_gettime"}},
-        {"file_audit_close_regression", "tests/regression/test_file_audit_close.c",
-            {"logger_create_reserved_file", "close"}}
     }
 
     for _, spec in ipairs(regression_targets) do
@@ -750,8 +693,7 @@ if has_config("build_regression_tests") then
         "queue_wakeup_litmus",
         "lockdep_regression",
         "metadata_capture_regression",
-        "global_flush_regression",
-        "crypto_vectors_test"
+        "global_flush_regression"
     }) do
         target(name)
             add_tests("default", {timeout = 15})
@@ -794,10 +736,6 @@ if has_config("build_regression_tests") then
                   {runargs = "queue-signal", timeout = 15})
         add_tests("force_wake_lock_failure",
                   {runargs = "force-wake", timeout = 15})
-        add_tests("audit_operation_lock_failure",
-                  {runargs = "audit", timeout = 15})
-        add_tests("audit_operation_unlock_failure",
-                  {runargs = "audit-unlock", timeout = 15})
     target_end()
 
     target("stderr_sigpipe_regression")
@@ -805,18 +743,6 @@ if has_config("build_regression_tests") then
                                     "bootstrap-preblocked", "bootstrap-pending",
                                     "bootstrap-format"}) do
             add_tests(scenario, {runargs = scenario, timeout = 15})
-        end
-    target_end()
-
-    target("audit_concurrency_regression")
-        for _, scenario in ipairs({"lifetimes", "transactions"}) do
-            add_tests(scenario, {runargs = scenario, timeout = 30})
-        end
-    target_end()
-
-    target("crypto_contract_regression")
-        for _, scenario in ipairs({"vectors", "boundaries", "invalid", "threads"}) do
-            add_tests(scenario, {runargs = {scenario, "sha256"}, timeout = 30})
         end
     target_end()
 
@@ -859,195 +785,20 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    target("audit_commit_regression")
-        for _, scenario in ipairs({
-            "checkpoint-once", "offset-error", "checkpoint-persistent",
-            "io-write", "io-partial", "io-fsync", "preflight",
-            "txn-preflight", "txn-begin-checkpoint", "txn-end-checkpoint",
-            "txn-begin-write", "txn-begin-partial", "txn-begin-fsync",
-            "txn-end-write", "txn-end-partial", "txn-end-fsync",
-            "stop-error", "start-error"
-        }) do
-            add_tests("audit_" .. scenario .. "_regression",
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_sequence_regression")
-        for _, scenario in ipairs({
-            "valid-rotation", "valid-genesis", "valid-restart-cross",
-            "valid-restart-within", "anchored-suffix",
-            "gap-within", "duplicate-within", "gap-cross",
-            "duplicate-cross", "switch-no-start", "switch-not-one",
-            "switch-within-no-start", "same-id-reset", "start-not-one",
-            "genesis-not-one", "wrap"
-        }) do
-            add_tests("audit_sequence_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_system_regression")
-        for _, scenario in ipairs({
-            "ordinary-genesis", "valid-stop", "after-stop", "repeat-stop",
-            "restart-after-stop", "restart-without-stop",
-            "restart-after-stop-cross", "after-stop-cross",
-            "anchored-stop-restart",
-            "start-actor", "start-source", "start-resource",
-            "start-empty-resource", "start-operation", "start-txn",
-            "start-failure", "start-error", "start-detail",
-            "start-empty-detail", "start-attempt", "start-seq2",
-            "stop-actor", "stop-source", "stop-resource",
-            "stop-operation", "stop-txn", "stop-failure", "stop-error",
-            "stop-detail", "stop-empty-detail", "stop-attempt", "stop-seq1"
-        }) do
-            add_tests("audit_system_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_lifecycle_regression")
-        for _, scenario in ipairs({
-            "init-gate", "stop-gate", "teardown-race",
-            "dispose-cond", "dispose-mutex", "dispose-no-final-release",
-            "init-rollback-retain", "close-error-finalized",
-            "teardown-failure-race",
-            "generation", "fork-guard", "cancel"
-        }) do
-            add_tests("audit_" .. scenario .. "_regression",
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_dirfd_regression")
-        add_tests("audit_dirfd_parent_rename", {timeout = 20})
-    target_end()
-
-    target("checkpoint_io_regression")
-        for _, scenario in ipairs({
-            "ok", "write", "zero", "short-eintr",
-            "fsync", "dir-fsync", "close", "rename"
-        }) do
-            add_tests("checkpoint_" .. scenario .. "_regression",
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("crypto_failure_regression")
-        for _, scenario in ipairs({
-            "init-probe", "init-start", "write", "begin", "end", "stop",
-            "verify", "verify-empty", "recover-probe", "recover-forward", "recover-init"
-        }) do
-            add_tests("crypto_sha256_" .. scenario,
-                      {runargs = {scenario, "sha256"}, timeout = 20})
-        end
-        add_tests("crypto_none_explicit",
-                  {runargs = {"none", "sha256"}, timeout = 20})
-    target_end()
-
-    target("audit_tail_io_regression")
-        for _, scenario in ipairs({
-            "ok", "write", "zero", "short-eintr",
-            "evidence-fsync", "directory-fsync", "truncate", "active-fsync"
-        }) do
-            add_tests("tail_io_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("audit_entropy_regression")
-        add_tests("audit_entropy_failfast", {timeout = 15})
-    target_end()
-
-    target("audit_record_regression")
-        for _, scenario in ipairs({
-            "roundtrip", "bounds", "fuzz", "suffix", "duplicate", "unknown",
-            "reorder", "escape", "escape-nul", "escape-print", "raw-control",
-            "unclosed", "seq-zero", "seq-overflow", "seq-leading", "seq-negative",
-            "txn-plus", "txn-overflow", "error-overflow", "error-underflow",
-            "negative-zero", "phase", "result", "attempt-result", "missing-result",
-            "empty-event", "empty-operation", "instance", "bad-prefix", "bad-date",
-            "trailing-space", "crlf", "missing-lf", "short-hash", "long-hash",
-            "hash-nonhex", "hash-upper", "oversize", "oversize-eof", "nul"
-        }) do
-            add_tests("record_sha256_" .. scenario,
-                      {runargs = {scenario, "sha256"}, timeout = 30})
-        end
-    target_end()
-
-    target("audit_recovery_strict_regression")
-        for _, scenario in ipairs({
-            "forward", "partial", "complete-no-lf", "oversize-complete",
-            "oversize-eof", "malformed", "nul", "checkpoint-offset",
-            "checkpoint-ahead", "checkpoint-seq", "before-checkpoint-corrupt",
-            "names", "archives", "time-backwards", "active-larger", "no-active",
-            "empty-active", "archive-partial", "missing-middle", "duplicate",
-            "branch", "active-not-last", "lost-state-genesis",
-            "lost-state-retained", "retained-anchor", "symlink", "fifo"
-        }) do
-            add_tests("recovery_sha256_" .. scenario,
-                      {runargs = {scenario, "sha256"}, timeout = 30})
-        end
-    target_end()
-
-    target("audit_reader_regression")
-        for _, scenario in ipairs({
-            "reader", "ok", "suffix", "second-line", "second-blank",
-            "negative-offset", "large-offset", "leading-seq", "unknown-alg",
-            "short-hash", "long-hash", "short-crc", "unknown-version",
-            "missing-lf", "nul", "bad-crc"
-        }) do
-            add_tests("strict_reader_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-    target_end()
-
-    target("sha256_only_regression")
-        for _, scenario in ipairs({
-            "provider", "config", "verify-empty", "verify-missing", "live"
-        }) do
-            add_tests("sha256_only_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-        local legacy_sm3 = path.join(os.projectdir(), "tests", "fixtures",
-                                     "legacy_crypto", "sm3")
-        for _, scenario in ipairs({
-            "verify-history", "checkpoint-read", "checkpoint-write",
-            "recover-id", "init-history", "init-missing-state",
-            "init-relabel-state"
-        }) do
-            add_tests("sha256_only_" .. scenario,
-                      {runargs = {scenario, legacy_sm3}, timeout = 20})
-        end
-    target_end()
-
-    -- Historical Audit crypto coverage belongs to the uninstalled archive.
-    target("crypto_builtin_only_regression")
+    -- Execute the isolation probe against the actual production static/DSO artifact.
+    -- Export executable interposition with the baseline linker-supported flag.
+    target("production_isolation_regression")
         set_kind("binary")
         set_default(false)
-        add_files("tests/regression/test_crypto_builtin_only.c")
-        add_deps("logger_regression_support")
+        add_files("tests/regression/test_fault_isolation.c")
+        add_deps("logger")
         add_includedirs("src")
-        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                   {force = true})
-        add_tests("crypto_builtin_sha256_lifecycle",
-                  {runargs = {"lifecycle", "sha256"}, timeout = 30})
-        add_tests("crypto_builtin_sha256_legacy", {
-            runargs = {
-                "legacy", "sha256",
-                path.join(os.projectdir(), "tests", "fixtures",
-                          "legacy_crypto", "sha256")
-            },
-            timeout = 30
-        })
-    target_end()
-
-    target("production_isolation_regression")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_ldflags("-Wl,--export-dynamic", {force = true})
         for _, scenario in ipairs({
-            "file_write", "file_fsync", "file_rename", "file_ftruncate",
-            "state_write", "state_fsync", "state_rename", "short-write",
-            "syslog-path", "after_audit_fsync", "before_state_rename",
-            "after_state_rename", "after_checkpoint_commit"
+            "file_write", "file_fsync", "file_rename", "short-write",
+            "syslog-path", "file_after_archive_rename", "file_after_archive_dirsync",
+            "file_after_active_open", "file_after_active_dirsync"
         }) do
             add_tests("production_isolation_" .. scenario,
                       {runargs = scenario, timeout = 15})
@@ -1063,12 +814,11 @@ if has_config("build_regression_tests") then
         add_defines("TEST_EXPECT_HOOKS=1")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    {force = true})
-        add_ldflags("-Wl,--wrap=connect", {force = true})
+        add_ldflags("-Wl,--export-dynamic", {force = true})
         for _, scenario in ipairs({
-            "file_write", "file_fsync", "file_rename", "file_ftruncate",
-            "state_write", "state_fsync", "state_rename", "short-write",
-            "syslog-path", "after_audit_fsync", "before_state_rename",
-            "after_state_rename", "after_checkpoint_commit"
+            "file_write", "file_fsync", "file_rename", "short-write",
+            "syslog-path", "file_after_archive_rename", "file_after_archive_dirsync",
+            "file_after_active_open", "file_after_active_dirsync"
         }) do
             add_tests("test_hooks_" .. scenario,
                       {runargs = scenario, timeout = 15})
@@ -1285,12 +1035,11 @@ if has_config("build_regression_tests") then
             return false, errors or ("exit code: " .. tostring(code))
         end)
         for _, scenario in ipairs({
-            "global", "explicit", "console-only", "context-only", "audit-only",
-            "verify-only", "emit-held", "progress-held", "console-held",
+            "global", "explicit", "console-only", "context-only", "emit-held", "progress-held", "console-held",
             "reader-held", "registration-window", "earlier-handler",
             "after-shutdown", "bypass-handler", "prefork",
             "register-global", "register-explicit", "register-console",
-            "register-context", "register-audit", "register-verify"
+            "register-context"
         }) do
             add_tests("process_fork_" .. scenario,
                       {runargs = scenario, timeout = 12})
@@ -1381,7 +1130,7 @@ if has_config("build_regression_tests") then
             "dropped", "metrics", "io", "diagnostics", "file-metrics", "syslog", "context-set",
             "context-clear", "context-get", "console", "console-debug",
             "console-init", "console-level", "console-color", "console-tty",
-            "global", "global-write", "audit", "audit-status"
+            "global", "global-write"
         }) do
             add_tests("explicit_reentry_" .. scenario,
                       {runargs = {"reentry", "write", scenario}, timeout = 10})
@@ -1390,7 +1139,7 @@ if has_config("build_regression_tests") then
             "worker", "console", "create", "format", "reopen", "destroy"
         }) do
             for _, scenario in ipairs({
-                "flush", "destroy", "create", "global", "audit", "console"
+                "flush", "destroy", "create", "global", "console"
             }) do
                 add_tests("explicit_" .. origin .. "_reentry_" .. scenario,
                           {runargs = {"reentry", origin, scenario}, timeout = 10})
@@ -1528,7 +1277,4 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    target("file_audit_close_regression")
-        add_tests("file_audit_close", {timeout = 20})
-    target_end()
 end

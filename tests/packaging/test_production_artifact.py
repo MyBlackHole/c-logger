@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression fixtures for the unconditional production fork-helper exclusion.
+"""Regression fixtures for production exclusions: fork helpers, Audit and hooks.
 
 Requires a native C compiler, ar, nm, strings and readelf. No fixture is executed.
 """
@@ -92,6 +92,27 @@ class ProductionArtifactForkTests(unittest.TestCase):
                 artifact = self.artifact('const char path[] = "/proc/self/task";\n', kind)
                 report = self.inspect(artifact, 1)
                 self.assertIn('/proc/self/task', report['failures'])
+
+    def test_retired_audit_and_test_hook_symbols_are_rejected(self):
+        for symbol in ('audit_init', 'audit_digest_provider',
+                       'logger_fault_should_fail', 'logger_fault_short_write',
+                       'logger_fault_crash_if_requested'):
+            for kind in ('static', 'shared'):
+                with self.subTest(symbol=symbol, kind=kind):
+                    source = f'int {symbol}(void) {{ return 0; }}\n'
+                    self.inspect(self.artifact(source, kind), 1)
+
+    def test_retired_audit_archive_member_is_rejected_without_symbols(self):
+        clean = self.artifact('int harmless(void) { return 0; }\n', 'static')
+        self.inspect(clean, 0)
+        obj = self.directory / 'audit_record.c.o'
+        (self.directory / 'fixture.o').rename(obj)
+        archive = self.directory / 'retired.a'
+        subprocess.run(['ar', 'rcs', str(archive), str(obj)], check=True,
+                       capture_output=True, text=True)
+        report = self.inspect(archive, 1)
+        self.assertTrue(any('retired Audit source member' in failure
+                            for failure in report['failures']))
 
     def test_legacy_bypass_option_is_rejected(self):
         artifact = self.artifact('int clean(void) { return 0; }\n', 'static')

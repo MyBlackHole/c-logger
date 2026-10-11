@@ -87,16 +87,12 @@ struct logger {
  * 普通 I/O teardown 错误仍完成 final free；若 join/同步对象/census 无法
  * 证明 quiescent，则故意保留 retired allocation，绝不继续 free 成 UAF。
  * teardown 一旦开始，旧指针都不能被调用者当作可重试对象。 */
-/* Audit 在检查/修复目标前先取得 file ownership，随后把该 reservation
- * move 给同步 logger。 */
-logger_t *logger_create_reserved_file(const logger_config_t *, logger_file_t *);
 int logger_dispose_internal(logger_t *);
 /* Current-thread final-release receipt for controllers calling the normal
  * logger_destroy_status() entry (including link-time wrappers). Reset before
  * the call; a receipt is set only after final census release and free. */
 void logger_destroy_receipt_reset(void);
 int logger_destroy_receipt_read(void);
-int logger_file_offset(logger_t *, uint64_t *);
 int logger_emit_status(logger_t *, const logger_message_t *, int);
 /* Consumes/advances the iovecs while preserving the caller's SIGPIPE policy. */
 struct iovec;

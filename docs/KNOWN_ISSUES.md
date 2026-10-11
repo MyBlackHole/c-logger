@@ -7,7 +7,7 @@
 
 - 根 VERSION 暂为1.0.0，ABI已切至SONAME 2 / LOGGER_2.0；开发包不得作为v1兼容产物发布。
 - 2.0公开API/ABI最终冻结、发布触发策略和文档收敛尚需完成。CI通过不等于正式release授权。
-- 历史Audit源码/测试仍存在于未安装的private/regression支持库中；普通生产目标始终不包含Audit，测试开关不得改变生产制品。
+- Audit/crypto源码和专用测试已退役；private/regression支持库仍用于普通Logger故障与锁检测，不能进入安装产物。
 - 每次生产候选必须在精确提交上验证GCC/Clang、shared/static、ASan/UBSan、TSan、安装消费、制品隔离和平台门禁。旧提交上的成功不能移用。
 
 ## 运行与部署边界

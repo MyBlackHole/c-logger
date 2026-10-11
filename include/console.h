@@ -43,7 +43,7 @@ static inline console_config_t console_defaults_cpp(void)
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
 #endif
-/* Console shares the Logger/Audit process guard. Inherited child output returns
+/* Console shares the Logger process guard. Inherited child output returns
  * -1/ECHILD before stdio or mutex use; setters are no-ops with errno=ECHILD.
  * TTY predicates return 0 with errno=ECHILD. Exec before using a new runtime.
  * These are defensive errors, not a general async-signal-safe console API.

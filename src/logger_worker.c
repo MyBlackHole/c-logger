@@ -115,7 +115,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	size_t n;
 	int rc = 0;
 
-	/* 同步确认接口（Audit 也使用）必须在任何输出端看到部分内容前
+	/* 同步确认接口必须在任何输出端看到部分内容前
 	 * 拒绝格式错误或被截断的记录；普通日志和 worker 批次维持尽力语义。 */
 	if (force_sync) {
 		rc = logger_format_line_checked(l, m, line, sizeof(line), &n);

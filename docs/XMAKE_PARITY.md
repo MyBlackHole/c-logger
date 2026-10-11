@@ -3,7 +3,9 @@
 ## 状态
 
 当前 main 已移除 legacy fork helper、构建选项、示例和专用回归/CI job；下文对应条目仅记录历史迁移证据。
-raw fork 防御、普通可靠性测试和安装/制品验证仍保留。
+raw fork 防御、普通可靠性测试和安装/制品验证仍保留。Audit/crypto源码与测试已退役；下面按阶段记录
+的旧目标名、旧用例数和v1 ABI是历史记录，不是当前测试清单。当前权威为 `xmake.lua`、
+[TESTING.md](../TESTING.md)及[清理映射](../validation/AUDIT_TEST_RETIREMENT.md)。
 
 Xmake 当前是 **生产发布构建权威**。
 

@@ -5,11 +5,7 @@
 enum logger_fault_point {
 	LOGGER_FAULT_FILE_WRITE,
 	LOGGER_FAULT_FILE_FSYNC,
-	LOGGER_FAULT_FILE_RENAME,
-	LOGGER_FAULT_FILE_FTRUNCATE,
-	LOGGER_FAULT_STATE_WRITE,
-	LOGGER_FAULT_STATE_FSYNC,
-	LOGGER_FAULT_STATE_RENAME
+	LOGGER_FAULT_FILE_RENAME
 };
 /* Only the deliberately separate logger_test_support target has hooks.
  * Production macros erase call arguments too (including crash-point strings).

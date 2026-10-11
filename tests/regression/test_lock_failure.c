@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "audit_support.h"
+#include "support.h"
 #include "logger_internal.h"
 
 /* 故障注入只作用于触发 API 的测试线程，不干扰 worker 的真实锁操作。 */
@@ -8,7 +8,6 @@ static _Thread_local pthread_mutex_t *failed_mutex;
 static _Thread_local pthread_mutex_t *fail_unlock_mutex;
 static _Thread_local pthread_mutex_t *captured_mutex;
 static _Thread_local pthread_cond_t *fail_signal_cv;
-static _Thread_local int fail_after;
 static _Thread_local int capture_lock_after;
 static _Thread_local int fail_unlock_once;
 static _Thread_local int fail_signal_once;
@@ -27,14 +26,11 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 		captured_mutex = mu;
 		fail_unlock_mutex = mu;
 	}
-	if (fail_mutex == mu || fail_after > 0) {
-		if (fail_mutex == mu || --fail_after == 0) {
-			fail_mutex = NULL;
-			fail_after = 0;
-			failed_mutex = mu;
-			lock_failed = 1;
-			return EAGAIN;
-		}
+	if (fail_mutex == mu) {
+		fail_mutex = NULL;
+		failed_mutex = mu;
+		lock_failed = 1;
+		return EAGAIN;
 	}
 	int rc = __real_pthread_mutex_lock(mu);
 	if (!rc && failed_mutex == mu)
@@ -126,39 +122,6 @@ static int test_emit_lock_failure(void)
 			(unsigned long long)metrics.emitted_records,
 			(unsigned long long)metrics.failed_records,
 			metrics.first_error);
-		return 1;
-	}
-	return 0;
-}
-
-static int test_audit_operation_lock_failure(void)
-{
-	char dir[] = "/tmp/audit-lock-operation-XXXXXX";
-	enter_temp(dir);
-	CHECK(logger_process_ensure() == 0);
-	audit_config_t config = audit_test_config();
-
-	lock_failed = 0;
-	invalid_unlock = 0;
-	fail_after = 2;
-	errno = 0;
-	int rc = audit_init(&config);
-	int error = errno;
-	int had_invalid_unlock = invalid_unlock;
-	int log_created = access("app.audit.log", F_OK) == 0;
-	int state_created = access("app.audit.state", F_OK) == 0;
-	failed_mutex = NULL;
-	if (rc == 0)
-		(void)audit_shutdown_status();
-	audit_test_cleanup(dir);
-
-	if (!lock_failed || rc != -1 || error != EAGAIN || had_invalid_unlock ||
-	    log_created || state_created) {
-		fprintf(stderr,
-			"audit operation lock failure: lock=%d rc=%d errno=%d "
-			"invalid_unlock=%d log=%d state=%d\n",
-			lock_failed, rc, error, had_invalid_unlock, log_created,
-			state_created);
 		return 1;
 	}
 	return 0;
@@ -340,55 +303,6 @@ static int test_force_wake_lock_failure(void)
 	return 0;
 }
 
-static int test_audit_operation_unlock_failure(void)
-{
-	char dir[] = "/tmp/audit-lock-unlock-XXXXXX";
-	enter_temp(dir);
-	CHECK(logger_process_ensure() == 0);
-	audit_config_t config = audit_test_config();
-
-	lock_failed = 0;
-	unlock_failed = 0;
-	invalid_unlock = 0;
-	captured_mutex = NULL;
-	capture_lock_after = 2;
-	fail_unlock_once = 1;
-	int rc = audit_init(&config);
-	int error = errno;
-	int cancel_state = -1;
-	int cancel_state_rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
-						      &cancel_state);
-	int operation_lock_rc = captured_mutex ?
-		pthread_mutex_trylock(captured_mutex) : EINVAL;
-	int operation_lock_retained = operation_lock_rc == EBUSY;
-	if (operation_lock_rc == 0)
-		(void)pthread_mutex_unlock(captured_mutex);
-	int restore_cancel_rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,
-						       NULL);
-	int log_created = access("app.audit.log", F_OK) == 0;
-	int state_created = access("app.audit.state", F_OK) == 0;
-	audit_test_cleanup(dir);
-
-	if (!captured_mutex || !unlock_failed || lock_failed || invalid_unlock ||
-	    rc != -1 || error != EAGAIN ||
-	    cancel_state_rc || restore_cancel_rc ||
-	    cancel_state != PTHREAD_CANCEL_DISABLE || !operation_lock_retained ||
-	    log_created || state_created) {
-		fprintf(stderr,
-			"audit operation unlock failure: captured=%d unlock=%d "
-			"lock=%d invalid_unlock=%d rc=%d errno=%d "
-			"cancel_state=%d operation_lock_retained=%d "
-			"cancel_rc=%d restore_cancel_rc=%d "
-			"log=%d state=%d\n",
-			captured_mutex != NULL, unlock_failed, lock_failed,
-			invalid_unlock, rc, error, cancel_state,
-			operation_lock_retained, cancel_state_rc, restore_cancel_rc, log_created,
-			state_created);
-		return 1;
-	}
-	return 0;
-}
-
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
@@ -404,10 +318,6 @@ int main(int argc, char **argv)
 		return test_queue_notify_signal_failure();
 	if (!strcmp(argv[1], "force-wake"))
 		return test_force_wake_lock_failure();
-	if (!strcmp(argv[1], "audit"))
-		return test_audit_operation_lock_failure();
-	if (!strcmp(argv[1], "audit-unlock"))
-		return test_audit_operation_unlock_failure();
 	CHECK(!"unknown lock-failure scenario");
 	return 2;
 }

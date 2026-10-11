@@ -1,27 +1,22 @@
 #!/usr/bin/env bash
-# Historical Audit checks use the uninstalled compatibility archive.
-# Ordinary checked formatting below still exercises the production artifact.
+# Both formatter suites exercise the real production archive, without private
+# hooks or regression-support archives.
 set -euo pipefail
-build="${1:?usage: run_audit_format.sh BUILD_DIR [address,undefined]}"
+build="${1:?usage: run_logger_format.sh BUILD_DIR [address,undefined]}"
 san="${2:-}"
 mapfile -t libraries < <(find "$build" -type f -name liblogger.a)
 if [ "${#libraries[@]}" -ne 1 ]; then
     echo "expected exactly one production archive in $build" >&2
     exit 2
 fi
-mapfile -t audit_libraries < <(find "$build" -type f -name liblogger_regression_support.a)
-if [ "${#audit_libraries[@]}" -ne 1 ]; then
-    echo "expected exactly one uninstalled regression archive in $build" >&2
-    exit 2
-fi
 flags=()
 if [ -n "$san" ]; then
     flags+=("-fsanitize=$san" -fno-omit-frame-pointer)
 fi
-binary="$build/audit-format-regression"
+binary="$build/logger-format-regression"
 "${CC:-cc}" -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -DLOGGER_STATIC_DEFINE=1 -Iinclude -I"$build/generated" \
-    "${flags[@]}" tests/regression/test_audit_format.c "${audit_libraries[0]}" \
+    "${flags[@]}" tests/regression/test_logger_format.c "${libraries[0]}" \
     -pthread -Wl,--wrap=clock_gettime -Wl,--wrap=localtime_r \
     -Wl,--wrap=strftime -o "$binary"
 printf 'SOURCE_COMMIT=%s\n' "$(git rev-parse HEAD)"

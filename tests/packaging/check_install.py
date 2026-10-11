@@ -164,8 +164,7 @@ try:
             'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
         run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
             expected=0 if success else 1)
-    # Freeze the current Production-v1 source layout across C and C++ only.
-    # Pre-v1 headers are intentionally not a compatibility target.
+    # Freeze the current ABI 2 source layout across C and C++.
     layouts=[]
     for compiler,standard,language in [(a.cc,'c11','c'),(a.cxx,'c++11','c++')]:
         ex=work/('layout-%d'%counter)
