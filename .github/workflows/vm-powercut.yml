@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -63,18 +63,18 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Install QEMU, filesystem tools and guest kernel
+      - name: 安装 QEMU、文件系统工具与客户机内核
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 busybox-static cpio linux-image-virtual \
             e2fsprogs xfsprogs kmod zstd
 
-      - name: Build Xmake static test-only guest
+      - name: 构建 Xmake 静态链接的仅测试客户机
         shell: bash
         run: |
           set -euo pipefail
@@ -85,7 +85,7 @@ jobs:
           cp "$guest" vm_powercut_guest
           file vm_powercut_guest
 
-      - name: Force VM power cut and verify recovery
+      - name: 强制虚拟机断电并验证恢复
         shell: bash
         run: |
           set -euo pipefail
@@ -105,7 +105,7 @@ jobs:
             --point '${{ matrix.point }}' \
             --output vm-evidence
 
-      - name: Upload VM evidence
+      - name: 上传虚拟机验证证据
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -116,7 +116,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Upload failed rotation disks for diagnosis
+      - name: 上传轮转失败的磁盘以供诊断
         if: failure() && (startsWith(matrix.point, 'file_') || matrix.point == 'rotation_after_file_fsync')
         uses: actions/upload-artifact@v4
         with:

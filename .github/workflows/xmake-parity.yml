@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -55,18 +55,18 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure semantic ABI contract
+      - name: 配置语义 ABI 契约
         run: xmake f -m release --build_shared=n
 
-      - name: Build C and C++11 ABI contracts
+      - name: 构建 C 与 C++11 ABI 契约测试
         run: xmake -j2 current_abi_contract_c current_abi_contract_cpp
 
-      - name: Run C and C++11 ABI contracts
+      - name: 运行 C 与 C++11 ABI 契约测试
         run: |
           xmake run current_abi_contract_c
           xmake run current_abi_contract_cpp
@@ -80,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -88,12 +88,12 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure
+      - name: 配置构建
         run: |
           if [ "${{ matrix.kind }}" = shared ]; then
             xmake f -m release --build_shared=y
@@ -101,10 +101,10 @@ jobs:
             xmake f -m release --build_shared=n
           fi
 
-      - name: Build production artifact
+      - name: 构建生产产物
         run: xmake -j2 logger
 
-      - name: Locate artifact
+      - name: 定位产物
         id: artifact
         run: |
           version="$(cat VERSION)"
@@ -117,21 +117,21 @@ jobs:
           echo "path=$artifact" >> "$GITHUB_OUTPUT"
           file "$artifact"
 
-      - name: Verify fork exclusion checker fixtures
+      - name: 验证 fork 排除检查器的测试夹具
         if: matrix.kind == 'static'
         run: python3 tests/packaging/test_production_artifact.py -v
 
-      - name: Verify production isolation
+      - name: 验证生产隔离
         run: python3 scripts/check_production_artifact.py "${{ steps.artifact.outputs.path }}"
 
-      - name: Verify shared ABI
+      - name: 验证共享库 ABI
         if: matrix.kind == 'shared'
         run: >-
           python3 scripts/check_release_abi.py "${{ steps.artifact.outputs.path }}"
           --machine 'Advanced Micro Devices X86-64'
           --elf-class ELF64
 
-      - name: Verify shared version links
+      - name: 验证共享库版本链接
         if: matrix.kind == 'shared'
         run: |
           version="$(cat VERSION)"
@@ -147,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -155,15 +155,15 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure core tests
+      - name: 配置核心测试
         run: xmake f -m debug --build_shared=n --build_tests=y
 
-      - name: Run production-linked core tests
+      - name: 运行链接生产库的核心测试
         run: xmake test -j2
 
 
@@ -172,7 +172,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -180,15 +180,15 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure test-only support cases
+      - name: 配置仅测试支持用例
         run: xmake f -m release --build_shared=n --build_private_tests=y
 
-      - name: Run test-only support cases
+      - name: 运行仅测试支持用例
         run: xmake test -j1
 
 
@@ -197,7 +197,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -205,15 +205,15 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure auxiliary targets
+      - name: 配置辅助目标
         run: xmake f -m release --build_shared=n --build_regression_tests=y
 
-      - name: Build auxiliary tools and examples
+      - name: 构建辅助工具与示例
         run: >-
           xmake -j2
           bench_logger
@@ -226,7 +226,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -234,15 +234,15 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure regression support
+      - name: 配置回归测试支持
         run: xmake f -m release --build_shared=n --build_regression_tests=y
 
-      - name: Run regression-support cases
+      - name: 运行回归支持用例
         run: xmake test -j1
 
 
@@ -257,7 +257,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -265,12 +265,12 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure sanitized static suite
+      - name: 配置启用内存与未定义行为检查的静态库测试集
         run: |
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
             policies="build.sanitizer.address,build.sanitizer.undefined"
@@ -288,11 +288,11 @@ jobs:
       # CMake uses ctest -j2, but also assigns every case its own working
       # directory. Until Xmake has the same global isolation, serialize the
       # complete suite; the concurrency regressions still create real threads.
-      - name: Run sanitized static suite
+      - name: 运行启用内存与未定义行为检查的静态库测试集
         run: xmake test -j1
 
       # Sanitizer builds must keep the production archive free of test hooks.
-      - name: Verify sanitized production isolation
+      - name: 验证启用检查器的生产隔离
         shell: bash
         run: |
           set -euo pipefail
