@@ -36,12 +36,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -49,23 +49,23 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Prepare memory baseline
+      - name: 准备内存基线
         run: >-
           git worktree add ../queue-memory-baseline
           "$QUEUE_MEMORY_BASELINE_REF"
 
-      - name: Prepare tuning baseline
+      - name: 准备调优基线
         run: >-
           git worktree add ../queue-tuning-baseline
           "$QUEUE_TUNING_BASELINE_REF"
 
-      - name: Configure Xmake candidate
+      - name: 配置 Xmake 候选版本
         run: >-
           xmake f -m release -o build-queue-candidate
           --build_shared=n
           --build_regression_tests=y
 
-      - name: Build candidate benchmark
+      - name: 构建候选版本基准测试
         shell: bash
         run: |
           set -euo pipefail
@@ -75,29 +75,29 @@ jobs:
           echo "QUEUE_CANDIDATE_BIN=$candidate" >> "$GITHUB_ENV"
           file "$candidate"
 
-      - name: Configure memory baseline
+      - name: 配置内存基线
         run: >-
           cmake -S ../queue-memory-baseline -B build-queue-memory-baseline
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_SHARED_LIBS=OFF
 
-      - name: Build memory baseline benchmark
+      - name: 构建内存基线基准测试
         run: >-
           cmake --build build-queue-memory-baseline
           --target bench_matrix -j2
 
-      - name: Configure tuning baseline
+      - name: 配置调优基线
         run: >-
           cmake -S ../queue-tuning-baseline -B build-queue-tuning-baseline
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_SHARED_LIBS=OFF
 
-      - name: Build tuning baseline benchmark
+      - name: 构建调优基线基准测试
         run: >-
           cmake --build build-queue-tuning-baseline
           --target bench_matrix -j2
 
-      - name: Compare memory and throughput
+      - name: 比较内存占用与吞吐量
         continue-on-error: ${{ github.event_name == 'pull_request' }}
         run: >-
           python3 scripts/compare_queue_benchmark.py
@@ -114,7 +114,7 @@ jobs:
           --min-memory-reduction 50
           --out-dir benchmark-comparison
 
-      - name: Publish summary
+      - name: 发布摘要
         if: always()
         run: |
           if [ -f benchmark-comparison/summary.md ]; then
