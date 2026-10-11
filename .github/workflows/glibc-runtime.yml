@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install build and inspection tools
+      - name: 安装构建与检查工具
         shell: bash
         run: |
           set -euo pipefail
@@ -57,12 +57,12 @@ jobs:
             python3 binutils
           rm -rf /var/lib/apt/lists/*
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Enable Xmake in root-owned container
+      - name: 在 root 所有的容器中启用 Xmake
         shell: bash
         run: |
           set -euo pipefail
@@ -85,7 +85,7 @@ jobs:
           chmod +x "$wrapper/xmake"
           echo "$wrapper" >> "$GITHUB_PATH"
 
-      - name: Record userland baseline
+      - name: 记录用户态环境基线
         id: baseline
         shell: bash
         run: |
@@ -112,7 +112,7 @@ jobs:
           } > platform-evidence.txt
           cat platform-evidence.txt
 
-      - name: Run production-linked core tests
+      - name: 运行链接生产库的核心测试
         shell: bash
         run: |
           set -euo pipefail
@@ -127,7 +127,7 @@ jobs:
           JOBS=2 \
             scripts/check.sh fast
 
-      - name: Locate and inspect production artifact
+      - name: 定位并检查生产产物
         id: artifact
         shell: bash
         run: |
@@ -144,7 +144,7 @@ jobs:
           sha256sum "$artifact" | tee -a platform-evidence.txt
           python3 scripts/check_production_artifact.py "$artifact"
 
-      - name: Check shared GLIBC ceiling
+      - name: 检查共享库 GLIBC 版本上限
         if: matrix.kind == 'shared'
         shell: bash
         run: |
@@ -164,7 +164,7 @@ jobs:
             readelf --version-info "$artifact"
           } >> platform-evidence.txt
 
-      - name: Verify installed C and C++ consumers
+      - name: 验证安装后的 C 与 C++ 消费端
         shell: bash
         run: |
           set -euo pipefail
@@ -178,7 +178,7 @@ jobs:
             --cmake cmake \
             --xmake xmake
 
-      - name: Upload platform evidence
+      - name: 上传平台验证证据
         if: always()
         uses: actions/upload-artifact@v4
         with:

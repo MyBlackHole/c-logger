@@ -25,16 +25,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
           echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: ${{ env.XMAKE_VERSION }}
-      - name: Run complete static correctness suite
+      - name: 运行完整静态库正确性测试集
         run: |
           xmake f -m release -o core-build \
             --build_shared=n \
@@ -42,23 +42,23 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y
           xmake test -j1
-      - name: Production Logger formatting regression
+      - name: 运行生产 Logger 格式化回归测试
         shell: bash
         run: |
           set -euo pipefail
           xmake -j2 logger
           bash tests/regression/run_logger_format.sh core-build | tee core-build/logger-format.log
-      - name: Worker startup production regression
+      - name: 运行工作线程启动的生产回归测试
         shell: bash
         run: |
           set -euo pipefail
           bash tests/regression/run_worker_startup.sh core-build | tee core-build/worker-startup.log
-      - name: Worker failure production regression
+      - name: 运行工作线程故障的生产回归测试
         shell: bash
         run: |
           set -euo pipefail
           bash tests/regression/run_worker_failure.sh core-build | tee core-build/worker-failure.log
-      - name: Preserve exact source and regression evidence
+      - name: 保留精确源码快照与回归证据
         if: always()
         shell: bash
         run: |
@@ -83,16 +83,16 @@ jobs:
         sanitizer: [address-undefined, thread]
     steps:
       - uses: actions/checkout@v5
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
           echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: ${{ env.XMAKE_VERSION }}
-      - name: Configure sanitizer suite
+      - name: 配置内存与未定义行为检查测试集
         shell: bash
         run: |
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
@@ -106,15 +106,15 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
             --policies="$policies"
-      - name: Run sanitized static suite
+      - name: 运行启用内存与未定义行为检查的静态库测试集
         run: xmake test -j1
-      - name: Production Logger formatting ASan and UBSan regression
+      - name: 运行生产 Logger 格式化的 ASan 与 UBSan 回归测试
         if: matrix.sanitizer == 'address-undefined'
         run: |
           xmake -j2 logger
           bash tests/regression/run_logger_format.sh sanitizer-build address,undefined
 
-      - name: Worker startup sanitized production regression
+      - name: 运行启用检查器的工作线程启动生产回归测试
         shell: bash
         run: |
           set -euo pipefail
@@ -125,7 +125,7 @@ jobs:
           fi
           xmake -j2 logger
           bash tests/regression/run_worker_startup.sh sanitizer-build "$sanitizer"
-      - name: Worker failure sanitized production regression
+      - name: 运行启用检查器的工作线程故障生产回归测试
         shell: bash
         run: |
           set -euo pipefail
@@ -141,20 +141,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
           echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: ${{ env.XMAKE_VERSION }}
-      - name: Build shared production artifact
+      - name: 构建共享库生产产物
         run: |
           xmake f -m release -o shared-build --build_shared=y
           xmake -j2 logger
-      - name: Verify production and ABI surface
+      - name: 验证生产产物与 ABI 接口
         shell: bash
         run: |
           set -euo pipefail
