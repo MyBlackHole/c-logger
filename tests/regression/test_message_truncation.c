@@ -110,7 +110,7 @@ int main(int argc, char **argv)
 			CHECK(strstr(line, "~") != NULL);
 			CHECK(strstr(line, "small-body\n") != NULL);
 		}
-		/* Source alone can exhaust the synchronous line too. */
+		/* 仅来源信息也能耗尽同步行容量。 */
 		logger_log(log, LOGGER_INFO, "short", text, 1, text, "small-body");
 		flush(log, mode);
 		clearerr(file);
@@ -124,11 +124,11 @@ int main(int argc, char **argv)
 			CHECK(strstr(line, "~") != NULL);
 			CHECK(strstr(line, "small-body\n") != NULL);
 		}
-		/* The acknowledged path must reject metadata-induced line overflow. */
+		/* 带确认路径必须拒绝元数据导致的行溢出。 */
 		CHECK(logger_log_sync_status(log, LOGGER_INFO, text, text, 1, text,
 					    "small-body") == -EOVERFLOW);
 	}
-	/* C locale cannot encode this surrogate: formatting failure emits nothing. */
+	/* C 区域设置无法编码此代理码点：格式化失败不输出任何内容。 */
 	if (!strcmp(mode, "global") || !strcmp(mode, "bootstrap"))
 		logger_global_write(LOGGER_INFO, "truncation", NULL, 0, NULL,
 				    "%lc", (wint_t)0xd800);

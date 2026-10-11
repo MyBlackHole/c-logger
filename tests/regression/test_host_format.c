@@ -36,14 +36,14 @@ int main(void)
 			CHECK(n < cap && b[n + 1] == 0);
 		if (cap > 1)
 			CHECK(n > 0 && b[n] == '\n');
-		/* Small output buffers reserve LF+NUL; visibly mark truncation. */
+		/* 小输出缓冲区为 LF+NUL 预留空间；以可见标记表示截断。 */
 		if (cap >= 3 && cap < 14)
 			CHECK(b[n - 1] == '~');
 		if (cap >= 14 && cap < 100)
 			CHECK(!memcmp(b + n - 12, " [truncated]", 12));
 		if (cap == LOGGER_LINE_MAX) {
 			CHECK(n <
-			      cap - 1); /* all bounded source/context/message fit */
+			      cap - 1); /* 全部有界来源、上下文和消息均可容纳 */
 			CHECK(b[n - 1] == 'X');
 		}
 	}

@@ -437,7 +437,7 @@ int main(int argc, char **argv)
 	logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 
-	/* Controller 持有的候选/退役对象：生命周期尚未发布。 */
+	/* 控制方持有的候选或退役对象：生命周期尚未发布。 */
 	logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_EMIT, &c);
 	logger_lockdep_release(LOGGER_LOCK_INSTANCE_EMIT, &c);

@@ -16,7 +16,7 @@ static void *produce(void *arg)
 	int id = *(int *)arg;
 	logger_message_t m = { 0 };
 	m.pid = id;
-	/* 让并发 MPSC 回归真实覆盖 long-message bitmap allocator。 */
+	/* 让并发 MPSC 回归真实覆盖长消息位图分配器。 */
 	memset(m.text, 'P', 700);
 	m.text[700] = '\0';
 	m.text_len = 700;
@@ -45,7 +45,7 @@ static void *consume(void *arg)
 			CHECK(m.pid >= 0 && m.pid < PRODUCERS);
 			CHECK(m.line ==
 			      last[m.pid] +
-				      1); /* no duplication, loss, or reordering per producer */
+				      1); /* 每个生产者无重复、丢失或乱序 */
 			last[m.pid] = m.line;
 			++consumed;
 			continue;
@@ -95,7 +95,7 @@ static void check_compact_storage(void)
 	}
 	CHECK(logger_queue_depth(&q) == q.spill_cap);
 	CHECK(logger_queue_depth(&q) < q.cap);
-	/* 没有 consumer 准备睡眠时，producer 不应该执行任何 cond signal。 */
+	/* 没有消费者准备睡眠时，生产者不应该执行任何条件信号通知。 */
 	CHECK(logger_queue_producer_wake_signals(&q) == 0);
 
 	in.line = 9999;

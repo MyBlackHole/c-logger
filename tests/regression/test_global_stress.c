@@ -1,9 +1,9 @@
 #define _GNU_SOURCE
 #include "global_support.h"
 
-/* The real-DSO variant cannot inspect private implementation counters. It
- * checks observable descriptor cleanup and shutdown state instead; static
- * white-box tests continue to assert the original private counter. */
+/* 真实 DSO 变体不能检查私有实现计数器。它改为检查可观察的
+ * 描述符清理与关闭状态；静态白盒测试继续断言原私有计数器。
+ */
 #ifdef LOGGER_PUBLIC_ABI_TEST
 #include <dirent.h>
 static unsigned initial_fds;
@@ -120,7 +120,7 @@ static void lifetimes(int async)
 				      (void *)i));
 	int br = pthread_barrier_wait(&run_barrier);
 	CHECK(br == 0 || br == PTHREAD_BARRIER_SERIAL_THREAD);
-	/* A fast controller loop must not finish before test participants ran. */
+	/* 快速控制方循环不得在测试参与者运行前结束。 */
 	for (int i = 0; i < 8; ++i)
 		wait_flag(&ready[i]);
 	for (int round = 0; round < 40; ++round) {

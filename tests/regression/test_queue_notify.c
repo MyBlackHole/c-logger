@@ -2,19 +2,18 @@
 #include "logger_internal.h"
 #include "support.h"
 
-/* No library hook: wrap the real pthread wait entry at link time. */
+/* 无库钩子：在链接时包装真实 pthread 等待入口。 */
 static _Atomic int in_gap, release_wait, intercepted, fail_wait;
 int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (!atomic_exchange(&intercepted, 1)) {
 		atomic_store(&in_gap, 1);
-		wait_flag(
-			&release_wait); /* worker still holds the predicate mutex */
+		wait_flag(&release_wait); /* 工作线程仍持有谓词互斥锁 */
 	}
 	int rc = __real_pthread_cond_wait(cv, mu);
 	if (!rc && atomic_exchange(&fail_wait, 0))
-		return EIO; /* mutex has been reacquired, matching cond-wait return semantics */
+		return EIO; /* 已重新获取互斥锁，与条件等待返回语义一致 */
 	return rc;
 }
 static void *producer(void *p)
@@ -67,10 +66,9 @@ int main(int argc, char **argv)
 	CHECK(logger_queue_producer_wake_signals(&l->q) == 0);
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, producer, l) == 0);
-	/*
-	 * 只等待 publication，不等 producer return：
-	 * producer 已看到 consumer_waiting=1，但此时 worker 仍持有 wait_mu，
-	 * 所以 producer 的少数 slow path 会阻塞到 cond_wait 原子释放 mutex。
+	/* 只等待发布，不等生产者返回：
+	 * 生产者已看到 consumer_waiting=1，但此时工作线程仍持有 wait_mu，
+	 * 所以生产者的少数慢路径会阻塞到 cond_wait 原子释放互斥锁。
 	 */
 	int published = 0;
 	for (int i = 0; i < 5000; ++i) {
@@ -94,7 +92,7 @@ int main(int argc, char **argv)
 		}
 		nap_ms();
 	}
-	/* Record the result BEFORE shutdown sends a rescue notification. */
+	/* 在关闭发送补救通知之前记录结果。 */
 	logger_destroy(l);
 	CHECK(file_contains("out.log", "last-before-idle"));
 	CHECK(output_without_rescue);
