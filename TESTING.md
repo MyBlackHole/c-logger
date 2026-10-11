@@ -1,249 +1,93 @@
-# Testing
+# Logger/Console 测试与发布门禁
 
-Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` 注册，CI 与本地开发使用同一
-目标/测试 定义。下游安装包仍使用真实 CMake 消费方 验证 `find_package(Logger ...)`，
-但项目自身不再依赖 CTest。
+Xmake 是项目构建与测试的唯一权威，目标和用例在 `xmake.lua` 注册。
+执行前导出 `LOGGER_PROJECT_VERSION="$(cat VERSION)"`。
+下游 CMake 项目只验证安装消费，不是本项目的第二套构建系统。
 
-## 基本约束
+## 链接边界
 
-运行 Xmake 前先导出唯一版本源：
+`logger` 是真实生产产物，故障注入和锁依赖诊断默认关闭。
+`logger_test_support` 使用同组 Logger/Console 源码和测试故障钩子；
+`logger_regression_support` 使用同组源码和链接期替换进行白盒验证。
+后两者不安装、不进入发布包。所有配置均不编译 Audit，测试开关不能改变产品边界。
+
+生产及测试使用 GNU C11，警告按错误处理；生产源码禁止可变长数组，并有单函数
+栈预算检查。编译通过不等于生命周期、持久性或并发协议已经得到证明。
+
+## 常用入口
 
 ```sh
 export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-```
-
-默认测试构建使用 Linux/ELF、GNU C11、`-Wall -Wextra -Wpedantic -Werror`。production、
-fault/crash 和 白盒回归 分离：
-
-- `logger`：真实 生产产物，故障注入 关闭；
-- `logger_test_support`：仅测试使用，包含 `src/logger_fault.c`；
-- `logger_regression_support`：同源 white-box archive，用于 GNU ld `--wrap`
-  与内部 确定性回归。
-
-后两者永不安装，也不进入 XPack。
-
-## 本地入口
-
-### Fast
-
-仅运行直接链接 production `logger` 的 核心测试：
-
-```sh
 scripts/check.sh fast
-```
-
-等价于：
-
-```sh
-xmake f -m release -o build \
-  --build_shared=n \
-  --build_tests=y \
-  --build_private_tests=n \
-  --build_regression_tests=n
-xmake test -j4
-```
-
-### 生产构建
-
-运行当前 静态库/完整测试面，包括 core、private 故障/崩溃支持 与全部 regression：
-
-```sh
 scripts/check.sh production
-```
-
-完整 suite 默认串行执行。部分历史测试共享固定文件名或工作目录，而测试内部的真实并发、
-取消、fork 和 压力测试 行为不受串行 运行器 影响。
-
-### 专项崩溃测试
-
-9 个 持久性 进程崩溃用例 使用 Xmake 原生 `process-crash` 分组：
-
-```sh
 scripts/check.sh crash
-# 或
-xmake test -g process-crash -j1
-```
-
-集合固定为：
-
-- 4 个 Audit 检查点/fsync 切断点；
-- 1 个 Audit 轮转 崩溃恢复；
-- 4 个 file 轮转 switch 切断点。
-
-专用 `crash-recovery` CI 会 共享库/静态库 各执行 3 次，并用
-`scripts/check_crash_matrix.py` 从实际 Xmake log 核对精确集合，输出 JSON、JUnit 和原始日志。
-
-### 旧版 fork 兼容性
-
-默认 发布 不编译 旧版辅助接口。需要受控兼容测试时：
-
-```sh
 scripts/check.sh legacy-fork
 ```
 
-或显式：
+`fast` 运行生产库链接的公共测试；`production` 运行静态库完整核心、私有和白盒
+测试。完整集合串行调度，测试内部仍有真实线程、取消、fork 和并发交错。
+`legacy-fork` 单独开启兼容辅助接口；默认产品不包含该接口。
+历史 unit/integration/concurrency/reliability/security/host-owned 参数运行完整集合，
+不以猜测的筛选规则默默减少覆盖面。
+
+## 安全检测
 
 ```sh
-xmake f -m release -o build-legacy \
-  --build_shared=n \
-  --legacy_fork=y \
-  --build_regression_tests=y
-xmake test 'fork_reinit_regression/*' -j1
-```
-
-## 旧 profile 参数
-
-历史 `scripts/check.sh unit/integration/concurrency/reliability/security/host-owned/crypto`
-依赖 CTest 多标签。Xmake 的 test 分组 是单组语义，无法无损表达同一 case 同时属于多个标签。
-
-为避免旧命令变成“看起来成功但实际少跑”的兼容陷阱，这些参数当前仍接受，但会运行**完整
-Xmake suite 的保守超集**。后续只有在真实开发工作流需要时，才新增 Xmake 原生 focused 分组；
-不会为了复刻旧标签体系重新维护第二份测试分类表。
-
-## Sanitizer 检测
-
-CI 对完整 default-static suite 运行两组 Sanitizer：
-
-ASan + UBSan：
-
-```sh
-xmake f -m debug -o build-asan \
-  --build_shared=n \
-  --build_tests=y \
-  --build_private_tests=y \
-  --build_regression_tests=y \
+xmake f -m debug -o build-asan --build_shared=n \
+  --build_tests=y --build_private_tests=y --build_regression_tests=y \
   --policies=build.sanitizer.address,build.sanitizer.undefined
 xmake test -j1
 ```
 
-TSan：
+线程检测使用同一默认静态配置，将 policies 替换为 `build.sanitizer.thread`。
+Sanitizer 配置不取消内存生命周期、错误传播或普通文件后端用例。
+受控 fork 辅助接口要求进程真正单线程；不能把 Sanitizer 自带后台线程忽略后
+声称满足这一前提，其兼容测试由独立配置运行。
 
-```sh
-xmake f -m debug -o build-tsan \
-  --build_shared=n \
-  --build_tests=y \
-  --build_private_tests=y \
-  --build_regression_tests=y \
-  --policies=build.sanitizer.thread
-xmake test -j1
-```
+## 共享库、安装和 ABI
 
-Sanitizer 后仍对生成的 production `liblogger.a` 运行
-`scripts/check_production_artifact.py`，确保 test hook 没有进入生产产物。
+共享库完整测试使用 `--build_shared=y` 并开启上述三类测试。
+必须覆盖真实 DSO 观察面、dlopen/dlclose、独立 SDK、全局代次与 Syslog。
+白盒 `--wrap` 用例链接同源静态支持库，不能冒称拦截了真实 DSO 的内部调用。
 
-## 共享库集成
+静态、共享 XPack 产物均验证真实安装和迁移后的路径：独立 C/C++11 CMake
+消费方、pkg-config、PIC 插件、精确版本/组件拒绝、公共头文件和默认值。
+共享库严格匹配 SONAME 2、`LOGGER_2.0` 和 `abi/logger-2.0.symbols`。
+独立 v2 C/C++ 契约检查结构布局、数值及函数类型；冻结的 v1 文件原样保留，
+历史快照检查不应被修改成当前 v2 断言。
 
-共享库配置 除 生产库链接 核心测试 外还覆盖真实 DSO 边界，包括：
+`check_production_artifact.py` 检查全部符号，包括隐藏共享符号和静态成员，
+禁止 Audit、测试故障钩子或密码学存储实现混入产品。不能只隐藏导出后宣称功能移除。
 
-- 共享库 Syslog 后端；
-- global shared 压力测试；
-- frozen v1 公开头文件 消费方；
-- `dlopen/dlclose` 生命周期；
-- installed package 消费方。
+## 普通文件日志的崩溃验证
 
-需要完整 shared suite：
+`process-crash` 分组有 6 个切点：
+`before_file_fsync`、`after_file_fsync`、
+`file_after_archive_rename`、`file_after_archive_dirsync`、
+`file_after_active_open`、`file_after_active_dirsync`。
 
-```sh
-xmake f -m release -o build-shared-tests \
-  --build_shared=y \
-  --build_tests=y \
-  --build_private_tests=y \
-  --build_regression_tests=y
-xmake test -j1
-```
+先持久化十条带独立 ID 的基线记录，再让新进程在指定切点终止。
+重启后检查每条基线记录完整、存在且只出现一次，并验证继续追加不会破坏基线。
+`check_crash_matrix.py` 从实际运行日志核验精确用例集合，输出 JSON/JUnit。
+未确认写入可以存在、缺失或不完整；不能把它当成承诺恢复的业务事务。
 
-white-box `--wrap` regression 即使在 共享库配置 中也链接 同源 static
-`logger_regression_support`；只有需要验证真实 DSO 观察面的 case 才直接链接 production shared
-library。不能把 static wrapper test 误称为 DSO 内部拦截。
+QEMU 断电框架使用同样的普通 Logger 记录，通过杀死 QEMU、同盘重启验证
+ext4/XFS。完整矩阵有 7 个切点（上述 6 个加 acknowledged），PR 选择其中
+同步后和归档目录同步后的 2 个切点，在两个文件系统执行。
+这不是任意物理磁盘、RAID/HBA、易失缓存或其他挂载配置的掉电认证。
+最低内核工作流另行验证 Linux 5.10 中的文件创建、同步和轮换行为。
 
-## QEMU 断电
+## 性能和可观测性
 
-`.github/workflows/vm-powercut.yml` 构建 static test-only `vm_powercut_guest`，对 10 个 cut
-point 在 ext4 与 XFS 两种 raw 文件系统 image 上执行真实 QEMU SIGKILL、同盘重启、恢复、
-追加与 Audit chain verify。
+当前 `bench_matrix` 用 Xmake 构建；历史基准仍使用其冻结提交的原构建系统，
+不以新规则重解释旧数据。吞吐、时延和内存比较必须说明配置和测量条件。
 
-覆盖：
+保留队列满、丢弃/同步回退、缓冲耗尽、后端写入/同步失败、工作线程退出、
+刷新水位和全局代次等现有故障用例。诊断数据通过真实故障核验，不由测试伪造计数。
+资源转移与销毁变更必须有失败覆盖；“测试成功”不能替代锁序和最终释放关系的证明。
 
-- acknowledged baseline；
-- `before_audit_fsync` / `after_audit_fsync`；
-- `before_state_rename` / `after_state_rename` / `after_checkpoint_commit`；
-- `file_after_archive_rename` / `file_after_archive_dirsync`；
-- `file_after_active_open` / `file_after_active_dirsync`。
+## 审计移除的验收边界
 
-这证明 GitHub 运行器 上 virtual x86_64 + raw ext4/XFS + QEMU 存储路径的恢复行为，不替代
-真实服务器断电、RAID/HBA/NVMe/SATA 易失缓存、实际目标 挂载/存储栈 或最低
-支持 内核 的验收。
-
-## Queue 基准测试
-
-当前 candidate 的 `bench_matrix` 由 Xmake 构建。两个冻结历史 baseline commit 继续用各自
-commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用今天的构建描述重解释过去数据。
-
-`queue-benchmark` CI 保持原线程数、record size、重复次数、memory reduction threshold 与比较
-脚本不变。
-
-## 安装与发布包验证
-
-发布验证 对 共享库/静态库 两种 XPack 都执行：
-
-1. 完整 Xmake suite；
-2. 生产产物 isolation；
-3. shared ELF ABI / SONAME / 符号版本 检查；
-4. XPack TGZ + SHA-256；
-5. 解包后的 relocation；
-6. 独立 C/C++11 CMake 消费方；
-7. PIC SDK 模块；
-8. pkg-config 消费方；
-9. 精确版本/组件s 失败关闭；
-10. frozen 旧头文件 与 public layout/default 兼容。
-
-`examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
-测试资产，不代表项目重新依赖 CMake 构建。
-
-## 工程 gate
-
-测试通过不是唯一准入条件。较大的 queue、工作线程、backend、lifecycle、所有者ship、locking 或
-## Observability regression
-
-统一 diagnostics 通过现有真实故障场景验证，而不是单独伪造计数：
-
-- queue full：检查 current depth/capacity、完成积压 与 saturation；
-- DROP / SYNC fallback：检查独立 lifetime observation flag；
-- long-message spill exhaustion：检查 in-use/capacity/exhaustion；
-- backend write/fsync failure：检查 failed_records 与 sticky first_error；
-- File sink：检查 write/writev 系统调用、部分字节、data/dir fsync、轮转、重新打开 分类计数；
-- flush 后：queue depth、spill in-use、完成积压 回到 0；
-- global generation：diagnostics 与 metrics 一样受 pin/stale-generation gate 保护；
-- explicit reentry：同线程嵌套读取被 EDEADLK 拒绝并清零输出；
-- installed 消费方：使用安装后的 公开头文件/library 实际调用 diagnostics。
-
-public API 修改还必须遵守：
-
-- `docs/ARCHITECTURE_INVARIANTS.md`
-- `docs/RESOURCE_OWNERSHIP.md`
-- `docs/REFCOUNTING.md`
-- `docs/RESOURCE_CLEANUP.md`
-- `docs/LOCKING.md`
-- `docs/LOCK_MATRIX.md`
-- `docs/CONCURRENCY.md`
-- `docs/ERROR_HANDLING.md`
-- `docs/LIFECYCLE.md`
-
-新增资源获取/转移路径应有对应失败覆盖；passing test 不能替代 所有者ship、锁顺序和最终释放
-关系的可证明性。
-
-## Cancellation 边界
-
-调用方处于 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 时进入 Logger/Console
-不在支持契约内。支持边界是 延迟取消，或调用前已禁用 cancellation。
-restore-policy regression 会验证原先 disabled 的 调用方 仍保持 disabled 且 cancellation type
-不被破坏；构造函数 契约 会拒绝 enabled asynchronous cancellation。
-
-
-## Audit OFD 单写者锁回归
-
-`audit_ofd_close_isolation` 验证同进程对 `.audit.lock` 的无关
-`open()/close()` 不会释放 Audit 正在持有的租约；
-`audit_ofd_posix_conflict` 验证旧 POSIX `F_SETLK` writer 与新的 OFD writer
-仍然互斥；`audit_ofd_unsupported` 对私有 writer-lock helper 注入
-`EINVAL`，要求转换为 `ENOTSUP`，禁止回退到进程关联锁。
+只删除对应已移除功能的 Audit 专用用例；混合测试中的普通 Logger 检查保留。
+不能通过停止共享库测试、关闭 Sanitizer、屏蔽缺失符号或删掉文件故障测试使 CI 变绿。
+合并开发 PR 不创建发布标签或发布二进制；正式发布另由人工触发完整流程。

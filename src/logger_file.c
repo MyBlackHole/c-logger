@@ -330,12 +330,14 @@ int logger_file_sync(logger_file_t *f)
 {
 	if (!f || f->fd < 0)
 		return -EBADF;
-	logger_fault_crash_if_requested("before_audit_fsync");
+	logger_fault_crash_if_requested("before_file_fsync");
 	int rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (!rc && f->detached)
 		rc = -(f->switch_error ? f->switch_error : EIO);
+	if (!rc)
+		logger_fault_crash_if_requested("after_file_fsync");
 	f->metrics.last_error = rc < 0 ? -rc : 0;
 	return rc;
 }

@@ -9,12 +9,12 @@ extern "C" {
  * LOGGER_ENABLE_LEGACY_FORK_HELPER=ON（保留原有语义）。
  * 优先采用宿主负责进程创建、显式管理实例生命周期的模型。 */
 /* 面向已经静默的 Linux 应用执行不带 exec 的受控 fork。
- * 进入前：停止/等待退出每一个可能使用本库的应用线程；销毁**全部**显式 logger_t 实例并关闭 Audit。
+ * 进入前：停止/等待退出每一个可能使用本库的应用线程；销毁**全部**显式 logger_t 实例。
  * 只允许可选默认 Logger 及其工作线程仍然存在。本调用期间，不得在线程/信号/atfork 处理器中
  * 创建线程或使用本库。其他库也必须静默，并允许单线程 fork/继续执行。
  *
  * 本函数会在 fork **之前**排空/同步/销毁默认 Logger，检查 /proc/self/task 是否已经达到单线程边界，
- * 然后调用 fork()。父、子返回分支都可以调用 logger_init/create、console_init 和 audit_init。
+ * 然后调用 fork()。父、子返回分支都可以调用 logger_init/create、console_init。
  * 父子必须分别显式重新初始化；旧实例不会复用。子进程中绝不会重置运行时计数器/锁。
  * 子进程请求上下文会清空；父进程请求上下文和 Console 配置保留。
  *

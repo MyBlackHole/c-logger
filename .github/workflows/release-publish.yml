@@ -2,12 +2,6 @@ name: release-publish
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "VERSION"
-      - "docs/RELEASE_NOTES_*.md"
-      - ".github/workflows/release-publish.yml"
 
 permissions:
   contents: write

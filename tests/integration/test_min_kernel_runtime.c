@@ -1,12 +1,10 @@
 #define _GNU_SOURCE
-#include <audit.h>
 #include <logger.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/random.h>
 #include <unistd.h>
 
 #define CHECK(expr)                                                        \
@@ -47,48 +45,20 @@ static int rotation_check(const char *path)
 	return 0;
 }
 
-static int audit_check(const char *dir, const char *name)
-{
-	char active[4096], state[4096], lock[4096];
-	CHECK(snprintf(active, sizeof(active), "%s/%s.audit.log", dir, name) > 0);
-	CHECK(snprintf(state, sizeof(state), "%s/%s.audit.state", dir, name) > 0);
-	CHECK(snprintf(lock, sizeof(lock), "%s/%s.audit.lock", dir, name) > 0);
-	(void)unlink(active);
-	(void)unlink(state);
-	(void)unlink(lock);
-
-	audit_config_t c = AUDIT_DEFAULT_CONFIG();
-	c.log_dir = dir;
-	c.name = name;
-	c.rotation.mode = LOGGER_ROTATE_NONE;
-	CHECK(audit_init(&c) == 0);
-
-	audit_event_t e = { 0 };
-	e.phase = AUDIT_PHASE_RESULT;
-	e.event = "MIN_KERNEL";
-	e.actor = "ci";
-	e.source = "qemu";
-	e.resource = name;
-	e.operation = "validate";
-	e.result = AUDIT_SUCCESS;
-	CHECK(audit_write(&e) == 0);
-	CHECK(audit_shutdown_status() == 0);
-	CHECK(audit_verify_file(active) == 0);
-	return 0;
-}
-
 int main(int argc, char **argv)
 {
 	if (argc != 5)
 		return 2;
 
-	unsigned char random[32];
-	CHECK(getrandom(random, sizeof(random), 0) == (ssize_t)sizeof(random));
-
 	CHECK(rotation_check(argv[1]) == 0);
 	CHECK(rotation_check(argv[2]) == 0);
-	CHECK(audit_check(argv[3], "min-kernel-ext4") == 0);
-	CHECK(audit_check(argv[4], "min-kernel-xfs") == 0);
+	char path[4096];
+	int n = snprintf(path, sizeof(path), "%s/runtime-probe.log", argv[3]);
+	CHECK(n > 0 && (size_t)n < sizeof(path));
+	CHECK(rotation_check(path) == 0);
+	n = snprintf(path, sizeof(path), "%s/runtime-probe.log", argv[4]);
+	CHECK(n > 0 && (size_t)n < sizeof(path));
+	CHECK(rotation_check(path) == 0);
 
 	puts("MIN_KERNEL_RUNTIME_PROBE_OK");
 	return 0;

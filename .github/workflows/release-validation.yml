@@ -8,7 +8,7 @@ on:
       - "LICENSE"
       - "xmake.lua"
       - "include/**"
-      - "abi/logger-1.0.symbols"
+      - "abi/logger-2.0.symbols"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/installed_consumer/**"
@@ -65,11 +65,11 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
 
-      - name: Verify Production v1 semantic ABI contract
+      - name: Verify Logger/Console ABI 2 semantic contract
         run: |
-          xmake -j2 v1_abi_contract_c v1_abi_contract_cpp
-          xmake run v1_abi_contract_c
-          xmake run v1_abi_contract_cpp
+          xmake -j2 v2_abi_contract_c v2_abi_contract_cpp
+          xmake run v2_abi_contract_c
+          xmake run v2_abi_contract_cpp
 
       - name: Run complete Xmake release suite
         run: xmake test -j1

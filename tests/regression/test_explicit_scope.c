@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include "global_support.h"
 #include "console.h"
-#include "audit.h"
 #include <dirent.h>
 #include <stdarg.h>
 #include <sys/socket.h>
@@ -64,7 +63,6 @@ static void nested_call(void)
 	logger_config_t cfg = config_for("nested.log", 0);
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	logger_context_t ctx = { .request_id = "nested" };
-	audit_status_t audit;
 	errno = 0;
 	if (!strcmp(nested, "log"))
 		LOGGER_INFO(log_instance, "test", "nested");
@@ -137,10 +135,6 @@ static void nested_call(void)
 		CHECK(logger_shutdown_status() == -1);
 	else if (!strcmp(nested, "global-write"))
 		LOG_INFO("nested global");
-	else if (!strcmp(nested, "audit"))
-		CHECK(audit_shutdown_status() == -1);
-	else if (!strcmp(nested, "audit-status"))
-		CHECK(audit_get_status(&audit) == -1);
 	else
 		CHECK(!"unknown nested API");
 	CHECK(errno == EDEADLK);

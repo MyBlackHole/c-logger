@@ -40,7 +40,7 @@ public API/UAPI/ABI freeze
 - `OWNERSHIP.md`：ownership/lifetime 图，主要由 #102 维护。
 - `LOCKING.md`：锁职责、顺序与 lockdep-style contract，由 #103 维护。
 - `MEMORY_MODEL.md`：C11 memory model、publication 与 lockless proof，由 #103 维护。
-- `AUDIT_TRANSACTION_SEMANTICS.md`：当前 Audit 事务字段的关联语义、验证边界与未来严格配对的前置条件。
+- `AUDIT_REMOVAL.md`：审计功能移除、生产产物一致性与验证边界。
 
 ## 当前状态
 

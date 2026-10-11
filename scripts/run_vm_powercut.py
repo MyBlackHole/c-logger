@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot a minimal Linux guest twice, killing QEMU after acknowledged audit writes."""
+"""Boot a minimal Linux guest twice, killing QEMU after acknowledged Logger writes."""
 
 import argparse
 import gzip
@@ -156,13 +156,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--filesystem", choices=("ext4", "xfs"), required=True)
     parser.add_argument("--point", choices=(
-        "acknowledged", "before_audit_fsync", "after_audit_fsync",
-        "before_state_rename", "after_state_rename", "after_checkpoint_commit",
+        "acknowledged", "before_file_fsync", "after_file_fsync",
         "file_after_archive_rename", "file_after_archive_dirsync",
         "file_after_active_open", "file_after_active_dirsync"), required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    disk = args.output / "audit-disk.raw"
+    disk = args.output / "logger-disk.raw"
     with disk.open("wb") as file:
         file.truncate(512 * 1024 * 1024)
     if args.filesystem == "ext4":

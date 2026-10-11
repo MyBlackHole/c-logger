@@ -1,4 +1,3 @@
-#include "audit.h"
 #include "logger.h"
 #include <errno.h>
 #include <stdio.h>
@@ -26,27 +25,20 @@ int main(void)
 	    errno != ENOSPC)
 		return 7;
 
-	unlink("./redact.audit.log");
-	unlink("./redact.audit.state");
-	unlink("./redact.audit.lock");
-	audit_config_t c = AUDIT_DEFAULT_CONFIG();
-	c.log_dir = ".";
-	c.name = "redact";
+	unlink("./redact.log");
+	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+	c.outputs = LOGGER_OUT_FILE;
+	c.file_path = "./redact.log";
+	c.async_mode = 0;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	if (audit_init(&c))
+	logger_t *logger = logger_create(&c);
+	if (!logger)
 		return 8;
-	audit_event_t e = { .phase = AUDIT_PHASE_RESULT,
-			    .event = "AUTH",
-			    .actor = "user-42",
-			    .source = "cli",
-			    .resource = "credential",
-			    .operation = "authenticate",
-			    .result = AUDIT_SUCCESS,
-			    .detail = AUDIT_DETAIL_REDACTED };
-	if (audit_write(&e))
+	int rc = logger_log_sync_status(logger, LOGGER_INFO, "AUTH", NULL, 0,
+					NULL, "credential=%s", logger_redact());
+	if (logger_destroy_status(logger) || rc)
 		return 9;
-	audit_shutdown();
-	FILE *f = fopen("./redact.audit.log", "r");
+	FILE *f = fopen("./redact.log", "r");
 	if (!f)
 		return 10;
 	char data[32768];

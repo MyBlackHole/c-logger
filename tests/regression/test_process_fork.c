@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include "support.h"
 #include "logger_internal.h"
-#include "audit.h"
 #include "console.h"
 #undef CONSOLE_DEBUG
 #include <fcntl.h>
@@ -23,7 +22,6 @@ static _Atomic int entered, release_pause;
 static _Atomic unsigned registrations;
 static logger_t *instance;
 static logger_config_t cfg;
-static audit_config_t acfg;
 
 int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
 int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
@@ -237,27 +235,6 @@ static void child_guard_matrix(void)
 	if (console_stderr_is_tty() != 0 || errno != ECHILD)
 		_exit(52);
 
-	CHILD_POSIX(audit_init(&acfg), 53);
-	audit_event_t event = { .event = "FORBIDDEN", .operation = "probe" };
-	CHILD_POSIX(audit_write(&event), 54);
-	CHILD_POSIX(audit_begin(&event), 55);
-	CHILD_POSIX(audit_end(&event, AUDIT_SUCCESS, 0), 56);
-	CHILD_POSIX(audit_flush(), 57);
-	CHILD_POSIX(audit_shutdown_status(), 58);
-	char id[33] = { 1 };
-	CHILD_POSIX(audit_instance_id_copy(id), 59);
-	if (id[0])
-		_exit(60);
-	audit_status_t status;
-	if (audit_get_status(&status) != 0 ||
-	    status.state != AUDIT_STATE_FORKED || status.error_code != ECHILD)
-		_exit(61);
-	if (audit_failure_policy() != AUDIT_FAIL_DENY)
-		_exit(62);
-	CHILD_POSIX(audit_verify_file("no-file"), 63);
-	CHILD_POSIX(audit_verify_file_with("no-file", (audit_integrity_t)2),
-		    64);
-	CHILD_POSIX(audit_verify_file_from("no-file", NULL, NULL), 65);
 	CHILD_POSIX(logger_init(&cfg), 66);
 	_exit(0);
 }
@@ -320,19 +297,13 @@ static void registration_failure(const char *mode)
 	else if (!strcmp(mode, "register-context")) {
 		logger_context_set(&(logger_context_t){ 0 });
 		CHECK(errno == ENOMEM);
-	} else if (!strcmp(mode, "register-audit"))
-		CHECK(audit_init(&acfg) == -1 && errno == ENOMEM);
-	else if (!strcmp(mode, "register-verify"))
-		CHECK(audit_verify_file("no-file") == -1 && errno == ENOMEM);
-	else
+	} else
 		CHECK(0);
 	CHECK(access("out.log", F_OK) != 0);
-	CHECK(access("forkaudit.audit.lock", F_OK) != 0);
 	/* Registration failure is sticky, no silent unguarded retry. */
 	atomic_store(&fail_registration, 0);
 	CHECK(logger_create(&cfg) == NULL && errno == ENOMEM);
 	CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
-	CHECK(audit_init(&acfg) == -1 && errno == ENOMEM);
 	CHECK(atomic_load(&registrations) == 1);
 }
 
@@ -345,13 +316,7 @@ int main(int argc, char **argv)
 	cfg.file_path = "out.log";
 	cfg.queue_capacity = 128;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
-	acfg = AUDIT_DEFAULT_CONFIG();
-	acfg.log_dir = ".";
-	acfg.name = "forkaudit";
-	acfg.rotation.mode = LOGGER_ROTATE_NONE;
 	unlink("out.log");
-	unlink("forkaudit.audit.log");
-	unlink("forkaudit.audit.state");
 	if (!strncmp(mode, "register-", 9)) {
 		registration_failure(mode);
 		puts("registration failure rejected before resources");
@@ -399,12 +364,6 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "context-only")) {
 		logger_context_set(&(logger_context_t){
 			.request_id = "inherited-secret-id" });
-	} else if (!strcmp(mode, "audit-only")) {
-		CHECK(!audit_init(&acfg));
-	} else if (!strcmp(mode, "verify-only")) {
-		FILE *f = fopen("empty.log", "w");
-		CHECK(f && !fclose(f));
-		CHECK(!audit_verify_file("empty.log"));
 	} else if (!strcmp(mode, "explicit") || !strcmp(mode, "emit-held") ||
 		   !strcmp(mode, "progress-held")) {
 		instance = logger_create(&cfg);
@@ -451,7 +410,6 @@ int main(int argc, char **argv)
 		logger_destroy(instance);
 	}
 	logger_shutdown();
-	audit_shutdown();
 	CHECK(atomic_load(&registrations) == 1);
 	puts("fork misuse rejected before runtime access; parent unaffected");
 	return 0;

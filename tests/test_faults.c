@@ -1,4 +1,3 @@
-#include "audit.h"
 #include "logger.h"
 #include <errno.h>
 #include <stdio.h>
@@ -21,26 +20,11 @@ static int strict_logger(void)
 	logger_destroy(l);
 	return rc < 0 ? 0 : 2;
 }
-static int audit_case(void)
-{
-	unlink("./faultaudit.audit.log");
-	unlink("./faultaudit.audit.state");
-	audit_config_t c = AUDIT_DEFAULT_CONFIG();
-	c.log_dir = ".";
-	c.name = "faultaudit";
-	c.rotation.mode = LOGGER_ROTATE_NONE;
-	int rc = audit_init(&c);
-	if (rc == 0)
-		audit_shutdown();
-	return rc < 0 ? 0 : 3;
-}
 int main(int argc, char **argv)
 {
 	if (argc != 2)
 		return 99;
 	if (!strcmp(argv[1], "logger"))
 		return strict_logger();
-	if (!strcmp(argv[1], "audit"))
-		return audit_case();
 	return 98;
 }

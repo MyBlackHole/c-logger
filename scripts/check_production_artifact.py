@@ -24,10 +24,18 @@ symbols = output(['nm', '-A'])
 strings = output(['strings'])
 forbidden = ['LOGGER_FAULT_POINT', 'LOGGER_FAULT_AFTER', 'LOGGER_FAULT_ERRNO',
              'LOGGER_FAULT_SHORT_WRITE', 'LOGGER_CRASH_POINT', 'LOGGER_SYSLOG_PATH',
-             'after_audit_fsync', 'after_checkpoint_commit', 'before_state_rename',
-             'after_state_rename', 'file_after_archive_rename', 'file_after_archive_dirsync',
+             'after_file_fsync', 'before_file_fsync',
+              'file_after_archive_rename', 'file_after_archive_dirsync',
              'file_after_active_open', 'file_after_active_dirsync']
 failures = [v for v in forbidden if v in strings]
+# Inspect all symbols, not just dynamic exports: hidden/dead Audit objects
+# also violate the product boundary, including in debug and static builds.
+for line in symbols.splitlines():
+    parts = line.split()
+    if parts and parts[-1].split('@', 1)[0].startswith('audit_'):
+        failures.append('retired Audit symbol: ' + line)
+if any('audit' in member.lower() for member in members.splitlines()):
+    failures.append('retired Audit object in archive')
 if 'logger_fault.c.o' in members:
     failures.append('logger_fault.c.o')
 for line in symbols.splitlines():
@@ -41,7 +49,7 @@ if not args.legacy_fork:
             failures.append(line)
 # No crypto backend may be brought in by this library, even in a debug build.
 # Inspect all archive symbols so accidentally statically linked API objects are
-# rejected as well. Exported audit_crypto_* names are not external crypto APIs.
+# rejected as well. Retired Audit implementations must not enter the production library.
 crypto_prefixes = ('EVP_', 'OPENSSL_', 'CRYPTO_', 'OSSL_', 'SSL_', 'SHA256_', 'SM3_')
 for line in symbols.splitlines():
     parts = line.split()
@@ -61,6 +69,6 @@ if not is_archive:
         if name.startswith(('libcrypto.', 'libssl.')):
             failures.append('external crypto dependency: ' + name)
 report = {'artifact_type':'archive' if is_archive else 'ELF', 'archive':str(archive), 'passed':not failures, 'failures':failures,
-          'members':members.splitlines(), 'needed':needed, 'crypto_implementation':'builtin-sha256-only'}
+          'members':members.splitlines(), 'needed':needed, 'crypto_implementation':'none'}
 print(json.dumps(report, indent=2))
 raise SystemExit(1 if failures else 0)

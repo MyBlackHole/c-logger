@@ -17,7 +17,7 @@ int main(void)
 	LOG_INFO("initialized before fork");
 
 	/* Application threads must already be stopped/joined here. Owners must
-     * flush/destroy explicit loggers and audit_shutdown_status() first, if any.
+     * flush/destroy explicit loggers first, if any.
      * The helper handles only the default logger (including its async worker).
      * Unlike raw fork after initialization, neither return branch needs exec.
      */

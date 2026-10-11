@@ -10,15 +10,11 @@ from pathlib import Path
 
 
 EXPECTED = {
-    "crash_recovery_test/crash_after_audit_fsync",
-    "crash_recovery_test/crash_before_state_rename",
-    "crash_recovery_test/crash_after_state_rename",
-    "crash_recovery_test/crash_after_checkpoint_commit",
-    "audit_rotation_crash_regression/rotation_crash_sha256",
-    "file_audit_regression/file_crash_sha256_file_after_archive_rename",
-    "file_audit_regression/file_crash_sha256_file_after_archive_dirsync",
-    "file_audit_regression/file_crash_sha256_file_after_active_open",
-    "file_audit_regression/file_crash_sha256_file_after_active_dirsync",
+    "crash_recovery_test/crash_" + point for point in (
+        "before_file_fsync", "after_file_fsync",
+        "file_after_archive_rename", "file_after_archive_dirsync",
+        "file_after_active_open", "file_after_active_dirsync",
+    )
 }
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -30,7 +26,7 @@ TEST_RESULT = re.compile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Verify Xmake process-crash logs against the fixed nine-case contract."
+        description="Verify Xmake process-crash logs against the fixed six-case contract."
     )
     parser.add_argument("logs", nargs="+", type=Path, help="xmake test output log")
     parser.add_argument(

@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include "support.h"
 #include "logger_internal.h"
-#include "audit.h"
 #include "console.h"
 #undef CONSOLE_DEBUG
 #include <dirent.h>
@@ -83,14 +82,6 @@ static logger_config_t config(const char *path, int async)
 	c.flush_level = LOGGER_OFF;
 	return c;
 }
-static audit_config_t audit_config(const char *name)
-{
-	audit_config_t c = AUDIT_DEFAULT_CONFIG();
-	c.log_dir = ".";
-	c.name = name;
-	c.rotation.mode = LOGGER_ROTATE_NONE;
-	return c;
-}
 static void wait_child(pid_t p)
 {
 	int st;
@@ -108,18 +99,6 @@ static int find_fd(const char *path)
 			return fd;
 	CHECK(!"logger file fd not found");
 	return -1;
-}
-static void audit_one(const char *name)
-{
-	audit_config_t c = audit_config(name);
-	CHECK(audit_init(&c) == 0);
-	audit_event_t e = { .event = "FORK_REINIT", .operation = "check" };
-	CHECK(audit_begin(&e) == 0);
-	CHECK(audit_end(&e, AUDIT_SUCCESS, 0) == 0);
-	CHECK(audit_shutdown_status() == 0);
-	char path[128];
-	CHECK(snprintf(path, sizeof(path), "%s.audit.log", name) > 0);
-	CHECK(audit_verify_file(path) == 0);
 }
 static void one_pair(void)
 {
@@ -146,7 +125,6 @@ static void one_pair(void)
 		CHECK(errno != ECHILD);
 		CHECK(console_info("hidden") == 0);
 		logger_shutdown();
-		audit_one("child");
 		CHECK(logger_process_object_count() == 0);
 		exit(0); /* controlled clean fork, no inherited runtime allocation */
 	}
@@ -155,7 +133,6 @@ static void one_pair(void)
 	LOG_INFO("PARENT_ONLY");
 	CHECK(logger_flush_status() == 0);
 	logger_shutdown();
-	audit_one("parent");
 	wait_child(p);
 	CHECK(file_contains("child.after.log", "CHILD_ONLY"));
 	CHECK(!file_contains("child.after.log", "PARENT_ONLY"));
@@ -322,20 +299,6 @@ static void run(const char *mode)
 		one_pair();
 		return;
 	}
-	if (!strcmp(mode, "audit-busy")) {
-		audit_config_t a = audit_config("audit-before");
-		CHECK(audit_init(&a) == 0);
-		char before[33], after[33];
-		CHECK(audit_instance_id_copy(before) == 0);
-		CHECK(logger_fork_reinit() == -1 && errno == EBUSY &&
-		      !fork_calls);
-		CHECK(logger_flush_status() == 0);
-		CHECK(audit_instance_id_copy(after) == 0 &&
-		      !strcmp(before, after));
-		CHECK(audit_shutdown_status() == 0);
-		one_pair();
-		return;
-	}
 	if (!strcmp(mode, "proc-failure")) {
 		fail_proc = 1;
 		CHECK(logger_fork_reinit() == -1 && errno == EACCES &&
@@ -396,30 +359,6 @@ static void run(const char *mode)
 		wait_child(child);
 		CHECK(file_contains("child-explicit.log", "NEW_EXPLICIT"));
 		CHECK(file_contains("parent-explicit.log", "NEW_EXPLICIT"));
-		return;
-	}
-	if (!strcmp(mode, "audit-conflict")) {
-		int pipefd[2];
-		CHECK(pipe(pipefd) == 0);
-		pid_t child = logger_fork_reinit();
-		CHECK(child >= 0);
-		audit_config_t a = audit_config("single-chain");
-		if (!child) {
-			CHECK(close(pipefd[1]) == 0);
-			char permit;
-			CHECK(read(pipefd[0], &permit, 1) == 1);
-			CHECK(close(pipefd[0]) == 0);
-			CHECK(audit_init(&a) == -1 && errno == EBUSY);
-			audit_one("separate-child");
-			exit(0);
-		}
-		CHECK(close(pipefd[0]) == 0);
-		CHECK(audit_init(&a) == 0);
-		CHECK(write(pipefd[1], "x", 1) == 1);
-		CHECK(close(pipefd[1]) == 0);
-		wait_child(child);
-		CHECK(audit_shutdown_status() == 0);
-		CHECK(audit_verify_file("single-chain.audit.log") == 0);
 		return;
 	}
 	if (!strcmp(mode, "nested")) {

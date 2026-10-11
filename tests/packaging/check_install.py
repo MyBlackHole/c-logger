@@ -28,9 +28,9 @@ p.add_argument('--installed-prefix', type=Path,
 p.add_argument('--libdir', default='lib')
 p.add_argument('--includedir', default='include')
 p.add_argument('--legacy', action='store_true')
-p.add_argument('--abi-version', default='1')
-p.add_argument('--symbol-version', default='LOGGER_1.0')
-p.add_argument('--abi-manifest', default='abi/logger-1.0.symbols')
+p.add_argument('--abi-version', default='2')
+p.add_argument('--symbol-version', default='LOGGER_2.0')
+p.add_argument('--abi-manifest', default='abi/logger-2.0.symbols')
 a = p.parse_args()
 a.source = a.source.resolve(); a.build = a.build.resolve(); a.artifact = a.artifact.resolve()
 version = (a.source / 'VERSION').read_text(encoding='utf-8').strip()
@@ -69,7 +69,7 @@ try:
     for h in ('logger.h', 'console.h'):
         text = re.sub(r'/\*.*?\*/', '', (a.source/'include'/h).read_text(), flags=re.S)
         for line in text.splitlines():
-            m = re.match(r'^(?:LOGGER_API\s+)?(?:logger_t\s*\*|logger_state_t|logger_context_t|audit_failure_policy_t|const char\s*\*|uint64_t|int|void)\s*((?:logger_|audit_|console_)\w*)\(', line)
+            m = re.match(r'^(?:LOGGER_API\s+)?(?:logger_t\s*\*|logger_state_t|logger_context_t|const char\s*\*|uint64_t|int|void)\s*((?:logger_|audit_|console_)\w*)\(', line)
             if m:
                 assert line.startswith('LOGGER_API '), line
                 declared.add(m.group(1))
