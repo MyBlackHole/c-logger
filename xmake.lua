@@ -663,7 +663,8 @@ if has_config("build_regression_tests") then
             {"logger_file_write", "logger_file_reopen", "logger_queue_push",
              "pthread_cond_wait", "pthread_create", "close", "fflush",
              "vfprintf", "vsnprintf", "pthread_mutex_lock",
-             "pthread_setcancelstate", "logger_format_line"}},
+             "pthread_setcancelstate", "logger_format_line",
+             "logger_get_file_metrics"}},
 
         -- Link-time interception parity, group D: syslog backend/fault/config/compat.
         {"syslog_backend_regression", "tests/regression/test_syslog_backend.c"},
