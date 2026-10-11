@@ -7,18 +7,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-static _Atomic unsigned long calls[7];
+static _Atomic unsigned long calls[3];
 static const char *name(enum logger_fault_point p)
 {
-	static const char *n[] = { "file_write",  "file_fsync",
-				   "file_rename", "file_ftruncate",
-				   "state_write", "state_fsync",
-				   "state_rename" };
-	return p >= 0 && p < 7 ? n[p] : "";
+	static const char *n[] = { "file_write", "file_fsync", "file_rename" };
+	return p >= 0 && p < 3 ? n[p] : "";
 }
 int logger_fault_should_fail(enum logger_fault_point p)
 {
-	if ((unsigned)p >= 7)
+	if ((unsigned)p >= 3)
 		return 0;
 	const char *x = getenv("LOGGER_FAULT_POINT");
 	if (!x || strcmp(x, name(p)))

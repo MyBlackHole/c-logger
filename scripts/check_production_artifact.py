@@ -23,12 +23,15 @@ symbols = output(['nm', '-A'])
 strings = output(['strings'])
 forbidden = ['LOGGER_FAULT_POINT', 'LOGGER_FAULT_AFTER', 'LOGGER_FAULT_ERRNO',
              'LOGGER_FAULT_SHORT_WRITE', 'LOGGER_CRASH_POINT', 'LOGGER_SYSLOG_PATH',
-             'after_audit_fsync', 'after_checkpoint_commit', 'before_state_rename',
+             'before_audit_fsync', 'after_audit_fsync', 'after_checkpoint_commit', 'before_state_rename',
              'after_state_rename', 'file_after_archive_rename', 'file_after_archive_dirsync',
              'file_after_active_open', 'file_after_active_dirsync']
 failures = [v for v in forbidden if v in strings]
 if 'logger_fault.c.o' in members:
     failures.append('logger_fault.c.o')
+for member in members.splitlines():
+    if Path(member).name.startswith(('audit.', 'audit_')):
+        failures.append('retired Audit source member: ' + member)
 for line in symbols.splitlines():
     parts = line.split()
     if parts and parts[-1].split('@', 1)[0].startswith('audit_'):
@@ -50,7 +53,7 @@ for line in symbols.splitlines():
         failures.append(line)
 # No crypto backend may be brought in by this library, even in a debug build.
 # Inspect all archive symbols so accidentally statically linked API objects are
-# rejected as well. Exported audit_crypto_* names are not external crypto APIs.
+# rejected as well. Audit symbols are independently rejected above.
 crypto_prefixes = ('EVP_', 'OPENSSL_', 'CRYPTO_', 'OSSL_', 'SSL_', 'SHA256_', 'SM3_')
 for line in symbols.splitlines():
     parts = line.split()

@@ -33,11 +33,6 @@ typedef struct {
 	((logger_file_t){ .fd = -1, .dir_fd = -1, .lock_fd = -1 })
 int logger_file_init(logger_file_t *, const char *, logger_rotation_config_t,
 		     mode_t);
-/* Audit recovery 前先 reserve；此阶段不创建或修改 active file。
- * reserved owner 只有在成功 open/move 进 logger 后才被消费。 */
-int logger_file_reserve(logger_file_t *, const char *, logger_rotation_config_t,
-			mode_t);
-int logger_file_open_reserved(logger_file_t *);
 int logger_file_close_status(logger_file_t *); /* 0 / -errno；释放全部 fd */
 void logger_file_close(logger_file_t *);
 int logger_file_sync(logger_file_t *); /* 0 / -errno；调用者必须持有 emit_mu */
@@ -46,7 +41,6 @@ int logger_file_write(logger_file_t *, const char *, size_t,
 		      const struct timespec *, int);
 int logger_file_writev(logger_file_t *, struct iovec *, int, size_t,
 		       const struct timespec *, int);
-int logger_file_offset_get(logger_file_t *, uint64_t *);
 /* 独立 translation unit 便于 link-time fault test。使用 Linux syscall，
  * 不提供会覆盖目标的 rename fallback；平台不支持时返回 ENOTSUP。 */
 int logger_file_rename_noreplace(int, const char *, const char *);

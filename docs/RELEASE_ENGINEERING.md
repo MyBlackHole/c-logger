@@ -21,9 +21,9 @@ main
 
 2.0 的设计权威位于 `docs/v2/`；现有根目录和 `docs/` 下的 v1 架构/ABI文档继续作为 Production v1 历史与维护依据。
 
-c-logger 当前软件版本为 **1.0.0 / Production v1**。软件版本由仓库根 `VERSION` 唯一决定；
-默认 ABI 为 SONAME 1 / `LOGGER_1.0`，public C ABI 由 62-symbol
-`abi/logger-1.0.symbols` 与语义 ABI contract 共同冻结。
+已发布 Production v1 为 **1.0.0**，历史 ABI 为 SONAME 1 / `LOGGER_1.0`、62符号。
+当前 main 的开发 ABI 为 SONAME 2 / `LOGGER_2.0`、47符号；根 VERSION 仍待独立发布身份
+迁移，不能把当前开发包作为已发布 v1 的兼容替代。
 
 ## 构建权威
 
@@ -48,34 +48,29 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 
 ## ABI 契约
 
-- SONAME：`liblogger.so.1`；
+- 当前 main SONAME：`liblogger.so.2`；
 - shared 实体文件：`liblogger.so.<VERSION>`；
-- 默认 ELF symbol version：`LOGGER_1.0`；
-- 唯一 Production v1 public C ABI allowlist：`abi/logger-1.0.symbols`（62 项）；
-- 安装元数据固定 `LOGGER_ABI_VERSION=1`；
+- 当前 main ELF symbol version：`LOGGER_2.0`；
+- 当前 public C ABI allowlist：`abi/logger-2.0.symbols`（47 项）；
+- 当前安装元数据固定 `LOGGER_ABI_VERSION=2`；
 - 历史 v1 opt-in fork helper 不属于当前 main；main 已移除该实现、兼容头文件与构建选项；
 - production 默认隐藏可见性，并使用 version script `local: *`；
 - 生产故障注入固定关闭。
 
-`abi/logger-1.0.symbols` 是 v1 ABI 的唯一权威符号清单，不再保留 pre-v1 active manifest。
+`abi/logger-1.0.symbols` 仅保留已发布 v1 的历史符号清单。
 新增/删除 public API 必须显式重新打开 ABI 评审，并同步更新 public header、冻结清单和语义 ABI
 contract。禁止使用 glob 代替显式 allowlist。
 
 `VERSION=1.0.0` 起，安装元数据与生成头文件的 release-candidate 标志为 false/0；
 0.x 历史发布继续作为 candidate 记录保留。
 
-### v1 semantic ABI 契约
+### 当前 semantic ABI 契约
 
-`abi/LOGGER_1_0_CONTRACT.md` 与 `tests/packaging/v1_abi_contract.c` 冻结初始 v1 的语义 ABI：
-
-- 所有现有 public struct 的 size/alignment/全部 field offset；
-- public enum 与数值宏；
-- 62 个默认 production public function 的精确 C type；
-- Logger/Audit/Console 配置版本与默认值；
-- 1.x 增量式-only 规则和需要新 ABI major 的破坏性变化。
-
-该 契约 同时按 C11/C++11 编译运行，并进入 `xmake-parity` 和 共享库/静态库
-`release-validation`。ELF SONAME/symbol-version gate 与 semantic 契约 是两层独立门禁。
+`tests/packaging/current_abi_contract.c` 按 C11/C++11 检查当前 Logger/Console 的结构布局、
+数值常量、配置默认值与精确 C 函数类型；现有断言完整保留。当前 ELF 门禁使用
+`abi/logger-2.0.symbols` 的47符号、SONAME 2与 `LOGGER_2.0`，两个门禁互相独立。
+`abi/LOGGER_1_0_CONTRACT.md` 与 `abi/logger-1.0.symbols` 仅保留历史记录，旧snapshot不再
+进入当前CI。此改名和清理不修改 VERSION、正式发布workflow或tag/release策略。
 
 ## Shared build
 

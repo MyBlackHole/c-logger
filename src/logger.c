@@ -384,8 +384,7 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 	return cleanup_rc;
 }
 
-static logger_t *create_logger(const logger_config_t *input,
-			       logger_file_t *reserved)
+static logger_t *create_logger(const logger_config_t *input)
 {
 	logger_config_t cfg;
 	logger_ctor_state_t state = { 0 };
@@ -461,18 +460,9 @@ static logger_t *create_logger(const logger_config_t *input,
 		goto fail;
 	state.progress_cv_ready = 1;
 
-	if (reserved) {
-		if (!(l->outputs & LOGGER_OUT_FILE) ||
-		    logger_file_open_reserved(reserved)) {
-			rc = errno ? errno : EINVAL;
-			goto fail;
-		}
-		l->file_backend = *reserved;
-		*reserved =
-			LOGGER_FILE_EMPTY; /* move, never unlock a shared lease */
-	} else if ((l->outputs & LOGGER_OUT_FILE) &&
-		   logger_file_init(&l->file_backend, cfg.file_path,
-				    cfg.rotation, l->file_mode)) {
+	if ((l->outputs & LOGGER_OUT_FILE) &&
+	    logger_file_init(&l->file_backend, cfg.file_path, cfg.rotation,
+			     l->file_mode)) {
 		rc = errno ? errno : EIO;
 		goto fail;
 	}
@@ -566,15 +556,14 @@ static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
 	return l;
 }
 
-static logger_t *create_entry(const logger_config_t *input,
-			      logger_file_t *reserved)
+static logger_t *create_entry(const logger_config_t *input)
 {
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return NULL;
 	/* Returning an owned pointer cannot be made an atomic handoff under
      * enabled asynchronous cancellation. Reject BEFORE acquiring resources.
-     * Global/Audit callers enter with cancellation already disabled. */
+     * Global callers enter with cancellation already disabled. */
 	int old_type;
 	int rc = pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &old_type);
 	if (!rc)
@@ -584,7 +573,7 @@ static logger_t *create_entry(const logger_config_t *input,
 		(void)logger_scope_end(&scope, rc ? -rc : -ENOTSUP);
 		return NULL;
 	}
-	logger_t *l = create_logger(input, reserved);
+	logger_t *l = create_logger(input);
 	int error = l ? 0 : -(errno ? errno : EIO);
 	/* Resolve a pending deferred cancellation before ownership handoff. The
      * cleanup is registered while disabled; no API CP remains after pop/return.
@@ -594,17 +583,7 @@ static logger_t *create_entry(const logger_config_t *input,
 
 logger_t *logger_create(const logger_config_t *input)
 {
-	return create_entry(input, NULL);
-}
-
-logger_t *logger_create_reserved_file(const logger_config_t *input,
-				      logger_file_t *reserved)
-{
-	if (!reserved) {
-		errno = EINVAL;
-		return NULL;
-	}
-	return create_entry(input, reserved);
+	return create_entry(input);
 }
 
 static int dispose_body(logger_t *l, int *released)
@@ -873,37 +852,6 @@ int logger_reopen_instance(logger_t *l)
 			if (rc)
 				logger_note_io_error(l, -rc);
 		}
-		if (!ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard)) {
-			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
-						    &emit_guard);
-			if (unlock_rc) {
-				logger_note_synchronization_error(l, unlock_rc);
-				if (!rc)
-					rc = unlock_rc;
-			}
-		}
-	}
-	return logger_scope_end(&scope, rc) ? -1 : 0;
-}
-int logger_file_offset(logger_t *l, uint64_t *out)
-{
-	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
-	int rc = !l || !out ? -EINVAL : 0;
-	if (!rc) {
-		int sync_error = atomic_load_explicit(
-			&l->synchronization_error, memory_order_acquire);
-		if (sync_error)
-			rc = -sync_error;
-	}
-	if (!rc) {
-		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
-		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
-		if (!rc)
-			rc = logger_file_offset_get(&l->file_backend, out) ?
-				     -(errno ? errno : EIO) :
-				     0;
 		if (!ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard)) {
 			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
 						    &emit_guard);

@@ -49,14 +49,14 @@ case "$profile" in
     exec xmake test -j1
     ;;
 
-  unit|integration|concurrency|reliability|security|host-owned|crypto)
+  unit|integration|concurrency|reliability|security|host-owned)
     echo "profile '$profile' is a compatibility alias; running the complete Xmake suite" >&2
     configure_full
     exec xmake test -j1
     ;;
 
   *)
-    echo "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned|crypto}" >&2
+    echo "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned}" >&2
     exit 2
     ;;
 esac

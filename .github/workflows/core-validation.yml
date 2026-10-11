@@ -41,12 +41,12 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y
           xmake test -j1
-      - name: Historical Audit formatting regression
+      - name: Production Logger formatting regression
         shell: bash
         run: |
           set -euo pipefail
           xmake -j2 logger
-          bash tests/regression/run_audit_format.sh core-build | tee core-build/audit-format.log
+          bash tests/regression/run_logger_format.sh core-build | tee core-build/logger-format.log
       - name: Worker startup production regression
         shell: bash
         run: |
@@ -61,17 +61,17 @@ jobs:
         if: always()
         shell: bash
         run: |
-          mkdir -p audit-format-evidence
-          git rev-parse HEAD > audit-format-evidence/source-commit.txt
-          git archive --format=zip HEAD -o audit-format-evidence/source.zip
-          cp core-build/audit-format.log audit-format-evidence/ 2>/dev/null || true
-          cp core-build/worker-startup.log audit-format-evidence/ 2>/dev/null || true
-          cp core-build/worker-failure.log audit-format-evidence/ 2>/dev/null || true
+          mkdir -p logger-format-evidence
+          git rev-parse HEAD > logger-format-evidence/source-commit.txt
+          git archive --format=zip HEAD -o logger-format-evidence/source.zip
+          cp core-build/logger-format.log logger-format-evidence/ 2>/dev/null || true
+          cp core-build/worker-startup.log logger-format-evidence/ 2>/dev/null || true
+          cp core-build/worker-failure.log logger-format-evidence/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: audit-format-source-and-evidence
-          path: audit-format-evidence/
+          name: logger-format-source-and-evidence
+          path: logger-format-evidence/
           retention-days: 14
 
   sanitizer:
@@ -107,11 +107,11 @@ jobs:
             --policies="$policies"
       - name: Run sanitized static suite
         run: xmake test -j1
-      - name: Historical Audit formatting ASan and UBSan regression
+      - name: Production Logger formatting ASan and UBSan regression
         if: matrix.sanitizer == 'address-undefined'
         run: |
           xmake -j2 logger
-          bash tests/regression/run_audit_format.sh sanitizer-build address,undefined
+          bash tests/regression/run_logger_format.sh sanitizer-build address,undefined
 
       - name: Worker startup sanitized production regression
         shell: bash

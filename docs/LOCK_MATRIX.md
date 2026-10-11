@@ -6,18 +6,16 @@
 |---|---|---|---|---|---|
 | global `g_control_mu` | process-static | global init/shutdown controller | 无 | `g_lifetime_lock`，随后 instance lock | 保持显式 |
 | global `g_lifetime_lock` | process-static | `g_logger` publish/destroy 与 read-side lifetime pin | `g_control_mu`（writer/controller）或无（reader） | instance lock | 保持显式 |
-| `logger_t.emit_mu` | logger instance | file/syslog backend 可变状态、write/sync/reopen | global lifetime pin 或 Audit operation；普通 explicit API 可直接获取 | 不允许 `progress_mu/q.wait_mu` | 简单路径可 guard |
+| `logger_t.emit_mu` | logger instance | file/syslog backend 可变状态、write/sync/reopen | global lifetime pin；普通 explicit API 可直接获取 | 不允许 `progress_mu/q.wait_mu` | 简单路径可 guard |
 | `logger_t.progress_mu` | logger instance | `completed_pos/progress_cv` completion predicate | global lifetime pin；普通 explicit API 可直接获取 | 不允许 `emit_mu/q.wait_mu` | 可 guard |
 | `logger_queue_t.wait_mu` | queue instance | consumer_waiting handshake + condvar sleep/wakeup；producer 仅在 waiting slow path 获取 | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
 | Console `g_console_mu` | process-static | Console FILE 输出与 flush | 无 | 无 | checked guard |
-| Audit `g_control_mu` | process-static | Audit init/shutdown/controller | 无 | Audit `g_operation_mu` | 保持显式 |
-| Audit `g_operation_mu` | process-static | runtime、seq/hash、transaction、in-flight drain | Audit `g_control_mu` 或无 | Audit private logger instance lock | 保持显式 |
 
 ## 不属于 pthread lock 的同步机制
 
 以下机制不能混入 lock hierarchy 当作普通 mutex：
 
-- `<active>.logger.lock` / Audit writer-lock fd：跨进程 ownership/exclusivity；
+- `<active>.logger.lock`：跨进程 ownership/exclusivity；
 - `g_ticket`：generation + phase admission；
 - queue slot `seq`：MPSC publication/reuse generation；
 - queue `spill_used[]`：long-message block ownership bitmap；
@@ -56,7 +54,7 @@ global read-side API 必须先取得 lifetime pin，再进入 instance 操作。
 
 ### Console 独立
 
-`g_console_mu` 不参与 Logger/Audit hierarchy。持锁时不要调用会重入 Console/Logger 的
+`g_console_mu` 不参与 Logger hierarchy。持锁时不要调用会重入 Console/Logger 的
 host callback。
 
 ## condition variable 规则
@@ -77,12 +75,11 @@ guard 代表该 scope 对 mutex 的 ownership；wait 返回后 destructor 再负
 - worker `q.wait_mu`；
 - self-paced/force wake `q.wait_mu`；
 - Console `g_console_mu`；
-- explicit-instance 的 reopen/file-offset/flush/syslog-metrics 单锁路径。
+- explicit-instance 的 reopen/flush/syslog-metrics 单锁路径。
 
 刻意保留显式：
 
 - logger teardown 中 join -> emit sync -> destroy mutex 的阶段；
 - global control/lifetime 多锁；
-- Audit control/operation 多锁与 cancellation-aware scope。
 
 原因不是“guard 不支持”，而是这些路径的锁释放顺序本身就是 lifecycle/error contract。

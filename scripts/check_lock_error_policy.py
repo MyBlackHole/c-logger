@@ -84,31 +84,10 @@ def check_call_sites(errors: list[str]) -> None:
                 )
 
 
-def check_audit_nested_locks(errors: list[str]) -> None:
-    path = SRC / "audit.c"
-    lines = path.read_text(encoding="utf-8").splitlines()
-    for name in ("operation_lock_nested", "operation_unlock_nested"):
-        definition = re.compile(rf"^\s*static\s+int\s+{name}\s*\(")
-        call = re.compile(rf"\b{name}\s*\(\s*\)\s*;")
-        assignment = re.compile(
-            rf"^\s*(?:int\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*"
-            rf"{name}\s*\(\s*\)\s*;"
-        )
-        for number, line in enumerate(lines, start=1):
-            if not call.search(line) or definition.search(line):
-                continue
-            if not assignment.match(line):
-                fail(f"audit.c:{number} 未检查 {name}() 的返回值", errors)
-    source = "\n".join(lines)
-    if re.search(r"\(\s*void\s*\)\s*unlock_scope\s*\(", source):
-        fail("audit.c 显式丢弃了 unlock_scope() 的清理结果", errors)
-
-
 def main() -> int:
     errors: list[str] = []
     check_guard_definitions(errors)
     check_call_sites(errors)
-    check_audit_nested_locks(errors)
     if errors:
         for message in errors:
             print(f"错误：{message}", file=sys.stderr)

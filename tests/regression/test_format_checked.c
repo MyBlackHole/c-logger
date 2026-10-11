@@ -55,7 +55,7 @@ int main(void)
 	CHECK(l && m && out && expected);
 	m->ts = (struct timespec){ 1700000000, 123456000 };
 	m->level = LOGGER_INFO;
-	m->module = "AUDIT";
+	m->module = "formatter";
 	m->pid = getpid();
 	m->tid = getpid();
 	memcpy(m->text, "payload", sizeof("payload"));

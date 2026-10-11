@@ -443,19 +443,6 @@ int main(int argc, char **argv)
 	logger_lockdep_release(LOGGER_LOCK_INSTANCE_EMIT, &c);
 	logger_lockdep_release(LOGGER_LOCK_GLOBAL_CONTROL, &a);
 
-	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_CONTROL, &a);
-	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_OPERATION, &b);
-	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_PROGRESS, &c);
-	logger_lockdep_release(LOGGER_LOCK_INSTANCE_PROGRESS, &c);
-	logger_lockdep_release(LOGGER_LOCK_AUDIT_OPERATION, &b);
-	logger_lockdep_release(LOGGER_LOCK_AUDIT_CONTROL, &a);
-
-	/* Audit 控制器持有的私有 logger 候选/退役对象。 */
-	logger_lockdep_acquire(LOGGER_LOCK_AUDIT_CONTROL, &a);
-	logger_lockdep_acquire(LOGGER_LOCK_INSTANCE_EMIT, &c);
-	logger_lockdep_release(LOGGER_LOCK_INSTANCE_EMIT, &c);
-	logger_lockdep_release(LOGGER_LOCK_AUDIT_CONTROL, &a);
-
 	expect_abort(bad_instance_nesting);
 	expect_abort(bad_reverse_global);
 	expect_abort(bad_release);

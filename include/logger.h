@@ -420,7 +420,7 @@ LOGGER_API int logger_reopen(void);
  * - fork before any library runtime use while truly single-threaded, OR fork+exec.
  *   After async initialization the process is already multithreaded.
  * - pthread_atfork installs an internal child invalidation guard. Inherited
- *   Logger/Console/Audit runtimes are never repaired in place: constructors and
+ *   Logger/Console runtimes are never repaired in place: constructors and
  *   status APIs reject with ECHILD until exec; void operations no-op/set errno.
  * - do not use vfork, signal handlers or arbitrary post-fork library calls.
  *   Parent descriptors/queues remain unchanged; child fds live until exec/_exit.

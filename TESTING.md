@@ -1,8 +1,7 @@
 # Testing
 
-> main 的生产目标始终为 Audit-free ABI 2。下文的 Audit/crypto 条目是未安装支持库的历史回归，
-> 不属于当前产品能力；普通 Logger 的生产链接测试、文件 crash、安装消费与制品隔离必须独立通过。
-> 旧 v1 ABI snapshot 只保护历史记录，不证明当前 ABI 2 的正式发布合同。
+> main 的源码、生产库和未安装支持库均为 Audit-free ABI 2。普通 Logger 的生产链接、故障、锁、
+> 格式、文件 crash、安装消费与制品隔离独立验收。旧 v1 snapshot 不再是当前门禁。
 
 Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` 注册，CI 与本地开发使用同一
 目标/测试 定义。下游安装包仍使用真实 CMake 消费方 验证 `find_package(Logger ...)`，
@@ -90,7 +89,7 @@ PID/atfork 防护、注册窗口、早注册 child handler、继承锁和 ECHILD
 
 ## 旧 profile 参数
 
-历史 `scripts/check.sh unit/integration/concurrency/reliability/security/host-owned/crypto`
+历史 `scripts/check.sh unit/integration/concurrency/reliability/security/host-owned`
 依赖 CTest 多标签。Xmake 的 test 分组 是单组语义，无法无损表达同一 case 同时属于多个标签。
 
 为避免旧命令变成“看起来成功但实际少跑”的兼容陷阱，这些参数当前仍接受，但会运行**完整
@@ -134,7 +133,7 @@ Sanitizer 后仍对生成的 production `liblogger.a` 运行
 
 - 共享库 Syslog 后端；
 - global shared 压力测试；
-- frozen v1 公开头文件 消费方；
+- 当前 C/C++11 公开 ABI 消费方；
 - `dlopen/dlclose` 生命周期；
 - installed package 消费方。
 
@@ -192,7 +191,7 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 7. PIC SDK 模块；
 8. pkg-config 消费方；
 9. 精确版本/组件s 失败关闭；
-10. frozen 旧头文件 与 public layout/default 兼容。
+10. 当前 public layout/default/function type 和 config 负向合同。
 
 `examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
 测试资产，不代表项目重新依赖 CMake 构建。
@@ -237,10 +236,15 @@ restore-policy regression 会验证原先 disabled 的 调用方 仍保持 disab
 不被破坏；构造函数 契约 会拒绝 enabled asynchronous cancellation。
 
 
-## Audit OFD 单写者锁回归
+## 普通 Logger 格式与隔离
 
-`audit_ofd_close_isolation` 验证同进程对 `.audit.lock` 的无关
-`open()/close()` 不会释放 Audit 正在持有的租约；
-`audit_ofd_posix_conflict` 验证旧 POSIX `F_SETLK` writer 与新的 OFD writer
-仍然互斥；`audit_ofd_unsupported` 对私有 writer-lock helper 注入
-`EINVAL`，要求转换为 `ENOTSUP`，禁止回退到进程关联锁。
+静态 production 目标 `logger_format_production_test` 保留 normal、cache-hit、localtime、date、
+zone、bad-date、bad-zone、cached-bad、truncation 九项；`format_checked_production_test`
+保留容量边界、严格/普通格式一致、printf 失败与非法纳秒断言。独立入口
+`tests/regression/run_logger_format.sh BUILD_DIR [address,undefined]` 同样只链接真实生产 archive。
+
+`production_isolation_regression` 直接链接当前 static/shared 生产库，
+`test_hooks_regression` 链接未安装 fault-support archive。两者对照 file_write/file_fsync/
+file_rename/short-write/syslog-path 与四个真实轮转环境 hook。process_fork 保留17个普通
+Logger/Console/context场景；原21项的4个Audit入口专属场景退役。锁失败保留6个普通场景。
+逐项迁移记录见 [Audit 清理覆盖映射](validation/AUDIT_TEST_RETIREMENT.md)。

@@ -53,7 +53,7 @@ struct timestamp_cache {
 static _Thread_local struct timestamp_cache timestamp;
 
 /* Validate cached bytes too: an ordinary call can populate this same cache.
- * strftime success alone does not imply the four-digit-year Audit grammar. */
+ * strftime success alone does not imply the strict four-digit-year timestamp grammar. */
 static int canonical_time(const struct timestamp_cache *cache)
 {
 	const char *d = cache->date;

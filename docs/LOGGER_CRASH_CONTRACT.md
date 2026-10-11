@@ -49,8 +49,8 @@ regular-file identity to the active inode and requires the exact expected postwr
 size. It cannot stop on a directory fsync, an archived fd, or the empty-new-inode
 fsync inside rotation. The rotation-plus-fsync case additionally requires the real
 `file_after_active_dirsync` hook first. Production sources and installed libraries
-receive no new hooks. The legacy internal `before_audit_fsync` hook is not used by
-this contract; later Audit-source cleanup may remove it independently.
+receive no new hooks. The unused legacy internal `before_audit_fsync` hook has
+been removed; these eight cut boundaries are unchanged.
 
 The unconfirmed pre-fsync target may be lost or cut short. Only a byte prefix of
 its exact expected content is accepted, never arbitrary sector corruption or
@@ -78,8 +78,8 @@ rotation case, and four file rotation cases. Removing three checkpoint-only case
 and adding acknowledged/pre-fsync process checks yields eight. The previous VM
 set was ten: removing those three checkpoint-only points and adding the rotated
 post-fsync point yields eight. `scripts/crash_contract.py` records this mapping in
-both JSON evidence formats. Historical Audit rotation and busy/cwd tests remain
-outside the ordinary `process-crash` group until their separate removal batch.
+both JSON evidence formats. Historical Audit rotation and busy/cwd tests have
+been retired separately; the ordinary `process-crash` group is unchanged.
 
 ## Distinct failure boundaries and evidence
 

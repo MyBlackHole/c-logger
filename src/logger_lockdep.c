@@ -26,8 +26,6 @@ static const char *const class_names[LOGGER_LOCK_CLASS_NR] = {
 	[LOGGER_LOCK_INSTANCE_PROGRESS] = "instance-progress",
 	[LOGGER_LOCK_QUEUE_WAIT] = "queue-wait",
 	[LOGGER_LOCK_CONSOLE] = "console",
-	[LOGGER_LOCK_AUDIT_CONTROL] = "audit-control",
-	[LOGGER_LOCK_AUDIT_OPERATION] = "audit-operation",
 };
 
 const char *logger_lockdep_class_name(logger_lock_class_t class_id)
@@ -58,11 +56,6 @@ static int allowed_after(logger_lock_class_t held, logger_lock_class_t next)
 		return next == LOGGER_LOCK_GLOBAL_LIFETIME ||
 		       is_instance(next);
 	if (held == LOGGER_LOCK_GLOBAL_LIFETIME)
-		return is_instance(next);
-	if (held == LOGGER_LOCK_AUDIT_CONTROL)
-		return next == LOGGER_LOCK_AUDIT_OPERATION ||
-		       is_instance(next);
-	if (held == LOGGER_LOCK_AUDIT_OPERATION)
 		return is_instance(next);
 	return 0;
 }
