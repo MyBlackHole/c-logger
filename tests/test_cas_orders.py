@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Positive and negative CAS gate fixtures; never mutate the working tree."""
+"""CAS 门禁的正向与负向测试；不修改工作目录中的源码。"""
 from __future__ import annotations
 
 import csv
@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_cas_orders.py"
-# Keep source-tree imports read-only during the Xmake test run.
+# Xmake 测试期间保持源码目录导入为只读。
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("cas_gate", SCRIPT)
 gate = importlib.util.module_from_spec(spec)
@@ -45,7 +45,7 @@ class CasOrderTests(unittest.TestCase):
         path.write_text(source.replace(old, new))
 
     def test_checked_in_inventory(self):
-        self.run_gate(ROOT, 0, "reviewed calls passed")
+        self.run_gate(ROOT, 0, "处已评审调用通过")
 
     def test_each_global_lifecycle_regression_is_rejected(self):
         calls = {
@@ -59,10 +59,10 @@ class CasOrderTests(unittest.TestCase):
                 root = self.fixture()
                 old = args + "\n\t\t    memory_order_acq_rel, memory_order_acquire"
                 self.replace(root, old, old.replace("memory_order_acq_rel", "memory_order_release"))
-                self.run_gate(root, 1, "unapproved C11 order pair release/acquire")
+                self.run_gate(root, 1, "未获准的 C11 内存序组合 release/acquire")
 
     def test_order_pair_matrix(self):
-        # Independent expected contract, including failure release/acq_rel rejects.
+        # 独立列出期望组合，包括拒绝 failure 为 release/acq_rel 的情况。
         allowed = {"relaxed/relaxed", "consume/relaxed", "consume/consume",
                    "acquire/relaxed", "acquire/consume", "acquire/acquire",
                    "release/relaxed", "acq_rel/relaxed", "acq_rel/consume",
@@ -85,7 +85,7 @@ class CasOrderTests(unittest.TestCase):
         root = self.fixture()
         self.replace(root, "memory_order_release, memory_order_relaxed);",
                      "memory_order_seq_cst, memory_order_relaxed);", "src/logger_worker.c")
-        self.run_gate(root, 1, "unreviewed/changed CAS")
+        self.run_gate(root, 1, "未经评审或已变更的 CAS")
 
     def test_extra_and_duplicate_calls(self):
         for filename, call in (
@@ -98,12 +98,12 @@ class CasOrderTests(unittest.TestCase):
                 root = self.fixture()
                 with (root / filename).open("a") as stream:
                     stream.write("\n" + call + "\n")
-                self.run_gate(root, 1, "unreviewed/changed CAS")
+                self.run_gate(root, 1, "未经评审或已变更的 CAS")
 
     def test_removed_source_is_rejected(self):
         root = self.fixture()
         (root / "src/console.c").unlink()
-        self.run_gate(root, 1, "missing/changed CAS")
+        self.run_gate(root, 1, "缺失或已变更的 CAS")
 
     def test_missing_or_invalid_inventory(self):
         for contents in ("", "file\toperation\n", "delete"):
@@ -126,7 +126,7 @@ class CasOrderTests(unittest.TestCase):
             writer = csv.DictWriter(stream, fieldnames=gate.FIELDS, delimiter="\t")
             writer.writeheader()
             writer.writerows(rows)
-        self.run_gate(root, 1, "unapproved CAS operation/order pair")
+        self.run_gate(root, 1, "未获准的 CAS 操作或内存序组合")
 
     def test_aliases_and_implicit_or_builtin_cas_are_rejected(self):
         for call in ("atomic_compare_exchange_strong(&a, &e, 1);",

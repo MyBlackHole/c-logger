@@ -34,10 +34,10 @@ enum global_phase {
  * 若分开读取，reader 可能把某一代 RUNNING 与另一代 generation 错配。
  * 每次真实 init 尝试都会消费一个 generation，即使 candidate 构造失败。
  *
- * Lifecycle transitions that acquire on CAS failure also acquire on success.
- * acq_rel/acquire preserves release publication and gives an unambiguous C11
- * order pair; do not rely on release/acquire's historical "no stronger" wording.
- * The ticket controls admission, while g_lifetime_lock still pins the object.
+ * CAS 失败时需要 acquire 的生命周期转换，成功时也保留 acquire。
+ * acq_rel/acquire 保留 release 发布，并明确满足本项目采用的 C11 约定，
+ * 不依赖 release/acquire 在历史“失败序不得更强”措辞下的歧义。
+ * ticket 只控制准入，对象存活仍由 g_lifetime_lock 的生命周期锁保证。
  */
 static _Atomic uint64_t g_ticket;
 /* A failed lock release or incomplete teardown invalidates global lifetime. */
