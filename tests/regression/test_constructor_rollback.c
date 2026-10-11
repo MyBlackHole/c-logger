@@ -21,6 +21,8 @@ static enum proof_failure failure;
 static logger_t *candidate;
 static int candidate_freed;
 static int create_failed;
+static int queue_init_failure;
+static int queue_init_failed;
 static unsigned release_calls;
 
 void *__real_calloc(size_t, size_t);
@@ -53,6 +55,16 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 }
 
 int __real_pthread_cond_destroy(pthread_cond_t *);
+int __real_pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *);
+int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *attr)
+{
+	if (candidate && queue_init_failure && cv == &candidate->q.wait_cv) {
+		queue_init_failed = 1;
+		return EAGAIN;
+	}
+	return __real_pthread_cond_init(cv, attr);
+}
+
 int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 {
 	if (candidate && failure == PROOF_QUEUE_COND &&
@@ -102,11 +114,11 @@ int __wrap_logger_process_object_release(void)
 
 static enum proof_failure select_failure(const char *name)
 {
-	if (!strcmp(name, "success"))
+	if (!strcmp(name, "success") || !strcmp(name, "queue-init"))
 		return PROOF_NONE;
 	if (!strcmp(name, "queue-cond"))
 		return PROOF_QUEUE_COND;
-	if (!strcmp(name, "queue-mutex"))
+	if (!strcmp(name, "queue-mutex") || !strcmp(name, "queue-init-mutex"))
 		return PROOF_QUEUE_MUTEX;
 	if (!strcmp(name, "progress-cond"))
 		return PROOF_PROGRESS_COND;
@@ -124,6 +136,7 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	failure = select_failure(argv[1]);
 	CHECK((int)failure >= 0);
+	queue_init_failure = !strncmp(argv[1], "queue-init", 10);
 
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_STDERR;
@@ -134,10 +147,11 @@ int main(int argc, char **argv)
 	logger_t *l = logger_create(&c);
 	CHECK(l == NULL);
 	CHECK(errno == EAGAIN);
-	CHECK(create_failed == 1);
+	CHECK(create_failed == !queue_init_failure);
+	CHECK(queue_init_failed == queue_init_failure);
 	CHECK(candidate != NULL);
 
-	if (!strcmp(argv[1], "success")) {
+	if (!strcmp(argv[1], "success") || !strcmp(argv[1], "queue-init")) {
 		CHECK(candidate_freed == 1);
 		CHECK(release_calls == 1);
 		CHECK(logger_process_object_count() == 0);

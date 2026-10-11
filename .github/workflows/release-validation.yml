@@ -8,7 +8,7 @@ on:
       - "LICENSE"
       - "xmake.lua"
       - "include/**"
-      - "abi/logger-1.0.symbols"
+      - "abi/logger-2.0.symbols"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/installed_consumer/**"

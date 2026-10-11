@@ -102,6 +102,9 @@ int logger_global_lifetime_broken(void);
 #endif
 int logger_file_offset(logger_t *, uint64_t *);
 int logger_emit_status(logger_t *, const logger_message_t *, int);
+/* Consumes/advances the iovecs while preserving the caller's SIGPIPE policy. */
+struct iovec;
+int logger_stderr_writev_all(struct iovec *, int);
 void logger_vlog_internal(logger_t *, logger_level_t, const char *,
 			  const char *, int, const char *, const char *,
 			  va_list);

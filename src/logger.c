@@ -491,6 +491,11 @@ static logger_t *create_logger(const logger_config_t *input,
 						     cfg.queue_capacity :
 						     8192) != 0) {
 			rc = errno ? errno : EIO;
+			/* Partial queue construction can leave an unproven mutex.
+			 * Preserve its container/census without replacing primary errno. */
+			int proof_error = logger_queue_wait_error(&l->q);
+			if (proof_error)
+				logger_note_synchronization_error(l, proof_error);
 			goto fail;
 		}
 		state.queue_ready = 1;

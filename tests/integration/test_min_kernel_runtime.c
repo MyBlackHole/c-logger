@@ -1,5 +1,4 @@
 #define _GNU_SOURCE
-#include <audit.h>
 #include <logger.h>
 
 #include <errno.h>
@@ -47,33 +46,42 @@ static int rotation_check(const char *path)
 	return 0;
 }
 
-static int audit_check(const char *dir, const char *name)
+/* Exercise the installed production async/drain/reopen contract on each
+ * guest filesystem. This does not claim physical power-loss certification. */
+static int persistence_check(const char *dir)
 {
-	char active[4096], state[4096], lock[4096];
-	CHECK(snprintf(active, sizeof(active), "%s/%s.audit.log", dir, name) > 0);
-	CHECK(snprintf(state, sizeof(state), "%s/%s.audit.state", dir, name) > 0);
-	CHECK(snprintf(lock, sizeof(lock), "%s/%s.audit.lock", dir, name) > 0);
-	(void)unlink(active);
-	(void)unlink(state);
-	(void)unlink(lock);
-
-	audit_config_t c = AUDIT_DEFAULT_CONFIG();
-	c.log_dir = dir;
-	c.name = name;
+	char path[4096];
+	int n = snprintf(path, sizeof(path), "%s/persistence.log", dir);
+	CHECK(n > 0 && (size_t)n < sizeof(path));
+	(void)unlink(path);
+	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+	c.outputs = LOGGER_OUT_FILE;
+	c.file_path = path;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	CHECK(audit_init(&c) == 0);
+	c.queue_capacity = 128;
+	logger_t *log = logger_create(&c);
+	CHECK(log != NULL);
+	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL, "before-reopen");
+	CHECK(logger_flush_instance_status(log) == 0);
+	CHECK(logger_reopen_instance(log) == 0);
+	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL, "after-reopen");
+	CHECK(logger_flush_instance_status(log) == 0);
+	logger_file_metrics_t m;
+	CHECK(logger_get_file_metrics(log, &m) == 0);
+	CHECK(m.data_sync_attempts >= 2 && m.data_sync_failures == 0);
+	CHECK(m.reopen_successes == 1 && m.reopen_failures == 0);
+	CHECK(logger_destroy_status(log) == 0);
 
-	audit_event_t e = { 0 };
-	e.phase = AUDIT_PHASE_RESULT;
-	e.event = "MIN_KERNEL";
-	e.actor = "ci";
-	e.source = "qemu";
-	e.resource = name;
-	e.operation = "validate";
-	e.result = AUDIT_SUCCESS;
-	CHECK(audit_write(&e) == 0);
-	CHECK(audit_shutdown_status() == 0);
-	CHECK(audit_verify_file(active) == 0);
+	FILE *file = fopen(path, "r");
+	CHECK(file != NULL);
+	char text[4096];
+	size_t length = fread(text, 1, sizeof(text) - 1, file);
+	int read_error = ferror(file);
+	int close_error = fclose(file);
+	CHECK(!read_error && !close_error);
+	text[length] = '\0';
+	CHECK(strstr(text, "before-reopen") != NULL);
+	CHECK(strstr(text, "after-reopen") != NULL);
 	return 0;
 }
 
@@ -87,8 +95,8 @@ int main(int argc, char **argv)
 
 	CHECK(rotation_check(argv[1]) == 0);
 	CHECK(rotation_check(argv[2]) == 0);
-	CHECK(audit_check(argv[3], "min-kernel-ext4") == 0);
-	CHECK(audit_check(argv[4], "min-kernel-xfs") == 0);
+	CHECK(persistence_check(argv[3]) == 0);
+	CHECK(persistence_check(argv[4]) == 0);
 
 	puts("MIN_KERNEL_RUNTIME_PROBE_OK");
 	return 0;

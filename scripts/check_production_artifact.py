@@ -31,6 +31,9 @@ failures = [v for v in forbidden if v in strings]
 if 'logger_fault.c.o' in members:
     failures.append('logger_fault.c.o')
 for line in symbols.splitlines():
+    parts = line.split()
+    if parts and parts[-1].split('@', 1)[0].startswith('audit_'):
+        failures.append('retired Audit symbol: ' + line)
     if any(name in line for name in ['logger_fault_should_fail', 'logger_fault_short_write', 'logger_fault_crash_if_requested']):
         failures.append(line)
 if not args.legacy_fork:
@@ -61,6 +64,6 @@ if not is_archive:
         if name.startswith(('libcrypto.', 'libssl.')):
             failures.append('external crypto dependency: ' + name)
 report = {'artifact_type':'archive' if is_archive else 'ELF', 'archive':str(archive), 'passed':not failures, 'failures':failures,
-          'members':members.splitlines(), 'needed':needed, 'crypto_implementation':'builtin-sha256-only'}
+          'members':members.splitlines(), 'needed':needed, 'crypto_implementation':'none'}
 print(json.dumps(report, indent=2))
 raise SystemExit(1 if failures else 0)

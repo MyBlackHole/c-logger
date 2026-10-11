@@ -10,12 +10,6 @@ option("build_shared")
     set_description("Build the production logger as a shared library")
 option_end()
 
-option("legacy_audit")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Temporary opt-in legacy Audit compatibility")
-option_end()
-
 option("legacy_fork")
     set_default(false)
     set_showmenu(true)
@@ -178,11 +172,9 @@ local audit_sources = {
     "src/audit.c", "src/audit_record.c", "src/audit_integrity.c",
     "src/audit_recovery.c", "src/audit_verify.c"
 }
--- Public core tests must exercise the same Audit-free artifact as production.
--- Private/regression suites retain legacy Audit temporarily for migration.
-local audit_compat = has_config("legacy_audit") or
-    has_config("build_private_tests") or has_config("build_regression_tests")
-
+-- Production is always Audit-free, regardless of enabled test suites.
+-- Retired Audit code remains only in uninstalled private/regression archives
+-- until the historical tests have been fully retired.
 local logger_sources = {
     "src/logger.c",
     "src/logger_global.c",
@@ -207,11 +199,6 @@ target("logger")
 
     for _, source in ipairs(logger_sources) do
         add_files(source)
-    end
-    if audit_compat then
-        for _, source in ipairs(audit_sources) do
-            add_files(source)
-        end
     end
     if has_config("legacy_fork") then
         add_files("src/logger_fork.c")
@@ -256,9 +243,6 @@ target("logger")
     add_includedirs("include", "$(builddir)/generated", {public = true})
     add_headerfiles("include/logger.h", "include/console.h",
                     "include/logger_export.h", {prefixdir = "logger"})
-    if audit_compat then
-        add_headerfiles("include/audit.h", {prefixdir = "logger"})
-    end
     add_installfiles("$(builddir)/generated/logger_version.h",
                      {prefixdir = "include/logger"})
     if has_config("legacy_fork") then
@@ -383,7 +367,7 @@ xpack("logger_package")
     set_formats("targz")
     set_version(project_version)
     set_title(package_title)
-    set_description("Host-owned C Logger (legacy Audit opt-in)")
+    set_description("Host-owned C Logger (Audit-free)")
     set_basename(package_basename)
     add_targets("logger")
     after_package(function (package)
@@ -425,6 +409,20 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+    -- This public-API test must cover the actual shipped library in both
+    -- shared and static builds, not only the white-box support archive.
+    target("stderr_sigpipe_production_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_stderr_sigpipe.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, scenario in ipairs({"sync", "async", "preblocked", "bootstrap",
+                                    "bootstrap-preblocked", "bootstrap-pending",
+                                    "bootstrap-format"}) do
+            add_tests(scenario, {runargs = scenario, timeout = 15})
+        end
+    target_end()
 end
 
 
@@ -629,7 +627,7 @@ if has_config("build_regression_tests") then
              "pthread_mutex_destroy"}},
         {"constructor_rollback_regression",
             "tests/regression/test_constructor_rollback.c",
-            {"calloc", "free", "pthread_create", "pthread_cond_destroy",
+            {"calloc", "free", "pthread_create", "pthread_cond_init", "pthread_cond_destroy",
              "pthread_mutex_destroy", "logger_process_object_release"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
@@ -675,12 +673,12 @@ if has_config("build_regression_tests") then
              "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
              "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
              "logger_create", "logger_destroy_status", "logger_file_write",
-             "logger_file_reopen", "dprintf", "fsync"}},
+             "logger_file_reopen", "logger_stderr_writev_all", "fsync"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
             {"logger_create", "logger_destroy_status", "logger_file_write",
              "logger_file_reopen", "logger_queue_push", "logger_format_line",
              "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock",
-             "dprintf"}},
+             "logger_stderr_writev_all"}},
 
         -- Link-time interception parity, group C: explicit instance/Console scope.
         {"explicit_scope_regression", "tests/regression/test_explicit_scope.c",
@@ -784,7 +782,9 @@ if has_config("build_regression_tests") then
     target_end()
 
     target("stderr_sigpipe_regression")
-        for _, scenario in ipairs({"sync", "async", "preblocked"}) do
+        for _, scenario in ipairs({"sync", "async", "preblocked", "bootstrap",
+                                    "bootstrap-preblocked", "bootstrap-pending",
+                                    "bootstrap-format"}) do
             add_tests(scenario, {runargs = scenario, timeout = 15})
         end
     target_end()
@@ -994,12 +994,12 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    -- Uses the real production logger for the builtin-only boundary.
+    -- Historical Audit crypto coverage belongs to the uninstalled archive.
     target("crypto_builtin_only_regression")
         set_kind("binary")
         set_default(false)
         add_files("tests/regression/test_crypto_builtin_only.c")
-        add_deps("logger")
+        add_deps("logger_regression_support")
         add_includedirs("src")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    {force = true})
@@ -1069,7 +1069,7 @@ if has_config("build_regression_tests") then
 
     target("constructor_rollback_regression")
         for _, scenario in ipairs({
-            "success", "queue-cond", "queue-mutex",
+            "success", "queue-init", "queue-init-mutex", "queue-cond", "queue-mutex",
             "progress-cond", "progress-mutex", "emit-mutex", "census"
         }) do
             add_tests("constructor_rollback_" .. scenario,

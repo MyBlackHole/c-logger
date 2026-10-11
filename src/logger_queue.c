@@ -230,6 +230,8 @@ static void queue_spill_put(logger_queue_t *q, uint32_t index)
 int logger_queue_init(logger_queue_t *q, size_t requested)
 {
 	memset(q, 0, sizeof(*q));
+	/* The constructor can inspect rollback proof even after early failure. */
+	atomic_init(&q->wait_mu_error, 0);
 	if (queue_capacity(requested, &q->cap) != 0)
 		return -1;
 	q->mask = q->cap - 1;
@@ -257,7 +259,6 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	atomic_init(&q->wait_count, 0);
 	atomic_init(&q->producer_wake_signals, 0);
 	atomic_init(&q->force_wake_signals, 0);
-	atomic_init(&q->wait_mu_error, 0);
 
 	int rc = pthread_mutex_init(&q->wait_mu, NULL);
 	if (rc != 0) {
@@ -266,7 +267,10 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	}
 	rc = pthread_cond_init(&q->wait_cv, NULL);
 	if (rc != 0) {
-		pthread_mutex_destroy(&q->wait_mu);
+		int destroy_rc = pthread_mutex_destroy(&q->wait_mu);
+		if (destroy_rc)
+			atomic_store_explicit(&q->wait_mu_error, destroy_rc,
+					      memory_order_release);
 		errno = rc;
 		return -1;
 	}

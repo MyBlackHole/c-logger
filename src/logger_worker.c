@@ -118,7 +118,7 @@ static void stderr_sigpipe_consume_new(int was_pending)
 	}
 }
 
-static int stderr_writev_all(struct iovec *v, int count)
+int logger_stderr_writev_all(struct iovec *v, int count)
 {
 	sigset_t old_mask;
 	int was_pending = 0;
@@ -194,7 +194,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	}
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };
-		rc = stderr_writev_all(&v, 1);
+		rc = logger_stderr_writev_all(&v, 1);
 	}
 	if (l->outputs & LOGGER_OUT_FILE) {
 		int x = logger_file_write(&l->file_backend, line, n, &m->ts,
@@ -251,7 +251,7 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		memcpy(workspace->copy, workspace->vec,
 		       count * sizeof(*workspace->vec));
-		int rc = stderr_writev_all(workspace->copy, (int)count);
+		int rc = logger_stderr_writev_all(workspace->copy, (int)count);
 		if (rc < 0) {
 			/* partial batch 没有逐条 acknowledgement。
 			 * 因此保守地把整批 record 标记为未确认。 */

@@ -11,7 +11,7 @@ on:
       - "examples/**"
       - "VERSION"
       - "LICENSE"
-      - "abi/logger-1.0.symbols"
+      - "abi/logger-2.0.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_v1_abi_snapshot.py"
       - "scripts/check_production_artifact.py"
@@ -23,13 +23,15 @@ on:
   pull_request:
     paths:
       - "xmake.lua"
+      - "src/**"
+      - "tests/**"
       - "include/**"
       - "tests/packaging/**"
       - "tests/compat/**"
       - "examples/**"
       - "VERSION"
       - "LICENSE"
-      - "abi/logger-1.0.symbols"
+      - "abi/logger-2.0.symbols"
       - "scripts/check_release_abi.py"
       - "scripts/check_v1_abi_snapshot.py"
       - "scripts/check_production_artifact.py"
@@ -132,10 +134,10 @@ jobs:
         run: |
           version="$(cat VERSION)"
           dir="$(dirname "${{ steps.artifact.outputs.path }}")"
-          test -L "$dir/liblogger.so.1"
+          test -L "$dir/liblogger.so.2"
           test -L "$dir/liblogger.so"
-          test "$(readlink "$dir/liblogger.so.1")" = "liblogger.so.${version}"
-          test "$(readlink "$dir/liblogger.so")" = "liblogger.so.1"
+          test "$(readlink "$dir/liblogger.so.2")" = "liblogger.so.${version}"
+          test "$(readlink "$dir/liblogger.so")" = "liblogger.so.2"
 
 
   core-tests:
