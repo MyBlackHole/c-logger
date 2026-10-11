@@ -237,14 +237,14 @@ target("logger")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
-        -- Keep the current documentation and its linked dependencies explicit.
-        -- A recursive glob would also ship retired Audit/crypto design records.
+        -- 显式列出当前文档及其链接依赖。
+        -- 递归通配会把已退役的 Audit/密码模块设计记录也装入发布包。
         local doc_manifest = path.join(os.projectdir(), "docs", "INSTALL_MANIFEST.txt")
         for line in io.lines(doc_manifest) do
             local doc = line:trim()
             if doc ~= "" and doc:sub(1, 1) ~= "#" then
                 local source = path.join(os.projectdir(), doc)
-                assert(os.isfile(source), "missing installed document: " .. doc)
+                assert(os.isfile(source), "安装文档缺失：" .. doc)
                 local prefix = "share/doc/prod_c_logger"
                 local subdir = path.directory(doc)
                 if subdir ~= "." then

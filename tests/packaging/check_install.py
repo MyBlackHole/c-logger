@@ -248,7 +248,7 @@ try:
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'VERSION/header/CMake/pkg-config identity',
-                      'document manifest and relative Markdown links',
+                      '文档清单与 Markdown 相对文件链接',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
                       'version/components rejection','current C/C++ layouts and defaults','production isolation']}
     (work/'RESULT.json').write_text(json.dumps(report,indent=2))

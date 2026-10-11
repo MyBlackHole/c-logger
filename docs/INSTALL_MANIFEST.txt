@@ -1,6 +1,6 @@
-# Current installed documentation, relative to the source/documentation root.
-# Preserve this layout so Markdown links also work after relocation.
-# Historical architecture/Audit/crypto/round/release-note files stay source-only.
+# 当前安装文档清单；路径相对于源码根目录或安装文档根目录。
+# 保留此相对层级，确保重定位后的 Markdown 链接仍然可用。
+# 历史架构、Audit、密码模块、轮次和发布记录只保留在源码树中。
 LICENSE
 README.md
 API.md
@@ -47,5 +47,5 @@ docs/v2/QUEUE_WAKEUP_PROOF.md
 docs/v2/SUPPORT_MATRIX.md
 docs/v2/WORKER_FAILURE.md
 docs/v2/WORKER_STARTUP.md
-# Deliberate current migration evidence linked by TESTING and AUDIT_REMOVAL.
+# 显式包含 TESTING 和 AUDIT_REMOVAL 链接的当前迁移证据。
 validation/AUDIT_TEST_RETIREMENT.md

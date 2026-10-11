@@ -91,8 +91,10 @@ retired allocation。生命周期证明失败不是普通 I/O close 失败。
 ## 后端生命周期
 
 文件/Syslog 后端必须在实例进入 RUNNING 前完成初始化。
-重新打开/轮转可能替换内部文件描述符，但所有权转移必须具备事务性：
-在替代对象按照后端契约准备就绪之前，不得释放旧的可用状态。
+重新打开/轮转可能替换内部文件描述符，但两者的提交边界不同。
+简单 reopen 的 candidate 失败保留仍可用的 old owner；rotation 成功 rename 后，旧 fd
+已经属于 archive，后续 active 创建/同步失败进入 detached 状态，不能继续写旧 archive。
+因此不能把两条路径合并为“轮转失败永不改变旧状态”。
 
 ## Audit 生命周期
 
