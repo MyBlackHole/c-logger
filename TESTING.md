@@ -205,6 +205,20 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 `examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
 测试资产，不代表项目重新依赖 CMake 构建。
 
+## CAS 内存序门禁
+
+启用 `build_tests` 时，`xmake test -g cas-order -j1` 注册并运行静态清单检查和负向 mutation。
+`validation/cas_orders.tsv` 记录 `src/` 与 `include/` 中每个直接 CAS 的对象、desired 表达式、
+strong/weak、success/failure order、数量和理由，不依赖行号。新增、删除或改变 CAS 时须同步
+评审清单，不能自动接受扫描结果。检查器拒绝不在保守 C11 允许表中的 pair（包括
+release/acquire）、隐式 order、order 别名和未经评审的 compiler CAS builtin。
+
+Mutation 在临时源码副本中逐处恢复四个 global lifecycle 的 release/acquire，确认门禁失败；
+也验证非法 failure order、合法但未评审的 order 变化、清单漂移和新增调用会失败。
+这是未经预处理的词法门禁，检查所有源码分支，不是完整 C 解析器、happens-before 证明或运行时
+UB 检测；生命周期故障/并发回归仍须独立运行。保守 pair 选择消除 C11 可移植性契约疑义，
+不宣称旧 pair 已复现 UB。
+
 ## 工程 gate
 
 测试通过不是唯一准入条件。较大的 queue、工作线程、backend、lifecycle、所有者ship、locking 或
