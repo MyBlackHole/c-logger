@@ -1,5 +1,5 @@
-/* Test-only replacement: deliberately broken logger implementations must not
- * pass the exact production rotation test, even beside stale archives. */
+/* 仅供测试的替代实现：即使目录里有旧归档，故意损坏的实现也不得通过
+ * 与生产库完全相同的轮转测试。 */
 #include "logger.h"
 #include <errno.h>
 #include <stdarg.h>

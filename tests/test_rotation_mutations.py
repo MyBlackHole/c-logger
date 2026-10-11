@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the unchanged rotation test against replacement implementations."""
+"""将同一份轮转测试链接到替代实现，验证正常输出与故障反例。"""
 import argparse
 import os
 from pathlib import Path
@@ -25,9 +25,9 @@ with tempfile.TemporaryDirectory(prefix='logger-rotation-mutations-') as tempora
             if result.returncode != expected:
                 raise RuntimeError((stale, mode, result.returncode, result.stdout, result.stderr))
             if list(cwd.glob('rotation-test.*')):
-                raise RuntimeError('private directory leaked')
+                raise RuntimeError('测试私有目录未清理')
             if stale:
                 if ((cwd / 'rotation.fakeZ.log').read_text() != 'stale archive\n' or
                         (cwd / 'rotation.log').read_text() != 'stale active\n'):
-                    raise RuntimeError('stale parent files changed')
-            print(f'stale={stale} mutation={mode}: exit={result.returncode} expected={expected}')
+                    raise RuntimeError('上层目录中的旧文件被修改')
+            print(f'预放旧文件={stale} 反例={mode}：退出码={result.returncode} 期望={expected}')

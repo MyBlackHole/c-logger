@@ -43,8 +43,8 @@ static int verify_file(const char *path, unsigned int *next)
 	return rc;
 }
 
-/* Archive names contain UTC timestamps, so alphasort gives rotation order.
- * Check archives first, then the active tail, with one consecutive sequence. */
+/* 归档名包含 UTC 时间戳，alphasort 因而给出轮转顺序。
+ * 先检查归档，再检查活动文件尾部，要求记录序号连续。 */
 static int select_archive(const struct dirent *entry)
 {
 	const char *name = entry->d_name;
@@ -132,7 +132,7 @@ int main(void)
 	}
 	if (verify_directory(directory)) {
 		fprintf(stderr,
-			"rotation: missing archive or invalid record set\n");
+			"轮转测试：缺少归档或记录集合不符合要求\n");
 		rc = 3;
 	}
 out:
