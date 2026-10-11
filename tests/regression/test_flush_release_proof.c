@@ -4,14 +4,15 @@
 #include <fcntl.h>
 #include <sys/file.h>
 
-/* Link wrappers inject one release-proof failure. All resources, worker I/O,
- * global lifetime pins, cancellation and subsequent lock calls remain real. */
+/* 链接包装函数注入一次释放证明失败。全部资源、工作线程 I/O、
+ * 全局生命周期保护、取消与后续锁调用仍是真实的。
+ */
 static _Atomic(logger_t *) subject;
 static _Atomic int pause_flush, at_progress, resume_flush;
 static _Atomic int fail_emit_unlock, emit_poisoned, poisoned_reacquires;
 static _Atomic int at_global_writer, stop_done, cancel_cleanup_ran;
 static _Atomic int fail_sync, sync_calls, fail_progress_lock;
-static _Thread_local int caller; /* 1: flush; 2: global shutdown */
+static _Thread_local int caller; /* 1：刷新；2：全局关闭 */
 static int use_global, stop_rc, stop_error;
 
 logger_t *__real_logger_create(const logger_config_t *);
@@ -32,8 +33,9 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	if (subject && mu == &subject->progress_mu && caller == 1 &&
 	    atomic_exchange(&pause_flush, 0)) {
-		/* The API has admitted this flush while RUNNING, and the global
-		 * variant already holds its real lifetime reader pin. */
+		/* API 已在 RUNNING 时接纳本次刷新，全局变体
+		 * 也已持有其真实的生命周期读侧保护。
+		 */
 		atomic_store(&at_progress, 1);
 		wait_flag(&resume_flush);
 	}
@@ -42,8 +44,9 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 		return EAGAIN;
 	if (subject && mu == &subject->emit_mu && atomic_load(&emit_poisoned)) {
 		atomic_fetch_add(&poisoned_reacquires, 1);
-		/* Deliberately retain the real lock operation: the unfixed baseline
-		 * hangs here and must be rejected by the runner's timeout. */
+		/* 有意保留真实锁操作：未修复基线会在此挂起，
+		 * 必须由测试运行器超时拒绝。
+		 */
 		fputs("unexpected reacquire of unproven emit_mu\n", stderr);
 	}
 	return __real_pthread_mutex_lock(mu);
@@ -54,7 +57,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 	if (subject && mu == &subject->emit_mu &&
 	    atomic_exchange(&fail_emit_unlock, 0)) {
 		atomic_store(&emit_poisoned, 1);
-		return EAGAIN; /* Do not actually release: ownership is unproven. */
+		return EAGAIN; /* 不实际释放：所有权未经证明。 */
 	}
 	return __real_pthread_mutex_unlock(mu);
 }
@@ -79,9 +82,10 @@ int __wrap_fsync(int fd)
 static void cancelled_flush_cleanup(void *unused)
 {
 	(void)unused;
-	/* Cancellation must not escape while an explicit scope is still busy.
-	 * For Global, completion of the waiting shutdown below also proves the
-	 * reader pin was released before this cleanup ran. */
+	/* 显式作用域仍忙碌时，取消不得逃逸。
+	 * 对于全局情形，下方等待关闭的完成也证明
+	 * 此清理运行前读侧生命周期保护已释放。
+	 */
 	CHECK(!logger_scope_busy());
 	CHECK(logger_get_state(subject) == LOGGER_STATE_STOPPING);
 	atomic_store(&cancel_cleanup_ran, 1);
@@ -144,8 +148,9 @@ static void release_failure(int global, int cancel)
 		logger_log(subject, LOGGER_INFO, "proof", NULL, 0, NULL, "record");
 	wait_flag(&subject->synchronization_error);
 	CHECK(atomic_load(&subject->synchronization_error) == EAGAIN);
-	/* Test-only join proves this exact worker ended. Production must still
-	 * retain the object because its emit lock could not be released. */
+	/* 仅供测试的线程回收证明此精确工作线程已结束。
+	 * 生产库仍必须保留对象，因为其输出锁未能释放。
+	 */
 	CHECK(!pthread_join(subject->worker, NULL));
 	CHECK(atomic_load(&subject->async_completed) == 1);
 	int before = atomic_load(&sync_calls);
@@ -176,9 +181,10 @@ static void release_failure(int global, int cancel)
 	CHECK(flock(lease, LOCK_EX | LOCK_NB) == -1 &&
 	      (errno == EAGAIN || errno == EWOULDBLOCK));
 	CHECK(close(lease) == 0);
-	/* Keep the retired allocation rooted until exit. Only fixture names are
-	 * removed after all assertions; no successor owner is attempted afterward.
-	 * Never retry teardown or reset the poisoned mutex for test cleanup. */
+	/* 保留退役分配的根引用直到退出。全部断言后只移除夹具名称；
+	 * 之后不尝试建立后继所有者。
+	 * 测试清理绝不重试拆除，也不重置已失效互斥锁。
+	 */
 }
 
 static void ordinary_error(int wait_error)

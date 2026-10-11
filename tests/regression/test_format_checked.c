@@ -25,8 +25,9 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
 	return __real_vsnprintf(out, cap, fmt, ap);
 }
 
-/* glibc redirects fortified production calls to __vsnprintf_chk. Exercise the
- * same failure contract without disabling the library's FORTIFY protection. */
+/* glibc 把加固的生产调用重定向到 __vsnprintf_chk。
+ * 在不禁用库的 FORTIFY 保护的情况下测试相同失败契约。
+ */
 int __real___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
 			  const char *fmt, va_list ap);
 int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,

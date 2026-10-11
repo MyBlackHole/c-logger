@@ -23,10 +23,10 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 {
 	if (fail_join) {
 		fail_join = 0;
-		/* Let the real worker quiesce so the test itself has no runaway
-		 * thread, but report a failed lifetime proof to the implementation.
-		 * The implementation must conservatively refuse final free because
-		 * it cannot rely on facts hidden behind a failed pthread_join(). */
+		/* 让真实工作线程静止，使测试自身没有失控线程，
+		 * 但向实现报告生命周期证明失败。实现必须保守地拒绝最终 free，
+		 * 因为它不能依赖失败的 pthread_join() 背后隐藏的事实。
+		 */
 		int rc = __real_pthread_join(thread, result);
 		return rc ? rc : EDEADLK;
 	}
@@ -93,11 +93,12 @@ int main(int argc, char **argv)
 	for (int i = 0; i < (io_error ? 1 : 1000); ++i)
 		LOGGER_INFO(l, "test", "record=%d", i);
 	int rc = logger_destroy_status(l);
-	l = NULL; /* destroy consumes public ownership on every return */
+	l = NULL; /* 销毁在每种返回情况下都消耗公开所有权 */
 	CHECK(expected ? rc == -1 && errno == expected : rc == 0);
 	if (lifecycle_error) {
-		/* Lifetime proof failed: the implementation must intentionally retain
-		 * the object/resources instead of freeing possibly reachable memory. */
+		/* 生命周期证明失败：实现必须故意保留对象与资源，
+		 * 而不是释放仍可能被访问的内存。
+		 */
 		CHECK(logger_process_object_count() == 1);
 		return 0;
 	}

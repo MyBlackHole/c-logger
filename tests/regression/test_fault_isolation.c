@@ -16,9 +16,10 @@ extern char **environ;
 static int intercept_connect;
 static char connected_path[108];
 
-/* Export this executable symbol for both production static and shared links.
- * --wrap=connect alone cannot observe a call made inside the production DSO.
- * Linux is the supported platform; forward unrelated calls without libdl. */
+/* 为生产静态与共享链接都导出此可执行文件符号。
+ * 仅用 --wrap=connect 无法观察生产 DSO 内部的调用。
+ * Linux 是受支持平台；不使用 libdl，转发无关调用。
+ */
 int isolation_connect(int, const struct sockaddr *, socklen_t) __asm__("connect");
 int isolation_connect(int fd, const struct sockaddr *address, socklen_t n)
 {
@@ -49,8 +50,9 @@ static int file_fault(const char *mode)
 
 static int file_crash(const char *mode)
 {
-	/* The other four process-crash cases use syscall/acknowledgment probes,
-	 * not environment-enabled library hooks. They have their own matrix. */
+	/* 其他四个进程崩溃用例使用系统调用与确认探针，
+	 * 不使用环境启用的库钩子。它们有自己的矩阵。
+	 */
 	return !strcmp(mode, "file_after_archive_rename") ||
 	       !strcmp(mode, "file_after_archive_dirsync") ||
 	       !strcmp(mode, "file_after_active_open") ||
@@ -112,8 +114,9 @@ static void scenario(const char *mode)
 		CHECK(!logger_get_file_metrics(logger, &metrics));
 		CHECK(metrics.bytes_written > 3 &&
 		      metrics.write_operations == 1);
-		/* Sync logging uses write, and its public syscall counter proves
-		 * support actually split the record while production ignored it. */
+		/* 同步日志使用 write，其公开系统调用计数器证明
+		 * 测试支持确实拆分记录，而生产库忽略了它。
+		 */
 		CHECK(TEST_EXPECT_HOOKS ? metrics.write_syscalls > 1 :
 					 metrics.write_syscalls == 1);
 		CHECK(!logger_destroy_status(logger));
@@ -125,8 +128,9 @@ static void scenario(const char *mode)
 		logger_t *logger = logger_create(&c);
 		CHECK(logger);
 		CHECK(!emit(logger, "baseline"));
-		/* Both variants take a real file rotation. Support must terminate
-		 * at the named hook; production must complete the switch and write. */
+		/* 两个变体都执行真实文件轮转。测试支持必须在命名钩子处终止；
+		 * 生产库必须完成切换和写入。
+		 */
 		CHECK(!setenv("LOGGER_CRASH_POINT", mode, 1));
 		CHECK(!emit(logger, "after-rotation"));
 		logger_file_metrics_t metrics;

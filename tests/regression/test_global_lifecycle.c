@@ -3,8 +3,9 @@
 #include <stdarg.h>
 #include <sys/wait.h>
 
-/* No hooks in the library. GNU ld wrappers control exact before-lock and
- * in-backend boundaries; the executable owns every pause and failure. */
+/* 库中没有钩子。GNU ld 包装函数控制精确的加锁前与后端内部边界；
+ * 可执行文件拥有每次暂停与失败。
+ */
 static _Thread_local int delay_read, delay_control, count_reads, note_writer;
 static _Thread_local int fail_read, fail_control, fail_writer;
 static _Atomic int delayed, release_delayed, entered, release_backend;
@@ -15,8 +16,9 @@ static _Atomic int recurse_create, recurse_destroy, recurse_write,
 	recurse_reopen, recurse_bootstrap;
 static _Atomic int recursion_checked, pause_bootstrap, fail_sync;
 static int admission_only;
-/* Link-time failures do not call the real release: lock ownership remains
- * deliberately uncertain. Every poison scenario runs in its own process. */
+/* 链接时失败不调用真实释放：锁所有权有意保持不确定。
+ * 每个失效场景在自己的进程中运行。
+ */
 static _Thread_local int fail_rw_unlock, fail_control_unlock;
 static _Thread_local int fail_join, fail_cond_destroy;
 static _Thread_local int handoff_reader, handoff_writer;
@@ -87,7 +89,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 	if (mu == control_mutex && fail_control_unlock) {
 		int error = fail_control_unlock;
 		fail_control_unlock = 0;
-		return error; /* owner is still holding the real mutex */
+		return error; /* 所有者仍持有真实互斥锁 */
 	}
 	return __real_pthread_mutex_unlock(mu);
 }
@@ -95,9 +97,9 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	if (handoff_reader) {
 		handoff_reader = 0;
-		/* Synthetic error after a real release: a caller seeing a
-		 * nonzero return must still treat ownership as unknown, while
-		 * the other real pthread thread can safely acquire the lock. */
+		/* 真实释放后的合成错误：看到非零返回的调用者
+		 * 仍必须视所有权为未知，而另一条真实 pthread 线程可以安全获取锁。
+		 */
 		atomic_store(&handoff_reader_at_unlock, 1);
 		wait_flag(&handoff_release_reader);
 		CHECK(__real_pthread_rwlock_unlock(rw) == 0);
@@ -106,7 +108,7 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 	if (fail_rw_unlock) {
 		int error = fail_rw_unlock;
 		fail_rw_unlock = 0;
-		return error; /* no actual unlock: ownership is uncertain */
+		return error; /* 不实际解锁：所有权不确定 */
 	}
 	return __real_pthread_rwlock_unlock(rw);
 }
@@ -117,7 +119,7 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 		fail_join = 0;
 		rejected_worker = thread;
 		saw_rejected_join = 1;
-		return error; /* production join failed: final free is forbidden */
+		return error; /* 生产线程回收失败：禁止最终 free */
 	}
 	return __real_pthread_join(thread, result);
 }
@@ -271,7 +273,7 @@ static void generation(enum operation op, int bootstrap)
 	pthread_t t;
 	call_result_t r = { .op = op };
 	CHECK(!pthread_create(&t, NULL, delayed_call, &r));
-	wait_flag(&delayed); /* ticket sampled, before reader lock */
+	wait_flag(&delayed); /* 票据已采样，尚未获取读锁 */
 	if (!bootstrap)
 		CHECK(stop_status() == 0);
 	CHECK(logger_init(&b) == 0);
@@ -296,8 +298,7 @@ static void shutdown_generation(void)
 	pthread_t t;
 	call_result_t r = { 0 };
 	CHECK(!pthread_create(&t, NULL, delayed_shutdown, &r));
-	wait_flag(
-		&delayed); /* shutdown sampled old generation, no control lock */
+	wait_flag(&delayed); /* 关闭已采样旧代次，未持控制锁 */
 	CHECK(!stop_status());
 	CHECK(!logger_init(&b));
 	atomic_store(&release_delayed, 1);
@@ -311,7 +312,7 @@ static void all_rejected(int error)
 {
 	for (int i = 0; i < OP_COUNT; ++i) {
 		call_result_t r = { .op = (enum operation)i };
-		/* Verify rejected metric queries overwrite old caller data with zero. */
+		/* 验证被拒绝的指标查询用零覆盖调用者旧数据。 */
 		memset(&r.metrics, 0xa5, sizeof(r.metrics));
 		memset(&r.io, 0xa5, sizeof(r.io));
 		memset(&r.diagnostics, 0xa5, sizeof(r.diagnostics));
@@ -328,7 +329,7 @@ static void start_gate(void)
 	call_result_t r = { 0 };
 	atomic_store(&pause_create, 1);
 	CHECK(!pthread_create(&t, NULL, init_call, &r));
-	wait_flag(&entered); /* before candidate exists */
+	wait_flag(&entered); /* 候选对象存在之前 */
 	count_reads = 1;
 	all_rejected(EAGAIN);
 	count_reads = 0;
@@ -363,9 +364,9 @@ static void stop_gate(void)
 	call_result_t w = { 0 }, s = { 0 };
 	atomic_store(&pause_write, 1);
 	CHECK(!pthread_create(&writer, NULL, write_call, &w));
-	wait_flag(&entered); /* existing reader is inside backend emit_mu */
+	wait_flag(&entered); /* 现有读者位于后端 emit_mu 内 */
 	CHECK(!pthread_create(&stopper, NULL, shutdown_call, &s));
-	wait_flag(&writer_waiting); /* admission closed, wrlock about to wait */
+	wait_flag(&writer_waiting); /* 准入已关闭，写锁即将等待 */
 	for (int i = 0; i < 8; ++i)
 		CHECK(!pthread_create(&readers[i], NULL, flood_closed, NULL));
 	for (int i = 0; i < 8; ++i)
@@ -489,11 +490,11 @@ static void *verify_poisoned_controller(void *arg)
 	return NULL;
 }
 
-/* Reader has acquired the lifetime pin before reaching release.
- * The controller closes admission, pauses before acquiring writer, then
- * the reader returns a synthetic unlock error. Both interleavings must
- * preserve BROKEN: writer success must not unpublish, and failed writer
- * acquisition must not roll back the already-poisoned generation. */
+/* 读者到达释放点前已取得生命周期保护。控制方关闭准入，
+ * 在获取写锁前暂停，然后读者返回合成的解锁错误。
+ * 两种交错都必须保留 BROKEN：写锁成功不得撤销发布，
+ * 写锁获取失败也不得回滚已失效的代次。
+ */
 static void *handoff_reader_thread(void *arg)
 {
 	call_result_t *r = arg;
@@ -522,13 +523,14 @@ static void unlock_shutdown_handoff(int acquire_fails)
 	call_result_t a = { 0 }, b = { 0 };
 	CHECK(!pthread_create(&reader, NULL, handoff_reader_thread, &a));
 	wait_flag(&handoff_reader_at_unlock);
-	/* Reader still owns the lock; shutdown must close admission first. */
+	/* 读者仍拥有锁；关闭必须先关闭准入。 */
 	CHECK(!pthread_create(&controller, NULL, handoff_shutdown_thread,
 				 &b));
 	wait_flag(&handoff_writer_at_lock);
 
-	/* For this controlled error, the real unlock succeeds. The injected
-	 * error is returned only after the reader has released that pin. */
+	/* 对于此受控错误，真实解锁成功。注入错误
+	 * 只在读者已释放该生命周期保护后返回。
+	 */
 	atomic_store(&handoff_release_reader, 1);
 	CHECK(!pthread_join(reader, NULL));
 	CHECK(a.rc == -1 && a.error == EIO);
@@ -540,8 +542,9 @@ static void unlock_shutdown_handoff(int acquire_fails)
 	else
 		CHECK(b.rc == -1 && b.error == EIO);
 
-	/* The reader's poison wins even if writer acquires successfully.
-	 * The one live instance is still owned by the Global controller. */
+	/* 即使写锁成功获取，读者造成的失效仍优先。
+	 * 唯一存活实例仍由全局控制方拥有。
+	 */
 	CHECK(logger_process_object_count() == 1);
 	all_rejected(EIO);
 	logger_config_t replacement = config_for("new.log", 0);
@@ -551,8 +554,9 @@ static void unlock_shutdown_handoff(int acquire_fails)
 
 static void release_proof_failure(const char *kind)
 {
-	/* Global lock failures do not need a worker; only join/queue destroy
-	 * tests create an asynchronous executor that may remain unjoined. */
+	/* 全局锁失败不需要工作线程；只有线程回收或队列销毁测试
+	 * 创建可能保持未回收状态的异步执行器。
+	 */
 	int asynchronous = !strcmp(kind, "join") ||
 			   !strcmp(kind, "cond-destroy");
 	logger_config_t cfg = config_for("old.log", asynchronous);
@@ -560,7 +564,7 @@ static void release_proof_failure(const char *kind)
 	int lock_uncertain = 0;
 
 	if (!strcmp(kind, "control")) {
-		/* Capture only the Global control mutex, not an instance mutex. */
+		/* 只捕获全局控制互斥锁，不捕获实例互斥锁。 */
 		capture_control = 1;
 		fail_control_unlock = error;
 		CHECK(logger_init(&cfg) == -1 && errno == error);
@@ -586,8 +590,9 @@ static void release_proof_failure(const char *kind)
 			CHECK(!"unknown proof-failure scenario");
 	}
 
-	/* For all five paths the old instance was never fully released.
-	 * Neither another generation nor another lock acquisition is legal. */
+	/* 五条路径中旧实例都从未完整释放。
+	 * 另一代次或另一次锁获取都不合法。
+	 */
 	CHECK(logger_process_object_count() == 1);
 	pthread_t observer;
 	CHECK(!pthread_create(&observer, NULL, verify_poisoned_controller,
@@ -599,16 +604,18 @@ static void release_proof_failure(const char *kind)
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state));
 	CHECK(old_state == (lock_uncertain ?
 				PTHREAD_CANCEL_DISABLE : PTHREAD_CANCEL_ENABLE));
-	/* Production deliberately kept the object because its join failed.
-	 * Test-only: reap the exact rejected worker after asserting BROKEN;
-	 * never call logger_destroy again or reset the poisoned controller.
-	 * This gives TSan an actual thread-happens-before edge at process exit. */
+	/* 生产库因线程回收失败而故意保留对象。
+	 * 仅用于测试：断言 BROKEN 后回收精确的被拒绝工作线程；
+	 * 绝不再次调用 logger_destroy，也不重置已失效控制方。
+	 * 这为 TSan 在进程退出时提供真实的线程先行发生关系。
+	 */
 	if (!strcmp(kind, "join")) {
 		CHECK(saw_rejected_join);
 		CHECK(!__real_pthread_join(rejected_worker, NULL));
 	}
-	/* A failed unlock can still own a real lock; never try to clean up
-	 * or reinitialize this test process. Process exit reclaims it. */
+	/* 解锁失败仍可能拥有真实锁；绝不尝试清理
+	 * 或重新初始化此测试进程。进程退出会回收它。
+	 */
 }
 
 static void shutdown_error(int real_sync)
@@ -622,7 +629,7 @@ static void shutdown_error(int real_sync)
 		atomic_store(&fail_dispose, 1);
 	CHECK(stop_status() == -1 && errno == EIO);
 	CHECK(!logger_process_object_count());
-	CHECK(!stop_status()); /* old failure is not a request to retry freed object */
+	CHECK(!stop_status()); /* 旧失败不是要求重试已释放对象 */
 	CHECK(!logger_init(&cfg));
 	CHECK(!stop_status());
 }

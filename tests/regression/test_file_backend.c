@@ -493,7 +493,7 @@ static void rotation_failure(const char *scenario)
 	CHECK(!file_metrics.detached);
 	CHECK(file_metrics.last_rotation_error == expected);
 	CHECK(file_metrics.last_error == 0);
-	/* Disable size rotation only for this final probe. */
+	/* 只为最后这次探测禁用按大小轮转。 */
 	l->file_backend.rotation.mode = LOGGER_ROTATE_NONE;
 	LOGGER_INFO(l, "test", "new-active");
 	CHECK(file_contains("out.log", "new-active") &&

@@ -1,6 +1,7 @@
-/* Black-box regression assertions using only pre-existing public APIs.
- * Compile and link this identical source against both the input and output
- * archives. A nonzero result on the input demonstrates the old defect. */
+/* 仅使用既有公开 API 的黑盒回归断言。
+ * 将此相同源码分别针对输入与输出静态库编译并链接。
+ * 输入版本上的非零结果展示旧缺陷。
+ */
 #define _GNU_SOURCE
 #include "logger.h"
 #include <errno.h>

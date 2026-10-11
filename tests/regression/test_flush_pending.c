@@ -31,8 +31,7 @@ int __wrap_fsync(int fd)
 static void *flusher(void *p)
 {
 	in_flush = 1;
-	logger_flush_instance(
-		p); /* exercises the unchanged legacy API as well */
+	logger_flush_instance(p); /* 也覆盖未改变的旧有 API */
 	size_after_flush = file_size("out.log");
 	in_flush = 0;
 	return NULL;
@@ -50,7 +49,7 @@ int main(void)
 	CHECK(l);
 	logger_log(l, LOGGER_INFO, "flush", __FILE__, __LINE__, __func__,
 		   "pending-format");
-	/* Avoid conflating the baseline test with its independent lost-wakeup bug. */
+	/* 避免将基线测试与其独立的唤醒丢失缺陷混为一谈。 */
 	pthread_mutex_lock(&l->q.wait_mu);
 	pthread_cond_signal(&l->q.wait_cv);
 	pthread_mutex_unlock(&l->q.wait_mu);

@@ -6,9 +6,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-/* All pausing state belongs to this test. The rendezvous has no test mutex
- * which could itself be abandoned by cancellation. Wrappers intercept the
- * real library critical section, not an imitation of the implementation. */
+/* 所有暂停状态都属于此测试。会合点没有自身可能因取消而被遗留的测试互斥锁。
+ * 包装函数拦截真实库临界区，不是实现的仿制品。
+ */
 enum point {
 	P_NONE,
 	P_WRITE,
@@ -279,8 +279,9 @@ static void application_cleanup(void *unused)
 	int old;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	actor = 0;
-	/* Constructor cleanup must have disposed its unreturned candidate first.
-     * Destructor caller removed the pointer from its owner before the call. */
+	/* 构造清理必须先销毁尚未返回的候选对象。
+	 * 析构调用者在调用前已从其所有者中移除指针。
+	 */
 	if (cleanup_new) {
 		CHECK(logger_process_object_count() == 0);
 		logger_config_t cfg = local_cfg(0);
@@ -324,7 +325,7 @@ static void *caller(void *unused)
 		 !strcmp(scenario, "create-fail")) {
 		logger_config_t cfg = local_cfg(1);
 		logger_t *l = logger_create(&cfg);
-		/* A pending deferred request must be handled before pointer handoff. */
+		/* 待定的延迟取消请求必须在指针交接前处理。 */
 		if (l) {
 			logger_destroy(l);
 			CHECK(!"constructor returned despite pending cancellation");
@@ -421,7 +422,7 @@ static void cancel_case(void)
 	CHECK(!pthread_create(&t, NULL, caller, NULL));
 	wait_flag(&entered);
 	if (!strcmp(scenario, "file-metrics")) {
-		/* Logging also takes emit_mu; it must not satisfy this case. */
+		/* 日志输出也获取 emit_mu；它不能满足此测试情形。 */
 		int calls = atomic_load(&file_metrics_calls);
 		if (calls != 1)
 			fprintf(stderr,
@@ -624,7 +625,7 @@ int main(int argc, char **argv)
 		CHECK(!bind(receiver, (struct sockaddr *)&address,
 			    sizeof(address)));
 	}
-	/* Isolate stdio output. Preserve stderr for CHECK diagnostics after tests. */
+	/* 隔离 stdio 输出。保留 stderr，供测试后的 CHECK 诊断使用。 */
 	FILE *sink = fopen("console.out", "w+");
 	CHECK(sink);
 	FILE *saved_out = stdout, *saved_err = stderr;
