@@ -1,6 +1,6 @@
 > 新增受控 `logger_fork_reinit()`：允许初始化之后 fork，父子无需 exec 即可重新初始化。
 > 前提是先停止业务线程、关闭 Audit 与显式实例；helper 在父进程清理默认 Logger。
-> 这不是任意多线程 raw fork 自动恢复。详见 `docs/CONTROLLED_FORK_REINIT.md`。
+> 这不是任意多线程 raw fork 自动恢复。详见 `docs/HISTORY_CONTROLLED_FORK_REINIT.md`。
 
 > **当前交付：Round 5 Fork/生产隔离修复，仍非 Production v1。**
 > 子进程不能靠覆盖 pthread 对象重建运行时；继承状态必须 exec 后再初始化。
@@ -344,7 +344,7 @@ Use `logger_fork_reinit()` for a controlled single-threaded fork/continue after
 initialization, then initialize each branch explicitly. The helper tears down
 the optional default logger in the parent BEFORE fork; explicit instances and
 Audit must already be closed by their owners. A remaining thread/instance is
-rejected. See `docs/CONTROLLED_FORK_REINIT.md` and `examples/fork_reinit.c`.
+rejected. See `docs/HISTORY_CONTROLLED_FORK_REINIT.md` and `examples/fork_reinit.c`.
 
 Raw fork after initialization keeps the Round 5 ECHILD guard. There is no child
 mutex/rwlock reset and no automatic restoration of arbitrary inherited state.

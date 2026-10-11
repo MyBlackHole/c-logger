@@ -20,7 +20,6 @@ fi
 configure_full() {
   xmake f -m "$mode" -o "$build" \
     --build_shared="$shared" \
-    --legacy_fork=n \
     --build_tests=y \
     --build_private_tests=y \
     --build_regression_tests=y
@@ -30,7 +29,6 @@ case "$profile" in
   fast)
     xmake f -m "$mode" -o "$build" \
       --build_shared="$shared" \
-      --legacy_fork=n \
       --build_tests=y \
       --build_private_tests=n \
       --build_regression_tests=n
@@ -40,21 +38,10 @@ case "$profile" in
   crash)
     xmake f -m release -o "$build" \
       --build_shared="$shared" \
-      --legacy_fork=n \
       --build_tests=n \
       --build_private_tests=y \
       --build_regression_tests=n
     exec xmake test -g process-crash -j1
-    ;;
-
-  legacy-fork)
-    xmake f -m release -o "$build" \
-      --build_shared=n \
-      --legacy_fork=y \
-      --build_tests=n \
-      --build_private_tests=n \
-      --build_regression_tests=y
-    exec xmake test -j1 'fork_reinit_regression/*'
     ;;
 
   production)
@@ -69,7 +56,7 @@ case "$profile" in
     ;;
 
   *)
-    echo "usage: scripts/check.sh {fast|production|crash|legacy-fork|unit|integration|concurrency|reliability|security|host-owned|crypto}" >&2
+    echo "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned|crypto}" >&2
     exit 2
     ;;
 esac

@@ -425,12 +425,7 @@ LOGGER_API int logger_reopen(void);
  * - do not use vfork, signal handlers or arbitrary post-fork library calls.
  *   Parent descriptors/queues remain unchanged; child fds live until exec/_exit.
  */
-/* Optional legacy application helper is declared only by logger_fork_compat.h.
- * The normal library never calls fork or scans the host's thread list. */
-#if defined(LOGGER_ENABLE_LEGACY_FORK_HELPER) && \
-	LOGGER_ENABLE_LEGACY_FORK_HELPER
-#include "logger_fork_compat.h"
-#endif
+/* The library never calls fork or scans the host's thread list. */
 
 LOGGER_API void logger_set_level(logger_level_t);
 LOGGER_API uint64_t logger_global_dropped(void);

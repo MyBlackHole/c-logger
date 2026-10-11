@@ -59,7 +59,7 @@ PKG_CONFIG_PATH=/opt/logger/current/lib/pkgconfig   pkg-config --cflags --libs l
 
 - C 与 C++11 消费方；
 - `find_package(Logger ... EXACT CONFIG REQUIRED)`；
-- 共享库/静态库/legacy 组件 失败关闭；
+- 共享库/静态库组件及未知或已移除组件失败关闭；
 - PIC 静态库 嵌入 SDK 模块；
 - pkg-config；
 - SONAME、ELF 符号版本 与 公开符号允许列表；
@@ -121,22 +121,9 @@ Host: logger_create → SDK instances borrow → stop/join SDK callers
 
 ## Fork 边界
 
-默认生产库不编译 legacy `logger_fork_reinit()` 辅助接口。宿主负责线程退出、进程创建与
-child 中的重新初始化时机。
-
-仅在受控兼容场景显式启用：
-
-```sh
-export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-xmake f -m release -o build-compat \
-  --build_shared=n \
-  --legacy_fork=y \
-  --build_regression_tests=y
-xmake -j4 fork_reinit_example
-xmake test 'fork_reinit_regression/*' -j1
-```
-
-新业务 SDK 不应依赖该 辅助接口。原始 fork 防御保护 和现有 ECHILD 契约仍然适用。
+当前库不提供 `logger_fork_reinit()` 或其他进程创建 helper，也不扫描宿主线程列表。
+宿主负责进程创建、线程退出与首次初始化时机。继承运行时后的 raw fork 仍由 PID/atfork
+防护以 ECHILD 拒绝，child 必须 exec；移除旧 helper 不扩大 post-fork 支持范围。
 
 ## 关键文档
 

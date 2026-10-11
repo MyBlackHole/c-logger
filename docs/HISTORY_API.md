@@ -1,5 +1,5 @@
 > 缺陷收敛开发版，仍非 Production v1。当前 fork/生产构建规范见
-> `docs/CONTROLLED_FORK_REINIT.md` 与 `docs/ROUND5_FORK_ISOLATION.md`。受控 fork 可重新初始化；raw fork 仍拒绝继承运行时。
+> `docs/HISTORY_CONTROLLED_FORK_REINIT.md` 与 `docs/ROUND5_FORK_ISOLATION.md`。受控 fork 可重新初始化；raw fork 仍拒绝继承运行时。
 > Queue/Flush、Audit 状态、密码与解析分别见 Round 1–4；剩余问题见 KNOWN_ISSUES。
 
 # Public API contract (v1 candidate)
@@ -81,7 +81,7 @@ legacy markers; they do not drain workers or implement the controlled helper.
 Fork before any runtime use while truly single-threaded, or fork+exec, remain
 supported alternatives. No support for vfork/raw clone/signal-handler logging,
 or arbitrary multithreaded post-fork reconstruction. LOG arguments are evaluated
-before the library's rejection checks. See `docs/CONTROLLED_FORK_REINIT.md`.
+before the library's rejection checks. See `docs/HISTORY_CONTROLLED_FORK_REINIT.md`.
 
 ## Audit durability and failure state
 
