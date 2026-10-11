@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -49,18 +49,18 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure release crash profile
+      - name: 配置 release 崩溃测试选项
         run: >-
           xmake f -m release -o xmake-build
           --build_shared=${{ matrix.shared }}
           --build_private_tests=y
 
-      - name: Run and verify process-crash recovery
+      - name: 运行并验证进程崩溃恢复
         shell: bash
         run: |
           set -uo pipefail
@@ -97,7 +97,7 @@ jobs:
             exit 1
           fi
 
-      - name: Upload crash recovery evidence
+      - name: 上传崩溃恢复证据
         if: always()
         uses: actions/upload-artifact@v4
         with:

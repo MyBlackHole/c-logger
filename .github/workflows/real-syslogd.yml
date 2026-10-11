@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install real syslog daemon
+      - name: 安装真实 Syslog 守护进程
         shell: bash
         run: |
           set -euo pipefail
@@ -56,7 +56,7 @@ jobs:
             sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.rsyslogd
           fi
 
-      - name: Export project version
+      - name: 导出项目版本
         shell: bash
         run: |
           set -euo pipefail
@@ -64,12 +64,12 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "LOGGER_PROJECT_VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Set up Xmake
+      - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: "3.1.1"
 
-      - name: Configure production-linked integration
+      - name: 配置链接生产库的集成测试
         shell: bash
         run: |
           set -euo pipefail
@@ -80,8 +80,8 @@ jobs:
           fi
           xmake f -m release -o real-syslog-build --build_shared="$shared"
 
-      - name: Build integration executable
+      - name: 构建集成测试可执行文件
         run: xmake -j2 real_syslogd_integration
 
-      - name: Run against real rsyslogd
+      - name: 连接真实 rsyslogd 运行测试
         run: xmake run real_syslogd_integration

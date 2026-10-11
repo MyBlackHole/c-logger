@@ -24,16 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install VM and filesystem tools
+      - name: 安装虚拟机与文件系统工具
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 e2fsprogs xfsprogs
 
-      - name: Validate Ubuntu 20.04 on Linux 5.10 guest
+      - name: 在 Linux 5.10 客户机中验证 Ubuntu 20.04
         shell: bash
         run: bash scripts/run_min_kernel_vm.sh min-kernel-evidence
 
-      - name: Upload minimum-kernel evidence
+      - name: 上传最低内核验证证据
         if: always()
         uses: actions/upload-artifact@v4
         with:
