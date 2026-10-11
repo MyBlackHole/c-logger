@@ -1,40 +1,42 @@
 # 显式 Logger / Console：取消、重入与所有权
 
 > 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
-> Audit/crypto 已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
+> Audit/密码学模块已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
 
 此文描述当前加固版本。公开函数签名、公开结构布局、普通文件/Audit 格式未变。
-它不让裸指针在并发 destroy、释放后访问或卸载代码时自动变安全。
+它不让裸指针在并发销毁、释放后访问或卸载代码时自动变安全。
 
-## 私有 scope 的目的和限制
+<a id="私有-scope-的目的和限制"></a>
+
+## 私有作用域的目的和限制
 
 `logger_scope.c/.h` 使用每线程标记与取消状态保存，不使用全局执行锁或实例引用计数。
-构造函数、日志格式化/提交、同步回退、flush、重新打开、Syslog metrics、最终处置和 Console I/O
+构造函数、日志格式化/提交、同步回退、flush、重新打开、Syslog 指标、最终处置和 Console I/O
 在接触资源前禁用取消；资源清理、va_end、解锁后清除标记，再恢复原取消状态。
 有效的延迟取消请求会保留，取消不回滚已输出的记录、配置更新或已经完成的销毁。
 
 其他线程对活跃实例的正常并发仍然允许，实例内部锁仍负责编排。禁用取消不是超时机制：
-文件、stdio、工作线程 输出、锁及调度可能等待。不要靠 pthread_cancel 强制完成关闭。
-Logger 工作线程 由 running/notify/join 协作关闭；宿主不得取消私有 工作线程。
+文件、stdio、工作线程输出、锁及调度可能等待。不要靠 pthread_cancel 强制完成关闭。
+Logger 工作线程由 running/通知/join 协作关闭；宿主不得取消私有工作线程。
 
 所有普通 API 都不是信号安全接口，也不承诺异步取消从任意指令发生时的通用安全。
 调用者不得在 `PTHREAD_CANCEL_ASYNCHRONOUS + PTHREAD_CANCEL_ENABLE` 状态下把 Logger/Console
 API 当作 AC-Safe 函数使用；POSIX 并不要求这些普通库函数具备该性质。若宿主必须保留
-ASYNCHRONOUS type，应先把 cancellation state 设为 DISABLE，再调用 Logger，并由宿主在自己的
-安全边界决定何时恢复 ENABLE。库必须保持这种 调用方-disabled 状态和原 type，不得擅自启用。
+ASYNCHRONOUS 类型，应先把取消状态设为 DISABLE，再调用 Logger，并由宿主在自己的
+安全边界决定何时恢复 ENABLE。库必须保持这种由调用方禁用取消的状态和原类型，不得擅自启用。
 不得从 printf 扩展、FILE 回调/拦截函数中重新启用取消、pthread_exit、longjmp 或抛出穿越 C 边界的异常。
 
 ## 所有权交接必须区别于普通写入
 
-`logger_create()` 在构造成功之后、指针交给宿主之前保留取消 清理。恢复原状态后有一次
-`pthread_testcancel()`（仅原状态 ENABLE），挂起的延迟取消先触发，清理 释放尚未交出的实例。
+`logger_create()` 在构造成功之后、指针交给宿主之前保留取消清理。恢复原状态后有一次
+`pthread_testcancel()`（仅原状态 ENABLE），挂起的延迟取消先触发，清理释放尚未交出的实例。
 文件/协调文件等初始化副作用不撤销；不能据此假设文件系统事务回滚。
 
 已启用 ASYNCHRONOUS 取消的直接构造返回 NULL/ENOTSUP，不读取后端配置或创建实例/后端资源；
 进程身份防护的注册可能已发生，因此不承诺完全没有运行时副作用。
-原因是裸 C 指针从 callee 返回到宿主赋值没有可对异步取消原子化的交接点。宿主可以先禁用取消，
-建立自己的所有权和 清理 后再恢复。原来已经 DISABLE 的策略不被库擅自启用。
-Global/Audit 在其外层已禁用取消的生命周期内调用 构造函数，行为仍合法。
+原因是裸 C 指针从被调用函数返回到宿主赋值没有可对异步取消原子化的交接点。宿主可以先禁用取消，
+建立自己的所有权和清理后再恢复。原来已经 DISABLE 的策略不被库擅自启用。
+Global/Audit 在其外层已禁用取消的生命周期内调用构造函数，行为仍合法。
 
 宿主对于成功返回的指针要负责后续线程取消的清理。例如，在已满足独占销毁前提时：
 
@@ -43,11 +45,11 @@ static void release_owned(void *opaque)
 {
     logger_t **slot = opaque;
     logger_t *owned = *slot;
-    *slot = NULL; /* 先从宿主 cleanup 所有权中移除，避免取消后再次 destroy */
+    *slot = NULL; /* 先从宿主清理处理器的所有权中移除，避免取消后再次销毁 */
     (void)logger_destroy_status(owned);
 }
 
-/* 默认 deferred cancellation；真实项目仍要在这里处理构造/输出错误。 */
+/* 默认延迟取消；真实项目仍要在这里处理构造/输出错误。 */
 logger_t *owned = NULL;
 pthread_cleanup_push(release_owned, &owned);
 owned = logger_create(&cfg);
@@ -59,9 +61,9 @@ if (owned) {
 pthread_cleanup_pop(0);
 ```
 
-如果最终处置在恢复取消状态时触发宿主 清理，原实例可能已经释放；不要重复销毁。
-NULL destroy 不注册新运行时。ECHILD / EDEADLK 是处置前拒绝；正常处置末尾的 I/O 失败仍释放实例。
-不允许多个 所有者 同时 destroy，不允许把 get_state(STOPPED) 当成旧指针可再次使用的证据。
+如果最终处置在恢复取消状态时触发宿主清理，原实例可能已经释放；不要重复销毁。
+NULL 销毁不注册新运行时。ECHILD / EDEADLK 是处置前拒绝；正常处置末尾的 I/O 失败仍释放实例。
+不允许多个所有者同时销毁，不允许把 get_state(STOPPED) 当成旧指针可再次使用的证据。
 
 ## 重入契约
 
@@ -71,40 +73,40 @@ NULL destroy 不注册新运行时。ECHILD / EDEADLK 是处置前拒绝；正�
 它不阻止正常先后使用 A/B，不阻止不同线程使用不同或同一个活跃实例，也不妨碍 SDK → 宿主日志
 适配器 → Logger 这一普通顶层调用；SDK 回调尚未执行在 Logger 内部。
 
-工作线程 也设置本线程标记，避免 回调 → flush 等待自身完成、回调 → destroy join 自身。
+工作线程也设置本线程标记，避免回调 → flush 等待自身完成、回调 → 销毁 join 自身。
 Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Logger 的回调反向取得生命周期锁。
-这不是通用死锁检测：跨线程 回调 等待环、宿主持有 flockfile 再逆序调用 Console 等不受保证。
-纯字符串 redaction 辅助接口 不是资源 scope，不带隐式递归检测。
+这不是通用死锁检测：跨线程回调等待环、宿主持有 flockfile 再逆序调用 Console 等不受保证。
+纯字符串脱敏辅助接口不是资源作用域，不带隐式递归检测。
 
 ## Console 配置与错误
 
-详细程度/颜色 使用一个原子打包值。整次 console_init 一次提交；设置接口 CAS 只改自己的字段；
-每次输出捕获一次配置。并发整次 init 不会拼出一个从未配置过的 详细程度/颜色 组合。
+详细程度/颜色使用一个原子打包值。整次 console_init 一次提交；设置接口 CAS 只改自己的字段；
+每次输出捕获一次配置。并发执行整个初始化过程 不会拼出一个从未配置过的详细程度/颜色组合。
 
-- console_print 仍是 标准输出、无标签、不自动追加换行；诊断仍到 标准错误。
+- console_print 仍是标准输出、无标签、不自动追加换行；诊断仍到标准错误。
 - 所有 fmt=NULL 返回 EINVAL，包括被级别过滤的消息。
-- 非法配置/枚举不改变已有配置，void 设置接口/init 通过 errno 报告 EINVAL。
+- 非法配置/枚举不改变已有配置，void 设置接口/初始化 通过 errno 报告 EINVAL。
 - stdio 输出失败后即使后续 fflush 也失败，保留第一次错误。
 - Console 自身的 stdout/stderr 写入和 fflush 使用线程局部 SIGPIPE guard：关闭读取端的
-  pipe 返回 -1/errno=EPIPE，不因该次输出终止宿主。已有首错优先，例如格式化 EILSEQ 后的
+  管道返回 -1/errno=EPIPE，不因该次输出终止宿主。已有首错优先，例如格式化 EILSEQ 后的
   fflush 再遇 EPIPE，仍返回 EILSEQ，同时处理这次写入产生的 SIGPIPE。
-- guard 不改变进程全局 signal disposition，不修改其他线程的 mask；返回前恢复调用线程的
-  完整原 mask。调用前已 pending 的 SIGPIPE 保留；仅在观察到 EPIPE 且进入时无 pending
+- guard 不改变进程全局信号处置方式，不修改其他线程的信号屏蔽字；返回前恢复调用线程的
+  完整原信号屏蔽字。调用前已有的待处理 SIGPIPE 保留；仅在观察到 EPIPE 且进入时没有待处理
   SIGPIPE 时消费新信号。标准信号不能区分同一窗口内外部投递的 SIGPIPE 与写入生成信号；
-  这不是一个管理宿主显式 signal 投递的接口。
-- 保留原 fprintf/vfprintf/fputc/fflush 路径、FILE buffer 和 ferror 状态，不切换为 raw fd
+  这不是一个管理宿主显式信号投递的接口。
+- 保留原 fprintf/vfprintf/fputc/fflush 路径、FILE 缓冲区和 ferror 状态，不切换为原始 fd
   输出，也不增加可增长的中间格式缓冲。既有 fflush 仍可能刷新宿主预先放入相同 FILE 的
   数据；宿主在 Console 外直接写入或刷新该 FILE 时自行负责 SIGPIPE 策略。
-- console_debug_源信息 消息 3072 字节（含 NUL）、合成字段 4096 字节（含 NUL）；超限返回
+- console_debug_源信息消息 3072 字节（含 NUL）、合成字段 4096 字节（含 NUL）；超限返回
   EOVERFLOW，在写出诊断前拒绝，而不静默截断。
 - TTY 自动探测不覆盖供 printf `%m` 使用的 errno；成功操作恢复入口 errno。
 - 配置或输出提交后收到取消，不做回滚。
 
-TLS 上下文 set/get 的自赋值与 请求/会话 等交换使用临时快照，避免输入仍指向 TLS 时
-边读边覆盖。TLS/context 生命周期和异步 源信息 复制容量没有改变。
+TLS 上下文 set/get 的自赋值与请求/会话等交换使用临时快照，避免输入仍指向 TLS 时
+边读边覆盖。TLS/上下文生命周期和异步源信息复制容量没有改变。
 
 ## 验证与生产范围
 
-回归通过链接器 --wrap 安排真实资源持有窗口，另用无 wrapper 的 fopencookie 宿主回调测试实际
-共享产物。wrapper 不编译进生产库，未增加环境控制故障点或进程管理功能。
+回归通过链接器 --wrap安排真实资源持有窗口，另用未使用包装器的 fopencookie 宿主回调测试实际
+共享产物。包装器不编译进生产库，未增加环境控制故障点或进程管理功能。
 详见 validation/EXPLICIT_CONSOLE_RESULTS.md；新增测试通过不代表已验收所有部署平台和存储掉电。
