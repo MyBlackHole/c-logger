@@ -120,27 +120,20 @@ CI 对 25 个 production-linked core tests 分别运行：
 
 ## Crash / VM power-cut parity
 
-Xmake 现在把 focused process-crash 集合固定为 9 个 case：
+当前 main 的 focused process-crash 已迁移为八个普通 Logger case：acknowledged、data
+fsync 前/后、真实 rotation 后的 data fsync、四个 file rotation switch 点。
+三个纯 Audit checkpoint 点明确退役，不再将历史 Audit hash-chain 成功当成普通 Logger 验收。
+新旧九项/十项到八项的逐项映射见 [crash 合同](LOGGER_CRASH_CONTRACT.md)。
 
-- 4 个 Audit checkpoint / fsync crash point；
-- 1 个 rotation crash recovery；
-- 4 个 file rotation switch crash point。
+八项统一使用 Xmake 原生 `group = "process-crash"`。`check_crash_matrix.py` 从实际日志核对
+精确集合，缺失、意外新增或失败均使 gate 失败，并保留JSON/JUnit/原始日志。
+另一个 `crash-verifier` group 验证完整字节 oracle 的正负向 fixture。
+专用 workflow 保持 main/manual 的 shared/static 配置各三次；PR只执行shared配置一次。
+两个配置的 crash executable 都链接静态 `logger_test_support`，不等于生产DSO内注入。
 
-这 9 个 `add_tests` 统一使用 Xmake 原生 `group = "process-crash"`。
-专用 `crash-recovery` workflow 对 shared/static 两种配置分别执行该 group 3 次，
-`scripts/check_crash_matrix.py` 从实际 Xmake result log 核对**精确 case 集合**，任何缺失、
-意外新增或失败都会使门禁失败，同时保留 JSON、JUnit 和原始日志证据。
-
-此前 `xmake-parity` 内重复维护的一份 9×3 case 列表已经删除，避免同一 crash suite 双跑。
-测试二进制仍链接独立的 `logger_test_support`，不会把 crash hook 带入 production `logger`。
-
-QEMU power-cut workflow 已切到 Xmake-only authority。迁移前 CI 已对同一 10 个 cut point
-同时运行 CMake/Xmake guest，确认两者都能完成同盘重启后的 baseline、恢复、追加与 chain
-verify；当前不再为每个 cut point 重复执行旧 CMake guest。
-
-权威 guest 仍是静态 test-only `vm_powercut_guest`，链接 `logger_test_support` 并保留
-`--wrap=logger_fault_crash_if_requested`。每个 cut point 继续执行真实 QEMU SIGKILL、raw ext4
-重启恢复和 chain verify；这仍然是虚拟机存储栈验证，不替代真实硬件断电验收。
+QEMU guest 同样使用此普通 Logger fixture，静态链接仅测试支持库。PR和main/manual均运行
+完整8点×ext4/XFS矩阵，串口确认目标hook之后才SIGKILL QEMU，再同盘启动验证十条唯一
+baseline及两条恢复记录的完整字节。这里没有Audit chain verify，且不替代物理硬件断电验收。
 
 ## Install parity 3A
 
@@ -283,8 +276,8 @@ suite 的 lifetime scenarios；CI 首次实际构建该 target 后暴露问题�
 - `file_audit_close_regression`：reserved audit file 创建与 close 错误路径。
 
 wrapper 集合、测试名称与 timeout 与 CMake 保持一致。已有
-`file_audit_regression`（busy/cwd 与四个 process-crash 点）继续由
-Xmake private/process-crash 门禁覆盖，不重复引入第二套实现。
+`file_audit_regression` 的历史 busy/cwd 仍由 Xmake private 测试覆盖；四个 rotation
+process-crash 点已迁入普通 Logger 共用 fixture，见 [crash 合同](LOGGER_CRASH_CONTRACT.md)。
 
 ## Static sanitizer prerequisite — Audit / crypto regression parity
 

@@ -9,7 +9,8 @@ c-logger 定位为高可靠 C 日志库，不再负责业务审计事务、哈�
 - 生产logger始终Audit-free；private/regression开关不再把Audit源文件或audit.h注入安装产品。
 - SONAME 2 / LOGGER_2.0与47符号清单隔离已发布v1；当前VERSION仍待独立发布身份迁移，不可发布为v1。
 - production-linked核心测试与最低内核installed probe已转为普通Logger验证；安装、打包、ABI检查使用ABI2。
-- 历史Audit测试仅使用未安装支持archive；后续可以按覆盖关系删除历史源码，不能删掉普通Logger的文件故障/轮换证据。
+- 普通Logger crash/QEMU证据已迁出Audit：共享fixture检查十条唯一已确认baseline、四个真实轮转切点、data fsync前后与重开追加；process/VM各八项。三个纯Audit checkpoint点明确退役，见[完整合同与矩阵映射](../LOGGER_CRASH_CONTRACT.md)。
+- 历史Audit测试仅使用未安装支持archive；残余源码另批删除，不属于本次crash证据迁移。
 - 正式2.0 release仍需最终合同冻结、精确SHA全部门禁和发布授权。本文件后续章节保留迁移过程历史。
 
 ## 历史：第一阶段

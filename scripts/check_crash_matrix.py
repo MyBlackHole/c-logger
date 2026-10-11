@@ -8,18 +8,10 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from crash_contract import MIGRATION, POINTS
 
-EXPECTED = {
-    "crash_recovery_test/crash_after_audit_fsync",
-    "crash_recovery_test/crash_before_state_rename",
-    "crash_recovery_test/crash_after_state_rename",
-    "crash_recovery_test/crash_after_checkpoint_commit",
-    "audit_rotation_crash_regression/rotation_crash_sha256",
-    "file_audit_regression/file_crash_sha256_file_after_archive_rename",
-    "file_audit_regression/file_crash_sha256_file_after_archive_dirsync",
-    "file_audit_regression/file_crash_sha256_file_after_active_open",
-    "file_audit_regression/file_crash_sha256_file_after_active_dirsync",
-}
+
+EXPECTED = {f"crash_recovery_test/crash_{point}" for point in POINTS}
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 TEST_RESULT = re.compile(
@@ -30,7 +22,7 @@ TEST_RESULT = re.compile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Verify Xmake process-crash logs against the fixed nine-case contract."
+        description="Verify Xmake process-crash logs against the fixed eight-case ordinary Logger contract."
     )
     parser.add_argument("logs", nargs="+", type=Path, help="xmake test output log")
     parser.add_argument(
@@ -52,7 +44,13 @@ def results_from_log(path: Path) -> dict[str, tuple[str, float]]:
         line = ANSI_ESCAPE.sub("", raw_line)
         match = TEST_RESULT.match(line)
         if match:
-            results[match.group(1)] = (match.group(2), float(match.group(3)))
+            name, status, seconds = match.groups()
+            if name in results:
+                # A repeated result must not overwrite an earlier failure or
+                # make an accidentally duplicated run look like an exact set.
+                results[name] = ("duplicate", results[name][1] + float(seconds))
+            else:
+                results[name] = (status, float(seconds))
     return results
 
 
@@ -112,6 +110,9 @@ def write_junit(
 def main() -> int:
     args = parse_args()
     evidence = {
+        "contract": "ordinary-logger-crash-v1",
+        "boundary": "process SIGKILL; not VM or physical power loss",
+        "migration": MIGRATION,
         "expected": sorted(EXPECTED),
         "runs": [],
     }

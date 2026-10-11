@@ -202,10 +202,11 @@ Linux 发行版、内核 或 CPU 自动兼容。
 
 ## Crash / 断电 / Sanitizer / 基准测试
 
-Production v1 继续保留以下独立证据链：
+当前 main 保留以下独立证据链（历史 Production v1 合同见 release/1.x）：
 
-- `crash-recovery`：9 个 进程崩溃用例，共享库/静态库 各重复 3 次；
-- `vm-powercut`：ext4 + XFS 各 10 个 QEMU SIGKILL + raw-disk reboot/recovery 切断点；
+- `crash-recovery`：8 个普通 Logger 进程 SIGKILL 用例，main/manual shared/static 配置各3次；
+- `vm-powercut`：ext4 + XFS 各8个普通 Logger QEMU SIGKILL + raw-disk reboot/recovery 切断点；
+  新旧矩阵与三个纯 Audit checkpoint 点的退役原因见 [crash 合同](LOGGER_CRASH_CONTRACT.md)；
 - `xmake-parity` Sanitizer：ASan+UBSan 与 TSan 的完整 static suite；
 - `queue-benchmark`：当前 Production v1 用 Xmake，冻结历史 baseline 用其各自 commit 的原构建定义。
 
