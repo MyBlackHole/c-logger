@@ -13,7 +13,8 @@
  * attributes are discarded. Exact function types are therefore frozen by the
  * C11 translation unit below; C++11 independently freezes layouts, numeric
  * constants and default initializers. */
-#define ABI_FN(name, ret, ...)
+#define ABI_FN(name, ret, ...) \
+	static_assert(true, "C function types are checked by the C11 contract")
 #else
 #define ABI_ASSERT(expr) _Static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) _Alignof(type)
@@ -223,7 +224,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* Exact public function type contract: 62 default production exports. */
+/* Exact public function type contract: 47 default production exports. */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
