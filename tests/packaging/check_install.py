@@ -127,7 +127,7 @@ try:
     assert re.search(r'^set\(Logger_RELEASE_CANDIDATE\s+' + expected_candidate_cmake + r'\)$', cmake_config, re.M)
     pc = (pc_dir / 'logger.pc').read_text()
     assert re.search(r'^Description: Host-owned C Logger, ABI ' +
-                     re.escape(a.abi_version) + r' development$', pc, re.M)
+                     re.escape(a.abi_version) + r'$', pc, re.M)
     for x in prefix.rglob('*'):
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()

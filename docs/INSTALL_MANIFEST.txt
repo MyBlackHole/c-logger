@@ -52,3 +52,7 @@ docs/v2/WORKER_FAILURE.md
 docs/v2/WORKER_STARTUP.md
 # 显式包含 TESTING 和 AUDIT_REMOVAL 链接的当前迁移证据。
 validation/AUDIT_TEST_RETIREMENT.md
+
+# 当前稳定发布准备合同与说明。
+abi/LOGGER_2_0_CONTRACT.md
+docs/RELEASE_NOTES_2.0.0.md
