@@ -80,6 +80,15 @@ xmake test -g crash-verifier -j1
 `scripts/check_crash_matrix.py` 核对精确八项并输出 JSON、JUnit 和原始日志。
 `crash-verifier` 用正负向 mutation fixture 验证验收器不会放过缺失、重复或损坏。
 
+### Rotation 记录完整性与反例
+
+`rotation_test` 每次使用独立 `mkdtemp` 目录，检查 status shutdown，要求产生 archive，
+并逐条验证 active + archives 中的 100 条记录内容与序号恰好出现一次。
+`xmake test -g rotation-verifier` 将同一测试链接到测试专用替代实现：有效 fixture 必须通过；
+无输出、仅 active、缺失、重复、内容损坏与 shutdown 失败必须拒绝。每项分别在干净目录和
+预放旧 active/archive 的目录执行，旧文件不得影响结果或被删除。替代实现不链接生产库、
+不安装，也不进入 XPack；真实 rotation 测试仍分别链接 static/shared 生产产物。
+
 ### Raw fork 防御
 
 生产链接的 `fork_test` / `fork_guard_test` 与白盒 `process_fork_regression` 持续验证
