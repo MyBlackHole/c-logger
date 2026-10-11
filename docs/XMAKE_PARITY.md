@@ -2,6 +2,9 @@
 
 ## 状态
 
+当前 main 已移除 legacy fork helper、构建选项、示例和专用回归/CI job；下文对应条目仅记录历史迁移证据。
+raw fork 防御、普通可靠性测试和安装/制品验证仍保留。
+
 Xmake 当前是 **生产发布构建权威**。
 
 - production shared/static、install metadata、XPack TGZ 与 GitHub Release asset 由 Xmake 生成；

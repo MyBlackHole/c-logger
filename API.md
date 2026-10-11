@@ -3,7 +3,7 @@
 本文描述 main 的普通 Logger/Console 接入；当前开发 ABI 为 SONAME 2 / `LOGGER_2.0`，
 默认47个公开 C 符号，清单见 `abi/logger-2.0.symbols`。2.0 最终公开合同尚未冻结。
 Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅适用于 `release/1.x`。
-`logger_fork_reinit()` 仍仅由 opt-in 兼容产物提供，不进入默认 ABI。
+`logger_fork_reinit()` 与对应构建选项、兼容头文件已移除。
 
 ## 显式实例（第三方默认入口）
 
@@ -64,11 +64,11 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
 关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局handler、mask或既有pending信号。
 
-## Fork 与兼容
+## Fork 边界
 
-默认库保留 PID/atfork 误用防护，但不替宿主 fork 或检查全进程线程列表。
+库保留 PID/atfork 误用防护，但不替宿主 fork 或检查全进程线程列表。
 一般 raw fork 的 ECHILD 契约不变。第三方选择 worker 内首次初始化或 exec 后初始化等合法生命周期。
-需要旧的受控 helper 时显式开启 `LOGGER_ENABLE_LEGACY_FORK_HELPER`，详细约束见兼容文档。
+不提供重绑 child 进程身份的 helper；已初始化运行时的 child 必须 exec。
 
 ## 跨库句柄和配置
 

@@ -81,23 +81,12 @@ xmake test -g crash-verifier -j1
 `scripts/check_crash_matrix.py` 核对精确八项并输出 JSON、JUnit 和原始日志。
 `crash-verifier` 用正负向 mutation fixture 验证验收器不会放过缺失、重复或损坏。
 
-### 旧版 fork 兼容性
+### Raw fork 防御
 
-默认 发布 不编译 旧版辅助接口。需要受控兼容测试时：
-
-```sh
-scripts/check.sh legacy-fork
-```
-
-或显式：
-
-```sh
-xmake f -m release -o build-legacy \
-  --build_shared=n \
-  --legacy_fork=y \
-  --build_regression_tests=y
-xmake test 'fork_reinit_regression/*' -j1
-```
+生产链接的 `fork_test` / `fork_guard_test` 与白盒 `process_fork_regression` 持续验证
+PID/atfork 防护、注册窗口、早注册 child handler、继承锁和 ECHILD 快速拒绝。
+`process_fork_regression` 在 shared 配置下仍链接同源 static 支持库；production core
+测试分别覆盖真实 shared/static 产物。旧 `legacy-fork` profile 与重初始化 helper 已移除。
 
 ## 旧 profile 参数
 

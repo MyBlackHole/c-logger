@@ -53,7 +53,7 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 - 默认 ELF symbol version：`LOGGER_1.0`；
 - 唯一 Production v1 public C ABI allowlist：`abi/logger-1.0.symbols`（62 项）；
 - 安装元数据固定 `LOGGER_ABI_VERSION=1`；
-- 旧版 fork 辅助接口仅在显式 compatibility build 中额外导出 `logger_fork_reinit`；
+- 历史 v1 opt-in fork helper 不属于当前 main；main 已移除该实现、兼容头文件与构建选项；
 - production 默认隐藏可见性，并使用 version script `local: *`；
 - 生产故障注入固定关闭。
 
@@ -142,9 +142,8 @@ target_link_libraries(host PRIVATE Logger::logger)
 
 - `shared`
 - `static`
-- `legacy_fork`
 
-CI 使用 `EXACT` + 组件 组合检查 失败关闭 行为。
+CI 使用 `EXACT` + 组件组合检查失败关闭行为；已移除的 `legacy_fork` 与未知组件均必须拒绝。
 
 pkg-config：
 
@@ -232,23 +231,12 @@ cache、实际目标 挂载/存储栈 或最低 内核/glibc 验收。
 `workflow_dispatch` 因而是幂等恢复入口：完整 发布 不会重复发布，不完整 发布 会从既有 tag 的源码重建并修复。
 发布新代码仍必须先递增 `VERSION`；不能把同一 tag 改指向另一份源码。
 
-## Legacy fork 辅助接口
+## Fork 制品边界
 
-默认包不包含 `logger_fork_reinit`。受控兼容构建：
-
-```sh
-export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-xmake f -m release -o build-legacy \
-  --build_shared=n \
-  --legacy_fork=y \
-  --build_regression_tests=y
-xmake -j4 logger fork_reinit_example
-xmake test 'fork_reinit_regression/*' -j1
-```
-
-安装 legacy 变体时，CMake target/pkg-config 元数据 会传播
-`LOGGER_ENABLE_LEGACY_FORK_HELPER=1`，并安装 `logger_fork_compat.h`。默认包不会声明不存在
-的 辅助接口。
+当前 main 不提供 legacy fork helper、兼容头文件或构建选项。所有生产制品检查都必须拒绝
+`logger_fork_reinit`、进程创建符号和 `/proc/self/task` 扫描；没有 opt-in 绕过开关。
+CMake/pkg-config 元数据不传播旧 helper 宏，安装检查持续验证公开头文件、当前 ABI 符号集、
+共享库/静态库组件和未知/已移除组件的失败关闭行为。PID/atfork 防御和对象 census 保留。
 
 ## 不宣称的兼容性
 

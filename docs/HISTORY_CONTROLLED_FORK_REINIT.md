@@ -1,6 +1,5 @@
-> 本轮更新：此文描述 **opt-in 兼容 helper**，不再是第三方集成默认入口。
-> 需要 Xmake `--legacy_fork=y`；默认产物不编译该函数。
-> 新集成参见 [HOST_OWNED.md](HOST_OWNED.md)。下文保留原兼容约束。
+> 历史记录：本文描述已从 main 移除的受控 fork helper，不是当前 API 或构建说明。
+> 当前边界见 [HOST_OWNED.md](HOST_OWNED.md)。下文仅保留原实现的历史约束。
 
 # 初始化后 fork 并重新初始化（受控模式）
 

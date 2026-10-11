@@ -2,6 +2,7 @@
 """Mutation checks for the ordinary Logger crash oracle (no crash is simulated)."""
 
 import argparse
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -96,7 +97,7 @@ def main():
     check("unexpected namespace entry", baseline,
           extra=lambda root: (root / "crash.unexpected.log").write_bytes(b""))
     check("hard-linked active", baseline,
-          extra=lambda root: (root / "alias").hardlink_to(root / "crash.log"))
+          extra=lambda root: os.link(root / "crash.log", root / "alias"))
     def symlink(root):
         (root / "crash.log").rename(root / "real")
         (root / "crash.log").symlink_to("real")
