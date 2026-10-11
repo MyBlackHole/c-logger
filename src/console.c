@@ -2,6 +2,7 @@
 #include "logger_scope.h"
 #include "logger_cleanup.h"
 #include "logger_uapi.h"
+#include "logger_sigpipe.h"
 #undef CONSOLE_DEBUG
 #include <errno.h>
 #include <pthread.h>
@@ -118,6 +119,17 @@ static int color_enabled(unsigned config, FILE *out)
 	return enabled;
 }
 
+static void stdio_error(int failed, int *first_error, int *saw_epipe)
+{
+	if (!failed)
+		return;
+	int error = errno ? errno : EIO;
+	if (error == EPIPE)
+		*saw_epipe = 1;
+	if (!*first_error)
+		*first_error = -error;
+}
+
 /* scope 覆盖全部 libc 调用、本库 mutex 和 FILE 内部锁。
  * cancellation 发生时不会回滚已经完成或部分完成的输出；
  * 也不承诺与 host 外部 flockfile() 建立额外 lock order。 */
@@ -134,20 +146,23 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 	int rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 	if (rc)
 		return rc;
-	if (label) {
-		int n = color_enabled(config, out) && ansi ?
-				fprintf(out, "%s%s:\033[0m ", ansi, label) :
-				fprintf(out, "%s: ", label);
-		if (n < 0)
-			rc = -(errno ? errno : EIO);
+	logger_sigpipe_guard_t sigpipe_guard;
+	rc = logger_sigpipe_begin(&sigpipe_guard);
+	int guarded = !rc;
+	int saw_epipe = 0;
+	if (guarded) {
+		if (label) {
+			int n = color_enabled(config, out) && ansi ?
+					fprintf(out, "%s%s:\033[0m ", ansi, label) :
+					fprintf(out, "%s: ", label);
+			stdio_error(n < 0, &rc, &saw_epipe);
+		}
+		if (!rc)
+			stdio_error(vfprintf(out, fmt, ap) < 0, &rc, &saw_epipe);
+		if (!rc && label)
+			stdio_error(fputc('\n', out) == EOF, &rc, &saw_epipe);
+		stdio_error(fflush(out) != 0, &rc, &saw_epipe);
 	}
-	if (!rc && vfprintf(out, fmt, ap) < 0)
-		rc = -(errno ? errno : EIO);
-	if (!rc && label && fputc('\n', out) == EOF)
-		rc = -(errno ? errno : EIO);
-	int flush = fflush(out);
-	if (!rc && flush)
-		rc = -(errno ? errno : EIO);
 	int unlock_rc = RELEASE_ERR(pthread_mutex_console,
 				    &console_guard);
 	if (unlock_rc) {
@@ -156,7 +171,7 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 		if (!rc)
 			rc = unlock_rc;
 	}
-	return rc;
+	return guarded ? logger_sigpipe_end(&sigpipe_guard, rc, saw_epipe) : rc;
 }
 
 int console_print(const char *fmt, ...)
@@ -234,11 +249,15 @@ int console_debug_source(const char *file, int line, const char *func,
 			ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
 			rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 			if (!rc) {
-				if (fprintf(stderr, "DEBUG: %s\n", merged) < 0)
-					rc = -(errno ? errno : EIO);
-				int flush = fflush(stderr);
-				if (!rc && flush)
-					rc = -(errno ? errno : EIO);
+				logger_sigpipe_guard_t sigpipe_guard;
+				rc = logger_sigpipe_begin(&sigpipe_guard);
+				int guarded = !rc, saw_epipe = 0;
+				if (guarded) {
+					stdio_error(fprintf(stderr, "DEBUG: %s\n", merged) < 0,
+						    &rc, &saw_epipe);
+					stdio_error(fflush(stderr) != 0, &rc,
+						    &saw_epipe);
+				}
 				int unlock_rc = RELEASE_ERR(
 					pthread_mutex_console,
 					&console_guard);
@@ -249,6 +268,9 @@ int console_debug_source(const char *file, int line, const char *func,
 					if (!rc)
 						rc = unlock_rc;
 				}
+				if (guarded)
+					rc = logger_sigpipe_end(&sigpipe_guard, rc,
+							 saw_epipe);
 			}
 		}
 	}
