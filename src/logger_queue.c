@@ -12,8 +12,9 @@ static int queue_capacity(size_t requested, size_t *capacity)
 	size_t n = 2;
 	if (requested < 2)
 		requested = 2;
-	/* position 差值使用 unsigned 模运算。queue 不能占用一半及以上的 position
-	 * 空间，同时必须避免 allocation size 溢出。 */
+	/* 位置差值使用 unsigned 模运算。队列不能占用一半及以上的位置
+	 * 空间，同时必须避免分配大小溢出。
+	 */
 	while (n < requested) {
 		if (n > SIZE_MAX / 2) {
 			errno = EOVERFLOW;
@@ -195,10 +196,9 @@ static int queue_spill_take(logger_queue_t *q, const char *text,
 					(uint32_t)(word *
 							   LOGGER_QUEUE_SPILL_WORD_BITS +
 						   bit);
-				/*
-				 * 0->1 CAS 后当前 producer 独占 block。
+				/* 0->1 CAS 后当前生产者独占块。
 				 * 正文 memcpy 不需要共享锁；slot.seq 的 release
-				 * publication 再把 block 内容交给 consumer。
+				 * 发布再把块内容交给消费者。
 				 */
 				memcpy(q->spills[found].text, text,
 				       text_len + 1u);
@@ -219,9 +219,8 @@ static void queue_spill_put(logger_queue_t *q, uint32_t index)
 		return;
 	size_t word = index / LOGGER_QUEUE_SPILL_WORD_BITS;
 	unsigned bit = index % LOGGER_QUEUE_SPILL_WORD_BITS;
-	/*
-	 * consumer 已经完成 spill text 读取后才 clear bit。
-	 * 下一位 producer 通过 acquire CAS 重新取得该 bit 后才允许覆盖 block。
+	/* 消费者已经完成溢出区正文读取后才清除位。
+	 * 下一位生产者通过 acquire CAS 重新取得该位后才允许覆盖块。
 	 */
 	(void)atomic_fetch_and_explicit(&q->spill_used[word], ~(1u << bit),
 					memory_order_release);
@@ -230,7 +229,7 @@ static void queue_spill_put(logger_queue_t *q, uint32_t index)
 int logger_queue_init(logger_queue_t *q, size_t requested)
 {
 	memset(q, 0, sizeof(*q));
-	/* The constructor can inspect rollback proof even after early failure. */
+	/* 即使提前失败，构造函数也可以检查回滚证明。 */
 	atomic_init(&q->wait_mu_error, 0);
 	if (queue_capacity(requested, &q->cap) != 0)
 		return -1;
@@ -275,7 +274,7 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
-	/* ownership transfer：两个预分配区域都交给 logger_queue_t。 */
+	/* 所有权转移：两个预分配区域都交给 logger_queue_t。 */
 	q->slots = no_free_ptr(slots);
 	q->spills = no_free_ptr(spills);
 	return 0;
@@ -290,9 +289,9 @@ int logger_queue_destroy(logger_queue_t *q)
 	if (wait_error)
 		return -wait_error;
 
-	/* Lifetime proof comes before storage release. If either synchronization
-	 * object still has users, intentionally retain all queue storage rather than
-	 * free memory that a waiter/producer could still reach. */
+	/* 释放存储前先证明生命周期。如果任一同步对象仍有使用者，
+	 * 则故意保留全部队列存储，不释放等待者或生产者仍可访问的内存。
+	 */
 	int rc = pthread_cond_destroy(&q->wait_cv);
 	if (rc)
 		return -rc;
@@ -309,14 +308,16 @@ int logger_queue_destroy(logger_queue_t *q)
 
 int logger_queue_notify_if_waiting(logger_queue_t *q)
 {
-	/* 必须位于 slot.seq 的 release 发布之后。probe 使用 acq_rel RMW：
-	 * 若它先于 worker 后续 arm，arm 会取得发布链；若读到 waiting=1，
-	 * producer 则进入与 wait_mu 配对的 signal 路径。 */
+	/* 必须位于 slot.seq 的 release 发布之后。探测使用 acq_rel 读改写操作：
+	 * 若它先于工作线程后续布置等待状态，该布置会取得发布链；若读到 waiting=1，
+	 * 生产者则进入与 wait_mu 配对的信号通知路径。
+	 */
 	if (!logger_queue_wait_probe_after_publish(q))
 		return 0;
 
-	/* 慢路径拿到 wait_mu 前 waiting 保持为 1。worker 因此要么复查后清除
-	 * 状态并继续运行，要么先由 cond_wait 原子释放 wait_mu，再由 producer 清除并唤醒。 */
+	/* 慢路径拿到 wait_mu 前 waiting 保持为 1。工作线程因此要么复查后清除
+	 * 状态并继续运行，要么先由 cond_wait 原子释放 wait_mu，再由生产者清除并唤醒。
+	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
 	if (rc)
@@ -347,8 +348,9 @@ int logger_queue_notify_if_waiting(logger_queue_t *q)
 
 int logger_queue_wake_force(logger_queue_t *q)
 {
-	/* stop/shutdown 不依赖 producer 的 waiting 提示。关闭 running 后发送强制唤醒；
-	 * 即使 worker 尚未真正睡眠，同一互斥锁和条件复查也能防止其随后睡死。 */
+	/* 停止或关闭不依赖生产者的 waiting 提示。关闭 running 后发送强制唤醒；
+	 * 即使工作线程尚未真正睡眠，同一互斥锁和条件复查也能防止其随后睡死。
+	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
 	if (rc)
@@ -428,13 +430,12 @@ int logger_queue_try_pop(logger_queue_t *q, logger_message_t *m)
 
 	uint32_t spill_index = slot->record.spill_index;
 	queue_record_unpack(q, &slot->record, m);
-	/*
-	 * consumer 已把正文复制到 worker batch，可先归还 spill block；
-	 * 归还必须发生在 slot 标记可复用之前，避免 producer 覆盖 spill_index。
+	/* 消费者已把正文复制到工作线程批次，可先归还溢出块；
+	 * 归还必须发生在槽位标记可复用之前，避免生产者覆盖 spill_index。
 	 */
 	queue_spill_put(q, spill_index);
 	atomic_store_explicit(&slot->seq, pos + q->cap, memory_order_release);
-	/* 这里只表示 slot 已被 consumer 取走，不代表 backend 已完成输出。 */
+	/* 这里只表示槽位已被消费者取走，不代表后端已完成输出。 */
 	atomic_store_explicit(&q->dequeue_pos, pos + 1, memory_order_release);
 	return 1;
 }
@@ -458,8 +459,9 @@ int logger_queue_empty(logger_queue_t *q)
 
 size_t logger_queue_depth(const logger_queue_t *q)
 {
-	/* 这是 race-free 的近似快照；reservation 可能尚未 publish。
-	 * 先读取 dequeue，再对深度做 clamp，因为两个 counter 不是一个原子事务。 */
+	/* 这是无数据竞争的近似快照；预留位置可能尚未发布。
+	 * 先读取出队位置，再限制深度范围，因为两个计数器不是一个原子事务。
+	 */
 	size_t deq =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_acquire);
 	size_t enq =

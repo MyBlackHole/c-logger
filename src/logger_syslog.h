@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <sys/un.h>
 
-/* 单一 owner；所有 write/metrics 访问由 logger_t.emit_mu 串行化。
- * init 成功后 configuration 不再变化，也不存在后台 reconnect 线程。
+/* 单一所有者；所有写入与指标访问由 logger_t.emit_mu 串行化。
+ * 初始化成功后配置不再变化，也不存在后台重连线程。
  */
 typedef struct {
 	int fd;

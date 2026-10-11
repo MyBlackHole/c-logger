@@ -50,15 +50,16 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	}
 
 	workspace->capacity = capacity;
-	/* ownership transfer：词法 allocation owner -> workspace object。
-	 * 最终由 logger_worker_workspace_destroy() 释放。 */
+	/* 所有权转移：词法作用域内的分配所有者 -> 工作区对象。
+	 * 最终由 logger_worker_workspace_destroy() 释放。
+	 */
 	workspace->batch = no_free_ptr(batch);
 	workspace->vec = no_free_ptr(vec);
 	workspace->copy = no_free_ptr(copy);
 	workspace->lines = no_free_ptr(lines);
 	workspace->lens = no_free_ptr(lens);
 	workspace->failed = no_free_ptr(failed);
-	/* ownership transfer：workspace constructor -> caller/logger instance。 */
+	/* 所有权转移：工作区构造函数 -> 调用者或 logger 实例。 */
 	return_ptr(workspace);
 }
 
@@ -116,7 +117,8 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	int rc = 0;
 
 	/* 同步确认接口必须在任何输出端看到部分内容前
-	 * 拒绝格式错误或被截断的记录；普通日志和 worker 批次维持尽力语义。 */
+	 * 拒绝格式错误或被截断的记录；普通日志和工作线程批次维持尽力语义。
+	 */
 	if (force_sync) {
 		rc = logger_format_line_checked(l, m, line, sizeof(line), &n);
 		if (rc)
@@ -205,8 +207,9 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		       count * sizeof(*workspace->vec));
 		int rc = logger_stderr_writev_all(workspace->copy, (int)count);
 		if (rc < 0) {
-			/* partial batch 没有逐条 acknowledgement。
-			 * 因此保守地把整批 record 标记为未确认。 */
+			/* 部分完成的批次没有逐条确认。
+			 * 因此保守地把整批记录标记为未确认。
+			 */
 			memset(workspace->failed, 1, count);
 			logger_note_io_error(l, -rc);
 		}
@@ -267,8 +270,9 @@ void *logger_worker_main(void *p)
 		size_t n = logger_queue_drain(&l->q, workspace->batch,
 					      workspace->capacity);
 		if (n != 0) {
-			/* 保留 legacy metrics 作为 dequeue 统计。下面的 completion 是另一个事件，
-			 * backend 输出失败也会推进 completion。 */
+			/* 保留旧有指标作为出队统计。下面的完成事件是另一个事件，
+			 * 后端输出失败也会推进完成位置。
+			 */
 			atomic_fetch_add_explicit(&l->consumer_batches, 1,
 						  memory_order_relaxed);
 			atomic_fetch_add_explicit(&l->consumer_records, n,
@@ -314,19 +318,17 @@ void *logger_worker_main(void *p)
 				logger_note_lifecycle_error(l, -lock_rc);
 				break;
 			}
-			/*
-			 * waiting 必须在持有 wait_mu 时 publish，并且 publish 后重新检查
-			 * queue/running。这样 producer 如果在任一窗口发布 record：
-			 * - 没看到 waiting：本次 recheck 会看到 record；
-			 * - 看到了 waiting：会在同一 mutex 下 signal。
+			/* waiting 必须在持有 wait_mu 时发布，并且发布后重新检查
+			 * 队列和 running。这样生产者如果在任一窗口发布记录：
+			 * - 没看到 waiting：本次复查会看到记录；
+			 * - 看到了 waiting：会在同一互斥锁下发送信号通知。
 			 */
 			while (logger_queue_empty(&l->q) &&
 			       atomic_load_explicit(&l->running,
 						    memory_order_acquire)) {
-				/*
-				 * arm 是 acq_rel RMW，随后立即 recheck。若 producer
-				 * probe 已先发生，arm acquire 取得其 publication chain；
-				 * 否则后续 producer 会观察 waiting=1 并走 signal。
+				/* 等待状态布置是 acq_rel 读改写操作，随后立即复查。若生产者
+				 * 探测已先发生，布置的 acquire 操作取得其发布链；
+				 * 否则后续生产者会观察 waiting=1 并走信号通知路径。
 				 */
 				logger_queue_wait_arm_recheck(&l->q);
 				if (!logger_queue_empty(&l->q) ||
@@ -364,9 +366,10 @@ void *logger_worker_main(void *p)
 		if (stop)
 			break;
 	}
-	/* executor 失败可能留下未完成的 reservation。最终广播前再次检查
-	 * progress_mu：等待者要么读到 sticky error，要么在互斥区内进入等待。
-	 * 此处不再持有 wait_mu，也不允许嵌套实例锁；销毁仍必须 join worker。 */
+	/* 执行器失败可能留下未完成的预留位置。最终广播前再次检查
+	 * progress_mu：等待者要么读到不会自动清除的错误状态，要么在互斥区内进入等待。
+	 * 此处不再持有 wait_mu，也不允许嵌套实例锁；销毁仍必须等待工作线程退出并回收。
+	 */
 	if (atomic_load_explicit(&l->lifecycle_error, memory_order_acquire)) {
 		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
 		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);

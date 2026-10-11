@@ -12,8 +12,9 @@
 #include <string.h>
 #include <unistd.h>
 
-/* 每次操作只读取一个 config snapshot：并发 init 不会把新 verbosity 与旧 color 混用。
- * 独立 setter 只对自己负责的 bit 做 CAS。 */
+/* 每次操作只读取一个配置快照：并发初始化不会把新 verbosity 与旧 color 混用。
+ * 独立设置函数只对自己负责的位做 CAS。
+ */
 #define COLOR_BITS 2u
 #define COLOR_MASK 3u
 static _Atomic unsigned g_config = (CONSOLE_NORMAL << COLOR_BITS) |
@@ -130,9 +131,10 @@ static void stdio_error(int failed, int *first_error, int *saw_epipe)
 		*first_error = -error;
 }
 
-/* scope 覆盖全部 libc 调用、本库 mutex 和 FILE 内部锁。
- * cancellation 发生时不会回滚已经完成或部分完成的输出；
- * 也不承诺与 host 外部 flockfile() 建立额外 lock order。 */
+/* 作用域覆盖全部 libc 调用、本库互斥锁和 FILE 内部锁。
+ * 发生取消时不会回滚已经完成或部分完成的输出；
+ * 也不承诺与宿主外部 flockfile() 建立额外锁顺序。
+ */
 static int write_v(FILE *out, const char *label, const char *ansi,
 		   unsigned config, const char *fmt, va_list ap)
 {
