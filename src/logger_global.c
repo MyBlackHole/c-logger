@@ -269,7 +269,8 @@ int logger_init(const logger_config_t *cfg)
 			  G_STARTING;
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &old, ticket,
-		    memory_order_acq_rel, memory_order_acquire))
+						     memory_order_acq_rel,
+						     memory_order_acquire))
 		return finish(&scope, -(global_lock_error() ?
 					global_lock_error() : EIO));
 	logger_t *candidate = logger_create(cfg);
@@ -345,8 +346,8 @@ int logger_shutdown_status(void)
 	 * 即使没有 logger 对象，也必须先关闭 admission 并等待该 reader 离开。 */
 	uint64_t stopping = with_phase(current, G_STOPPING);
 	if (!atomic_compare_exchange_strong_explicit(
-		    &g_ticket, &current, stopping,
-		    memory_order_acq_rel, memory_order_acquire))
+		    &g_ticket, &current, stopping, memory_order_acq_rel,
+		    memory_order_acquire))
 		return finish(&scope, -(global_lock_error() ?
 					global_lock_error() : EIO));
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
@@ -391,7 +392,7 @@ int logger_shutdown_status(void)
 		 * Backend I/O failure may still return with final free complete. */
 		if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &stopping, with_phase(current, G_STOPPED),
-		    memory_order_acq_rel, memory_order_acquire)) {
+			    memory_order_acq_rel, memory_order_acquire)) {
 			int error = global_lock_error();
 			if (!error) {
 				error = EUCLEAN;
