@@ -2,7 +2,7 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
-/* argv: DSO, symbol version, followed by the exact public export names. */
+/* argv：DSO、符号版本，随后为精确公开导出名称。 */
 int main(int argc, char **argv)
 {
 	if (argc < 4)

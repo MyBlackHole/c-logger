@@ -37,8 +37,9 @@ static int rotates(const char *point)
 	       !strcmp(point, "rotation_after_file_fsync");
 }
 
-/* A fixed test clock permits byte-for-byte checks of the entire formatted line,
- * including its metadata. Real monotonic clocks and timeouts are unchanged. */
+/* 固定测试时钟允许对整条格式化日志逐字节检查，包括其元数据。
+ * 真实单调时钟与超时保持不变。
+ */
 int __real_clock_gettime(clockid_t clock, struct timespec *value);
 int __wrap_clock_gettime(clockid_t clock, struct timespec *value)
 {
@@ -96,8 +97,9 @@ int __wrap_fsync(int fd)
 		char line[RECORD_CAPACITY];
 		size_t size = record_line(TARGET_SEQUENCE, line, sizeof(line));
 		size *= rotates(cut_point) ? 1u : BASELINE_RECORDS + 1u;
-		/* Never count directory fsync, a retired archive, or the empty new
-		 * inode fsync during rotation as the target record's data fsync. */
+		/* 绝不把目录 fsync、已退役归档或轮转中新空 inode 的 fsync
+		 * 计为目标记录的数据 fsync。
+		 */
 		match = S_ISREG(data.st_mode) && data.st_nlink == 1 &&
 			data.st_dev == active.st_dev && data.st_ino == active.st_ino &&
 			data.st_size == (off_t)size;
@@ -118,8 +120,8 @@ static logger_config_t config(int rotation)
 	c.async_mode = 0;
 	c.detail = LOGGER_DETAIL_MINIMAL;
 	c.rotation.mode = rotation ? LOGGER_ROTATE_SIZE : LOGGER_ROTATE_NONE;
-	c.rotation.max_file_size = 1; /* exactly one complete record per archive */
-	c.rotation.retention_days = 0; /* never expire the confirmed baseline */
+	c.rotation.max_file_size = 1; /* 每个归档恰好一条完整记录 */
+	c.rotation.retention_days = 0; /* 绝不使已确认基线过期 */
 	return c;
 }
 
@@ -127,7 +129,7 @@ static void initialize(void)
 {
 	CHECK(setenv("TZ", "UTC0", 1) == 0);
 	tzset();
-	/* An inherited fault setting must not satisfy or change this contract. */
+	/* 继承的故障设置不得满足或改变此契约。 */
 	CHECK(unsetenv("LOGGER_CRASH_POINT") == 0);
 	CHECK(unsetenv("LOGGER_FAULT_POINT") == 0);
 	CHECK(unsetenv("LOGGER_FAULT_SHORT_WRITE") == 0);
@@ -153,8 +155,9 @@ void crash_fixture_write(const char *point)
 		emit(logger, i);
 	CHECK(logger_flush_instance_status(logger) == 0);
 	verify_records(point, 0, 1);
-	/* No graceful shutdown precedes the kill: the controller only receives
-	 * a cut marker after the baseline's successful write+flush acknowledgments. */
+	/* 强制终止前不进行优雅关闭：控制方只在基线成功写入并刷新确认后
+	 * 才收到切断标记。
+	 */
 	if (!strcmp(point, "acknowledged"))
 		crash_fixture_cut(point);
 	armed = 1;
@@ -229,12 +232,13 @@ static void verify_records(const char *point, unsigned recovered, int baseline_o
 	CHECK(rotates(point) ? count >= 9 && count <= 10 : count == 0);
 	if (!baseline_only && rotates(point) &&
 	    strcmp(point, "file_after_archive_rename"))
-		CHECK(count == 10); /* archive directory fsync has completed */
+		CHECK(count == 10); /* 归档目录 fsync 已完成 */
 	if (!baseline_only && !strcmp(point, "file_after_active_dirsync"))
-		CHECK(active_present); /* new active inode and directory are durable */
+		CHECK(active_present); /* 新活动 inode 与目录已持久化 */
 	for (int i = 0; i < count; ++i) {
-		/* Sorting strict, unique UTC names reconstructs the serial writer.
-		 * One-record segments must never contain a partial or extra record. */
+		/* 对严格且唯一的 UTC 名称排序可重建串行写者的顺序。
+		 * 单记录分段绝不能包含部分记录或额外记录。
+		 */
 		size_t size = read_segment(archives[i]->d_name, bytes + used,
 					   sizeof(bytes) - used);
 		CHECK(size == length);
@@ -251,10 +255,10 @@ static void verify_records(const char *point, unsigned recovered, int baseline_o
 		CHECK(used - offset >= length && !memcmp(bytes + offset, line, length));
 		offset += length;
 	}
-	/* The interrupted record is not acknowledged. Before fsync, only an
-	 * absent record or a byte prefix of this exact target is allowed. No
-	 * arbitrary garbage, duplicate baseline, or unrelated tail is accepted.
-	 * Read raw bytes, not lines: a torn tail need not end with a newline. */
+	/* 被中断记录未经确认。fsync 前只允许记录缺失或为此精确目标的字节前缀。
+	 * 不接受任意垃圾、重复基线或无关尾部。
+	 * 读取原始字节而不是行：撕裂尾部不一定以换行符结束。
+	 */
 	size_t recovery_bytes = recovered * length;
 	CHECK(used - offset >= recovery_bytes);
 	size_t target_bytes = used - offset - recovery_bytes;
@@ -288,13 +292,14 @@ void crash_fixture_verify(const char *point, unsigned recovered)
 void crash_fixture_recover(const char *point)
 {
 	initialize();
-	/* Require the post-fsync target on initial recovery too; the application
-	 * did not receive its return, but the exact data fsync succeeded. */
+	/* 初次恢复时也要求存在 fsync 后的目标；应用未收到其返回，
+	 * 但精确的数据 fsync 已成功。
+	 */
 	crash_fixture_verify(point, 0);
 	logger_config_t c = config(0);
 	for (unsigned i = 0; i < 2; ++i) {
 		logger_t *logger = logger_create(&c);
-		CHECK(logger); /* killed owner and previous recovery released the lease */
+		CHECK(logger); /* 被终止的所有者与先前恢复已释放租约 */
 		errno = 0;
 		CHECK(logger_create(&c) == NULL && errno == EBUSY);
 		emit(logger, BASELINE_RECORDS + 1u + i);
