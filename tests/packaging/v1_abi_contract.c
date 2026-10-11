@@ -1,4 +1,3 @@
-#include <audit.h>
 #include <console.h>
 #include <logger.h>
 
@@ -161,36 +160,6 @@ ABI_FIELD(logger_syslog_metrics_t, connected, 88);
 ABI_FIELD(logger_syslog_metrics_t, last_error, 92);
 ABI_FIELD(logger_syslog_metrics_t, last_close_error, 96);
 
-ABI_TYPE(audit_config_t, 64, 8);
-ABI_ASSERT(AUDIT_CONFIG_SIZE == 64);
-ABI_FIELD(audit_config_t, struct_size, 0);
-ABI_FIELD(audit_config_t, version, 4);
-ABI_FIELD(audit_config_t, log_dir, 8);
-ABI_FIELD(audit_config_t, name, 16);
-ABI_FIELD(audit_config_t, chain_state_path, 24);
-ABI_FIELD(audit_config_t, rotation, 32);
-ABI_FIELD(audit_config_t, failure_policy, 56);
-ABI_FIELD(audit_config_t, integrity, 60);
-
-ABI_TYPE(audit_event_t, 72, 8);
-ABI_FIELD(audit_event_t, phase, 0);
-ABI_FIELD(audit_event_t, transaction_id, 8);
-ABI_FIELD(audit_event_t, event, 16);
-ABI_FIELD(audit_event_t, actor, 24);
-ABI_FIELD(audit_event_t, source, 32);
-ABI_FIELD(audit_event_t, resource, 40);
-ABI_FIELD(audit_event_t, operation, 48);
-ABI_FIELD(audit_event_t, result, 56);
-ABI_FIELD(audit_event_t, error_code, 60);
-ABI_FIELD(audit_event_t, detail, 64);
-
-ABI_TYPE(audit_status_t, 72, 8);
-ABI_FIELD(audit_status_t, state, 0);
-ABI_FIELD(audit_status_t, error_code, 4);
-ABI_FIELD(audit_status_t, checkpoint_dirty, 8);
-ABI_FIELD(audit_status_t, committed_seq, 16);
-ABI_FIELD(audit_status_t, checkpoint_seq, 24);
-ABI_FIELD(audit_status_t, instance_id, 32);
 
 ABI_TYPE(console_config_t, 16, 4);
 ABI_ASSERT(CONSOLE_CONFIG_SIZE == 16);
@@ -244,23 +213,6 @@ ABI_ASSERT(LOGGER_SYSLOG_FACILITY_LOCAL6 == 176);
 ABI_ASSERT(LOGGER_SYSLOG_FACILITY_LOCAL7 == 184);
 ABI_ASSERT(LOGGER_CONFIG_VERSION == 1);
 
-ABI_ASSERT(AUDIT_SUCCESS == 0);
-ABI_ASSERT(AUDIT_FAILURE == 1);
-ABI_ASSERT(AUDIT_PHASE_ATTEMPT == 0);
-ABI_ASSERT(AUDIT_PHASE_RESULT == 1);
-ABI_ASSERT(AUDIT_FAIL_REPORT == 0);
-ABI_ASSERT(AUDIT_FAIL_DENY == 1);
-ABI_ASSERT(AUDIT_INTEGRITY_NONE == 0);
-ABI_ASSERT(AUDIT_INTEGRITY_SHA256 == 1);
-ABI_ASSERT(AUDIT_STATE_IDLE == 0);
-ABI_ASSERT(AUDIT_STATE_STARTING == 1);
-ABI_ASSERT(AUDIT_STATE_RUNNING == 2);
-ABI_ASSERT(AUDIT_STATE_CHECKPOINT_FAILED == 3);
-ABI_ASSERT(AUDIT_STATE_IO_FAILED == 4);
-ABI_ASSERT(AUDIT_STATE_STOPPING == 5);
-ABI_ASSERT(AUDIT_STATE_FORKED == 6);
-ABI_ASSERT(AUDIT_STATE_CRYPTO_FAILED == 7);
-ABI_ASSERT(AUDIT_CONFIG_VERSION == 1);
 
 ABI_ASSERT(CONSOLE_COLOR_AUTO == 0);
 ABI_ASSERT(CONSOLE_COLOR_ALWAYS == 1);
@@ -272,21 +224,6 @@ ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
 /* Exact public function type contract: 62 default production exports. */
-ABI_FN(audit_begin, int, audit_event_t *);
-ABI_FN(audit_crypto_backend, const char *, void);
-ABI_FN(audit_end, int, audit_event_t *, audit_result_t, int);
-ABI_FN(audit_failure_policy, audit_failure_policy_t, void);
-ABI_FN(audit_flush, int, void);
-ABI_FN(audit_get_status, int, audit_status_t *);
-ABI_FN(audit_init, int, const audit_config_t *);
-ABI_FN(audit_instance_id, const char *, void);
-ABI_FN(audit_instance_id_copy, int, char *);
-ABI_FN(audit_shutdown, void, void);
-ABI_FN(audit_shutdown_status, int, void);
-ABI_FN(audit_verify_file, int, const char *);
-ABI_FN(audit_verify_file_from, int, const char *, const char *, char *);
-ABI_FN(audit_verify_file_with, int, const char *, audit_integrity_t);
-ABI_FN(audit_write, int, const audit_event_t *);
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -367,23 +304,11 @@ static int defaults_match(void)
 	    l.syslog.startup != LOGGER_SYSLOG_START_REQUIRED)
 		return 3;
 
-	audit_config_t a = AUDIT_DEFAULT_CONFIG();
-	if (a.struct_size != 64 || a.version != 1 || !a.log_dir ||
-	    strcmp(a.log_dir, "/var/log") || !a.name || strcmp(a.name, "app") ||
-	    a.chain_state_path != NULL ||
-	    a.rotation.mode != LOGGER_ROTATE_SIZE_DAILY ||
-	    a.rotation.max_file_size != 100u * 1024u * 1024u ||
-	    a.rotation.retention_days != 90 ||
-	    a.failure_policy != AUDIT_FAIL_REPORT ||
-	    a.integrity != AUDIT_INTEGRITY_SHA256)
-		return 4;
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.struct_size != 16 || c.version != 1 ||
 	    c.verbosity != CONSOLE_NORMAL || c.color != CONSOLE_COLOR_AUTO)
 		return 5;
-	if (strcmp(AUDIT_DETAIL_REDACTED, "[REDACTED]"))
-		return 6;
 	return 0;
 }
 
