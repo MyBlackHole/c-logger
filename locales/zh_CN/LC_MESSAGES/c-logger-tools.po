@@ -76,3 +76,112 @@ msgstr "无法编译翻译目录：{error}"
 
 msgid "Translation placeholders differ"
 msgstr "译文占位符与原文不一致"
+
+msgid "--abi-version must be numeric"
+msgstr "--abi-version 必须是数字"
+
+msgid "--max-glibc must be a dotted numeric version, e.g. 2.25"
+msgstr "--max-glibc 必须是点分数字版本，例如 2.25"
+
+msgid "--max-glibc must be a dotted numeric version, e.g. 2.31"
+msgstr "--max-glibc 必须是点分数字版本，例如 2.31"
+
+msgid "--symbol-version must look like LOGGER_1.0"
+msgstr "--symbol-version 格式须类似 LOGGER_1.0"
+
+msgid "Allow no direct GLIBC only in a shared module whose sole dependency is this separately checked Logger SONAME"
+msgstr "仅当共享模块的唯一依赖是此单独检查的 Logger SONAME 时，允许没有直接 GLIBC 版本需求"
+
+msgid "Check a production archive, even a Debug/-O0 build, for accidental test hooks.\nAccepts static archives or shared ELF objects. Checks test hooks and forbidden external crypto APIs/dependencies. Requires nm, ar, strings and readelf. Not a proof about arbitrary host dependencies."
+msgstr "检查生产归档是否意外包含测试钩子，包括 Debug/-O0 构建。\n接受静态归档或共享 ELF 对象，检查测试钩子及禁止的外部密码学 API 和依赖。\n需要 nm、ar、strings 和 readelf；此检查不证明任意宿主依赖的性质。"
+
+msgid "Check added source lines against the v2 baseline without rewriting legacy code."
+msgstr "对 PR 新增源码行执行 2.0 基线规则，避免一次性重写 v1 遗留代码。"
+
+msgid "Check final Linux consumer ELFs, including consumers linked to liblogger.a.\n\nAn archive has no final dynamic ABI. This checks direct GLIBC version needs of\nthe final ELF; it does not certify transitive libraries, kernels or arbitrary\nconsumer toolchains. Release CI also builds and runs consumers on the baseline."
+msgstr "检查 Linux 最终消费端 ELF，包括链接 liblogger.a 的消费端。\n\n静态归档没有最终动态 ABI。本工具检查最终 ELF 的直接 GLIBC 版本需求，\n不认证传递依赖库、内核或任意消费端工具链。\n发布 CI 还会在基线环境中构建并运行消费端。"
+
+msgid "Check one or both package kinds; default checks both"
+msgstr "检查一种或两种包类型；默认检查两种"
+
+msgid "Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64"
+msgstr "目标的精确 readelf Machine 值，如 Advanced Micro Devices X86-64"
+
+msgid "Expected SONAME ABI major, default: 2"
+msgstr "预期的 SONAME ABI 主版本，默认值：2"
+
+msgid "Expected default ELF symbol version, default: LOGGER_2.0"
+msgstr "预期的 ELF 默认符号版本，默认值：LOGGER_2.0"
+
+#, python-brace-format
+msgid "Expected exactly one {kind} package, found {count}"
+msgstr "预期恰好一个 {kind} 包，实际找到 {count} 个"
+
+msgid "Inspect a Linux ELF release without executing it. Requires readelf and nm.\nThis proves exported-name/version/ELF metadata properties, NOT behavioral ABI\ncompatibility, minimum-kernel support, durable storage, or platform certification."
+msgstr "静态检查 Linux ELF 发布产物，不执行产物；需要 readelf 和 nm。\n本工具验证导出名称、版本及 ELF 元数据属性，不证明 ABI 行为兼容性、\n最低内核支持、存储持久性，也不构成平台认证。"
+
+#, python-brace-format
+msgid "Invalid checksum record for {package}"
+msgstr "{package} 的校验和记录无效"
+
+msgid "Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements"
+msgstr "可选的部署基线版本上限，如 2.25；超限时判定失败，不改写版本需求"
+
+#, python-brace-format
+msgid "Release asset verification failed: {error}\n"
+msgstr "发布包核验失败：{error}\n"
+
+msgid "Required target ELF class"
+msgstr "要求的目标 ELF 类别"
+
+#, python-brace-format
+msgid "SHA-256 mismatch for {package}"
+msgstr "{package} 的 SHA-256 不匹配"
+
+msgid "Verify Xmake process-crash logs against the fixed eight-case ordinary Logger contract."
+msgstr "按普通 Logger 固定八项用例契约，核验 Xmake 进程崩溃日志。"
+
+msgid "Verify the exact shared/static release package assets before upload or publication."
+msgstr "上传或发布前，核验 shared/static 发布包资产的精确集合。"
+
+msgid "merge base ref, for example origin/main"
+msgstr "用于查找共同祖先的基线引用，例如 origin/main"
+
+msgid "optional JSON evidence file containing the observed test set per run"
+msgstr "可选的 JSON 证据文件，记录每次运行实际观察到的测试集合"
+
+msgid "optional directory for one JUnit XML report per input log"
+msgstr "可选的报告目录，每份输入日志生成一份 JUnit XML 报告"
+
+msgid "v2 added-line policy: ok"
+msgstr "v2 新增行规则：通过"
+
+msgid "version must be MAJOR.MINOR.PATCH"
+msgstr "版本必须为 MAJOR.MINOR.PATCH 格式"
+
+msgid "xmake test output log"
+msgstr "xmake test 输出日志"
+
+#, python-brace-format
+msgid "{path}: crash suite mismatch/failure: missing={missing}, unexpected={unexpected}, failed={failed}"
+msgstr "{path}：进程崩溃测试集合不匹配或失败：missing={missing}, unexpected={unexpected}, failed={failed}"
+
+#, python-brace-format
+msgid "{path}: new code uses forbidden {name}()"
+msgstr "{path}：新增代码使用了禁止的 {name}()"
+
+#, python-brace-format
+msgid "{path}: new strncpy() requires fixed-width justification and V2_FIXED_WIDTH_OK marker"
+msgstr "{path}：新增 strncpy() 必须说明固定宽度理由，并带有 V2_FIXED_WIDTH_OK 标记"
+
+#, python-brace-format
+msgid "{path}: source file must end with a newline"
+msgstr "{path}：源文件必须以换行结束"
+
+#, python-brace-format
+msgid "{path}: use logger_compiler.h abstraction instead of raw always_inline"
+msgstr "{path}：请使用 logger_compiler.h 抽象，不直接使用 always_inline"
+
+#, python-brace-format
+msgid "{path}: verified {count} process-crash tests: {tests}"
+msgstr "{path}：已核验 {count} 项进程崩溃测试：{tests}"

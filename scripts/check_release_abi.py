@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Inspect a Linux ELF release without executing it. Requires readelf and nm.
-This proves exported-name/version/ELF metadata properties, NOT behavioral ABI
-compatibility, minimum-kernel support, durable storage, or platform certification.
+"""静态检查 Linux ELF 发布产物，不执行产物；需要 readelf 和 nm。
+本工具验证导出名称、版本及 ELF 元数据属性，不证明 ABI 行为兼容性、
+最低内核支持、存储持久性，也不构成平台认证。
 """
-import argparse
+# JSON 报告字段、状态值与诊断值保留兼容拼写。
 import json
 import os
 import re
@@ -82,23 +82,24 @@ def inspect(artifact, manifest, max_glibc=None, machine=None, elf_class=None,
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
+    from tool_i18n import parser_for
+    p, _ = parser_for('Inspect a Linux ELF release without executing it. Requires readelf and nm.\nThis proves exported-name/version/ELF metadata properties, NOT behavioral ABI\ncompatibility, minimum-kernel support, durable storage, or platform certification.')
     p.add_argument('artifact', type=Path)
     p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'abi/logger-2.0.symbols')
-    p.add_argument('--max-glibc', help='Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements')
-    p.add_argument('--machine', help='Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64')
-    p.add_argument('--elf-class', choices=('ELF32', 'ELF64'), help='Required target ELF class')
+    p.add_argument('--max-glibc', help=_('Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements'))
+    p.add_argument('--machine', help=_('Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64'))
+    p.add_argument('--elf-class', choices=('ELF32', 'ELF64'), help=_('Required target ELF class'))
     p.add_argument('--abi-version', default='2',
-                   help='Expected SONAME ABI major, default: 2')
+                   help=_('Expected SONAME ABI major, default: 2'))
     p.add_argument('--symbol-version', default='LOGGER_2.0',
-                   help='Expected default ELF symbol version, default: LOGGER_2.0')
+                   help=_('Expected default ELF symbol version, default: LOGGER_2.0'))
     a = p.parse_args()
     if a.max_glibc and not re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', a.max_glibc):
-        p.error('--max-glibc must be a dotted numeric version, e.g. 2.25')
+        p.error(_('--max-glibc must be a dotted numeric version, e.g. 2.25'))
     if not re.fullmatch(r'[0-9]+', a.abi_version):
-        p.error('--abi-version must be numeric')
+        p.error(_('--abi-version must be numeric'))
     if not re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version):
-        p.error('--symbol-version must look like LOGGER_1.0')
+        p.error(_('--symbol-version must look like LOGGER_1.0'))
     try:
         report = inspect(a.artifact.resolve(strict=True), a.manifest.resolve(strict=True),
                          a.max_glibc, a.machine, a.elf_class,

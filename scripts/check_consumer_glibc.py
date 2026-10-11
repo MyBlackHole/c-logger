@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Check final Linux consumer ELFs, including consumers linked to liblogger.a.
+"""检查 Linux 最终消费端 ELF，包括链接 liblogger.a 的消费端。
 
-An archive has no final dynamic ABI. This checks direct GLIBC version needs of
-the final ELF; it does not certify transitive libraries, kernels or arbitrary
-consumer toolchains. Release CI also builds and runs consumers on the baseline.
+静态归档没有最终动态 ABI。本工具检查最终 ELF 的直接 GLIBC 版本需求，
+不认证传递依赖库、内核或任意消费端工具链。
+发布 CI 还会在基线环境中构建并运行消费端。
 """
-import argparse
+# JSON 报告字段、状态值与诊断值保留兼容拼写。
 import json
 import os
 from pathlib import Path
@@ -42,9 +42,9 @@ def inspect(artifact, max_glibc, allow_no_glibc_for=None):
     if unknown:
         errors.append({'unrecognized_glibc_requirements': sorted(unknown)})
     if not glibc:
-        # A shared consumer module may call only Logger, with all libc calls
-        # inside the separately checked liblogger DSO. Never use this allowance
-        # for a module embedding the static archive or a libc-linked executable.
+        # 共享消费端模块可能仅调用 Logger，所有 libc 调用都位于单独检查的
+        # liblogger DSO 内。不得将此豁免用于嵌入静态归档的模块，
+        # 也不得用于链接 libc 的可执行文件。
         needed = []
         if allow_no_glibc_for and field('Type').startswith('DYN '):
             dynamic = run('readelf', '-dW', str(artifact))
@@ -64,15 +64,15 @@ def inspect(artifact, max_glibc, allow_no_glibc_for=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    from tool_i18n import parser_for
+    parser, _ = parser_for('Check final Linux consumer ELFs, including consumers linked to liblogger.a.\n\nAn archive has no final dynamic ABI. This checks direct GLIBC version needs of\nthe final ELF; it does not certify transitive libraries, kernels or arbitrary\nconsumer toolchains. Release CI also builds and runs consumers on the baseline.')
     parser.add_argument('artifact', type=Path)
     parser.add_argument('--max-glibc', required=True)
     parser.add_argument('--allow-no-glibc-for', metavar='SONAME',
-                        help='Allow no direct GLIBC only in a shared module whose sole '
-                             'dependency is this separately checked Logger SONAME')
+                        help=_('Allow no direct GLIBC only in a shared module whose sole dependency is this separately checked Logger SONAME'))
     args = parser.parse_args()
     if not re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', args.max_glibc):
-        parser.error('--max-glibc must be a dotted numeric version, e.g. 2.31')
+        parser.error(_('--max-glibc must be a dotted numeric version, e.g. 2.31'))
     try:
         report = inspect(args.artifact.resolve(strict=True), args.max_glibc, args.allow_no_glibc_for)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

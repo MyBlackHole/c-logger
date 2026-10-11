@@ -27,6 +27,7 @@ jobs:
           sudo apt-get install -y gettext
           python scripts/compile_tool_catalog.py --check
           python scripts/test_tool_i18n.py
+          python scripts/test_checker_i18n.py
       - name: 运行门禁正反例自测
         run: python scripts/test_source_format.py
       - name: 检查新增和修改的源码行

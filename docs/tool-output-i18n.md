@@ -60,3 +60,43 @@ PO 中每条格式消息保留 `python-brace-format` 标记。不要翻译 `{pat
 - [Python gettext：类接口](https://docs.python.org/3/library/gettext.html#class-based-api)
 - [GNU gettext：LANGUAGE 选择](https://www.gnu.org/software/gettext/manual/html_node/The-LANGUAGE-variable.html)
 - [GNU gettext：msgfmt](https://www.gnu.org/software/gettext/manual/html_node/msgfmt-Invocation.html)
+
+## 六检查工具扩展
+
+以下脚本复用同一个 `c-logger-tools` gettext 目录与语言选项，不各自维护语言表：
+
+- `check_consumer_glibc.py`、`check_release_abi.py`：帮助与参数用法错误可切换语言；
+  JSON 的全部字段、值和 `error` 字符串保持原样。
+- `check_production_artifact.py`：帮助可切换语言；生产产物 JSON 报告、失败列表不变。
+- `check_crash_matrix.py`：帮助与终端汇总可切换语言；JSON 与 JUnit XML 中的字段、
+  状态、测试名、错误说明、报告内容逐字节保持一致。
+- `check_release_assets.py`：帮助与失败解释可切换语言；成功时输出的
+  `verified 文件名 SHA-256` 记录保持原样，继续用于校验和证据。
+- `check_v2_diff.py`：帮助、规则失败解释及通过提示可切换语言；既有 `error:` 前缀、
+  路径、函数名、规则标记与 0/1 判定保留。
+
+这些脚本的中文 docstring 只说明源码；运行帮助使用独立英文 msgid，并查标准 PO/MO。
+JSON 中的诊断属于自动化证据，不能因其看似英语句子而再次翻译。没有改写退出码、
+测试集合、ELF/ABI 判定、归档校验、添加行规则或产物内容。
+
+`python3 scripts/test_checker_i18n.py` 覆盖六工具双语帮助与非法语言、最终 ELF JSON、
+失败 JSON、完整/缺失/重复/失败/意外/空崩溃日志、JSON/JUnit 字节一致、发布包校验和
+记录与失败路径、添加行规则正反例。该回归纳入既有格式工作流，不替代产品测试。
+
+### 工作流依赖闭包
+
+`tool_i18n.py` 与 `locales/**` 是检查器的运行依赖。以下既有路径过滤保持作业 ID、权限、
+矩阵和执行逻辑，只补运行依赖触发范围：
+
+- `core-validation`：release ABI / production artifact；pull_request。
+- `crash-recovery`：crash matrix；pull_request 与 main push。
+- `glibc-runtime`：release ABI / production artifact；pull_request 与 main push。
+- `release-validation`：release ABI / release assets / production artifact / consumer GLIBC；
+  pull_request。既有标签触发不增加路径过滤。
+- `xmake-parity`：release ABI / production artifact 与打包验证；pull_request 与 main push。
+- `v2-engineering-baseline`：v2 diff；pull_request 与 main push。既有 `scripts/**` 已涵盖
+  helper，补上 `locales/**`。
+
+`source-format` 没有路径过滤，会运行两组国际化测试；`release-publish` 仍仅由既有
+标签/手动流程触发，不扩大发布权限或发布入口。未调用这些检查器的专用性能、最小内核、
+真实 syslogd、VM 断电流程不因此扩大触发。结构回归验证每个上述过滤块均涵盖依赖。
