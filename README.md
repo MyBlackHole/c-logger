@@ -136,8 +136,6 @@ Host: logger_create → SDK instances borrow → stop/join SDK callers
 - [公共 API](API.md)
 - [测试策略](TESTING.md)
 - [发布工程](docs/RELEASE_ENGINEERING.md)
-- [Xmake 迁移记录](docs/XMAKE_PARITY.md)
-- [总体架构](docs/ARCHITECTURE.md)
 - [Architecture Invariants](docs/ARCHITECTURE_INVARIANTS.md)
 - [资源所有权](docs/RESOURCE_OWNERSHIP.md)
 - [锁与锁顺序](docs/LOCKING.md)
@@ -147,7 +145,6 @@ Host: logger_create → SDK instances borrow → stop/join SDK callers
 - [Syslog backend](docs/SYSLOG_BACKEND.md)
 - [可观测性与问题发现](docs/OBSERVABILITY.md)
 - [平台基线](docs/PLATFORM_BASELINE.md)
-- [Production v1 支持范围与发布准入](docs/V1_RELEASE_CRITERIA.md)
 - [已知限制](docs/KNOWN_ISSUES.md)
 - [变更清单](CHANGELOG.md)
 

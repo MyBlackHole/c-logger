@@ -1,0 +1,51 @@
+# 当前安装文档清单；路径相对于源码根目录或安装文档根目录。
+# 保留此相对层级，确保重定位后的 Markdown 链接仍然可用。
+# 历史架构、Audit、密码模块、轮次和发布记录只保留在源码树中。
+LICENSE
+README.md
+API.md
+SECURITY.md
+TESTING.md
+CHANGELOG.md
+docs/INSTALL_MANIFEST.txt
+docs/ARCHITECTURE_INVARIANTS.md
+docs/CODING_STYLE.md
+docs/CONCURRENCY.md
+docs/ERROR_HANDLING.md
+docs/EXPLICIT_CONSOLE_SCOPE.md
+docs/FILE_BACKEND.md
+docs/GLOBAL_LIFECYCLE.md
+docs/HOST_OWNED.md
+docs/KNOWN_ISSUES.md
+docs/LIFECYCLE.md
+docs/LOCKING.md
+docs/LOCK_MATRIX.md
+docs/LOGGER_CRASH_CONTRACT.md
+docs/OBSERVABILITY.md
+docs/PLATFORM_BASELINE.md
+docs/QUEUE_STORAGE.md
+docs/REFCOUNTING.md
+docs/RELEASE_ENGINEERING.md
+docs/RELEASE_SAFETY.md
+docs/RESOURCE_CLEANUP.md
+docs/RESOURCE_OWNERSHIP.md
+docs/RESOURCE_OWNERSHIP_MATRIX.md
+docs/SYSLOG_BACKEND.md
+docs/UAPI.md
+docs/v2/README.md
+docs/v2/ARCHITECTURE.md
+docs/v2/AUDIT_REMOVAL.md
+docs/v2/CODING_STYLE.md
+docs/v2/EXECUTION_CONTEXT.md
+docs/v2/INVARIANTS.md
+docs/v2/LOCKDEP.md
+docs/v2/LOCKING.md
+docs/v2/LOCKLESS_PROOF_TEMPLATE.md
+docs/v2/MEMORY_MODEL.md
+docs/v2/OWNERSHIP.md
+docs/v2/QUEUE_WAKEUP_PROOF.md
+docs/v2/SUPPORT_MATRIX.md
+docs/v2/WORKER_FAILURE.md
+docs/v2/WORKER_STARTUP.md
+# 显式包含 TESTING 和 AUDIT_REMOVAL 链接的当前迁移证据。
+validation/AUDIT_TEST_RETIREMENT.md

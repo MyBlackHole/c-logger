@@ -237,12 +237,20 @@ target("logger")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
-        target:add("installfiles", "LICENSE", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
-                   {prefixdir = "share/doc/prod_c_logger"})
-        for _, doc in ipairs(os.files(path.join(os.projectdir(), "docs", "*.md"))) do
-            if path.filename(doc):sub(1, 7) ~= "HISTORY" then
-                target:add("installfiles", doc,
-                           {prefixdir = "share/doc/prod_c_logger/docs"})
+        -- 显式列出当前文档及其链接依赖。
+        -- 递归通配会把已退役的 Audit/密码模块设计记录也装入发布包。
+        local doc_manifest = path.join(os.projectdir(), "docs", "INSTALL_MANIFEST.txt")
+        for line in io.lines(doc_manifest) do
+            local doc = line:trim()
+            if doc ~= "" and doc:sub(1, 1) ~= "#" then
+                local source = path.join(os.projectdir(), doc)
+                assert(os.isfile(source), "安装文档缺失：" .. doc)
+                local prefix = "share/doc/prod_c_logger"
+                local subdir = path.directory(doc)
+                if subdir ~= "." then
+                    prefix = path.join(prefix, subdir)
+                end
+                target:add("installfiles", source, {prefixdir = prefix})
             end
         end
         target:add("installfiles", "examples/installed_consumer/CMakeLists.txt",

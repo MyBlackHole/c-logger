@@ -99,7 +99,11 @@ try:
     lib = prefix / a.libdir
     config_dir = lib / 'cmake/Logger'
     pc_dir = lib / 'pkgconfig'
-    license_file = prefix / 'share/doc/prod_c_logger/LICENSE'
+    doc_root = prefix / 'share/doc/prod_c_logger'
+    documentation = json.loads(run([sys.executable, a.source/'scripts/check_installed_docs.py',
+                                    '--doc-root', doc_root,
+                                    '--manifest', a.source/'docs/INSTALL_MANIFEST.txt']))
+    license_file = doc_root / 'LICENSE'
     assert license_file.is_file()
     license_text = license_file.read_text()
     assert 'Apache License' in license_text
@@ -240,10 +244,11 @@ try:
             'packaged_shared_abi':shared_abi,
             'consumer_glibc_ceiling':a.max_consumer_glibc,
             'consumer_glibc':consumer_glibc,
-            'install_driver':'xmake',
+            'install_driver':'xmake','documentation':documentation,
             'work':str(work),'commands':log,
             'checks':[install_check,'relocated prefix with spaces','public headers only',
                       'VERSION/header/CMake/pkg-config identity',
+                      '文档清单与 Markdown 相对文件链接',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
                       'version/components rejection','current C/C++ layouts and defaults','production isolation']}
     (work/'RESULT.json').write_text(json.dumps(report,indent=2))

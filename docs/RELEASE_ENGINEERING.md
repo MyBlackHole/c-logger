@@ -116,12 +116,17 @@ xmake install -o /opt/logger/current logger
 <prefix>/lib/liblogger.so.<VERSION>（或 liblogger.a）
 <prefix>/lib/cmake/Logger/{LoggerConfig.cmake,LoggerConfigVersion.cmake,LoggerTargets*.cmake}
 <prefix>/lib/pkgconfig/logger.pc
-<prefix>/share/doc/prod_c_logger/{LICENSE,API.md,SECURITY.md,TESTING.md,CHANGELOG.md,docs/,examples/}
+<prefix>/share/doc/prod_c_logger/{LICENSE,README.md,API.md,SECURITY.md,TESTING.md,CHANGELOG.md,docs/,validation/,examples/}
 ```
 
 Xmake `-o <prefix>` 是安装根。CMake 风格 `DESTDIR` CLI 不是当前项目契约；发布 CI 对 Xmake
 staged install 和最终 XPack 解包树直接做 relocation/消费方 验证，因此不需要保留旧安装
 driver 作为 oracle。
+
+文档由 `docs/INSTALL_MANIFEST.txt` 显式列出，保留 `docs/v2/` 和当前迁移说明依赖的相对层级。
+已退役 Audit/crypto 专项设计、旧 round/release 记录及混合历史架构文档不随包安装。
+`tests/packaging/check_install.py` 对 relocation 后的全部安装 Markdown 执行清单与相对文件链接检查；
+链接只能命中安装文档树内的真实文件，不能借源码树补齐。该检查不验证外部 URL 或 heading anchor。
 
 不要把共享库和静态库覆盖安装到同一 prefix。一个 prefix 描述一个确定的链接变体。
 

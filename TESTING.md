@@ -200,7 +200,11 @@ commit 中原有的 CMake 构建，以保证历史基准可重现，而不是用
 7. PIC SDK 模块；
 8. pkg-config 消费方；
 9. 精确版本/组件s 失败关闭；
-10. 当前 public layout/default/function type 和 config 负向合同。
+10. 当前 public layout/default/function type 和 config 负向合同；
+11. 显式安装文档清单、`docs/v2/` 权威与全部 Markdown 相对文件链接的 relocation 验证。
+
+`tests/packaging/test_installed_docs.py` 包含缺失 v2 文档、缺失传递链接、越界链接、
+意外安装历史 Audit 文档等负向 fixture；发布检查通过 `check_install.py` 使用同一验收器。
 
 `examples/installed_consumer/CMakeLists.txt` 和发布包中的 `LoggerConfig.cmake` 是**消费兼容性**
 测试资产，不代表项目重新依赖 CMake 构建。

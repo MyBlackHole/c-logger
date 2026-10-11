@@ -1,5 +1,8 @@
 # 引用计数使用规范
 
+> 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
+> Audit/crypto 已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
+
 c-logger 当前没有为 `logger_t`、Audit runtime、queue storage、worker state 或
 global logger 引入通用 per-object refcount。
 
