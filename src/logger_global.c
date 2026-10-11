@@ -33,6 +33,11 @@ enum global_phase {
 /* generation 与 phase 放在同一个 atomic ticket 中。
  * 若分开读取，reader 可能把某一代 RUNNING 与另一代 generation 错配。
  * 每次真实 init 尝试都会消费一个 generation，即使 candidate 构造失败。
+ *
+ * Lifecycle transitions that acquire on CAS failure also acquire on success.
+ * acq_rel/acquire preserves release publication and gives an unambiguous C11
+ * order pair; do not rely on release/acquire's historical "no stronger" wording.
+ * The ticket controls admission, while g_lifetime_lock still pins the object.
  */
 static _Atomic uint64_t g_ticket;
 /* A failed lock release or incomplete teardown invalidates global lifetime. */
@@ -264,7 +269,7 @@ int logger_init(const logger_config_t *cfg)
 			  G_STARTING;
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &old, ticket,
-		    memory_order_release, memory_order_acquire))
+		    memory_order_acq_rel, memory_order_acquire))
 		return finish(&scope, -(global_lock_error() ?
 					global_lock_error() : EIO));
 	logger_t *candidate = logger_create(cfg);
@@ -299,7 +304,7 @@ int logger_init(const logger_config_t *cfg)
 	g_logger = candidate;
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &ticket, with_phase(ticket, G_RUNNING),
-		    memory_order_release, memory_order_acquire)) {
+		    memory_order_acq_rel, memory_order_acquire)) {
 		/* A concurrent reader may have poisoned the lifetime after the
 		 * earlier check. Nothing was published to an admitted reader:
 		 * the writer pin is still held, so retire this candidate. */
@@ -341,7 +346,7 @@ int logger_shutdown_status(void)
 	uint64_t stopping = with_phase(current, G_STOPPING);
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &current, stopping,
-		    memory_order_release, memory_order_acquire))
+		    memory_order_acq_rel, memory_order_acquire))
 		return finish(&scope, -(global_lock_error() ?
 					global_lock_error() : EIO));
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
@@ -386,7 +391,7 @@ int logger_shutdown_status(void)
 		 * Backend I/O failure may still return with final free complete. */
 		if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &stopping, with_phase(current, G_STOPPED),
-		    memory_order_release, memory_order_acquire)) {
+		    memory_order_acq_rel, memory_order_acquire)) {
 			int error = global_lock_error();
 			if (!error) {
 				error = EUCLEAN;

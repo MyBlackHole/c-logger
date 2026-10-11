@@ -1,0 +1,22 @@
+file	operation	object	desired	success	failure	count	rationale
+src/console.c	weak	&g_config	next	relaxed	relaxed	1	Packed scalar configuration; CAS does not publish other storage.
+src/logger.c	weak	&l->queue_high_watermark	depth	relaxed	relaxed	1	Best-effort numeric high-water mark; no payload publication.
+src/logger.c	strong	&l->lifecycle_error	error	release	relaxed	2	Constructor and runtime sticky lifecycle error publication; failed expected value is unused.
+src/logger.c	strong	&l->state	LOGGER_STATE_RUNNING	acq_rel	acquire	1	Publish RUNNING only from CREATED; failed acquire observes worker STOPPING publication.
+src/logger.c	strong	&l->lifecycle_error	join_rc	release	relaxed	1	Publish failed join diagnosis; failed expected value is unused.
+src/logger.c	strong	&l->first_error	error	release	relaxed	1	Publish first I/O error; failed expected value is unused.
+src/logger.c	strong	&l->synchronization_error	error	release	relaxed	1	Publish first synchronization-proof error; failed expected value is unused.
+src/logger_global.c	strong	&g_lock_error	error	release	relaxed	1	Publish first global lock error before G_BROKEN; failed expected value is unused.
+src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN)	acq_rel	acquire	1	Publish G_BROKEN without replacing a newer generation; acquire each retry observation.
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase)	release	relaxed	1	Rollback only the owned ticket; failed expected value is unused.
+src/logger_global.c	strong	&g_ticket	ticket	acq_rel	acquire	1	Publish new STARTING generation; retain acquire failure using unambiguous acq_rel success.
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,G_RUNNING)	acq_rel	acquire	1	Publish RUNNING under writer pin; retain acquire failure without release/acquire ambiguity.
+src/logger_global.c	strong	&g_ticket	stopping	acq_rel	acquire	1	Close admission with STOPPING; retain acquire failure using unambiguous acq_rel success.
+src/logger_global.c	strong	&g_ticket	current	release	relaxed	1	Reopen admission only when writer acquire failed and ticket is unchanged; failed value unused.
+src/logger_global.c	strong	&g_ticket	with_phase(current,G_STOPPED)	acq_rel	acquire	1	Publish STOPPED only after final-release receipt; retain acquire failure without ambiguity.
+src/logger_process.c	strong	&owner_pid	current	release	relaxed	1	Publish PID before atfork registration; failed observation compares the scalar PID only.
+src/logger_process.c	weak	&live_objects	n+1	acq_rel	relaxed	1	Bounded object census increment; successful RMW keeps census ordering, failure retries scalar.
+src/logger_process.c	weak	&live_objects	n-1	acq_rel	acquire	1	Bounded census decrement and underflow guard; acquire retry observations.
+src/logger_queue.c	weak	&q->spill_used[word]	desired	acq_rel	relaxed	1	Acquire exclusive spill reuse after release-clear; failure only selects another bit.
+src/logger_queue.c	weak	&q->enqueue_pos	pos+1	relaxed	relaxed	1	Reserve unique queue position only; payload publication is separate slot.seq release/acquire.
+src/logger_worker.c	strong	&l->lifecycle_error	wait_rc	release	relaxed	1	Publish worker wait failure; failed expected value is unused.
