@@ -270,7 +270,7 @@ jobs:
         with:
           xmake-version: "3.1.1"
 
-      - name: 配置启用内存与未定义行为检查的静态库测试集
+      - name: 配置启用运行时检查的静态库测试集
         run: |
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
             policies="build.sanitizer.address,build.sanitizer.undefined"
@@ -288,7 +288,7 @@ jobs:
       # CMake uses ctest -j2, but also assigns every case its own working
       # directory. Until Xmake has the same global isolation, serialize the
       # complete suite; the concurrency regressions still create real threads.
-      - name: 运行启用内存与未定义行为检查的静态库测试集
+      - name: 运行启用运行时检查的静态库测试集
         run: xmake test -j1
 
       # Sanitizer builds must keep the production archive free of test hooks.
