@@ -169,22 +169,13 @@ xmake test -j1
 白盒 `--wrap` 回归测试即使在共享库配置中也链接同源静态
 `logger_regression_support`；只有需要验证真实 DSO 观察面的用例才直接链接生产共享库。不能把静态包装测试误称为 DSO 内部拦截。
 
-## QEMU 断电
+## 故障测试范围
 
-`.github/workflows/vm-powercut.yml` 构建仅供测试的静态程序 `vm_powercut_guest`，对相同 8 个普通
-Logger 中断点在 ext4 与 XFS 原始文件系统映像上执行真实 QEMU SIGKILL、同盘重启、
-完整基线字节校验、重新打开和追加验证。PR、main 推送和手动运行均运行完整8×2矩阵。
-
-- 已确认基线；
-- `before_file_fsync` / `after_file_fsync` / `rotation_after_file_fsync`；
-- `file_after_archive_rename` / `file_after_archive_dirsync`；
-- `file_after_active_open` / `file_after_active_dirsync`。
-
-原 10 点中的三个纯 Audit 检查点退役，新增轮转后的 fsync 完成点。不存在 Audit 链验证承诺。真实系统调用/钩子、逐项映射与JSON证据见 [崩溃契约](docs/LOGGER_CRASH_CONTRACT.md)。
-
-这证明指定运行器上虚拟 x86_64 + 原始 ext4/XFS + QEMU 存储路径的恢复行为，不替代
-真实服务器物理断电、RAID/HBA/NVMe/SATA 易失缓存、实际目标挂载/存储栈或最低支持内核验收。
-普通进程 SIGKILL 保留宿主页缓存，与终止整台 QEMU 的边界不同。
+当前维护普通 Logger 的八个进程 SIGKILL 切断点与判定器变异测试。
+VM/断电测试及其专用程序、运行脚本和 CI 已移除，不再提供可选执行入口。
+历史报告只描述对应旧提交，不是当前支持承诺。进程测试保留宿主页缓存，不能证明
+物理掉电或设备易失缓存安全；既有 flush/fsync API 契约不变。
+最低内核 VM 属于平台兼容性验证，继续独立保留。
 
 <a id="queue-基准测试"></a>
 

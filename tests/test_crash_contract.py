@@ -109,11 +109,6 @@ def main():
     declared = set(re.findall(r'"((?:acknowledged|before_file_fsync|after_file_fsync|rotation_after_file_fsync|file_after_[a-z_]+))"', section))
     assert declared == set(POINTS), (declared, POINTS)
     assert EXPECTED == {f"crash_recovery_test/crash_{point}" for point in POINTS}
-    workflow = (ROOT / ".github/workflows/vm-powercut.yml").read_text()
-    matrix = workflow.split("      matrix:", 1)[1].split("    steps:", 1)[0]
-    assert "filesystem: [ext4, xfs]" in matrix
-    declared = set(re.findall(r"^          - ([a-z_]+)$", matrix, re.MULTILINE))
-    assert declared == set(POINTS), (declared, POINTS)
     result_lines = [f"[100%]: {name} ........ passed 0.001s" for name in sorted(EXPECTED)]
     with tempfile.TemporaryDirectory(prefix="logger-matrix-") as name:
         log = Path(name) / "xmake.log"
@@ -131,7 +126,7 @@ def main():
                                      str(log)], capture_output=True, timeout=5)
             assert (result.returncode == 0) == valid, (label, result.stdout, result.stderr)
     print(f"crash verifier: {tested} fixture acceptance/rejection checks passed; "
-          "six log-matrix checks passed; process/VM matrices match the eight-point contract")
+          "six log-matrix checks passed; process matrix matches the eight-point contract")
 
 
 if __name__ == "__main__":

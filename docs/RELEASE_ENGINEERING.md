@@ -225,7 +225,7 @@ Linux 发行版、内核或 CPU 自动兼容。
 
 <a id="crash--断电--sanitizer--基准测试"></a>
 
-## 崩溃 / 断电 / Sanitizer / 基准测试
+## 进程崩溃 / Sanitizer / 基准测试
 
 普通 Logger 的发布验收以基本 API 为范围：参数与返回值、并发、资源、轮转、正常
 flush/关闭语义，以及既有 ABI、安装消费、生产隔离和声明的平台兼容性。现有 flush/fsync
@@ -235,14 +235,13 @@ flush/关闭语义，以及既有 ABI、安装消费、生产隔离和声明的�
 （历史生产版 v1 合同见 release/1.x）：
 
 - `crash-recovery`：8 个普通 Logger 进程 SIGKILL 用例，main/手动共享库/静态库配置各3次；
-- `vm-powercut`（可选扩展）：ext4 + XFS 各8个普通 Logger QEMU SIGKILL + 原始磁盘重启/恢复切断点；
-  新旧矩阵与三个纯 Audit 检查点切断点的退役原因见 [crash 合同](LOGGER_CRASH_CONTRACT.md)；
 - `xmake-parity` Sanitizer：ASan+UBSan 与 TSan 的完整静态库测试集；
 - `queue-benchmark`（性能参考）：当前 ABI 2 候选版本用 Xmake，冻结历史基线用其各自提交的原构建定义。
 
-进程 SIGKILL 故障回归和适用的 Sanitizer 检查保留；VM 测试代码与现有自动触发配置不变，
-但不要求为每次最终 SHA 单独补跑 VM/掉电矩阵。上述证据仅证明各自明确环境中的实现
-行为；基本 API 通过不等于物理存储认证，VM 证据也不能替代最低内核/glibc 兼容性证据。
+进程 SIGKILL 故障回归和适用的 Sanitizer 检查保留；当前不维护 VM/断电测试，
+专用程序、脚本与 CI 已移除。进程矩阵见 [崩溃契约](LOGGER_CRASH_CONTRACT.md)。
+上述证据仅证明各自明确环境中的实现行为；基本 API 通过不等于物理存储认证。
+最低内核 VM、glibc 运行时及真实 syslogd 的平台兼容性验证继续独立保留。
 没有另行约定的业务 SLO 或全面审计不作为本次验收的新增缺陷。
 
 ## GitHub Release

@@ -645,16 +645,6 @@ if has_config("build_private_tests") then
         add_tests("default", {timeout = 5})
     target_end()
 
-    -- The QEMU guest deliberately links only the test-support archive.
-    target("vm_powercut_guest")
-        set_kind("binary")
-        set_default(false)
-        add_files("tests/vm_powercut.c", "tests/crash_support.c")
-        add_deps("logger_test_support")
-        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        add_ldflags("-static", "-Wl,--wrap=logger_fault_crash_if_requested",
-                    "-Wl,--wrap=fsync", "-Wl,--wrap=clock_gettime", {force = true})
-    target_end()
 end
 
 

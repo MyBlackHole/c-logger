@@ -9,7 +9,7 @@ c-logger 定位为高可靠 C 日志库，不再负责业务审计事务、哈�
 - 生产 Logger 始终不含 Audit；私有/回归开关不再把 Audit 源文件或 audit.h 注入安装产品。
 - VERSION=2.0.0、SONAME 2 / LOGGER_2.0 与 47 符号清单对齐 ABI 2 身份并隔离已发布 v1；当前处于稳定发布准备，[合同](../../abi/LOGGER_2_0_CONTRACT.md)待最终验收，不得作为 v1 兼容包或已经发布的 2.0。
 - 生产库链接的核心测试与最低内核安装后探测已转为普通 Logger 验证；安装、打包、ABI 检查使用 ABI 2。
-- 普通 Logger 进程崩溃/QEMU 证据已迁出 Audit：共享测试样本检查十条唯一已确认基线、四个真实轮转切点、数据 fsync 前后与重开追加；进程/VM 各八项。三个纯 Audit 检查点切断点明确退役，见[完整合同与矩阵映射](../LOGGER_CRASH_CONTRACT.md)。
+- 普通 Logger 进程崩溃证据已迁出 Audit：测试样本检查十条唯一已确认基线、四个真实轮转切点、数据 fsync 前后与重开追加，共八项。三个纯 Audit 检查点切断点明确退役；VM/断电测试现已移除，不再维护。见[完整合同与矩阵映射](../LOGGER_CRASH_CONTRACT.md)。
 - Audit/密码学模块源码、头、纯历史测试和测试样本已删除；混合测试中的普通覆盖先迁为 Logger 专用，两个支持归档只使用 Logger 源码。详见[逐场景映射](../../validation/AUDIT_TEST_RETIREMENT.md)。
 - 正式 2.0 发布仍需当前合同确认、精确源码全部适用门禁和发布授权。本文件后续章节保留迁移过程历史。
 
