@@ -178,7 +178,9 @@ local audit_sources = {
     "src/audit.c", "src/audit_record.c", "src/audit_integrity.c",
     "src/audit_recovery.c", "src/audit_verify.c"
 }
-local audit_compat = has_config("legacy_audit") or has_config("build_tests") or
+-- Public core tests must exercise the same Audit-free artifact as production.
+-- Private/regression suites retain legacy Audit temporarily for migration.
+local audit_compat = has_config("legacy_audit") or
     has_config("build_private_tests") or has_config("build_regression_tests")
 
 local logger_sources = {
