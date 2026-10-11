@@ -2,9 +2,9 @@
 #include "global_support.h"
 #include <stdarg.h>
 
-/* Cancellation probes pause with only test atomics, never a test mutex that
- * could itself be abandoned by cancellation. The real library lock/pin is the
- * resource under test. Both masks and post-cancel reuse are checked. */
+/* 取消探针仅用测试原子变量暂停，绝不用自身可能因取消而被遗留的测试互斥锁。
+ * 真实库锁与生命周期保护是被测资源。检查掩码以及取消后的复用。
+ */
 enum point {
 	P_NONE,
 	P_CREATE,
@@ -135,7 +135,7 @@ static void cleanup(void *unused)
 		CHECK(logger_flush_status() == 0);
 	}
 	atomic_store(&cleanup_seen, 1);
-	/* Thread is exiting, deliberately no re-enable in application cleanup. */
+	/* 线程正在退出，应用清理中有意不重新启用。 */
 }
 static void *caller(void *unused)
 {
@@ -248,8 +248,7 @@ int main(int argc, char **argv)
 	CHECK(!pthread_cancel(thread));
 	for (int i = 0; i < 20; ++i)
 		nap_ms();
-	CHECK(!atomic_load(
-		&cleanup_seen)); /* cancellation must not strand held resources */
+	CHECK(!atomic_load(&cleanup_seen)); /* 取消不得遗留已持有资源 */
 	atomic_store(&release_point, 1);
 	atomic_store(&release_format, 1);
 	void *ret;
@@ -270,7 +269,7 @@ int main(int argc, char **argv)
 	} else
 		CHECK(!stop_status());
 	CHECK(!logger_process_object_count());
-	/* No abandoned global control/read/instance lock; another generation works. */
+	/* 没有遗留的全局控制锁、读锁或实例锁；另一代次可以工作。 */
 	CHECK(!logger_init(&cfg));
 	LOG_INFO("next-generation-after-cancel");
 	CHECK(!logger_flush_status() && !stop_status());

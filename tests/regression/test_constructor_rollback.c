@@ -158,8 +158,9 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	/* proof failure turns the unpublished object into an intentional tombstone:
-	 * no final free and no census release that could make fork state lie. */
+	/* 证明失败使未发布对象成为有意保留的墓碑：
+	 * 不做最终 free，也不释放存活对象计数，避免 fork 状态失真。
+	 */
 	CHECK(candidate_freed == 0);
 	CHECK(atomic_load_explicit(&candidate->lifecycle_error,
 				   memory_order_acquire) ==
