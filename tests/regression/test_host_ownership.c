@@ -149,7 +149,7 @@ int main(int argc, char **argv)
 		p.destroy(sa);
 		CHECK(close_logger(a) == 0);
 		CHECK(p.run(sb, 3) ==
-		      0); /* one SDK/logger lifecycle does not stop another */
+		      0); /* 一个 SDK 或 logger 生命周期不会停止另一个 */
 		p.destroy(sb);
 		CHECK(close_logger(b) == 0);
 		CHECK(count_lines("a.log") == 1 && count_lines("b.log") == 2);

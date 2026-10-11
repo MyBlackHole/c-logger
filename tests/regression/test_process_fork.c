@@ -10,11 +10,13 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 
-/* Erroneous child API calls must return before locks/once/allocation/I/O.
- * These wrappers are linked into this executable only. _exit codes 90..93
- * distinguish a forbidden operation from the errno/return assertions. */
-/* Keep the probe flag atomic even for the raw-SYS_fork defense experiment,
- * which deliberately bypasses the sanitizer fork interceptor as well. */
+/* 错误的子进程 API 调用必须在锁、once、分配或 I/O 前返回。
+ * 这些包装函数仅链接到此可执行文件。_exit 代码 90..93
+ * 用于区分被禁止操作与 errno 或返回值断言。
+ */
+/* 即使原始 SYS_fork 防御实验也保持探针标志为原子变量；
+ * 该实验也有意绕过 Sanitizer 的 fork 拦截器。
+ */
 static _Atomic int strict_child;
 static _Atomic int fail_registration, pause_registration, pause_reader,
 	pause_console;
@@ -136,7 +138,7 @@ void __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 	__real_logger_vlog_internal(l, v, m, f, line, fn, fmt, a);
 }
 
-/* No CHECK/stdio/malloc in the child assertions. */
+/* 子进程断言中不使用 CHECK、stdio 或 malloc。 */
 #define CHILD_POSIX(expr, code)                      \
 	do {                                         \
 		errno = 0;                           \
@@ -173,8 +175,9 @@ static void child_guard_matrix(void)
 	if (logger_global_dropped() != 0 || errno != ECHILD)
 		_exit(22);
 
-	/* In origin-only cases, this poison pointer checks rejection before any
-     * dereference. Explicit cases use a real inherited allocated instance. */
+	/* 仅检查来源的情形中，此毒化指针检查在任何解引用前拒绝。
+	 * 显式实例情形使用真实继承的已分配实例。
+	 */
 	logger_t *l = instance ? instance : (logger_t *)(uintptr_t)1;
 	CHILD_VOID(LOGGER_INFO(l, "fork", "INHERITED_FORBIDDEN"), 23);
 	CHILD_VOID(logger_log_source(l, LOGGER_INFO, (logger_source_t){ 0 },
@@ -245,8 +248,9 @@ static void wait_child(pid_t p)
 static void early_child(void)
 {
 	strict_child = 1;
-	/* Registered before the library handler: immutable PID ownership, not
-     * handler order, must prevent logger_init from touching inherited once. */
+	/* 在库处理函数之前注册：必须由不可变 PID 所有权，
+	 * 而非处理函数顺序，阻止 logger_init 接触继承的 once。
+	 */
 	CHILD_POSIX(logger_init(&cfg), 70);
 }
 static void *global_writer(void *p)
@@ -293,7 +297,7 @@ static void registration_failure(const char *mode)
 	} else
 		CHECK(0);
 	CHECK(access("out.log", F_OK) != 0);
-	/* Registration failure is sticky, no silent unguarded retry. */
+	/* 注册失败不会自动清除，不允许静默地无保护重试。 */
 	atomic_store(&fail_registration, 0);
 	CHECK(logger_create(&cfg) == NULL && errno == ENOMEM);
 	CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
@@ -327,7 +331,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (!strcmp(mode, "prefork")) {
-		/* Single-threaded and no library runtime use before fork. */
+		/* 单线程，且 fork 前没有使用库运行时。 */
 		pid_t p = fork();
 		CHECK(p >= 0);
 		if (!p) {
@@ -395,7 +399,7 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "bypass-handler")) {
 #ifdef SYS_fork
 		p = (pid_t)syscall(
-			SYS_fork); /* test PID defense only, not supported API */
+			SYS_fork); /* 仅测试 PID 防御，不是受支持 API */
 #else
 		return 77;
 #endif

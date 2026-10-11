@@ -2,7 +2,7 @@
 #include "support.h"
 #include "logger_internal.h"
 
-/* 故障注入只作用于触发 API 的测试线程，不干扰 worker 的真实锁操作。 */
+/* 故障注入只作用于触发 API 的测试线程，不干扰工作线程的真实锁操作。 */
 static _Thread_local pthread_mutex_t *fail_mutex;
 static _Thread_local pthread_mutex_t *failed_mutex;
 static _Thread_local pthread_mutex_t *fail_unlock_mutex;

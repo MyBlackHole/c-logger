@@ -40,7 +40,7 @@ int __wrap_clock_gettime(clockid_t id, struct timespec *ts)
 
 struct tm *__wrap_localtime_r(const time_t *sec, struct tm *out)
 {
-	/* Do not fail file-open wall_day(time(NULL)); target record formatting. */
+	/* 不要使文件打开时的 wall_day(time(NULL)) 失败；目标是记录格式化。 */
 	if (*sec == now) {
 		++localtime_calls;
 		if (fault == LOCALTIME) {
@@ -62,7 +62,7 @@ size_t __wrap_strftime(char *out, size_t cap, const char *fmt,
 	zone_calls += (unsigned)zone;
 	if ((fault == DATE && date) || (fault == ZONE && zone)) {
 		++hits;
-		/* strftime's output is unspecified on failure; poison it deliberately. */
+		/* strftime 失败时输出未指定；有意污染它。 */
 		memset(out, 'X', cap);
 		return 0;
 	}
@@ -195,7 +195,7 @@ static void check_truncation(const char *path)
 	logger_log(l, LOGGER_INFO, oversized, NULL, 0, NULL, "body");
 	check_truncated(path, &before);
 
-	/* Message overflow and line/metadata overflow both fail before output. */
+	/* 消息溢出以及行或元数据溢出都会在输出前失败。 */
 	snapshot(path, &before);
 	CHECK(strict_record(l, oversized) == -EOVERFLOW);
 	unchanged(path, &before);
@@ -258,8 +258,9 @@ int main(int argc, char **argv)
 		CHECK(0);
 
 	if (cached_bad) {
-		/* Ordinary successful strftime can cache noncanonical bytes. Strict
-		 * logging must validate those bytes even without a fresh conversion. */
+		/* 普通成功的 strftime 可能缓存不规范字节。
+		 * 即使没有新的转换，严格日志也必须验证这些字节。
+		 */
 		snapshot(log_path, &before);
 		logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "warm-bad-cache");
 		check_record(log_path, &before, "0000-01-01T00:00:00.123456+0000",
@@ -287,22 +288,25 @@ int main(int argc, char **argv)
 				     !strcmp(scenario, "date") ? 1u : 2u));
 		if (!strcmp(scenario, "bad-date") || !strcmp(scenario, "bad-zone") || cached_bad) {
 			fault = NONE;
-			/* Removing a malformed-success fault does not refresh a valid
-			 * same-second cache. It must remain rejected without output. */
+			/* 移除“格式畸形但成功”的故障不会刷新有效的同秒缓存。
+			 * 它必须继续被拒绝且不输出。
+			 */
 			CHECK(strict_record(l, "cached-rejection") == -EOVERFLOW);
 			unchanged(log_path, &before);
 			CHECK(localtime_calls == 2 && date_calls == 2 && zone_calls == 2);
 			CHECK(hits == observed_hits);
 		} else {
-			/* Also check each conversion failure through ordinary output:
-			 * even poisoned strftime buffers must produce visible fallback. */
+			/* 也通过普通输出检查每种转换失败：
+			 * 即使 strftime 缓冲区被污染，也必须产生可见回退文本。
+			 */
 			logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "fault-fallback");
 			check_record(log_path, &before, "time-unavailable.123456", "fault-fallback");
 			CHECK(hits == observed_hits + 1);
 			fault = NONE;
 
-			/* A failed refresh must invalidate the previous second too.
-			 * Revisit it before recovery, catching partial/stale cache hits. */
+			/* 刷新失败也必须使前一秒失效。
+			 * 恢复前再次访问它，以捕获部分或陈旧缓存命中。
+			 */
 			--now;
 			snapshot(log_path, &before);
 			unsigned old_localtime = localtime_calls;
@@ -319,7 +323,7 @@ int main(int argc, char **argv)
 	}
 	CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
 
-	/* A healthy next second recovers even a malformed-success cache. */
+	/* 健康的下一秒能恢复，即使缓存来自格式畸形但成功的转换。 */
 	fault = NONE;
 	++now;
 	snapshot(log_path, &before);
@@ -328,8 +332,9 @@ int main(int argc, char **argv)
 	check_record(log_path, &before, NULL, "next-second-recovery");
 	CHECK(localtime_calls == old_localtime + 1);
 
-	/* Ordinary logging keeps visible fallback after strict time failures,
-	 * and fallback itself must never become a valid same-second cache hit. */
+	/* 严格时间失败后，普通日志保持可见回退文本，
+	 * 回退本身也绝不能成为有效的同秒缓存命中。
+	 */
 	++now;
 	fault = LOCALTIME;
 	snapshot(log_path, &before);

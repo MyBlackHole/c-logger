@@ -246,7 +246,7 @@ int main(int argc, char **argv)
 		CHECK(file.failed_write_syscalls == 1);
 		CHECK(!file.bytes_written);
 		CHECK(file.last_write_error == ENOSPC);
-		/* status flush performed a later successful file sync */
+		/* 返回状态的刷新执行了后续成功的文件同步 */
 		CHECK(file.last_error == 0);
 		atomic_store(&fault, NORMAL);
 		LOGGER_INFO(instance, "io", "later-success");
@@ -279,7 +279,7 @@ int main(int argc, char **argv)
 		CHECK(file.bytes_written ==
 		      (uint64_t)(bad ? 3 : file_size("out.log")));
 		CHECK(file.last_write_error == (bad ? EIO : 0));
-		/* status flush is the latest File operation in both cases */
+		/* 两种情形中，返回状态的刷新都是最后一次文件操作 */
 		CHECK(file.last_error == 0);
 		CHECK((off_t)instance->file_backend.current_size ==
 		      file_size("out.log"));
@@ -295,8 +295,7 @@ int main(int argc, char **argv)
 		LOGGER_INFO(instance, "io", "output-before-sync-failure");
 		CHECK(logger_flush_instance_status(instance) == -1 &&
 		      errno == EIO);
-		check_terminal(1, 0, 1,
-			       0); /* fsync failure is not an extra record */
+		check_terminal(1, 0, 1, 0); /* fsync 失败不是额外记录 */
 		logger_file_metrics_t file = file_metrics();
 		CHECK(file.data_sync_attempts == 1);
 		CHECK(file.data_sync_failures ==
