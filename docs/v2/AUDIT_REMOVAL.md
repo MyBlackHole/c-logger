@@ -6,12 +6,12 @@ c-logger 定位为高可靠 C 日志库，不再负责业务审计事务、哈�
 
 ## 当前已实施边界
 
-- 生产logger始终Audit-free；private/regression开关不再把Audit源文件或audit.h注入安装产品。
-- VERSION=2.0.0、SONAME 2 / LOGGER_2.0与47符号清单对齐ABI 2开发身份并隔离已发布v1；不得作为v1兼容包或已冻结的2.0正式release。
-- production-linked核心测试与最低内核installed probe已转为普通Logger验证；安装、打包、ABI检查使用ABI2。
-- 普通Logger crash/QEMU证据已迁出Audit：共享fixture检查十条唯一已确认baseline、四个真实轮转切点、data fsync前后与重开追加；process/VM各八项。三个纯Audit checkpoint点明确退役，见[完整合同与矩阵映射](../LOGGER_CRASH_CONTRACT.md)。
-- Audit/crypto源码、头、纯历史测试和fixture已删除；混合测试中的普通覆盖先迁为Logger专用，两个支持archive只使用logger sources。详见[逐场景映射](../../validation/AUDIT_TEST_RETIREMENT.md)。
-- 正式2.0 release仍需最终合同冻结、精确SHA全部门禁和发布授权。本文件后续章节保留迁移过程历史。
+- 生产 Logger 始终不含 Audit；私有/回归开关不再把 Audit 源文件或 audit.h 注入安装产品。
+- VERSION=2.0.0、SONAME 2 / LOGGER_2.0 与 47 符号清单对齐 ABI 2 开发身份并隔离已发布 v1；不得作为 v1 兼容包或已冻结的 2.0 正式发布。
+- 生产库链接的核心测试与最低内核安装后探测已转为普通 Logger 验证；安装、打包、ABI 检查使用 ABI 2。
+- 普通 Logger 进程崩溃/QEMU 证据已迁出 Audit：共享测试样本检查十条唯一已确认基线、四个真实轮转切点、数据 fsync 前后与重开追加；进程/VM 各八项。三个纯 Audit 检查点切断点明确退役，见[完整合同与矩阵映射](../LOGGER_CRASH_CONTRACT.md)。
+- Audit/密码学模块源码、头、纯历史测试和测试样本已删除；混合测试中的普通覆盖先迁为 Logger 专用，两个支持归档只使用 Logger 源码。详见[逐场景映射](../../validation/AUDIT_TEST_RETIREMENT.md)。
+- 正式 2.0 发布仍需最终合同冻结、精确 SHA 全部门禁和发布授权。本文件后续章节保留迁移过程历史。
 
 ## 历史：第一阶段
 
@@ -28,7 +28,7 @@ c-logger 定位为高可靠 C 日志库，不再负责业务审计事务、哈�
 
 ## 历史计划：正式发布前的迁移清单
 
-1. 处理 ABI：已发布 Production v1 的 SONAME 1 / LOGGER_1.0 包含 Audit 符号。**不能用同一 SONAME 发布删去符号的共享库。** 必须冻结 2.0 新 ABI major，更新符号清单、版本脚本、打包/安装元数据和下游 ABI 测试。
+1. 处理 ABI：已发布生产版 v1 的 SONAME 1 / LOGGER_1.0 包含 Audit 符号。**不能用同一 SONAME 发布删去符号的共享库。** 必须冻结 2.0 新 ABI 主版本，更新符号清单、版本脚本、打包/安装元数据和下游 ABI 测试。
 2. 将核心 Logger 与 Audit 的私有测试支持依赖完全拆开；删除仅用于 Audit 的测试目标、脚本和工作流，保留对普通文件后端故障和轮换的测试。
 3. 审查普通 Logger 的头文件、故障注入点、文件租约与文档是否存在残留 Audit 耦合。不能仅删除文件名而留下无效行为。
 4. 删除 `src/audit*.c`、`src/audit*.h`、`include/audit.h` 及专用测试/样例；保留历史版本的发布分支与标签供旧用户迁移。
@@ -38,4 +38,4 @@ c-logger 定位为高可靠 C 日志库，不再负责业务审计事务、哈�
 
 旧用户继续使用已发布的 v1 审计功能，或迁移到独立审计服务/数据库。新 c-logger 只负责日志记录与可观察的持久化结果；业务事务配对、不可变存储、可信锚点由业务系统或独立审计组件承担。
 
-**源码修复PR的合并不等于正式release。** Audit历史支持源码已移除；版本身份已对齐ABI 2开发产物，最终合同与发布授权仍需单独验收。
+**源码修复 PR 的合并不等于正式发布。** Audit 历史支持源码已移除；版本身份已对齐 ABI 2 开发产物，最终合同与发布授权仍需单独验收。

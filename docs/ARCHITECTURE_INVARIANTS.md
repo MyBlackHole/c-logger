@@ -1,140 +1,148 @@
 # 架构不变量
 
-本文是 c-logger 的架构 评审门禁。
+本文是 c-logger 的架构评审门禁。
 
-它不描述“当前代码具体怎么写”，而定义**局部重构、性能优化、后端 扩展不能破坏的性质**。
+它不描述“当前代码具体怎么写”，而定义**局部重构、性能优化、后端扩展不能破坏的性质**。
 
 现行设计入口见 [v2/README.md](v2/README.md)，总体对象模型见 [v2/OWNERSHIP.md](v2/OWNERSHIP.md)。
-Audit/crypto 已退役，不属于当前架构不变量或验收；历史契约由 `release/1.x` 维护。
+Audit/密码学模块已退役，不属于当前架构不变量或验收；历史契约由 `release/1.x` 维护。
 
 ## 1. 宿主 / 集成
 
-1. Logger 不接管宿主 进程/线程/fork 模型。
-2. 第三方 SDK 默认不偷偷创建或销毁 global Logger。
-3. explicit `logger_t` 由 host 结构性所有者 独占销毁。
-4. SDK/caller 对 explicit 实例 默认是 BORROWED。
-5. public ABI 保持 plain C；内部 GNU C helper 不泄漏进 公开契约。
-6. 新 隐藏的线程/进程全局状态 必须先做 架构评审。
+1. Logger 不接管宿主进程/线程/fork 模型。
+2. 第三方 SDK 默认不偷偷创建或销毁全局 Logger。
+3. 显式 `logger_t` 由宿主结构性所有者独占销毁。
+4. SDK/调用方对显式实例默认是 BORROWED。
+5. 公开 ABI 保持普通 C；内部 GNU C 辅助函数不泄漏进公开契约。
+6. 新隐藏的线程/进程全局状态必须先做架构评审。
 
 ## 2. 所有权 / 生命周期
 
 7. 每个非平凡资源必须回答：
    - 谁创建；
    - 当前谁拥有；
-   - 何时 转移；
-   - 最终谁 release。
-8. BORROWED 指针 不能被 词法作用域清理 自动释放。
-9. 移交 后旧 所有者 必须失效。
-10. 工作线程/队列/工作区 必须在 final free 前证明执行者已经退出；`pthread_join` 必须成功。
-11. 是否允许 final free 只由 quiescence proof 决定；普通内部错误若仍能证明所有执行者已退出，可以返回错误后安全释放。
-12. 销毁一旦真正开始即消费 public ownership；普通最终 I/O 错误不让旧指针变成可重试对象。
-13. join、同步对象 destroy、process census 等是 quiescence/ownership 证明；这些证明失败时禁止继续 final free，安全泄漏优先于 UAF。
-14. process/object census 必须防 overflow/underflow，不能用无检查 fetch_sub 隐藏 double release。
-15. lock、atomic、生命周期固定、join、refcount 不得互相替代。
-16. 通用引用计数只有在多个独立 owner 真正需要延长生命周期时才允许引入。
+   - 何时转移；
+   - 最终谁释放。
+8. BORROWED 指针不能被词法作用域清理自动释放。
+9. 移交后旧所有者必须失效。
+10. 工作线程/队列/工作区必须在最终释放内存前证明执行者已经退出；`pthread_join` 必须成功。
+11. 是否允许最终释放内存只由静止状态证明决定；普通内部错误若仍能证明所有执行者已退出，可以返回错误后安全释放。
+12. 销毁一旦真正开始即消费公开所有权；普通最终 I/O 错误不让旧指针变成可重试对象。
+13. join、同步对象销毁、进程存活对象计数等是静止状态/所有权证明；这些证明失败时禁止继续最终释放内存，安全泄漏优先于 UAF。
+14. 进程/对象存活计数必须防上溢/下溢，不能用无检查 fetch_sub 隐藏重复释放。
+15. 锁、原子、生命周期固定、join、引用计数不得互相替代。
+16. 通用引用计数只有在多个独立所有者真正需要延长生命周期时才允许引入。
 
 ## 3. 异步 / 队列
 
-17. async 队列 必须 bounded。
-18. 当前 compatibility async path 不允许 per-record heap allocation。
-19. 成功 en队列 后，record 不依赖 caller/SDK 源指针 生命周期。
-20. 溢出 必须通过明确 policy 表达。
-21. 不允许 silent truncation 代替 resource exhaustion。
-22. 不允许无限增长 队列/溢出区 来掩盖持续 消费者 overload。
-23. 队列拓扑 可以改变，但必须保持可证明的 发布/顺序/完成 语义。
-24. performance 队列 修改必须同时检查固定内存成本。
+17. 异步队列必须有界。
+18. 当前兼容异步路径不允许逐记录堆分配。
+19. 成功入队后，记录不依赖调用方/SDK 源指针生命周期。
+20. 溢出必须通过明确策略表达。
+21. 不允许静默截断代替资源耗尽。
+22. 不允许无限增长队列/溢出区来掩盖持续消费者过载。
+23. 队列拓扑可以改变，但必须保持可证明的发布/顺序/完成语义。
+24. 面向性能的队列修改必须同时检查固定内存成本。
 
 ## 4. 完成 / 刷新
 
-25. consumer 完整复制后即可归还 slot/spill；出队和存储可复用都不等于后端完成。
-26. 队列为空 不等于 后端完成。
-27. 后端完成 不自动等于 durable fsync。
-28. 刷新 必须等待其 快照目标 的 completion。
-29. 刷新 语义变化属于 architecture/API contract change，不能只改实现代码。
+25. 消费者完整复制后即可归还槽位/溢出块；出队和存储可复用都不等于后端完成。
+26. 队列为空不等于后端完成。
+27. 后端完成不自动等于通过 fsync 实现持久化。
+28. 刷新必须等待其快照目标的完成。
+29. 刷新语义变化属于架构/API 契约变更，不能只改实现代码。
 
 ## 5. 后端 / I/O
 
-30. 后端 mutable state 必须有唯一 串行化契约。
-31. file target 所有权 不能被多个独立 Logger 无协议共享。
-32. reopen/rotation 必须先准备并验证 替代对象，再 retire usable old state。
-33. no-clobber rotation 不能为兼容平台退化成覆盖式 rename。
-34. error-bearing finalization 保持显式。
-35. first meaningful 后端 error 不能被 cleanup error 覆盖。
-36. sticky historical I/O error 不能被后续成功静默清除。
-37. unsupported platform capability 返回明确错误，不做危险降级。
-38. Syslog 故障/backpressure 不能伪装成 durable success。
+30. 后端可变状态必须有唯一串行化契约。
+31. 文件目标所有权不能被多个独立 Logger 无协议共享。
+32. 重新打开/轮转必须先准备并验证替代对象，再退役仍可用的旧状态。
+33. 不覆盖既有文件的轮转不能为兼容平台退化成覆盖式重命名。
+34. 会产生错误的最终处置保持显式。
+35. 第一个有意义的后端错误不能被清理错误覆盖。
+36. 已锁存的历史 I/O 错误不能被后续成功静默清除。
+37. 不受支持的平台能力返回明确错误，不做危险降级。
+38. Syslog 故障/背压不能伪装成持久化成功。
 
-## 6. Process / Cancellation
+<a id="6-process--cancellation"></a>
 
-39. raw fork 子进程 不得触碰可能处于 inherited-locked 状态的复杂 运行时。
-40. fork safety 不能通过重置继承 pthread object 来伪造。
-41. library 不扫描/控制整个宿主线程模型来替宿主决定生命周期。
-42. cancellation 恢复前必须先释放库内 lock/resource/pin。
-43. 普通 API 不宣称 唤醒信号-safe 或 generic async-cancel-safe。
-44. `pthread_exit/longjmp` 不能成为绕过 cleanup/生命周期 protocol 的支持路径。
+## 6. 进程/取消
 
-## 7. Performance
+39. 原始 fork 子进程不得触碰继承而来的、可能处于已上锁状态的复杂运行时。
+40. fork 安全性不能通过重置继承 pthread 对象来伪造。
+41. 库不扫描/控制整个宿主线程模型来替宿主决定生命周期。
+42. 取消恢复前必须先释放库内锁/资源/生命周期固定保护。
+43. 普通 API 不宣称信号处理安全或通用异步取消安全。
+44. `pthread_exit/longjmp` 不能成为绕过清理/生命周期协议的支持路径。
 
-45. 性能结论必须有可复现 benchmark 证据。
-46. shared runner 的吞吐抖动不应成为脆弱的硬门禁。
-47. correctness、有界内存、生命周期 优先于单项 logs/sec。
-48. “lock-free”标签不能替代 所有权/发布 proof。
-49. 不能通过 drop 更多记录制造虚假 throughput improvement。
-50. 提高固定内存换 burst capacity 时，必须同时报告 memory tradeoff。
-51. 新 fast path 不得偷偷改变旧 compatibility API 的 caller-生命周期 语义。
+<a id="7-performance"></a>
 
-## 8. Current Implementation vs Invariant
+## 7. 性能
+
+45. 性能结论必须有可复现基准测试证据。
+46. 共享运行器的吞吐抖动不应成为脆弱的硬门禁。
+47. 正确性、有界内存、生命周期优先于单项 logs/sec。
+48. “无锁（lock-free）”标签不能替代所有权/发布证明。
+49. 不能通过 丢弃更多记录制造虚假吞吐提升。
+50. 提高固定内存换突发容量时，必须同时报告内存取舍。
+51. 新快速路径不得偷偷改变旧兼容 API 的调用方生命周期语义。
+
+<a id="8-current-implementation-vs-invariant"></a>
+
+## 8. 当前实现与不变量
 
 以下只是当前实现，可以在满足上述规则时改变：
 
 | 当前实现 | 是否必须长期保留 |
 |---|---|
-| shared MPSC | 否 |
-| single async 工作线程 | 否 |
-| 512B inline | 否 |
-| 1024 溢出区 blocks | 否 |
-| atomic 溢出区 bitmap | 否 |
+| 共享 MPSC | 否 |
+| 单个异步工作线程 | 否 |
+| 512B 内嵌 | 否 |
+| 1024 溢出区块 | 否 |
+| 原子溢出区位图 | 否 |
 | BATCH_MAX=256 | 否 |
-| eager vsnprintf | 否 |
-| self-paced 工作线程 wakeup | 否 |
-| Syslog per-record send | 否 |
+| 立即执行 vsnprintf | 否 |
+| 自节奏工作线程唤醒 | 否 |
+| Syslog 逐记录 send | 否 |
 
-以下性质属于当前核心 invariant：
+以下性质属于当前核心不变量：
 
 | 性质 | 必须保留 |
 |---|---|
-| host-owned explicit 实例 | 是 |
-| bounded async memory | 是 |
-| explicit 溢出 policy | 是 |
-| no silent 溢出 truncation | 是 |
-| async source 生命周期 isolation | 是 |
-| 所有者-controlled 工作线程 生命周期 | 是 |
+| 宿主拥有显式实例 | 是 |
+| 有界异步内存 | 是 |
+| 显式溢出策略 | 是 |
+| 禁止静默截断溢出内容 | 是 |
+| 异步源数据生命周期隔离 | 是 |
+| 所有者控制的工作线程生命周期 | 是 |
 | 释放前等待退出 | 是 |
 | 刷新 != 队列为空 | 是 |
-| visible 后端 故障 | 是 |
-| file 所有权/no-clobber contract | 是 |
+| 可见的后端故障 | 是 |
+| 文件所有权/不覆盖契约 | 是 |
 
-如果未来确实要改变后一类性质，应视为**架构/API contract 变更**，不能作为普通性能重构合入。
+如果未来确实要改变后一类性质，应视为**架构/API 契约变更**，不能作为普通性能重构合入。
 
-## 9. Architecture Review Checklist
+<a id="9-architecture-review-checklist"></a>
 
-涉及 队列、工作线程、后端、lifecycle、资源或 公开 API 的修改，至少回答：
+## 9. 架构审查清单
 
-1. 是否改变 Host/SDK 所有权 边界？
-2. 是否增加 hidden thread 或 process-global state？
-3. 是否改变 bounded-memory 上界？
-4. 是否改变 caller/source 生命周期？
-5. 是否改变 溢出/backpressure？
-6. 是否改变 record ordering？
-7. 是否改变 刷新/completion？
-8. 是否新增 lock order？
-9. atomic 是否被误当 生命周期 mechanism？
-10. 是否改变 final release 顺序？
-11. 是否隐藏 I/O/持久性 error？
-12. 是否影响 fork/dlclose/cancellation？
-13. 是否需要 public ABI/version change？
-14. 性能收益是否有同 runner before/after evidence？
-15. 是否通过更多 drop、更弱语义或更多固定内存换取表面 throughput？
-16. 对应专项文档、tests、benchmark 是否同步更新？
+涉及队列、工作线程、后端、生命周期、资源或公开 API 的修改，至少回答：
+
+1. 是否改变宿主/SDK 所有权边界？
+2. 是否增加隐藏线程或进程全局状态？
+3. 是否改变有界内存上界？
+4. 是否改变调用方/源数据生命周期？
+5. 是否改变溢出/背压？
+6. 是否改变记录顺序？
+7. 是否改变刷新/完成？
+8. 是否新增锁顺序？
+9. 原子是否被误当生命周期机制？
+10. 是否改变最终释放顺序？
+11. 是否隐藏 I/O/持久性错误？
+12. 是否影响 fork/dlclose/取消？
+13. 是否需要公开 ABI/版本变更？
+14. 性能收益是否有同运行器前后对比证据？
+15. 是否通过更多丢弃、更弱语义或更多固定内存换取表面吞吐？
+16. 对应专项文档、测试、基准测试是否同步更新？
 
 这些问题没有回答清楚之前，不应把局部实现优化视为架构上完成。
