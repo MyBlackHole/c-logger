@@ -8,12 +8,12 @@
 #define LOGGER_PATH_MAX 4096
 #define LOGGER_FILENAME_MAX 255
 #define LOGGER_ARCHIVE_ATTEMPTS 1024u
-/* 私有、可 move 的 owner。结构体内部没有指针指向自身存储，因此整体 move 安全。
+/* 私有、可移动的所有者。结构体内部没有指针指向自身存储，因此整体移动安全。
  * 所有操作由所属 logger 的 emit_mu 串行化。
- * 普通文件通过 <active>.logger.lock 做跨实例协调，这里不会 unlink 该 lock 文件。
+ * 普通文件通过 <active>.logger.lock 做跨实例协调，这里不会删除该锁文件。
  */
 typedef struct {
-	char path[LOGGER_PATH_MAX]; /* 仅用于诊断；bind 后绝不重新解析路径 */
+	char path[LOGGER_PATH_MAX]; /* 仅用于诊断；绑定后绝不重新解析路径 */
 	char name[LOGGER_FILENAME_MAX + 1];
 	char lock_name[LOGGER_FILENAME_MAX + 1];
 	char stem[LOGGER_FILENAME_MAX + 1], ext[LOGGER_FILENAME_MAX + 1];
@@ -41,7 +41,8 @@ int logger_file_write(logger_file_t *, const char *, size_t,
 		      const struct timespec *, int);
 int logger_file_writev(logger_file_t *, struct iovec *, int, size_t,
 		       const struct timespec *, int);
-/* 独立 translation unit 便于 link-time fault test。使用 Linux syscall，
- * 不提供会覆盖目标的 rename fallback；平台不支持时返回 ENOTSUP。 */
+/* 独立编译单元便于链接时故障测试。使用 Linux 系统调用，
+ * 不提供会覆盖目标的重命名回退；平台不支持时返回 ENOTSUP。
+ */
 int logger_file_rename_noreplace(int, const char *, const char *);
 #endif

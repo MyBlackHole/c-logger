@@ -1,11 +1,10 @@
 #ifndef LOGGER_COMPILER_H
 #define LOGGER_COMPILER_H
 
-/*
- * c-logger private compiler contract.
+/* c-logger 私有编译器约定。
  *
- * 这里只封装编译器能力，不定义 ownership/lifetime/concurrency 语义。
- * public headers 不得依赖本文件。
+ * 这里只封装编译器能力，不定义所有权、生命周期或并发语义。
+ * 公开头文件不得依赖本文件。
  */
 #if defined(__clang__)
 #if !__has_attribute(cleanup)
@@ -20,9 +19,8 @@
 #define LOGGER_MAYBE_UNUSED __attribute__((unused))
 #define LOGGER_PRINTF(_fmt, _args) __attribute__((format(printf, _fmt, _args)))
 
-/*
- * 不作为普通 helper 的默认选择。仅用于 cleanup/class 这类确实依赖
- * 编译期展开语义的极小内部 helper。
+/* 不作为普通辅助函数的默认选择。仅用于 cleanup/class 这类确实依赖
+ * 编译期展开语义的极小内部辅助函数。
  */
 #define LOGGER_ALWAYS_INLINE inline __attribute__((always_inline))
 

@@ -6,10 +6,10 @@
 #include <signal.h>
 #include <time.h>
 
-/* Private, thread-local protection for write/writev and stdio pipe failures.
- * The caller must defer cancellation until end(), including after releasing
- * its locks. Never change the process-wide disposition or consume a SIGPIPE
- * that was already pending on entry. Successful setup preserves printf %m.
+/* 为 write/writev 和 stdio 管道失败提供私有、线程局部的保护。
+ * 调用者必须将取消推迟到 end()，包括释放自己的锁之后。
+ * 绝不改变进程级信号处置，也不消耗进入时已待处理的 SIGPIPE。
+ * 成功设置后保留 printf %m 的语义。
  */
 typedef struct {
 	sigset_t old_mask;
@@ -61,8 +61,9 @@ static inline void logger_sigpipe_consume_new(int was_pending)
 	}
 }
 
-/* saw_epipe is separate from the first error: a later fflush can fail with
- * EPIPE after formatting has already failed for a different reason. */
+/* saw_epipe 与首个错误分开记录：格式化因其他原因失败后，
+ * 后续 fflush 仍可能因 EPIPE 失败。
+ */
 static inline int logger_sigpipe_end(logger_sigpipe_guard_t *guard,
 				     int result, int saw_epipe)
 {

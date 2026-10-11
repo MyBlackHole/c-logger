@@ -8,8 +8,9 @@
 #define LOGGER_MESSAGE_MAX 4096
 #define LOGGER_LINE_MAX 5120
 
-/* Ordinary void logging retains a bounded byte prefix, visibly marked.
- * The status-returning path rejects oversized text instead of using this. */
+/* 普通无返回值的日志保留长度受限的字节前缀，并添加可见标记。
+ * 返回状态的路径会拒绝超长文本，而不使用此机制。
+ */
 static inline void logger_text_mark_truncated(char *text, size_t capacity)
 {
 	static const char marker[] = " [truncated]";
@@ -33,16 +34,17 @@ typedef struct logger_message {
 	pid_t pid, tid;
 	const char *file, *func, *module;
 	int line;
-	/* internal-only：告诉 async queue 哪些 metadata snapshot 真正有语义。 */
+	/* 仅供内部使用：告诉异步队列哪些元数据快照真正有语义。 */
 	uint8_t metadata_mask;
 	char request_id[64], session_id[64], trace_id[64];
-	/* 记录实际存入 text[] 的字节数，不含 NUL；避免 async queue 再扫描正文。 */
+	/* 记录实际存入 text[] 的字节数，不含 NUL；避免异步队列再扫描正文。 */
 	uint16_t text_len;
 	char text[LOGGER_MESSAGE_MAX];
 	char module_storage[128], file_storage[256], function_storage[128];
 } logger_message_t;
-/* Only a queue owns these fixed-size snapshots. Sync records need no retained
- * source lifetime. This bounded copy adds no per-record heap allocation. */
+/* 只有队列拥有这些固定大小的快照。同步记录无需保留来源的生命周期。
+ * 这种有界复制不会为每条记录增加堆分配。
+ */
 static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 {
 	size_t n = 0;
@@ -56,9 +58,8 @@ static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 static inline size_t logger_record_text_length(const logger_message_t *m)
 {
 	size_t n = m->text_len;
-	/*
-	 * production 路径由 vsnprintf() 精确填充 text_len。
-	 * 单元测试和内部手工构造 record 允许 text_len=0，此时兼容性扫描一次。
+	/* 生产路径由 vsnprintf() 精确填充 text_len。
+	 * 单元测试和内部手工构造的记录允许 text_len=0，此时兼容性扫描一次。
 	 */
 	if ((n != 0 || m->text[0] == '\0') && n < LOGGER_MESSAGE_MAX &&
 	    m->text[n] == '\0')

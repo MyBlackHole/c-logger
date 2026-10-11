@@ -6,15 +6,13 @@
 #include <stdint.h>
 #include <string.h>
 
-/*
- * Linux-UAPI-style struct copy:
- * - caller must provide the complete known structure;
- * - a larger future structure is accepted only when the unknown tail is zero;
- * - non-zero unknown data is rejected with E2BIG instead of being ignored.
+/* Linux UAPI 风格的结构体复制：
+ * - 调用者必须提供完整的已知结构体；
+ * - 未来更大的结构体只有在未知尾部全为零时才被接受；
+ * - 非零未知数据以 E2BIG 拒绝，而不是忽略。
  *
- * The caller remains responsible for ensuring that src points to struct_size
- * readable bytes. This is a userspace library, not a kernel copy_from_user()
- * boundary.
+ * 调用者仍负责确保 src 指向 struct_size 个可读字节。
+ * 这是用户态库，不是内核 copy_from_user() 边界。
  */
 static inline int logger_uapi_copy_struct(void *dst, size_t known_size,
 					 const void *src, uint32_t struct_size,
