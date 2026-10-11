@@ -2,6 +2,7 @@
 # 保留此相对层级，确保重定位后的 Markdown 链接仍然可用。
 # 历史架构、Audit、密码模块、轮次和发布记录只保留在源码树中。
 LICENSE
+AGENTS.md
 README.md
 API.md
 SECURITY.md
@@ -23,6 +24,7 @@ docs/LOCK_MATRIX.md
 docs/LOGGER_CRASH_CONTRACT.md
 docs/OBSERVABILITY.md
 docs/PLATFORM_BASELINE.md
+docs/PROJECT_LANGUAGE.md
 docs/QUEUE_STORAGE.md
 docs/REFCOUNTING.md
 docs/RELEASE_ENGINEERING.md

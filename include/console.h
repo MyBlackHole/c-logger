@@ -43,41 +43,39 @@ static inline console_config_t console_defaults_cpp(void)
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
 #endif
-/* Console shares the Logger process guard. Inherited child output returns
- * -1/ECHILD before stdio or mutex use; setters are no-ops with errno=ECHILD.
- * TTY predicates return 0 with errno=ECHILD. Exec before using a new runtime.
- * These are defensive errors, not a general async-signal-safe console API.
- * Console setters/init are process-global configuration operations.
- * Print functions return 0 on success, -1 on stdio failure with errno set by
- * the underlying libc operation where available. Output/flush failures on a
- * closed pipe return -1/EPIPE instead of terminating the host with SIGPIPE.
- * This uses only the calling thread's signal mask, restores its prior mask,
- * preserves already-pending SIGPIPE, and does not change the process handler.
- * FILE buffering/error state and the normal flush of host-buffered data are
- * retained; an earlier stdio error takes precedence over a later EPIPE.
- * Direct host writes/flushes outside Console are not protected. */
-/* Console operations defer cancellation while formatting/holding internal
- * mutexes and FILE operations, restore the caller's policy after release, and
- * reject same-thread Logger/Console callback recursion with EDEADLK. Not a
- * signal-handler API or a bounded-time I/O interface. The host must not change
- * cancellation policy, pthread_exit/longjmp, or unload code inside a callback.
- * Whole init is an atomic config snapshot; invalid config/setter values set
- * EINVAL without changing it. debug_source returns EOVERFLOW instead of silently
- * truncating its bounded source/message buffers. NULL fmt is always EINVAL,
- * even when diagnostics would otherwise be filtered out.
+/* Console 与 Logger 共用进程保护。子进程继承的输出接口在使用 stdio
+ * 或互斥锁前返回 -1/ECHILD；设置接口不执行操作，并设置 errno=ECHILD。
+ * TTY 判定返回 0，并设置 errno=ECHILD。使用新运行时前须执行 exec。
+ * 这些是防御性错误，不代表通用的异步信号安全控制台 API。
+ * Console 的设置/初始化是进程全局配置操作。
+ * 打印函数成功时返回 0，stdio 失败时返回 -1，并在底层 libc 操作
+ * 提供 errno 时保留该值。已关闭管道上的输出/刷新失败返回 -1/EPIPE，
+ * 不会因 SIGPIPE 终止宿主。这仅使用调用线程的信号屏蔽字，随后恢复
+ * 原屏蔽字，保留已待处理的 SIGPIPE，不改变进程的信号处理函数。
+ * 保留 FILE 缓冲/错误状态，以及对宿主缓冲数据的正常刷新；
+ * 较早的 stdio 错误优先于后续 EPIPE。
+ * 宿主在 Console 之外直接执行的写入/刷新不受保护。 */
+/* Console 操作在格式化、持有内部互斥锁及执行 FILE 操作期间延迟取消，
+ * 释放后恢复调用者的策略，并以 EDEADLK 拒绝同一线程内递归的
+ * Logger/Console 回调。这不是信号处理函数 API，也不是有时限的 I/O
+ * 接口。宿主不得在回调内更改取消策略、调用 pthread_exit/longjmp
+ * 或卸载代码。整个 init 以原子方式应用配置快照；无效的配置/设置值
+ * 会设置 EINVAL，不改变配置。debug_source 返回 EOVERFLOW，
+ * 而不会静默截断其有界的来源/消息缓冲区。fmt 为 NULL 时始终报
+ * EINVAL，即使该诊断信息本来会被过滤。
  */
 LOGGER_API void console_init(const console_config_t *);
 LOGGER_API void console_set_verbosity(console_verbosity_t);
 LOGGER_API void console_set_color(console_color_mode_t);
 LOGGER_API int console_stdout_is_tty(void);
 LOGGER_API int console_stderr_is_tty(void);
-/* Stable result/data channel: always stdout, no label/color. */
+/* 稳定的结果/数据通道：始终使用 stdout，无标签或颜色。 */
 LOGGER_API int console_print(const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 1, 2)))
 #endif
 	;
-/* Human-facing diagnostics: stderr. INFO is hidden in QUIET; verbose/debug are gated. */
+/* 面向人的诊断信息：stderr。QUIET 隐藏 INFO；verbose/debug 受级别控制。 */
 LOGGER_API int console_info(const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 1, 2)))

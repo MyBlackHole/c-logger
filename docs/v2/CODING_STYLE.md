@@ -1,39 +1,40 @@
 # c-logger 2.0 Linux C 编码规范
 
-2.0 内部代码采用 Linux 内核开发中的设计与编码纪律，但实现必须符合用户态 GNU C11/POSIX/C11 memory model。
+2.0 内部代码采用 Linux 内核开发中的设计与编码纪律，但实现必须符合用户态
+GNU C11/POSIX/C11 内存模型。说明文字遵循[项目语言约定](../PROJECT_LANGUAGE.md)。
 
 ## 基本格式
 
-- K&R brace style。
-- tab 表示缩进层级，tab width = 8。
-- 80 columns 是 preferred review width，不作为机械硬切断；长 URL、格式字符串、可读性更差的强拆行可以例外。
+- 使用 K&R 大括号风格。
+- 制表符表示缩进层级，宽度为 8 列。
+- 80 列是建议的审阅宽度，不作为机械硬切断；长 URL、格式字符串、可读性更差的强拆行可以例外。
 - 一行一个声明。
-- 避免超过约三层的复杂嵌套；优先 early return 或拆分 helper。
+- 避免超过约三层的复杂嵌套；优先提前返回或拆分辅助函数。
 - 函数围绕单一职责组织，不能靠“大函数 + 注释分段”代替结构设计。
 - 新增代码禁止 VLA。
-- trailing variable-size object 使用 C99 flexible array member `[]`，禁止新建 `[0]` / `[1]` 尾数组。
-- switch fallthrough 必须显式标记和解释。
+- 尾部变长对象使用 C99 柔性数组成员 `[]`，禁止新建 `[0]` / `[1]` 尾数组。
+- switch 分支贯穿必须显式标记和解释。
 
 ## 类型与抽象
 
-- 普通内部 struct 不为隐藏指针而机械 typedef；opaque public object、type-safe scalar、明确抽象例外。
-- bytes、records、index、count、generation、sequence、flags、state、deadline 等概念不能全部退化成无语义整数。
-- 能用 `static inline` 清楚表达时，不使用复杂 macro。
-- macro 不得隐式依赖调用方局部变量。
-- `__always_inline` 只用于编译语义确实需要的极小 helper，不作为性能装饰。
-- `likely/unlikely` 只有 profile/benchmark 证明后才使用。
+- 普通内部 struct 不为隐藏指针而机械使用 typedef；不透明公开对象、类型安全标量、明确抽象例外。
+- 字节数、记录数、索引、计数、代次、序列号、标志、状态、超时期限等概念不能全部退化成无语义整数。
+- 能用 `static inline` 清楚表达时，不使用复杂宏。
+- 宏不得隐式依赖调用方局部变量。
+- `__always_inline` 只用于编译语义确实需要的极小辅助函数，不作为性能装饰。
+- `likely/unlikely` 只有性能剖析/基准测试证明后才使用。
 
 ## 注释
 
 优先解释：
 
-- ownership；
-- lifetime；
-- locking；
-- blocking context；
-- memory ordering；
-- persistence/crash invariant；
-- error semantics；
+- 所有权；
+- 生命周期；
+- 锁机制；
+- 阻塞上下文；
+- 内存顺序；
+- 持久性/崩溃不变量；
+- 错误语义；
 - 为什么替代方案不安全。
 
 禁止只复述代码。
@@ -53,30 +54,32 @@ VLA
 
 格式化必须：
 
-- bounded；
-- truncation 可观察；
-- format string 经过编译器检查；
-- size arithmetic 经过 overflow check。
+- 有界；
+- 截断可观察；
+- 格式字符串经过编译器检查；
+- 长度计算经过溢出检查。
 
 ## 资源与错误
 
-- ownership transfer 使用 typed `take_*`；
-- lexical single-owner resource 可以使用 cleanup helper；
-- error-bearing finalization、shared lifetime、thread lifetime 保持显式；
-- 不允许 cleanup error 覆盖 primary error；
-- 不允许以 unsigned wraparound 作为正常控制流。
+- 所有权转移使用带类型的 `take_*`；
+- 词法作用域内的单一所有者资源可以使用清理辅助函数；
+- 需承载错误的收尾、共享生命周期、线程生命周期保持显式；
+- 不允许清理错误覆盖主错误；
+- 不允许以无符号整数回绕作为正常控制流。
 
 ## 并发
 
-- `volatile` 不是同步、atomic 或 memory barrier。
-- 用户态并发必须首先满足 ISO C11 data-race rules。
-- atomic/lock/refcount/join/lifetime pin 不能互相替代。
-- lockless 设计必须提供 linearization、happens-before、reclamation proof。
+- `volatile` 不是同步、原子操作或内存屏障。
+- 用户态并发必须首先满足 ISO C11 数据竞争规则。
+- 原子操作、锁、引用计数、线程等待、生命周期固定不能互相替代。
+- 无锁设计必须提供线性化、先发生关系（happens-before）、回收安全性证明。
 
-## Review 原则
+<a id="review-原则"></a>
 
-2.0 代码优先“最小充分机制”。不能仅因为 Linux 内核存在某 primitive 就引入；必须先证明 c-logger 存在对应问题。
+## 评审原则
 
+2.0 代码优先“最小充分机制”。不能仅因为 Linux 内核存在某原语就引入；
+必须先证明 c-logger 存在对应问题。
 
 ## 自动化门禁
 
@@ -84,29 +87,28 @@ VLA
 
 - `scripts/check_v2_diff.py` 只检查新增 C/C++ 行，避免为了启用规则而顺手重写 v1 遗留代码；
 - 新增代码禁止 `strcpy/strcat/sprintf`；
-- 新增 `strncpy` 默认拒绝；确属固定宽度协议字段时必须在同一行标记 `V2_FIXED_WIDTH_OK` 并由 reviewer 审核；
-- 新增源码直接写 `__attribute__((always_inline))` 被拒绝，统一走 compiler abstraction；
-- `git diff --check` 负责 whitespace 错误；
+- 新增 `strncpy` 默认拒绝；确属固定宽度协议字段时必须在同一行标记 `V2_FIXED_WIDTH_OK` 并由评审者审核；
+- 新增源码直接写 `__attribute__((always_inline))` 被拒绝，统一走编译器抽象层；
+- `git diff --check` 负责空白字符错误；
 - VLA 和大栈帧由编译器门禁检查。
 
 这些门禁只约束新改动；清理历史技术债必须独立 PR，不能混入无关功能变更。
 
-
 ## 所有权命名
 
-内部 API 的动词必须表达 ownership/lifetime 语义：
+内部 API 的动词必须表达所有权/生命周期语义：
 
 ```text
-take_*     ownership transfer；成功后 source 失效
-get_*      获取独立 lifetime reference
-put_*      释放独立 lifetime reference
-borrow_*   获取非 owning 访问；不得延长 lifetime
-release_*  释放某项资源，但不一定结束 container lifetime
-close_*    关闭 fd/backend 等外部资源
+take_*     转移所有权；成功后来源对象失效
+get_*      获取独立生命周期引用
+put_*      释放独立生命周期引用
+borrow_*   获取不持有所有权的访问；不得延长生命周期
+release_*  释放某项资源，但不一定结束容器生命周期
+close_*    关闭文件描述符/后端等外部资源
 destroy_*  结束对象生命周期
 reset_*    复用仍然存活的对象
 ```
 
 如果对象不是 REFCOUNTED，不应为了命名对称增加空洞的 `get_*/put_*`。
 
-同一个动词不能同时表示普通读取和 ownership transfer。
+同一个动词不能同时表示普通读取和所有权转移。
