@@ -10,6 +10,7 @@ on:
       - "src/logger_record.h"
       - "src/logger_worker.c"
       - "src/logger.c"
+      - "xmake.lua"
       - "tests/bench_matrix.c"
       - "scripts/benchmark.sh"
       - "scripts/compare_queue_benchmark.py"
@@ -22,6 +23,7 @@ on:
       - "src/logger_record.h"
       - "src/logger_worker.c"
       - "src/logger.c"
+      - "xmake.lua"
       - "tests/bench_matrix.c"
       - "scripts/compare_queue_benchmark.py"
 
@@ -63,13 +65,15 @@ jobs:
         run: >-
           xmake f -m release -o build-queue-candidate
           --build_shared=n
-          --build_regression_tests=y
+          --build_tests=n
+          --build_private_tests=n
+          --build_regression_tests=n
 
       - name: 构建候选版本基准测试
         shell: bash
         run: |
           set -euo pipefail
-          xmake -j2 bench_matrix
+          xmake -vD -j2 bench_matrix
           candidate="$(find build-queue-candidate -type f -name bench_matrix -print -quit)"
           test -n "$candidate"
           echo "QUEUE_CANDIDATE_BIN=$candidate" >> "$GITHUB_ENV"
@@ -104,6 +108,7 @@ jobs:
           --memory-baseline-bin build-queue-memory-baseline/bench_matrix
           --throughput-baseline-bin build-queue-tuning-baseline/bench_matrix
           --candidate-bin "$QUEUE_CANDIDATE_BIN"
+          --build-configs-differ
           --memory-baseline-ref "$QUEUE_MEMORY_BASELINE_REF"
           --throughput-baseline-ref "$QUEUE_TUNING_BASELINE_REF"
           --threads 1,4,16

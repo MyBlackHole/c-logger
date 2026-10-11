@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--memory-baseline-bin", required=True)
     parser.add_argument("--throughput-baseline-bin", required=True)
     parser.add_argument("--candidate-bin", required=True)
+    parser.add_argument("--build-configs-differ", action="store_true")
     parser.add_argument("--out-dir", default="benchmark-comparison")
     parser.add_argument("--threads", default="1,4,16")
     parser.add_argument("--sizes", default="64,256,1024,4000")
@@ -179,7 +180,7 @@ def main():
                 or any_nonzero(cand_samples, "sync_fallbacks")
                 or any_nonzero(cand_samples, "queue_spill_exhaustions")
             )
-            comparable = not overloaded
+            comparable = not overloaded and not args.build_configs_differ
             rows.append(
                 {
                     "threads": threads,
@@ -214,6 +215,7 @@ def main():
                         cand_wakes / cand_enqueued if cand_enqueued else 0.0
                     ),
                     "throughput_comparable": comparable,
+                    "build_configs_differ": args.build_configs_differ,
                 }
             )
             raw.append(
@@ -233,6 +235,7 @@ def main():
             "threads": parse_csv_ints(args.threads),
             "message_bytes": parse_csv_ints(args.sizes),
             "throughput_is_informational_only": True,
+            "build_configs_differ": args.build_configs_differ,
             "rows": rows,
         },
         "raw_samples": raw,
@@ -249,6 +252,10 @@ def main():
         f"每线程 {args.records} 条。吞吐只用于观察，不作为 CI 性能门禁。"
     )
     md.append("")
+    if args.build_configs_differ:
+        md.append("历史基线与候选构建配置不等价：吞吐只保留原始观察值，不计算比值，"
+                  "不归因于生产源码优化；确定性内存门槛不变。")
+        md.append("")
     md.append("## 默认 queue 内存门禁")
     md.append("")
     md.append("| 指标 | pre-compact | tuning baseline | candidate |")
@@ -280,7 +287,7 @@ def main():
     md.append("")
     md.append(
         "只有 tuning baseline/candidate 都没有 drop、sync fallback、spill "
-        "exhaustion 才计算 ratio；否则标记 overload。"
+        "exhaustion，且未标记构建配置不等价时才计算 ratio。"
     )
     md.append("")
     md.append(
@@ -293,12 +300,12 @@ def main():
         prod_ratio = (
             f"{row['producer_ratio']:.3f}x"
             if row["producer_ratio"] is not None
-            else "overload"
+            else ("build mismatch" if args.build_configs_differ else "overload")
         )
         e2e_ratio = (
             f"{row['end_to_end_ratio']:.3f}x"
             if row["end_to_end_ratio"] is not None
-            else "overload"
+            else ("build mismatch" if args.build_configs_differ else "overload")
         )
         md.append(
             f"| {row['threads']} | {row['message_bytes']} | "
