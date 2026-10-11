@@ -66,7 +66,7 @@ void logger_context_set(const logger_context_t *c)
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return;
-	/* Stage all fields, allowing set(get()) and overlapping/swapped TLS input. */
+	/* 暂存全部字段，允许 set(get()) 以及重叠或交换的 TLS 输入。 */
 	char request[64] = { 0 }, session[64] = { 0 }, trace[64] = { 0 };
 	copy_ctx(request, sizeof(request), c ? c->request_id : NULL);
 	copy_ctx(session, sizeof(session), c ? c->session_id : NULL);
@@ -194,7 +194,7 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 						  memory_order_relaxed);
 			update_high_watermark(l);
 		} else if (push_rc < 0) {
-			/* record 已发布；通知失败后不能回滚 MPSC slot，只能停止接纳。 */
+			/* 记录已发布；通知失败后不能回滚 MPSC 槽位，只能停止接纳。 */
 			int error = -push_rc;
 			atomic_fetch_add_explicit(&l->enqueued, 1,
 						  memory_order_relaxed);
@@ -298,11 +298,9 @@ static void logger_ctor_note_proof_error(logger_t *l, int rc)
 		memory_order_release, memory_order_relaxed);
 }
 
-/*
- * Roll back only resources whose construction completed. A synchronization,
- * join or census failure is a lifetime-proof failure: stop immediately and
- * intentionally retain the unpublished container. The caller keeps the
- * original construction errno; this return value is cleanup diagnostics.
+/* 只回滚构造已完成的资源。同步、线程回收或存活对象计数失败意味着
+ * 生命周期证明失败：立即停止并故意保留未发布的容器。
+ * 调用者保留原始构造 errno；此返回值用于清理诊断。
  */
 static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 {
@@ -369,8 +367,9 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 		}
 	}
 
-	/* close errors are secondary to the construction error and do not make
-	 * already-proven memory lifetime unsafe. Linux close is never retried. */
+	/* 关闭错误次于构造错误，不会使已证明的内存生命周期变得不安全。
+	 * 绝不重试 Linux close。
+	 */
 	int cleanup_rc = logger_file_close_status(&l->file_backend);
 	logger_syslog_close(&l->syslog_backend);
 
@@ -405,8 +404,9 @@ static logger_t *create_logger(const logger_config_t *input)
 	logger_t *l = calloc(1, sizeof(*l));
 	if (!l) {
 		int primary = errno ? errno : ENOMEM;
-		/* No container exists to retain. A failed census rollback still leaves
-		 * the process guard conservative; never replace the primary ENOMEM. */
+		/* 没有可保留的容器。存活对象计数回滚失败仍会使进程守卫保持保守；
+		 * 绝不替换主要错误 ENOMEM。
+		 */
 		(void)logger_ctor_rollback(NULL, &state);
 		errno = primary;
 		return NULL;
@@ -474,7 +474,7 @@ static logger_t *create_logger(const logger_config_t *input)
 		goto fail;
 	}
 
-	/* Deferred startup is explicit, not a claim that the sink is healthy. */
+	/* 延迟启动是显式行为，并不声称输出端健康。 */
 	if (l->outputs & LOGGER_OUT_SYSLOG)
 		logger_note_io_error(l, l->syslog_backend.metrics.last_error);
 
@@ -483,8 +483,9 @@ static logger_t *create_logger(const logger_config_t *input)
 						     cfg.queue_capacity :
 						     8192) != 0) {
 			rc = errno ? errno : EIO;
-			/* Partial queue construction can leave an unproven mutex.
-			 * Preserve its container/census without replacing primary errno. */
+			/* 队列的部分构造可能留下未经证明的互斥锁。
+			 * 保留其容器和存活对象计数，不替换主要 errno。
+			 */
 			int proof_error = logger_queue_wait_error(&l->q);
 			if (proof_error)
 				logger_note_synchronization_error(l, proof_error);
@@ -506,11 +507,10 @@ static logger_t *create_logger(const logger_config_t *input)
 		state.worker_started = 1;
 	}
 
-	/*
-	 * The worker can fail before pthread_create() returns. Only CREATED may
-	 * become RUNNING: never overwrite its release-published STOPPING state.
-	 * A failed acquire observes the preceding lifecycle_error publication;
-	 * rollback still stops and joins every successfully created worker.
+	/* 工作线程可能在 pthread_create() 返回前失败。只有 CREATED 可变为 RUNNING：
+	 * 绝不覆盖它以 release 发布的 STOPPING 状态。
+	 * 失败时的 acquire 会观察先前的 lifecycle_error 发布；
+	 * 回滚仍会停止并回收每个成功创建的工作线程。
 	 */
 	if (!atomic_compare_exchange_strong_explicit(
 		    &l->state, &expected, LOGGER_STATE_RUNNING,
@@ -525,9 +525,8 @@ static logger_t *create_logger(const logger_config_t *input)
 
 fail: {
 	int primary = rc ? rc : EIO;
-	/*
-	 * Cleanup diagnostics never replace the primary construction failure.
-	 * logger_ctor_rollback() itself enforces proof-before-free.
+	/* 清理诊断绝不替换主要构造失败。
+	 * logger_ctor_rollback() 自身强制要求释放前先完成证明。
 	 */
 	int cleanup_rc = logger_ctor_rollback(l, &state);
 	(void)cleanup_rc;
@@ -539,13 +538,15 @@ fail: {
 static void cancel_unreturned_logger(void *arg)
 {
 	logger_t *l = arg;
-	/* scope_end cleared the TLS marker before cancellation became effective.
-     * Dispose an object that never transferred to the caller. */
+	/* scope_end 已在取消生效前清除 TLS 标记。
+	 * 销毁从未转交给调用者的对象。
+	 */
 	(void)logger_dispose_internal(l);
 }
 
-/* Keep the ownership handoff separate from construction: cleanup macros may
- * implement setjmp scopes, whereas construction has many mutable resources. */
+/* 将所有权交接与构造分开：清理宏可能实现 setjmp 作用域，
+ * 而构造涉及许多可变资源。
+ */
 static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
 {
 	pthread_cleanup_push(cancel_unreturned_logger, l);
@@ -561,9 +562,9 @@ static logger_t *create_entry(const logger_config_t *input)
 	logger_scope_t scope;
 	if (logger_scope_begin(&scope))
 		return NULL;
-	/* Returning an owned pointer cannot be made an atomic handoff under
-     * enabled asynchronous cancellation. Reject BEFORE acquiring resources.
-     * Global callers enter with cancellation already disabled. */
+	/* 启用异步取消时，返回拥有所有权的指针无法成为原子交接。
+	 * 在获取资源之前拒绝。全局调用者进入时已禁用取消。
+	 */
 	int old_type;
 	int rc = pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &old_type);
 	if (!rc)
@@ -575,9 +576,10 @@ static logger_t *create_entry(const logger_config_t *input)
 	}
 	logger_t *l = create_logger(input);
 	int error = l ? 0 : -(errno ? errno : EIO);
-	/* Resolve a pending deferred cancellation before ownership handoff. The
-     * cleanup is registered while disabled; no API CP remains after pop/return.
-     * Callers still must install their own cleanup for later cancellation. */
+	/* 在所有权交接前处理待定的延迟取消。清理在禁用取消时注册；
+	 * pop/return 后不再有 API 取消点。
+	 * 调用者仍必须为之后的取消安装自己的清理处理。
+	 */
 	return finish_create(&scope, l, error);
 }
 
@@ -594,8 +596,9 @@ static int dispose_body(logger_t *l, int *released)
 		return 0;
 	}
 
-	/* 按生命周期顺序先停止发布和执行，再证明 worker 与同步对象无人使用，
-	 * 最后释放依赖存储。证明失败时保留半退役对象，避免把不变量错误变成 UAF。 */
+	/* 按生命周期顺序先停止发布和执行，再证明工作线程与同步对象无人使用，
+	 * 最后释放依赖存储。证明失败时保留半退役对象，避免把不变量错误变成释放后使用。
+	 */
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
@@ -648,7 +651,7 @@ static int dispose_body(logger_t *l, int *released)
 		return -unlock_rc;
 	}
 
-	/* Worker no longer exists, so its private workspace is no longer shared. */
+	/* 工作线程已不存在，因此其私有工作区不再被共享。 */
 	if (l->async_mode) {
 		logger_worker_workspace_destroy(l->worker_workspace);
 		l->worker_workspace = NULL;
@@ -660,7 +663,7 @@ static int dispose_body(logger_t *l, int *released)
 		}
 	}
 
-	/* These destroys are lifetime assertions, not best-effort cleanup. */
+	/* 这些销毁操作是生命周期断言，不是尽力而为的清理。 */
 	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
 	if (destroy_rc) {
 		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
@@ -693,14 +696,16 @@ static int dispose_body(logger_t *l, int *released)
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPED,
 			      memory_order_release);
 
-	/* The process census is an invariant gate. Underflow must not be hidden by
-	 * freeing the object and pretending that no runtime exists. */
+	/* 进程级存活对象计数是不变量门禁。不得通过释放对象并假装没有运行时
+	 * 来掩盖计数下溢。
+	 */
 	int release_rc = logger_process_object_release();
 	if (release_rc)
 		return release_rc;
 
-	/* This receipt is written before free: free itself cannot fail. It is not
-	 * inferred from errno or the process-wide live_objects census. */
+	/* 此回执在 free 前写入：free 本身不会失败。
+	 * 它不是根据 errno 或进程级 live_objects 存活对象计数推断的。
+	 */
 	if (released)
 		*released = 1;
 	free(l);
@@ -711,7 +716,7 @@ static int logger_dispose_internal_tracked(logger_t *l, int *released)
 {
 	if (released)
 		*released = 0;
-	/* NULL destruction retains its no-registration/no-resource behavior. */
+	/* 销毁 NULL 保留其不注册、不获取资源的行为。 */
 	if (!l) {
 		int rc = reject_access() ? -errno : 0;
 		if (!rc && released)
@@ -914,9 +919,10 @@ int logger_wait_for_output(logger_t *l)
 	if (sync_error)
 		return -sync_error;
 	if (l->async_mode) {
-		/* 顺序由 reservation counter 定义，而不是 enqueued 统计。
-		 * snapshot 前已 reserve、但尚未 publish 的 slot 也必须计入，
-		 * 慢 producer 不能被后续记录的完成位置越过。 */
+		/* 顺序由预留计数器定义，而不是 enqueued 统计。
+		 * 快照前已预留但尚未发布的槽位也必须计入，
+		 * 慢生产者不能被后续记录的完成位置越过。
+		 */
 		size_t target = atomic_load_explicit(&l->q.enqueue_pos,
 						     memory_order_acquire);
 		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
@@ -925,8 +931,9 @@ int logger_wait_for_output(logger_t *l)
 			return rc;
 		int result = 0;
 		for (;;) {
-			/* executor 失败后不能保证该 watermark。每次唤醒后都在
-			 * notifier mutex 下检查 sticky error，不能伪造队列空洞的完成状态。 */
+			/* 执行器失败后不能保证该水位。每次唤醒后都在通知互斥锁下
+			 * 检查不会自动清除的错误状态，不能伪造队列空洞的完成状态。
+			 */
 			int error = atomic_load_explicit(&l->lifecycle_error,
 						 memory_order_acquire);
 			if (error) {
@@ -978,12 +985,14 @@ int logger_flush_instance_status(logger_t *l)
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
-		/* reservation->notification 与 wait->sync 整段都处于 cancellation
-		 * disabled scope；等待 worker progress 时不能持有 emit_mu。 */
+		/* 预留到通知、等待到同步的整段都处于禁用取消的作用域；
+		 * 等待工作线程进度时不能持有 emit_mu。
+		 */
 		rc = logger_wait_for_output(l);
-		/* An in-flight worker may have lost its emit_mu release proof while
-		 * we waited. Never reacquire a known-unproven lock. Ordinary backend
-		 * errors still require the best-effort final sync below. */
+		/* 等待期间，运行中的工作线程可能已失去 emit_mu 释放证明。
+		 * 绝不重新获取已知未经证明的锁。普通后端错误仍要求执行下方
+		 * 尽力而为的最终同步。
+		 */
 		int sync_error = atomic_load_explicit(&l->synchronization_error,
 						      memory_order_acquire);
 		int sync_rc = sync_error ? -sync_error : 0;

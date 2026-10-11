@@ -14,8 +14,9 @@ const char *logger_level_name(logger_level_t);
 const char *logger_basename(const char *);
 size_t logger_format_line(const logger_t *, const logger_message_t *, char *,
 			  size_t);
-/* Acknowledged output: no fallback or truncation; length is zero on error.
- * Returns 0/-errno. Callers must not emit a partial buffer after failure. */
+/* 带确认的输出：不回退或截断；出错时长度为零。
+ * 返回 0/-errno。调用者不得在失败后输出部分缓冲区。
+ */
 int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
 			       char *out, size_t cap, size_t *length);
 logger_detail_t logger_internal_detail(const logger_t *);
@@ -41,41 +42,45 @@ struct logger {
 	_Atomic logger_level_t level;
 	_Atomic logger_state_t state;
 
-	/* 构造并 publish 成功后保持不变。 */
+	/* 构造并发布成功后保持不变。 */
 	logger_detail_t detail;
 	unsigned outputs;
 	mode_t file_mode;
 	int async_mode, include_pid, include_tid, include_source;
 	logger_level_t flush_level;
-	/* 构造时按 detail/include_* 冻结；producer 不再每条日志重复推导。 */
+	/* 构造时按 detail/include_* 冻结；生产者不再每条日志重复推导。 */
 	unsigned capture_mask;
 	pid_t pid;
 	char ident[128];
 
-	/* backend 可变状态统一由 emit_mu 串行化。 */
+	/* 后端可变状态统一由 emit_mu 串行化。 */
 	logger_file_t file_backend;
 	logger_syslog_t syslog_backend;
 	pthread_mutex_t emit_mu;
-	/* completion 与 queue 消费、emit_mu 相互独立。
-	 * 任何线程都不能在持有 emit_mu 时等待 progress_cv。 */
+	/* 完成事件与队列消费、emit_mu 相互独立。
+	 * 任何线程都不能在持有 emit_mu 时等待 progress_cv。
+	 */
 	pthread_mutex_t progress_mu;
 	pthread_cond_t progress_cv;
-	size_t completed_pos; /* queue 的 exclusive watermark，由 progress_mu 保护 */
+	size_t completed_pos; /* 队列的不包含上界的水位，由 progress_mu 保护 */
 	_Atomic uint64_t async_completed, sync_completed;
 	_Atomic uint64_t emitted_records, failed_records;
 	_Atomic int first_error;
-	/* Internal synchronization/lifecycle failure; positive errno, sticky.
-	 * Distinct from backend first_error because it gates safe teardown. */
-	_Atomic int lifecycle_error; /* 正 errno；实例生命周期内 sticky，不被后续成功清除 */
+	/* 内部同步或生命周期失败；正 errno，错误状态不会自动清除。
+	 * 与后端 first_error 不同，因为它控制能否安全拆除。
+	 */
+	_Atomic int
+		lifecycle_error; /* 正 errno；实例生命周期内不会被后续成功清除 */
 	/* 解锁失败后所有权不确定；销毁必须保留对象，不能再次操作该锁。 */
 	_Atomic int synchronization_error;
-	/* 异步 queue：q 拥有 compact slots 与预分配 spill pool。
-	 * producer/consumer 顺序由 slot.seq atomic publication 协议保证；
-	 * q.wait_mu 只负责 sleep/wakeup，不是 payload publication 锁。 */
+	/* 异步队列：q 拥有紧凑槽位与预分配溢出池。
+	 * 生产者与消费者的顺序由 slot.seq 原子发布协议保证；
+	 * q.wait_mu 只负责睡眠与唤醒，不是负载发布锁。
+	 */
 	logger_queue_t q;
-	/* create 成功后由 logger_t 拥有；必须在 worker join 后才能释放。 */
+	/* 创建成功后由 logger_t 拥有；必须在工作线程退出并回收后才能释放。 */
 	logger_worker_workspace_t *worker_workspace;
-	/* worker 生命周期由 logger_t 拥有；必须 cooperative stop + join。 */
+	/* 工作线程生命周期由 logger_t 拥有；必须协作停止并等待退出、回收。 */
 	pthread_t worker;
 	_Atomic int running;
 	logger_overflow_policy_t overflow[6];
@@ -83,18 +88,20 @@ struct logger {
 	_Atomic uint64_t enqueued, sync_fallbacks, queue_high_watermark;
 	_Atomic uint64_t consumer_batches, consumer_records;
 };
-/* 内部完整 teardown：调用者必须拥有独占 ownership，返回 0 / -errno。
- * 普通 I/O teardown 错误仍完成 final free；若 join/同步对象/census 无法
- * 证明 quiescent，则故意保留 retired allocation，绝不继续 free 成 UAF。
- * teardown 一旦开始，旧指针都不能被调用者当作可重试对象。 */
+/* 内部完整拆除：调用者必须拥有独占所有权，返回 0 / -errno。
+ * 普通 I/O 拆除错误仍完成最终释放；若线程回收、同步对象或存活对象计数
+ * 无法证明已静止，则故意保留退役分配，绝不继续释放而造成释放后使用。
+ * 拆除一旦开始，旧指针都不能被调用者当作可重试对象。
+ */
 int logger_dispose_internal(logger_t *);
-/* Current-thread final-release receipt for controllers calling the normal
- * logger_destroy_status() entry (including link-time wrappers). Reset before
- * the call; a receipt is set only after final census release and free. */
+/* 供控制方调用正常 logger_destroy_status() 入口（含链接时包装函数）
+ * 使用的当前线程最终释放回执。调用前重置；只有完成最终存活对象计数释放
+ * 和 free 后才设置回执。
+ */
 void logger_destroy_receipt_reset(void);
 int logger_destroy_receipt_read(void);
 int logger_emit_status(logger_t *, const logger_message_t *, int);
-/* Consumes/advances the iovecs while preserving the caller's SIGPIPE policy. */
+/* 消耗并推进 iovecs，同时保留调用者的 SIGPIPE 策略。 */
 struct iovec;
 int logger_stderr_writev_all(struct iovec *, int);
 void logger_vlog_internal(logger_t *, logger_level_t, const char *,
@@ -106,10 +113,11 @@ void *logger_worker_main(void *);
 void logger_note_io_error(logger_t *, int);
 void logger_note_lifecycle_error(logger_t *, int);
 void logger_note_synchronization_error(logger_t *, int);
-/* Caller already owns an explicit/global cancellation+lifetime scope.
- * Returns 0/-errno and only writes out after acquiring emit_mu. */
+/* 调用者已拥有显式实例或全局的取消与生命周期作用域。
+ * 返回 0/-errno，且只在获取 emit_mu 后写入 out。
+ */
 int logger_file_metrics_snapshot(logger_t *, logger_file_metrics_t *);
-/* 内部：等待已排队的 backend 输出完成，但不执行 fsync。返回 0 / -errno。 */
+/* 内部：等待已排队的后端输出完成，但不执行 fsync。返回 0 / -errno。 */
 int logger_wait_for_output(logger_t *);
 /* 调用时必须已经持有 emit_mu。 */
 int logger_sync_outputs_locked(logger_t *);

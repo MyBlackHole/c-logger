@@ -11,18 +11,20 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-/* 只有 lifecycle control 操作获取 g_control_mu。
- * 普通调用通过 g_lifetime_lock 的 read-side pin 保证对象存活。
- * 这个 rwlock pin 不是 refcount：reader 只在持有 read lock 时借用 g_logger。
- * 锁顺序固定为 control -> lifetime -> instance locks。
- * 持有 lifetime read lock 时禁止反向获取 control。
+/* 只有生命周期控制操作获取 g_control_mu。
+ * 普通调用通过 g_lifetime_lock 的读侧生命周期保护保证对象存活。
+ * 这个读写锁保护不是引用计数：读者只在持有读锁时借用 g_logger。
+ * 锁顺序固定为控制锁 -> 生命周期锁 -> 实例锁。
+ * 持有生命周期读锁时禁止反向获取控制锁。
  */
 static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;
-static logger_t *g_logger; /* 由 lifetime lock 保护；绝不把 owning pointer 返回给应用 */
-/* Controller-owned unpublished/retired instance, protected by g_control_mu.
- * A failed final-release proof deliberately retains the allocation here.
- * This is a real owner, not a sanitizer-only leak suppression or a refcount. */
+static logger_t
+	*g_logger; /* 由生命周期锁保护；绝不把拥有所有权的指针返回给应用 */
+/* 控制方拥有的未发布或已退役实例，由 g_control_mu 保护。
+ * 最终释放证明失败时，故意在此保留分配。
+ * 这是真正的所有者，不是仅用于消毒器的泄漏抑制或引用计数。
+ */
 static logger_t *g_retired;
 
 enum global_phase {
@@ -30,17 +32,17 @@ enum global_phase {
 };
 #define PHASE_BITS 3u
 #define PHASE_MASK UINT64_C(7)
-/* generation 与 phase 放在同一个 atomic ticket 中。
- * 若分开读取，reader 可能把某一代 RUNNING 与另一代 generation 错配。
- * 每次真实 init 尝试都会消费一个 generation，即使 candidate 构造失败。
+/* generation 与 phase 放在同一个原子票据中。
+ * 若分开读取，读者可能把某一代 RUNNING 与另一代 generation 错配。
+ * 每次真实初始化尝试都会消费一个 generation，即使候选对象构造失败。
  *
  * CAS 失败时需要 acquire 的生命周期转换，成功时也保留 acquire。
  * acq_rel/acquire 保留 release 发布，并明确满足本项目采用的 C11 约定，
  * 不依赖 release/acquire 在历史“失败序不得更强”措辞下的歧义。
- * ticket 只控制准入，对象存活仍由 g_lifetime_lock 的生命周期锁保证。
+ * 票据只控制准入，对象存活仍由 g_lifetime_lock 的生命周期锁保证。
  */
 static _Atomic uint64_t g_ticket;
-/* A failed lock release or incomplete teardown invalidates global lifetime. */
+/* 锁释放失败或拆除不完整会使全局生命周期失效。 */
 static _Atomic int g_lock_error;
 static _Thread_local int g_in_global;
 
@@ -49,7 +51,7 @@ typedef struct {
 	int saved_errno;
 	int control_locked;
 	int lifetime_locked;
-	int proof_error; /* current thread may still hold an unverified lock */
+	int proof_error; /* 当前线程可能仍持有未经验证的锁 */
 } global_scope_t;
 
 static enum global_phase phase_of(uint64_t ticket)
@@ -72,8 +74,9 @@ static int global_lock_error(void)
 	return atomic_load_explicit(&g_lock_error, memory_order_acquire);
 }
 
-/* Publish the sticky error before the broken phase. A CAS preserves a newer
- * generation if another controller was already waiting on the lock. */
+/* 先发布不会自动清除的错误状态，再发布损坏阶段。
+ * 若另一个控制方已在等待该锁，CAS 会保留更新的代次。
+ */
 static void global_lock_poison(int error)
 {
 	if (!error)
@@ -90,7 +93,7 @@ static void global_lock_poison(int error)
 	}
 }
 
-/* An init rollback must never undo another thread's proof failure. */
+/* 初始化回滚绝不能撤销另一线程的证明失败。 */
 static void rollback_ticket(uint64_t ticket, enum global_phase phase)
 {
 	(void)atomic_compare_exchange_strong_explicit(
@@ -98,9 +101,10 @@ static void rollback_ticket(uint64_t ticket, enum global_phase phase)
 		memory_order_release, memory_order_relaxed);
 }
 
-/* Called with Global control ownership and an unpublished candidate.
- * The same receipt also covers finalization errors that accompany a
- * successful free; only actual incomplete release retains this owner. */
+/* 调用时持有全局控制所有权，并持有未发布的候选对象。
+ * 同一回执也涵盖伴随成功 free 的收尾错误；
+ * 只有实际未完成释放时才保留此所有者。
+ */
 static int retire_candidate(logger_t *candidate)
 {
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_CONTROL,
@@ -115,17 +119,18 @@ static int retire_candidate(logger_t *candidate)
 	return rc;
 }
 
-/* cancellation 恢复生效前，必须先释放全部资源和 lifetime pin。
- * 应用的 cancellation cleanup handler 随后仍可能调用 Logger。
- * 这里是 cancellation deferral，不是 rollback，也不是 I/O deadline。
- * explicit-instance API 还会建立自己的 inner scope，并继承 disabled 状态。
+/* 取消恢复生效前，必须先释放全部资源和生命周期保护。
+ * 应用的取消清理处理函数随后仍可能调用 Logger。
+ * 这里是取消延后，不是回滚，也不是 I/O 超时期限。
+ * 显式实例 API 还会建立自己的内层作用域，并继承禁用状态。
  */
 static int finish(global_scope_t *scope, int rc)
 {
 	int error;
 	if (scope->proof_error) {
-		/* A manual unlock already failed. Retain outer locks and keep
-		 * cancellation disabled; repeating unlock cannot prove ownership. */
+		/* 手动解锁已经失败。保留外层锁并继续禁用取消；
+		 * 重复解锁不能证明所有权。
+		 */
 		errno = scope->proof_error;
 		return -1;
 	}
@@ -133,8 +138,9 @@ static int finish(global_scope_t *scope, int rc)
 		error = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 		if (error) {
 			global_lock_poison(error);
-			/* The lifetime pin may still be held. Do not unlock the
-			 * controller, clear TLS reentry, or resume cancellation. */
+			/* 生命周期保护可能仍被持有。不要解锁控制方，
+			 * 不要清除 TLS 重入标记，也不要恢复取消。
+			 */
 			errno = error;
 			return -1;
 		}
@@ -158,13 +164,13 @@ static int finish(global_scope_t *scope, int rc)
 
 static int begin(global_scope_t *scope)
 {
-	/* 接触继承来的同步对象或 once state 前，先检查 process identity。 */
+	/* 接触继承来的同步对象或 once 状态前，先检查进程标识。 */
 	if (logger_process_is_child()) {
 		errno = ECHILD;
 		return -1;
 	}
-	/* 拒绝同线程直接重入，例如 printf/interposition callback 回调 Logger。
-	 * 这并不意味着 signal handler 或跨线程 callback 环是安全的，
+	/* 拒绝同线程直接重入，例如 printf 或符号插入回调再次调用 Logger。
+	 * 这并不意味着信号处理函数或跨线程回调环是安全的，
 	 * 也不允许 pthread_exit/longjmp 穿过 Logger 调用。
 	 */
 	if (g_in_global || logger_scope_busy()) {
@@ -223,9 +229,9 @@ static int pin(global_scope_t *scope, int allow_bootstrap)
 	int error = phase_error(ticket);
 	if (error && !(allow_bootstrap && phase_of(ticket) == G_IDLE))
 		return -error;
-	/* 所有 read-side API 都必须经过 admission gate，不只是 LOG_* 和 flush。
-	 * admission 关闭后，持续的 metrics/set/reopen 调用不能继续加入 rwlock reader 流。
-	 * 已经延迟的调用最多进入一次，并在拿到 lifetime pin 后重新校验 ticket。
+	/* 所有读侧 API 都必须经过准入门禁，不只是 LOG_* 和 flush。
+	 * 准入关闭后，持续的指标、设置或重开调用不能继续加入读写锁读者流。
+	 * 已经延迟的调用最多进入一次，并在拿到生命周期保护后重新校验票据。
 	 */
 	int rc = __cleanup_lockdep_rwlock_rdlock(&g_lifetime_lock);
 	if (rc)
@@ -237,7 +243,7 @@ static int pin(global_scope_t *scope, int allow_bootstrap)
 	if (ticket != atomic_load_explicit(&g_ticket, memory_order_acquire))
 		return -ESHUTDOWN;
 	if (phase_of(ticket) == G_RUNNING && !g_logger)
-		return -EIO; /* 内部 invariant 破坏，不允许降级为 stderr fallback */
+		return -EIO; /* 内部不变量破坏，不允许降级为 stderr 回退 */
 	return 0;
 }
 
@@ -246,8 +252,8 @@ int logger_init(const logger_config_t *cfg)
 	global_scope_t scope;
 	if (begin(&scope))
 		return -1;
-	/* repeat init 必须在创建 file/socket/worker 前快速拒绝，包括 cfg 非法的情况。
-	 * 这样也避免连续 repeat-init 请求长期占用 lifecycle control。
+	/* 重复初始化必须在创建文件、套接字或工作线程前快速拒绝，包括 cfg 非法的情况。
+	 * 这样也避免连续重复初始化请求长期占用生命周期控制。
 	 */
 	if (phase_of(atomic_load_explicit(&g_ticket, memory_order_acquire)) ==
 	    G_RUNNING)
@@ -258,8 +264,9 @@ int logger_init(const logger_config_t *cfg)
 	uint64_t old = atomic_load_explicit(&g_ticket, memory_order_acquire);
 	if (phase_of(old) == G_RUNNING)
 		return finish(&scope, -EALREADY);
-	/* An incompletely retired object must never have a successor, even if
-	 * its generation ticket were to be mishandled by another path. */
+	/* 未完整退役的对象绝不能有后继对象，即使其他路径
+	 * 错误处理了其代次票据也不例外。
+	 */
 	if (g_retired)
 		return finish(&scope, -EUCLEAN);
 	if (generation_of(old) == (UINT64_MAX >> PHASE_BITS))
@@ -276,8 +283,8 @@ int logger_init(const logger_config_t *cfg)
 	logger_t *candidate = logger_create(cfg);
 	if (!candidate) {
 		rc = -(errno ? errno : EIO);
-		/* bootstrap 构造失败时保留 bootstrap logging，但仍消费本次 ticket，
-		 * 防止 pre-init 延迟调用穿越到后续新实例。
+		/* 初始引导构造失败时保留引导日志输出，但仍消费本次票据，
+		 * 防止初始化前的延迟调用穿越到后续新实例。
 		 */
 		enum global_phase rollback =
 			phase_of(old) == G_IDLE ? G_IDLE : G_STOPPED;
@@ -293,8 +300,9 @@ int logger_init(const logger_config_t *cfg)
 		return finish(&scope, -rc);
 	}
 	scope.lifetime_locked = 1;
-	/* A bootstrap reader can poison the lifetime during construction.
-	 * This candidate was never published and must not become global. */
+	/* 初始引导读者可能在构造期间使生命周期失效。
+	 * 此候选对象从未发布，不能成为全局对象。
+	 */
 	int poison = global_lock_error();
 	if (poison) {
 		(void)retire_candidate(candidate);
@@ -306,9 +314,10 @@ int logger_init(const logger_config_t *cfg)
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &ticket, with_phase(ticket, G_RUNNING),
 		    memory_order_acq_rel, memory_order_acquire)) {
-		/* A concurrent reader may have poisoned the lifetime after the
-		 * earlier check. Nothing was published to an admitted reader:
-		 * the writer pin is still held, so retire this candidate. */
+		/* 并发读者可能在先前检查后使生命周期失效。
+		 * 尚未向任何获准读者发布：写侧生命周期保护仍被持有，
+		 * 因此将此候选对象退役。
+		 */
 		g_logger = NULL;
 		int error = global_lock_error();
 		(void)retire_candidate(candidate);
@@ -322,8 +331,8 @@ int logger_shutdown_status(void)
 	global_scope_t scope;
 	if (begin(&scope))
 		return -1;
-	/* 排队中的 shutdown 绑定到这里观察到的 generation，
-	 * 不能在等待其他 controller 后转而关闭当时恰好存在的新实例。
+	/* 排队中的关闭操作绑定到这里观察到的 generation，
+	 * 不能在等待其他控制方后转而关闭当时恰好存在的新实例。
 	 */
 	uint64_t observed =
 		atomic_load_explicit(&g_ticket, memory_order_acquire);
@@ -337,13 +346,14 @@ int logger_shutdown_status(void)
 	if (phase_of(current) == G_STOPPED)
 		return finish(
 			&scope,
-			0); /* stop 已完成，不代表已释放对象可以被重试使用 */
+			0); /* 停止已完成，不代表已释放对象可以被重试使用 */
 	if (phase_of(current) != G_RUNNING && phase_of(current) != G_IDLE)
 		return finish(
 			&scope,
-			-EIO); /* STARTING/STOPPING 完全由 lifecycle controller 拥有 */
-	/* IDLE 状态仍可能存在被 pin 的 bootstrap stderr writer。
-	 * 即使没有 logger 对象，也必须先关闭 admission 并等待该 reader 离开。 */
+			-EIO); /* STARTING/STOPPING 完全由生命周期控制方拥有 */
+	/* IDLE 状态仍可能存在受生命周期保护的初始引导 stderr 写者。
+	 * 即使没有 logger 对象，也必须先关闭准入并等待该读者离开。
+	 */
 	uint64_t stopping = with_phase(current, G_STOPPING);
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &current, stopping, memory_order_acq_rel,
@@ -352,44 +362,49 @@ int logger_shutdown_status(void)
 					global_lock_error() : EIO));
 	rc = __cleanup_lockdep_rwlock_wrlock(&g_lifetime_lock);
 	if (rc) {
-		/* On failed acquire, reopen admission only if nobody poisoned this
-		 * generation while waiting for preexisting readers. */
+		/* 获取失败时，只有在等待已有读者期间无人使本代失效，
+		 * 才重新开放准入。
+		 */
 		(void)atomic_compare_exchange_strong_explicit(
 			&g_ticket, &stopping, current,
 			memory_order_release, memory_order_relaxed);
 		return finish(&scope, -rc);
 	}
-	/* A reader may discover an invalid unlock before we acquire writer. */
+	/* 读者可能在我们获取写锁之前发现无效解锁。 */
 	scope.lifetime_locked = 1;
 	int poison = global_lock_error();
 	if (poison)
 		return finish(&scope, -poison);
-	scope.lifetime_locked = 0; /* successful path unlocks explicitly */
+	scope.lifetime_locked = 0; /* 成功路径显式解锁 */
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME,
 				   &g_lifetime_lock);
 	logger_t *old = g_logger;
-	/* Unpublish under writer lock; the controller retains the only owner
-	 * until the last teardown resource has been proven released. */
+	/* 在写锁下撤销发布；控制方保留唯一所有者，
+	 * 直到证明最后一个拆除资源已释放。
+	 */
 	g_retired = old;
 	g_logger = NULL;
 	int unlock_rc = __cleanup_lockdep_rwlock_unlock(&g_lifetime_lock);
 	if (unlock_rc) {
-		/* Lifetime ownership is uncertain: retain the old allocation and
-		 * the outer control lock. Neither STOPPED nor final free is legal. */
+		/* 生命周期所有权不确定：保留旧分配和外层控制锁。
+		 * STOPPED 和最终 free 都不合法。
+		 */
 		global_lock_poison(unlock_rc);
 		scope.proof_error = unlock_rc;
 		return finish(&scope, -unlock_rc);
 	}
-	/* Writer lock release proves external readers drained. The internal
-	 * receipt distinguishes final free from an incomplete worker teardown. */
+	/* 写锁释放证明外部读者已排空。内部回执区分
+	 * 最终 free 与工作线程拆除未完成。
+	 */
 	logger_destroy_receipt_reset();
 	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
 	if (!logger_destroy_receipt_read())
 		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
 	else {
 		g_retired = NULL;
-		/* A late reader release failure must not be erased by STOPPED.
-		 * Backend I/O failure may still return with final free complete. */
+		/* 较晚发生的读者释放失败不能被 STOPPED 抹除。
+		 * 后端 I/O 失败时仍可能在完成最终 free 后返回。
+		 */
 		if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &stopping, with_phase(current, G_STOPPED),
 			    memory_order_acq_rel, memory_order_acquire)) {
@@ -528,8 +543,8 @@ void logger_global_write(logger_level_t level, const char *module,
 			logger_vlog_internal(g_logger, level, module, file,
 					     line, func, fmt, ap);
 		} else {
-			/* 仅供应用使用的 legacy bootstrap 输出，只存在于首次成功初始化/显式 shutdown 前。
-			 * lifetime pin 覆盖整个 I/O，因此旧的延迟消息不能在新实例 publish 后继续输出。
+			/* 仅供应用使用的旧有初始引导输出，只存在于首次成功初始化或显式关闭前。
+			 * 生命周期保护覆盖整个 I/O，因此旧的延迟消息不能在新实例发布后继续输出。
 			 */
 			char text[LOGGER_MESSAGE_MAX];
 			int n = vsnprintf(text, sizeof(text), fmt, ap);
@@ -538,9 +553,9 @@ void logger_global_write(logger_level_t level, const char *module,
 			else {
 				if ((size_t)n >= sizeof(text))
 					logger_text_mark_truncated(text, sizeof(text));
-				/* Bootstrap diagnostics need the same thread-local SIGPIPE
-				 * protection as initialized stderr sinks. Keep the historical
-				 * bytes without a second unbounded printf allocation. */
+				/* 初始引导诊断需要与已初始化的 stderr 输出端相同的线程局部 SIGPIPE 保护。
+				 * 保留历史字节，不再进行第二次无界 printf 分配。
+				 */
 				char name[6];
 				(void)snprintf(name, sizeof(name), "%-5s",
 					       logger_level_name(level));

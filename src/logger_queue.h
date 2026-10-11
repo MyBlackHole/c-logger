@@ -19,10 +19,9 @@ _Static_assert(sizeof(unsigned) * CHAR_BIT == LOGGER_QUEUE_SPILL_WORD_BITS,
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2,
 	       "spill bitmap requires lock-free unsigned atomics");
 
-/*
- * queue slot 不内嵌完整 logger_message_t。
- * source/context 使用固定 snapshot；正文 <= 512B 直接 inline，
- * 更长正文保存 spill index，由预分配 spill pool 持有。
+/* 队列槽位不内嵌完整 logger_message_t。
+ * 来源和上下文使用固定快照；正文 <= 512B 直接内嵌，
+ * 更长正文保存溢出区索引，由预分配溢出池持有。
  */
 typedef struct {
 	logger_level_t level;
@@ -51,10 +50,9 @@ typedef struct {
 	logger_queue_slot_t *slots;
 	size_t cap, mask;
 
-	/*
-	 * long-message spill pool：queue 结构性拥有全部 block。
-	 * spill_used 是 lock-free bitmap；producer 通过 0->1 CAS 独占 block，
-	 * consumer 完成复制后通过 atomic clear 归还。
+	/* 长消息溢出池：队列在结构上拥有全部块。
+	 * spill_used 是无锁位图；生产者通过 0->1 CAS 独占块，
+	 * 消费者完成复制后通过原子清位归还。
 	 */
 	logger_queue_spill_t *spills;
 	size_t spill_cap;
@@ -62,34 +60,32 @@ typedef struct {
 	_Atomic uint64_t spill_exhaustions;
 	size_t storage_bytes;
 
-	/* reservation/consumption 计数；slot.seq 负责 publish payload 可见性与复用代次。 */
+	/* 预留与消费计数；slot.seq 负责已发布负载的可见性与复用代次。 */
 	_Atomic size_t enqueue_pos;
 	_Atomic size_t dequeue_pos;
 
-	/*
-	 * worker sleep/wakeup 协议。
-	 * consumer_waiting=1 表示 worker 已进入 wait_mu 保护的“准备睡眠/已睡眠”状态；
-	 * producer 只有观察到 1 才进入 wait_mu + cond_signal 慢路径。
+	/* 工作线程睡眠与唤醒协议。
+	 * consumer_waiting=1 表示工作线程已进入 wait_mu 保护的“准备睡眠/已睡眠”状态；
+	 * 生产者只有观察到 1 才进入 wait_mu + cond_signal 慢路径。
 	 */
 	_Atomic unsigned consumer_waiting;
 	_Atomic uint64_t wait_count;
 	_Atomic uint64_t producer_wake_signals;
 	_Atomic uint64_t force_wake_signals;
-	/* wait_mu 解锁失败后，无法证明 worker 已能继续运行或安全销毁。 */
+	/* wait_mu 解锁失败后，无法证明工作线程已能继续运行或安全销毁。 */
 	_Atomic int wait_mu_error;
 	pthread_mutex_t wait_mu;
 	pthread_cond_t wait_cv;
 } logger_queue_t;
 
-/*
- * Lost-wakeup handoff for the single consumer.
+/* 防止单消费者丢失唤醒的交接协议。
  *
- * All concurrent post-init writes to consumer_waiting are acq_rel RMWs.
- * This is intentional: a producer probes only after slot.seq publication,
- * and the RMW modification-order chain carries that publication to a later
- * worker arm. Do not replace these helpers with plain loads/stores or fences.
+ * 初始化后，对 consumer_waiting 的所有并发写入都是 acq_rel 读改写操作。
+ * 这是有意为之：生产者只在 slot.seq 发布后探测，
+ * 读改写操作的修改顺序链会将该发布传递给工作线程后续的等待状态布置。
+ * 不要用普通读写或栅栏替换这些辅助函数。
  *
- * See docs/v2/QUEUE_WAKEUP_PROOF.md.
+ * 参见 docs/v2/QUEUE_WAKEUP_PROOF.md。
  */
 static inline void logger_queue_wait_arm_recheck(logger_queue_t *q)
 {
@@ -129,7 +125,7 @@ int logger_queue_wake_force(logger_queue_t *);
 int logger_queue_wait_error(const logger_queue_t *);
 size_t logger_queue_depth(const logger_queue_t *);
 
-/* private benchmark/diagnostic helpers，不进入 public ABI。 */
+/* 私有基准测试与诊断辅助函数，不进入公开 ABI。 */
 size_t logger_queue_storage_bytes(const logger_queue_t *);
 size_t logger_queue_spill_capacity(const logger_queue_t *);
 size_t logger_queue_spill_storage_bytes(const logger_queue_t *);
