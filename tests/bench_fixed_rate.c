@@ -73,8 +73,9 @@ static void *produce(void *opaque)
 			break;
 		uint64_t late = before > due ? before - due : 0;
 		logger_log(p->logger, LOGGER_INFO, "fixed_rate", __FILE__,
-			   __LINE__, __func__, "FR phase=%u seq=%" PRIu64 " payload=%s",
-			   p->number, i, p->payload);
+			   __LINE__, __func__,
+			   "FR phase=%u seq=%" PRIu64 " payload=%s", p->number,
+			   i, p->payload);
 		/* 此耗时包含时钟读取的测量开销。
 		 * 调用包含格式化/入队/可能回退，不代表输出或落盘。 */
 		p->calls[i] = now_ns() - before;
@@ -127,12 +128,16 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 		     uint64_t rate, unsigned seconds, const char *payload,
 		     int file_backend, FILE *raw)
 {
-	struct phase p = { .logger = logger, .payload = payload,
-		.rate = rate, .count = rate * seconds, .threads = threads,
-		.number = number, .mutex = PTHREAD_MUTEX_INITIALIZER,
-		.cond = PTHREAD_COND_INITIALIZER };
+	struct phase p = { .logger = logger,
+			   .payload = payload,
+			   .rate = rate,
+			   .count = rate * seconds,
+			   .threads = threads,
+			   .number = number,
+			   .mutex = PTHREAD_MUTEX_INITIALIZER,
+			   .cond = PTHREAD_COND_INITIALIZER };
 	pthread_t ids[64];
-	struct producer producers[64] = {0};
+	struct producer producers[64] = { 0 };
 	logger_metrics_t before, after;
 	logger_io_metrics_t io_before, io_after;
 	uint64_t attempted = 0;
@@ -156,7 +161,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	for (; started < threads; started++) {
 		producers[started].phase = &p;
 		producers[started].index = started;
-		if (pthread_create(&ids[started], NULL, produce, &producers[started]))
+		if (pthread_create(&ids[started], NULL, produce,
+				   &producers[started]))
 			break;
 	}
 	pthread_mutex_lock(&p.mutex);
@@ -187,18 +193,22 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	uint64_t dropped = drops(&after) - drops(&before);
 	uint64_t emitted = io_after.emitted_records - io_before.emitted_records;
 	uint64_t io_failed = io_after.failed_records - io_before.failed_records;
-	uint64_t completed = io_after.async_completed - io_before.async_completed;
-	uint64_t sync_completed = io_after.sync_completed - io_before.sync_completed;
+	uint64_t completed =
+		io_after.async_completed - io_before.async_completed;
+	uint64_t sync_completed =
+		io_after.sync_completed - io_before.sync_completed;
 	int accounting = attempted == enqueued + fallback + dropped &&
-		completed == enqueued && sync_completed == fallback &&
-		emitted + io_failed == completed + sync_completed;
+			 completed == enqueued && sync_completed == fallback &&
+			 emitted + io_failed == completed + sync_completed;
 	/* 原始数组按计划槽位保留；calls==0 表示未发出。机器本地字节序，
 	 * 由 runner 连同平台信息存档，不能把缺失槽位作为零延迟。 */
 	uint64_t header[2] = { number, p.count };
 	int raw_ok = fwrite(header, sizeof(*header), 2, raw) == 2 &&
-		fwrite(p.calls, sizeof(*p.calls), (size_t)p.count, raw) == p.count &&
-		fwrite(p.late, sizeof(*p.late), (size_t)p.count, raw) == p.count &&
-		fflush(raw) == 0;
+		     fwrite(p.calls, sizeof(*p.calls), (size_t)p.count, raw) ==
+			     p.count &&
+		     fwrite(p.late, sizeof(*p.late), (size_t)p.count, raw) ==
+			     p.count &&
+		     fflush(raw) == 0;
 	uint64_t n = 0;
 	uint64_t late_over_1ms = 0;
 	for (uint64_t i = 0; i < p.count; i++) {
@@ -211,27 +221,36 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	}
 	qsort(p.calls, (size_t)n, sizeof(*p.calls), compare_u64);
 	qsort(p.late, (size_t)n, sizeof(*p.late), compare_u64);
-	failed = generator_error || started != threads || output_rc || flush_rc || !accounting ||
-		io_failed || io_after.first_error || n != attempted || !raw_ok;
+	failed = generator_error || started != threads || output_rc ||
+		 flush_rc || !accounting || io_failed || io_after.first_error ||
+		 n != attempted || !raw_ok;
 	printf("{\"phase\":%u,\"rate\":%" PRIu64 ",\"seconds\":%u,"
-	       "\"start_monotonic_ns\":%" PRIu64 ",\"end_monotonic_ns\":%" PRIu64 ","
-	       "\"threads\":%u,\"scheduled\":%" PRIu64 ",\"attempted\":%" PRIu64 ","
-	       "\"generator_errno\":%d,\"generator_missed\":%" PRIu64 ",\"late_over_1ms\":%" PRIu64 ","
-	       "\"api_ns\":{\"p50\":%" PRIu64 ",\"p95\":%" PRIu64 ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "},"
-	       "\"arrival_late_ns\":{\"p50\":%" PRIu64 ",\"p95\":%" PRIu64 ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "},"
-	       "\"enqueued\":%" PRIu64 ",\"dropped\":%" PRIu64 ",\"sync_fallbacks\":%" PRIu64 ","
-	       "\"emitted\":%" PRIu64 ",\"failed\":%" PRIu64 ",\"queue_hwm_lifetime\":%" PRIu64 ","
+	       "\"start_monotonic_ns\":%" PRIu64
+	       ",\"end_monotonic_ns\":%" PRIu64 ","
+	       "\"threads\":%u,\"scheduled\":%" PRIu64 ",\"attempted\":%" PRIu64
+	       ","
+	       "\"generator_errno\":%d,\"generator_missed\":%" PRIu64
+	       ",\"late_over_1ms\":%" PRIu64 ","
+	       "\"api_ns\":{\"p50\":%" PRIu64 ",\"p95\":%" PRIu64
+	       ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "},"
+	       "\"arrival_late_ns\":{\"p50\":%" PRIu64 ",\"p95\":%" PRIu64
+	       ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "},"
+	       "\"enqueued\":%" PRIu64 ",\"dropped\":%" PRIu64
+	       ",\"sync_fallbacks\":%" PRIu64 ","
+	       "\"emitted\":%" PRIu64 ",\"failed\":%" PRIu64
+	       ",\"queue_hwm_lifetime\":%" PRIu64 ","
 	       "\"producer_seconds\":%.9f,\"output_observed_seconds\":%.9f,"
-	       "\"output_drain_observed_ns\":%" PRIu64 ",\"flush_ns\":%" PRIu64 ","
+	       "\"output_drain_observed_ns\":%" PRIu64 ",\"flush_ns\":%" PRIu64
+	       ","
 	       "\"flush_applicable\":%s,\"flush_rc\":%d,\"flush_errno\":%d,"
 	       "\"accounting_valid\":%s,\"valid\":%s}\n",
-	       number, rate, seconds, p.start, p.end, threads, p.count, attempted,
-	       generator_error, p.count - attempted, late_over_1ms,
+	       number, rate, seconds, p.start, p.end, threads, p.count,
+	       attempted, generator_error, p.count - attempted, late_over_1ms,
 	       percentile(p.calls, n, 50), percentile(p.calls, n, 95),
 	       percentile(p.calls, n, 99), n ? p.calls[n - 1] : 0,
 	       percentile(p.late, n, 50), percentile(p.late, n, 95),
-	       percentile(p.late, n, 99), n ? p.late[n - 1] : 0,
-	       enqueued, dropped, fallback, emitted, io_failed,
+	       percentile(p.late, n, 99), n ? p.late[n - 1] : 0, enqueued,
+	       dropped, fallback, emitted, io_failed,
 	       after.queue_high_watermark,
 	       producer_end > p.start ? (producer_end - p.start) / 1e9 : 0,
 	       output_end > p.start ? (output_end - p.start) / 1e9 : 0,
@@ -261,12 +280,12 @@ int main(int argc, char **argv)
 	uint64_t threads, rate, seconds, warmup, size;
 	if (argc != 8 || number(argv[1], &threads) || number(argv[2], &rate) ||
 	    number(argv[3], &seconds) || number(argv[4], &warmup) ||
-	    number(argv[5], &size) || threads < 1 || threads > 64 ||
-	    rate < 1 || rate > 2000000 || seconds < 1 || seconds > 30 ||
-	    warmup > 5 || size < 1 || size > 3500 ||
-	    rate * (seconds + warmup) > 2000000 ||
+	    number(argv[5], &size) || threads < 1 || threads > 64 || rate < 1 ||
+	    rate > 2000000 || seconds < 1 || seconds > 30 || warmup > 5 ||
+	    size < 1 || size > 3500 || rate * (seconds + warmup) > 2000000 ||
 	    rate * (seconds + warmup) * (size + 512) > 1073741824ull) {
-		fprintf(stderr, "{\"error\":\"invalid_arguments_or_budget\"}\n");
+		fprintf(stderr,
+			"{\"error\":\"invalid_arguments_or_budget\"}\n");
 		return 2;
 	}
 	/* 不接收已有普通文件，避免把旧日志误认为本次样本。 */
@@ -284,8 +303,10 @@ int main(int argc, char **argv)
 		clock_pairs[i] = now_ns() - begin;
 	}
 	qsort(clock_pairs, 1000, sizeof(*clock_pairs), compare_u64);
-	printf("{\"clock_pair_ns\":{\"p50\":%" PRIu64 ",\"p99\":%" PRIu64 "}}\n",
-	       percentile(clock_pairs, 1000, 50), percentile(clock_pairs, 1000, 99));
+	printf("{\"clock_pair_ns\":{\"p50\":%" PRIu64 ",\"p99\":%" PRIu64
+	       "}}\n",
+	       percentile(clock_pairs, 1000, 50),
+	       percentile(clock_pairs, 1000, 99));
 	char payload[3501];
 	memset(payload, 'x', (size_t)size);
 	payload[size] = '\0';
@@ -299,16 +320,19 @@ int main(int argc, char **argv)
 	config.overflow[LOGGER_INFO] = LOGGER_OVERFLOW_DROP;
 	logger_t *logger = logger_create(&config);
 	if (!logger) {
-		fprintf(stderr, "{\"error\":\"logger_create\",\"errno\":%d}\n", errno);
+		fprintf(stderr, "{\"error\":\"logger_create\",\"errno\":%d}\n",
+			errno);
 		fclose(raw);
 		return 3;
 	}
 	int file_backend = strcmp(argv[6], "/dev/null") != 0;
 	int rc = warmup ? run_phase(logger, 0, (unsigned)threads, rate,
-		(unsigned)warmup, payload, file_backend, raw) : 0;
+				    (unsigned)warmup, payload, file_backend,
+				    raw) :
+			  0;
 	if (!rc)
 		rc = run_phase(logger, 1, (unsigned)threads, rate,
-			(unsigned)seconds, payload, file_backend, raw);
+			       (unsigned)seconds, payload, file_backend, raw);
 	/* 销毁 /dev/null 时的 fsync EINVAL 不属于输出失败，单独记录状态。
 	 * 文件后端则必须成功关闭。 */
 	int close_rc = logger_destroy_status(logger);
@@ -316,5 +340,8 @@ int main(int argc, char **argv)
 	printf("{\"close_rc\":%d,\"close_errno\":%d}\n", close_rc, close_errno);
 	int raw_close_rc = fclose(raw);
 	return rc || raw_close_rc ||
-		(close_rc && (file_backend || close_errno != EINVAL)) ? 4 : 0;
+			       (close_rc &&
+				(file_backend || close_errno != EINVAL)) ?
+		       4 :
+		       0;
 }

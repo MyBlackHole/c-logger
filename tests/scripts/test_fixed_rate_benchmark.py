@@ -25,6 +25,14 @@ class Verification(unittest.TestCase):
                     "api_ns": {"p50": 10, "p95": 20, "p99": 20, "max": 20},
                     "arrival_late_ns": {"p50": 0, "p95": 2000000, "p99": 2000000, "max": 2000000}}
 
+    def test_wait_status_compatibility(self):
+        for code in (0, 1, 42, 255):
+            self.assertEqual(bench.wait_exit_code(code << 8), code)
+        for signum in (9, 15):
+            self.assertEqual(bench.wait_exit_code(signum), -signum)
+        with self.assertRaises(ValueError):
+            bench.wait_exit_code(0x7f)
+
     def test_raw_valid(self):
         bench.verify_raw(self.phases, [self.row])
 

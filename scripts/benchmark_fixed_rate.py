@@ -113,6 +113,15 @@ def verify_file(path, phases, rows, payload_bytes):
             "sha256": digest.hexdigest()}
 
 
+def wait_exit_code(status):
+    # Ubuntu 20.04 的 Python 3.8 尚无 os.waitstatus_to_exitcode。
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return -os.WTERMSIG(status)
+    raise ValueError("unexpected_wait_status")
+
+
 def child_limits():
     # 文件与地址空间双重封顶；外层还限制完整进程生命周期。
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_BYTES, MAX_BYTES))
@@ -163,7 +172,7 @@ def run_sample(binary, output, case, timeout, temp_root):
                 except ProcessLookupError:
                     pass
                 _, status, usage = os.wait4(process.pid, 0)
-            process.returncode = os.waitstatus_to_exitcode(status)
+            process.returncode = wait_exit_code(status)
         result = {"case": case, "command": args, "started_utc": start,
                   "finished_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   "lifecycle_wall_seconds": time.monotonic() - wall_start,
