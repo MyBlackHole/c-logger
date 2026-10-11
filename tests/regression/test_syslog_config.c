@@ -6,8 +6,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-/* Boundary objects really end at a PROT_NONE page, not just a short struct_size
- * on a generously-sized current object. */
+/* 边界对象确实结束于 PROT_NONE 页面，
+ * 不是在尺寸充裕的当前对象上仅设置较短 struct_size。
+ */
 static void *boundary(const void *data, size_t n, size_t *allocated)
 {
 	size_t page = (size_t)sysconf(_SC_PAGESIZE);

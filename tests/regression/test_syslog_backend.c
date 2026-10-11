@@ -274,7 +274,7 @@ static void run(const char *mode)
 	logger_t *l = logger_create(&c);
 	CHECK(l);
 	if (!strcmp(mode, "file-fails")) {
-		/* An independent instance with a failing file still attempts Syslog. */
+		/* 文件失败的独立实例仍尝试 Syslog。 */
 		CHECK(!logger_destroy_status(l));
 		c.outputs |= LOGGER_OUT_FILE;
 		c.file_path = "/dev/full";

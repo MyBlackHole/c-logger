@@ -2,8 +2,9 @@
 #include "logger_internal.h"
 #include "support.h"
 
-/* All gates and injected failures are link-time test code, never runtime hooks.
- * The synthetic cond_wait EIO leaves its valid, non-robust mutex held. */
+/* 全部门禁与注入失败都是链接时测试代码，绝非运行时钩子。
+ * 合成的 cond_wait EIO 保持有效的非健壮互斥锁处于持有状态。
+ */
 enum scenario {
 	WAIT_FIRST, ERROR_FIRST, WAIT_GAP, MULTIPLE, SPURIOUS, LATER_SLOT,
 	SPILL, NORMAL_GAP, NORMAL_DRAIN, BACKEND_ERROR, EMPTY_TARGET,
@@ -146,9 +147,9 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 		int previous = atomic_fetch_add(&waiter->calls, 1);
 
 		if (selected == SPURIOUS && !previous)
-			return 0; /* A wake without progress must recheck the predicate. */
+			return 0; /* 无进展的唤醒必须重新检查谓词。 */
 		if (selected == WAIT_GAP && !previous)
-			wait_flag(&release_waiter); /* Still owns progress_mu. */
+			wait_flag(&release_waiter); /* 仍拥有 progress_mu。 */
 	}
 	return __real_pthread_cond_wait(cv, mu);
 }
@@ -284,7 +285,7 @@ static void test_failure_or_gap(void)
 	for (unsigned i = 0; i < count; ++i) {
 		CHECK(!__real_pthread_create(&flushers[i], NULL, flush, &answers[i]));
 		if (defer_waiter())
-			wait_flag(&before_lock); /* Admission and watermark already read. */
+			wait_flag(&before_lock); /* 已读取准入和水位。 */
 		else
 			await_count(&answers[i].calls, selected == SPURIOUS ? 2 : 1);
 		CHECK(!atomic_load(&answers[i].done));
@@ -307,8 +308,9 @@ static void test_failure_or_gap(void)
 			atomic_store(&release_waiter, 1);
 	}
 
-	/* Failure must release all waiters even while the producer still owns
-	 * its reservation. Notification must not pretend to complete that slot. */
+	/* 即使生产者仍拥有其预留，失败也必须释放全部等待者。
+	 * 通知不得假装完成该槽位。
+	 */
 	for (unsigned i = 0; i < count; ++i) {
 		void *result;
 
@@ -346,7 +348,7 @@ static void test_failure_or_gap(void)
 			CHECK(logger_queue_spill_in_use(&instance->q) == 1);
 		errno = 0;
 		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == ESHUTDOWN); /* New calls follow admission, not wait. */
+		      errno == ESHUTDOWN); /* 新调用遵循准入，而不是等待。 */
 	} else {
 		CHECK(d.state == LOGGER_STATE_RUNNING && d.worker_running);
 		CHECK(d.async_completed == producers && d.queue_depth == 0);
@@ -406,7 +408,7 @@ int main(int argc, char **argv)
 		test_failure_or_gap();
 	}
 
-	/* External borrowers have all joined. Only now may the owner dispose. */
+	/* 外部借用线程已全部回收。只有此时所有者才能销毁。 */
 	int expected = !healthy_worker() ? EIO :
 		selected == BACKEND_ERROR ? ENOSPC : 0;
 

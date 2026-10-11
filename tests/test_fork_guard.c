@@ -11,7 +11,7 @@ int main(void)
 	l.rotation.mode = LOGGER_ROTATE_NONE;
 	if (logger_init(&l))
 		return 1;
-	/* Fork with a live runtime: the internal atfork/PID guard is the safety net. */
+	/* 运行时存活时 fork：内部 atfork/PID 守卫提供安全保障。 */
 	pid_t p = fork();
 	if (p < 0)
 		return 3;

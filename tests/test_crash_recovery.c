@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 	char observed[128] = { 0 };
 	ssize_t size = rc > 0 ? read(notification[0], observed, sizeof(observed) - 1) : -1;
 	int reached = size == (ssize_t)strlen(argv[1]) && !strcmp(observed, argv[1]);
-	/* A timeout/missing/wrong marker fails even though cleanup kills the child. */
+	/* 超时、标记缺失或错误都会失败，即使清理会终止子进程。 */
 	CHECK(kill(child, SIGKILL) == 0);
 	int status;
 	CHECK(waitpid(child, &status, 0) == child);

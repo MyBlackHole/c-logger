@@ -89,8 +89,7 @@ int main(int argc, char **argv)
 			   "copied payload");
 	}
 	wait_flag(&entered);
-	CHECK(munmap(page, page_size) ==
-	      0); /* no source storage remains accessible */
+	CHECK(munmap(page, page_size) == 0); /* 不再有可访问的来源存储 */
 	atomic_store(&proceed, 1);
 	CHECK(logger_flush_instance_status(l) == 0);
 	logger_destroy(l);

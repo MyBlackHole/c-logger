@@ -32,7 +32,7 @@ static int contains(const char *path, const char *needle)
 }
 static int exec_child(void)
 {
-	/* Fresh image may use full APIs. No parent log fd may survive exec. */
+	/* 新程序映像可以使用完整 API。父进程日志 fd 不得跨 exec 存活。 */
 	struct stat parent;
 	CHECK(stat("fork-parent.log", &parent) == 0);
 	DIR *d = opendir("/proc/self/fd");
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 	if (p < 0)
 		return 3;
 	if (!p) {
-		/* No malloc, stdio, logger reset/init or thread creation before exec. */
+		/* exec 前不使用 malloc、stdio、logger 重置或初始化，也不创建线程。 */
 		execve(exe, args, environ);
 		static const char message[] = "execve failed\n";
 		ssize_t ignored =
