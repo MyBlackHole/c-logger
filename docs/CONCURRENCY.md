@@ -3,12 +3,12 @@
 c-logger 将生命周期机制与同步机制明确分离，二者不能视为可以互相替代：
 
 ```text
-atomic ordering -> publication/individual atomic state
-lock            -> multi-field invariant serialization
-lifetime pin    -> object cannot be released while borrowed
-join            -> thread/user lifetime has ended
-refcount        -> independent owners count lifetime references
-state machine   -> legal lifecycle transitions
+原子内存序       -> 发布/单个原子状态
+锁               -> 串行化多字段不变量
+生命周期固定保护 -> 对象在借用期间不能释放
+join             -> 线程/使用者生命周期已结束
+引用计数         -> 独立所有者对生命周期引用计数
+状态机           -> 合法的生命周期转换
 ```
 
 ## MPSC 队列发布协议
@@ -18,23 +18,23 @@ state machine   -> legal lifecycle transitions
 生产者：
 
 ```text
-reserve enqueue position
+预留入队位置
     |
-write complete compact queue record
+写入完整的紧凑队列记录
     |
-release-store slot.seq = published
+以 release 存储 slot.seq = published
 ```
 
 消费者：
 
 ```text
-acquire-load slot.seq
+以 acquire 加载 slot.seq
     |
-if published: read payload
+若已发布：读取负载
     |
-release-store slot.seq = reusable generation
+以 release 将 slot.seq 存储为可复用代次
     |
-advance dequeue position
+推进出队位置
 ```
 
 `slot.seq` 周围的 release/acquire 配对负责发布记录内容。
@@ -42,196 +42,205 @@ advance dequeue position
 
 ## 队列长消息溢出区协议
 
-队列 slot 可内嵌最多 512B 正文。更长消息先从预分配 溢出区 pool
-取得一个独占 block，再 reserve/发布 队列 slot。
+队列槽位可内嵌最多 512B 正文。更长消息先从预分配溢出区池
+取得一个独占块，再预留/发布队列槽位。
 
-发布 顺序为：
+发布顺序为：
 
 ```text
-producer 从 spill bitmap claim block（仅长消息）
+生产者从溢出块位图认领一个块（仅长消息）
     ->
-写完整 spill text
+写完整溢出正文
     ->
-reserve queue position
+预留队列位置
     ->
-写 compact metadata + spill index
+写紧凑元数据 + 溢出块索引
     ->
-release-store slot.seq
+以 release 存储 slot.seq
 ```
 
-消费者 通过 acquire-load `slot.seq` 后读取 compact record 与 溢出区 text，
-复制到 工作线程 batch，然后在把 slot 标记为 reusable **之前**归还 溢出区 block。
+消费者通过 acquire 加载 `slot.seq` 后读取紧凑记录与溢出区正文，
+复制到工作线程批次，然后在把槽位标记为可复用 **之前**归还溢出区块。
 
-溢出区 block 所有权 由固定 atomic bitmap 管理：生产者 通过 0->1 CAS claim，
-消费者 完成复制后通过 1->0 atomic clear release。这里不再存在共享 溢出区 mutex。
+溢出区块所有权由固定原子位图管理：生产者通过 0->1 CAS 独占认领，
+消费者完成复制后以 release 内存序原子地从 1 清为 0。这里不再存在共享溢出区互斥锁。
 
-溢出区 pool 暂时耗尽不允许截断 long message。队列 push 返回 unavailable，
-上层继续使用原有 DROP / SYNC 溢出 policy。
+溢出区池暂时耗尽不允许截断长消息。队列入队操作返回不可用，
+上层继续使用原有 DROP / SYNC 溢出策略。
 
 ## 队列自节奏唤醒协议
 
-MPSC payload 发布 与 工作线程 sleep/wakeup 是两个独立协议。
+MPSC 负载发布与工作线程睡眠/唤醒是两个独立协议。
 
-当前使用同一个 `consumer_waiting` atomic 上的 acq_rel RMW handoff；旧双 SC fence 协议已移除。
-初始化后所有并发 waiting 修改均为 acq_rel RMW，不能用 plain load/store 替换 helper。
+当前使用同一个 `consumer_waiting` 原子变量上的 acq_rel RMW 交接；旧双 SC 栅栏协议已移除。
+初始化后所有并发 waiting 修改均为 acq_rel RMW，不能用普通加载/存储替换辅助函数。
 
-工作线程 只有在 drain 发现 队列 为空后才进入 wait protocol：
+工作线程只有在排空时发现队列为空后才进入等待协议：
 
 ```text
-lock wait_mu
+获取 wait_mu
   -> exchange(consumer_waiting, 1, acq_rel)  // 准备等待
-  -> recheck queue + running
-  -> still empty/running ? cond_wait : do not sleep
+  -> 重新检查队列 + running
+  -> 仍为空/仍运行 ? cond_wait : 不睡眠
   -> exchange(consumer_waiting, 0, acq_rel)  // 结束等待
-  -> unlock wait_mu
+  -> 释放 wait_mu
 ```
 
-生产者 完成 `slot.seq` release 发布后，执行 `fetch_or(consumer_waiting, 0, acq_rel)` probe：
+生产者完成 `slot.seq` release 发布后，执行 `fetch_or(consumer_waiting, 0, acq_rel)` 探测：
 
 ```text
-probe old == 0
-    -> 直接返回，不碰 wait_mu；RMW 仍参与 publication handoff chain
+探测得到 old == 0
+    -> 直接返回，不碰 wait_mu；RMW 仍参与发布交接链
 
-probe old == 1
-    -> lock wait_mu
+探测得到 old == 1
+    -> 获取 wait_mu
     -> exchange(consumer_waiting, 0, acq_rel)
-    -> old == 1 时 signal 一次；old == 0 时已有 resolver 处理该 wait cycle
-    -> unlock wait_mu
+    -> old == 1 时通知一次；old == 0 时已有执行者处理该等待周期
+    -> 释放 wait_mu
 ```
 
-同一 atomic 的 RMW modification order 给出两类情况：
+同一原子变量的 RMW 修改顺序给出两类情况：
 
-- head producer 的 publish/probe 在 worker arm 之前：arm acquire 取得该 RMW chain，
-  随后的 slot acquire recheck 必须看到 head publication；
-- worker arm 在 head producer probe 之前：尚未被 resolver 清除时，probe 观察到 1，
-  producer 持 `wait_mu` claim 后 signal；同一 mutex 与 cond_wait 的原子释放/等待衔接，防止 wait-entry 丢唤醒。
+- 队首生产者的发布/探测在工作线程建立等待准备之前：建立等待准备时以 acquire 取得该 RMW 链，
+  随后的槽位 acquire 重新检查必须看到队首发布；
+- 工作线程建立等待准备在队首生产者探测之前：尚未被负责完成等待处理的一方清除时，探测观察到 1，
+  生产者持 `wait_mu` 取得通知职责后发出通知；同一互斥锁与 cond_wait 的原子释放/等待衔接，防止等待入口丢唤醒。
 
-多个生产者的 RMW 构成传递链。若 probe 看到 intervening clear 后的 0，则该 wait cycle
-已由 producer signal claim、worker disarm 或 force wake 处理，不能把任意 plain store 0 加入协议。
-后续 slot 的 publication 不保证当前 dequeue head 已可消费；关闭 head reservation gap 的
-producer 仍须执行自己的 publish/probe。
+多个生产者的 RMW 构成传递链。若探测看到中间的清零操作后的 0，则该等待周期
+已由生产者取得通知职责、工作线程解除等待准备或强制唤醒处理，不能把任意普通存储 0 加入协议。
+后续槽位的发布不保证当前出队队首已可消费；填补队首预留空洞的
+生产者仍须执行自己的发布/探测。
 
-stop/shutdown 先关闭 `running`，再持 `wait_mu` 执行 acq_rel RMW disarm 并无条件 force signal。
+停止/关闭先关闭 `running`，再持 `wait_mu` 执行 acq_rel RMW 解除等待准备并无条件强制通知。
 完整 C11 证明与失败/进度边界见 [QUEUE_WAKEUP_PROOF.md](v2/QUEUE_WAKEUP_PROOF.md)；
-litmus、wait-entry regression 与 TSan 不能替代 happens-before 证明。
+试金石测试、等待入口回归与 TSan 不能替代 happens-before 证明。
 
-private diagnostics：
+私有诊断：
 
 - `wait_count`：实际进入 cond_wait 的次数；
-- `producer_wake_signals`：生产者 真正发送的 唤醒信号 次数；
-- `force_wake_signals`：shutdown/stop 强制 唤醒信号 次数。
+- `producer_wake_signals`：生产者真正发送的唤醒信号次数；
+- `force_wake_signals`：关闭/停止强制唤醒信号次数。
 
-这些计数只在真实 wait/唤醒信号 的低频路径更新，不给每条普通 en队列 增加统计 atomic。
+这些计数只在真实等待/唤醒信号的低频路径更新，不给每次普通入队增加统计原子操作。
 
 ## 完成与出队的区别
 
 出队并不等于后端完成。
 
-The 工作线程 may re移交 a record from the 队列 and still be formatting or writing
-it. Therefore:
+工作线程把记录从队列取出后，仍可能正在格式化或写入它。因此：
 
-- `dequeue_pos` means slot consumption;
-- `async_completed` means 后端 attempt completed;
-- `completed_pos` is the condition-variable watermark used by 刷新/wait.
+- `dequeue_pos` 表示槽位已被消费；
+- `async_completed` 表示后端尝试已完成；
+- `completed_pos` 是刷新/等待使用的条件变量水位。
 
-Flush must never equate "队列 is empty" with "output attempt is complete".
+刷新绝不能把“队列为空”等同于“输出尝试已完成”。
 
 ## Global 发布
 
-The global logger uses one atomic ticket containing generation + phase so a
-reader cannot combine a phase from one generation with another generation.
+全局 Logger 使用一个包含代次和阶段的原子令牌，防止
+读者把一个代次的阶段与另一个代次拼在一起。
 
-Publication sequence is conceptually:
-
-```text
-construct candidate privately
-    |
-obtain controller/lifetime publication rights
-    |
-publish g_logger
-    |
-release-store RUNNING ticket
-```
-
-Readers:
+概念上的发布顺序：
 
 ```text
-read ticket
+私下构造候选对象
     |
-admission check
+取得控制器/生命周期发布权限
     |
-take lifetime read pin
+发布 g_logger
     |
-recheck same ticket
-    |
-borrow g_logger
+以 release 存储 RUNNING 令牌
 ```
 
-The 生命周期固定, not the atomic 指针/ticket alone, prevents destruction.
+读者：
 
-## Worker 生命周期
+```text
+读取令牌
+    |
+准入检查
+    |
+获取生命周期读侧固定保护
+    |
+重新检查同一令牌
+    |
+借用 g_logger
+```
 
-The logger 实例 owns its 工作线程.
+阻止销毁的是生命周期固定保护，而非单独的原子指针/令牌。
 
-Stop protocol:
+<a id="worker-生命周期"></a>
+
+## 工作线程生命周期
+
+Logger 实例拥有自己的工作线程。
+
+停止协议：
 
 ```text
 running = false
     |
-wake worker
+唤醒工作线程
     |
-worker drains until stop predicate
+工作线程排空直到满足停止谓词
     |
 pthread_join()
     |
-free worker-owned workspace/queue resources
+释放工作线程拥有的工作区/队列资源
 ```
 
-Do not cancel the private 工作线程 as a normal shutdown mechanism.
+不得把取消私有工作线程用作正常关闭机制。
 
-## Atomic usage rules
+<a id="atomic-usage-rules"></a>
 
-Before introducing an atomic field, document:
+## 原子变量使用规则
 
-1. which invariant is represented by the atomic;
-2. who writes it;
-3. who reads it;
-4. the 发布 relation, if any;
-5. why the selected memory order is sufficient.
+引入原子字段前，必须说明：
 
-Do not use `memory_order_seq_cst` as a substitute for defining the protocol.
+1. 该原子变量表示哪个不变量；
+2. 谁写入它；
+3. 谁读取它；
+4. 它参与的发布关系（如有）；
+5. 为什么所选内存序足够。
 
-An atomic 指针/counter does not automatically protect the 生命周期 of the
-object it names or counts.
+不得用 `memory_order_seq_cst` 代替明确的协议定义。
 
-## Reference counting
+原子指针/计数器不会自动保护其指向或计数对象的
+生命周期。
 
-There is currently no generic per-object refcount in production code.
+<a id="reference-counting"></a>
 
-In particular:
+## 引用计数
 
-- `live_objects` is a process-wide census used for lifecycle/fork gating; it
-  does not keep a particular `logger_t` alive and reaching zero does not
-  release one;
-- `g_lifetime_lock` is a read-side 生命周期固定 for the global logger, not a
-  counted reference;
-- 工作线程 and 队列 生命周期 is owned by `logger_t` and ends through join.
+当前生产代码没有通用的逐对象引用计数。
 
-If independent 所有者s later need to retain an object beyond a lock/pin/所有者
-scope, follow `REFCOUNTING.md`; do not build a 生命周期 protocol directly from
-raw atomic increment/decrement operations.
+具体而言：
 
-## Cancellation and concurrency
+- `live_objects` 是用于生命周期/fork 门控的进程范围存活对象计数；
+  它不保证某个 `logger_t` 存活，计数降到零也不会
+  释放某个实例；
+- `g_lifetime_lock` 为全局 Logger 提供读侧生命周期固定保护，
+  并非计数引用；
+- 工作线程与队列的生命周期由 `logger_t` 拥有，并通过 join 结束。
 
-Normal Logger/Console calls temporarily disable deferred cancellation around
-resource-critical sections and restore the caller state after cleanup.
+如果未来独立所有者需要在锁/生命周期固定保护/所有者作用域之外
+继续保留对象，应遵循 `REFCOUNTING.md`；不要直接用
+裸原子递增/递减操作构造生命周期协议。
 
-This does not make arbitrary library code async-cancel-safe. Enabled
-`PTHREAD_CANCEL_ASYNCHRONOUS` entry into ordinary APIs remains outside the
-supported contract unless explicitly documented otherwise.
+<a id="cancellation-and-concurrency"></a>
 
-## Fork boundary
+## 取消与并发
 
-Raw multi-threaded fork inherits synchronization state. The 子进程 guard rejects
-use before touching inherited locks. Scope cleanup and atomics do not make
-inherited pthread synchronization objects safe after raw fork.
+普通 Logger/Console 调用会在资源临界区周围暂时禁用延迟取消，
+并在清理后恢复调用方状态。
+
+这不会让任意库代码都具备异步取消安全性。除非文档另有明确说明，
+在已启用 `PTHREAD_CANCEL_ASYNCHRONOUS` 的状态下进入普通 API，
+仍不属于支持的契约范围。
+
+<a id="fork-boundary"></a>
+
+## fork 边界
+
+原始多线程 fork 会继承同步状态。子进程防护在触及继承锁之前拒绝
+使用。作用域清理和原子操作不会让继承的 pthread 同步对象
+在原始 fork 后变得安全。

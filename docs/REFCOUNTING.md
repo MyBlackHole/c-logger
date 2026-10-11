@@ -1,87 +1,99 @@
 # 引用计数使用规范
 
 > 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
-> Audit/crypto 已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
+> Audit/密码学模块已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
 
-c-logger 当前没有为 `logger_t`、Audit runtime、queue storage、worker state 或
-global logger 引入通用 per-object refcount。
+c-logger 当前没有为 `logger_t`、Audit 运行时、队列存储、工作线程状态或
+全局 Logger 引入通用逐对象引用计数。
 
-这是有意设计：refcount 只是生命周期机制之一，不是默认 ownership 模型。
+这是有意设计：引用计数只是生命周期机制之一，不是默认所有权模型。
 
-## 什么时候应该使用 refcount
+<a id="什么时候应该使用-refcount"></a>
+
+## 什么时候应该使用引用计数
 
 只有同时满足以下条件时才考虑引用计数：
 
-1. 多个独立 owner 都可能延长同一个对象的生命周期；
-2. 这些 owner 可以逃逸出获得指针时的 lexical scope 或 lock；
-3. 没有更简单的 owner/join/lifetime-pin 协议能确定“最后一个使用者”；
-4. 对象确实需要一直存活到最后一个独立 owner 释放。
+1. 多个独立所有者都可能延长同一个对象的生命周期；
+2. 这些所有者可以逃逸出获得指针时的词法作用域或锁；
+3. 没有更简单的所有者/join/生命周期固定保护协议能确定“最后一个使用者”；
+4. 对象确实需要一直存活到最后一个独立所有者释放。
 
-如果一个 structural owner 可以 stop/join 全部使用者，或者 rwlock/pin 已经保证借用期间
-对象不会被销毁，则通常不需要再叠加 refcount。
+如果一个结构所有者可以停止/join 全部使用者，或者读写锁/生命周期固定保护（pin）已经保证借用期间
+对象不会被销毁，则通常不需要再叠加引用计数。
 
 ## REFCOUNTED 与 SHARED
 
-- **SHARED**：存在多个使用者，但生命周期由 lock pin、join、generation gate 或
-  owner/borrow contract 管理。
-- **REFCOUNTED**：每个独立生命周期 owner 都持有一个 counted reference，降到 0 时执行
-  final release。
+- **SHARED**：存在多个使用者，但生命周期由锁提供的生命周期固定保护、join、代次门禁或
+  所有者/借用契约管理。
+- **REFCOUNTED**：每个独立生命周期所有者都持有一个计数引用，降到 0 时执行
+  最终释放。
 
 SHARED 资源不自动等于 REFCOUNTED。
 
-当前保持非 refcount 的例子：
+当前保持非引用计数的例子：
 
-- explicit `logger_t *`：host owns，SDK/caller borrow；
-- global logger：generation/admission + lifetime rwlock pin；
-- worker：logger owner + cooperative stop + join；
-- queue/workspace：单一 structural owner + join-before-free；
-- `live_objects`：只是 process census/gate，不控制单个对象生命周期。
+- 显式 `logger_t *`：宿主拥有，SDK/调用方借用；
+- 全局 Logger：代次/准入 + 生命周期读写锁固定保护（pin）；
+- 工作线程：Logger 所有者 + 协作式停止 + join；
+- 队列/工作区：单一结构所有者 + 先 join 再释放；
+- `live_objects`：只是进程存活对象计数/门禁，不控制单个对象生命周期。
 
-## 如果未来引入 refcount，必须满足的语义
+<a id="如果未来引入-refcount必须满足的语义"></a>
 
-### 初始 reference
+## 如果未来引入引用计数，必须满足的语义
 
-creator 创建对象时拥有且仅拥有一个初始 reference。
+<a id="初始-reference"></a>
 
-publish pointer 本身不能偷偷制造新的 reference。
+### 初始引用
+
+创建者创建对象时拥有且仅拥有一个初始引用。
+
+发布指针本身不能偷偷制造新的引用。
 
 ### get 前必须证明对象仍存活
 
-普通 `get()` 只能在已有 lifetime guarantee 下执行，例如：
+普通 `get()` 只能在已有生命周期保证下执行，例如：
 
-- 调用者已经拥有一个 reference；
-- mutex/rwlock 在 lookup 期间阻止 final release；
-- 专门的 `try_get` 能在 count 已经为 0 时原子失败。
+- 调用者已经拥有一个引用；
+- 互斥锁/读写锁在查找期间阻止最终释放；
+- 专门的 `try_get` 能在计数已经为 0 时原子失败。
 
-仅仅先 atomic load 一个 raw pointer，再执行 count++ 是不够的：最后一个 put/free
+仅仅先原子加载一个裸指针，再执行count++ 是不够的：最后一个 put/free
 可能发生在两步之间。
 
-### put 消费一个 ownership
+<a id="put-消费一个-ownership"></a>
 
-`put()` 精确消费一个 owned reference。
+### put 消费一个所有权
 
-观察到 count 从 1 变 0 的那个 put 负责 final release。put 之后该 ownership 已经消失，
-调用者不能继续依赖这个 reference 使用对象。
+`put()` 精确消费一个拥有的引用。
+
+观察到计数从 1 变 0 的那个 put 负责最终释放。put 之后该所有权已经消失，
+调用者不能继续依赖这个引用使用对象。
 
 ### 0 是终态
 
-count 到 0 后禁止 resurrection。
+计数到 0 后禁止复活。
 
-final release 可能销毁 mutex、关闭 fd、释放内存，因此即使物理内存尚未复用，
+最终释放可能销毁互斥锁、关闭 fd、释放内存，因此即使物理内存尚未复用，
 对象也已经逻辑死亡。
 
-### overflow / underflow 属于 bug
+<a id="overflow--underflow-属于-bug"></a>
 
-禁止直接用裸 `_Atomic unsigned` + 任意 fetch_add/fetch_sub 构造 lifetime refcount。
+### 上溢 / 下溢属于错误
 
-未来如果需要 refcount abstraction，必须通过窄 API 防止或检测：
+禁止直接用裸 `_Atomic unsigned` + 任意 fetch_add/fetch_sub 构造生命周期引用计数。
 
-- overflow；
-- underflow；
-- double put；
-- resurrection。
+未来如果需要引用计数抽象，必须通过窄 API 防止或检测：
 
-### final release 必须唯一
+- 上溢；
+- 下溢；
+- 重复 put；
+- 复活。
+
+<a id="final-release-必须唯一"></a>
+
+### 最终释放必须唯一
 
 概念接口应类似：
 
@@ -91,26 +103,30 @@ bool object_try_get(object_t *obj);
 void object_put(object_t *obj); /* 0 -> object_release(obj) */
 ```
 
-仍有 counted reference 时，调用者不能直接调用 `object_release()`。
+仍有计数引用时，调用者不能直接调用 `object_release()`。
 
-## 与 lexical cleanup 的关系
+<a id="与-lexical-cleanup-的关系"></a>
 
-一个 counted reference 本身可以是 lexical OWNED resource，例如 scope 退出自动调用
+## 与词法作用域清理的关系
+
+一个计数引用本身可以是词法作用域 OWNED 资源，例如作用域退出自动调用
 `put()`。
 
-这只代表自动 cleanup 管理“一个 reference”，并不代表它管理整个 shared object 的
+这只代表自动清理管理“一个引用”，并不代表它管理整个共享对象的
 生命周期。
 
-## 引入 refcount 前的 review checklist
+<a id="引入-refcount-前的-review-checklist"></a>
 
-1. 为什么 single ownership 不够？
-2. 为什么 join 或 lifetime lock/pin 不能定义最后一个使用者？
-3. initial reference 在哪里创建？
-4. 在什么保护下允许获取新 reference？
-5. lookup 是否可能与 final put 竞争？
-6. 每个 reference 在哪里被消费？
-7. count 到 0 后由哪个唯一函数 release？
-8. 如何防止 overflow、underflow、double put、resurrection？
-9. 是否给 hot path 增加 atomic RMW？这个成本是否真的必要？
+## 引入引用计数前的审查清单
 
-在出现真正需要这些语义的对象之前，不要预先加入无人使用的通用 refcount 实现。
+1. 为什么单一所有权不够？
+2. 为什么 join 或生命周期锁/生命周期固定保护（pin）不能定义最后一个使用者？
+3. 初始引用在哪里创建？
+4. 在什么保护下允许获取新引用？
+5. 查找是否可能与最终 put 竞争？
+6. 每个引用在哪里被消费？
+7. 计数到 0 后由哪个唯一函数释放？
+8. 如何防止上溢、下溢、重复 put、复活？
+9. 是否给热路径增加原子 RMW？这个成本是否真的必要？
+
+在出现真正需要这些语义的对象之前，不要预先加入无人使用的通用引用计数实现。

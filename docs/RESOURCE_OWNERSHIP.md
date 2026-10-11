@@ -1,50 +1,58 @@
 # 资源所有权规范
 
-资源 ownership 是 c-logger 生命周期模型的第一层。自动 cleanup、locking 和 atomic
+资源所有权是 c-logger 生命周期模型的第一层。自动清理、加锁和原子操作
 都只是实现工具，它们本身不能回答“最终由谁负责释放资源”。
 
-对每一个非平凡资源，review 必须先回答四个问题：
+对每一个非平凡资源，审查必须先回答四个问题：
 
 1. 谁创建或获取资源？
 2. 当前谁拥有资源？
-3. ownership 在哪一个明确操作上发生转移？
+3. 所有权在哪一个明确操作上发生转移？
 4. 最终由谁释放？
 
 任何一个问题无法明确回答，都说明设计还没有完成。
 
-## ownership 状态
+<a id="ownership-状态"></a>
 
-c-logger 使用五种 ownership/lifetime 状态：
+## 所有权状态
+
+c-logger 使用五种所有权/生命周期状态：
 `OWNED`、`BORROWED`、`MOVED`、`SHARED`、`REFCOUNTED`。
 
-### OWNED
+<a id="owned"></a>
 
-当前变量、对象或 subsystem 负责最终释放资源。
+### 独占拥有（OWNED）
+
+当前变量、对象或子系统负责最终释放资源。
 
 示例：
 
 - 使用 `__free(free)` 的局部指针；
 - `logger_queue_init()` 成功后的 `logger_queue_t.slots`；
-- constructor publish 后的 `logger_t.worker_workspace`；
-- 持有 file/dir/coordination fd 的 `logger_file_t`。
+- 构造函数发布后的 `logger_t.worker_workspace`；
+- 持有文件/目录/协调 fd 的 `logger_file_t`。
 
-OWNED 资源允许 move，但禁止悄悄复制成第二个 owner。
+OWNED 资源允许移动，但禁止悄悄复制成第二个所有者。
 
-### BORROWED
+<a id="borrowed"></a>
+
+### 借用（BORROWED）
 
 当前代码可以在有界生命周期内使用资源，但不能释放。
 
 示例：
 
-- SDK 从 host 借用的显式 `logger_t *`；
+- SDK 从宿主借用的显式 `logger_t *`；
 - 普通日志调用收到的 `logger_t *`；
 - 在调用返回前已经复制内容的配置指针。
 
-BORROWED 资源不能附加 `__free()`、CLASS destructor 或其他隐式 release。
+BORROWED 资源不能附加 `__free()`、CLASS 析构函数或其他隐式释放。
 
-### MOVED
+<a id="moved"></a>
 
-ownership 已经转移给新 owner，旧 owner 必须在同一操作中失效。
+### 已转移（MOVED）
+
+所有权已经转移给新所有者，旧所有者必须在同一操作中失效。
 
 典型形式：
 
@@ -54,97 +62,109 @@ return_ptr(object);
 fd = take_fd(local_fd);
 ```
 
-move 后源变量必须变成 `NULL`、`-1` 或等价 empty state，禁止再次解引用或释放。
+移动后源变量必须变成 `NULL`、`-1` 或等价空资源状态，禁止再次解引用或释放。
 
-### SHARED
+<a id="shared"></a>
 
-存在多个并发使用者，但生命周期由显式协议控制，而不是单一 lexical owner。
+### 共享访问（SHARED）
+
+存在多个并发使用者，但生命周期由显式协议控制，而不是单一词法作用域所有者。
 
 当前示例：
 
-- generation/admission + lifetime rwlock 保护的 global logger；
-- 通过 cooperative stop + join 结束生命周期的 worker；
-- 多 producer / 单 consumer 共享的 queue state。
+- 代次/准入 + 生命周期读写锁保护的全局 Logger；
+- 通过协作式停止 + join 结束生命周期的工作线程；
+- 多生产者 / 单消费者共享的队列状态。
 
-SHARED 不代表“没有 owner”。仍然必须有最终 owner/releaser，以及阻止使用期间被释放的协议。
+SHARED 不代表“没有所有者”。仍然必须有最终所有者/释放者，以及阻止使用期间被释放的协议。
 
-### REFCOUNTED
+<a id="refcounted"></a>
 
-多个独立 owner 分别持有 counted lifetime reference。`get` 获取一个 reference，
-`put` 消费一个 reference，计数降到 0 的那个 `put` 执行 final release。
+### 引用计数管理（REFCOUNTED）
 
-REFCOUNTED 不等于 SHARED。worker join、rwlock lifetime pin、host-owned + bounded
-borrower 都属于 SHARED，但不需要 refcount。
+多个独立所有者分别持有带计数的生命周期引用。`get` 获取一个引用，
+`put` 消费一个引用，计数降到 0 的那个 `put` 执行最终释放。
 
-当前 c-logger **没有 production REFCOUNTED 对象**。引入前必须遵守
+REFCOUNTED 不等于 SHARED。工作线程 join、读写锁生命周期固定保护（pin）、宿主拥有 + 有界
+借用者都属于 SHARED，但不需要引用计数。
+
+当前 c-logger **没有生产环境 REFCOUNTED 对象**。引入前必须遵守
 `REFCOUNTING.md`。
 
-## ownership transfer
+<a id="ownership-transfer"></a>
 
-ownership transfer 必须在代码中可见，不能只靠普通指针赋值暗示。
+## 所有权转移
+
+所有权转移必须在代码中可见，不能只靠普通指针赋值暗示。
 
 推荐形式：
 
-- local owner -> object field：`field = no_free_ptr(local)`；
-- local owner -> caller：`return_ptr(local)`；
-- callee 成功后消费 ownership：`retain_and_null_ptr(local)`；
-- POSIX fd move：`take_fd(fd)`。
+- 局部所有者 -> 对象字段：`field = no_free_ptr(local)`；
+- 局部所有者 -> 调用方：`return_ptr(local)`；
+- 被调用函数成功后消费所有权：`retain_and_null_ptr(local)`；
+- POSIX fd 移动：`take_fd(fd)`。
 
-对 `logger_file_t` 这类 movable struct，move 后 source 必须立即恢复成定义好的 empty state。
+对 `logger_file_t` 这类可移动结构体，移动后源必须立即恢复成定义好的空资源状态。
 
-## owner 与 releaser 必须成对
+<a id="owner-与-releaser-必须成对"></a>
 
-长期 owning 字段应在字段声明或 constructor/destructor 附近明确最终 releaser。
+## 所有者与释放者必须成对
+
+长期拥有资源的字段应在字段声明或构造函数/析构函数附近明确最终释放者。
 
 ```text
 logger_queue_t.slots
-  acquire: logger_queue_init() 中 calloc()
-  owner after publish: logger_queue_t
-  final release: logger_queue_destroy()
+  获取：logger_queue_init() 中 calloc()
+  发布后所有者：logger_queue_t
+  最终释放：logger_queue_destroy()
 
 logger_t.worker_workspace
-  acquire: logger_worker_workspace_create()
-  owner after publish: logger_t
-  final release: worker join 后 logger_worker_workspace_destroy()
+  获取：logger_worker_workspace_create()
+  发布后所有者：logger_t
+  最终释放：工作线程 join 后 logger_worker_workspace_destroy()
 
-global g_logger
-  acquire: logger_create()
-  owner after publication: global lifecycle controller
-  users: 只允许 lifetime-pinned BORROWED
-  final release: logger_shutdown_status() / controlled teardown
+全局 g_logger
+  获取：logger_create()
+  发布后所有者：全局生命周期控制器
+  使用者：只允许受生命周期固定保护的 BORROWED
+  最终释放：logger_shutdown_status() / 受控销毁
 ```
 
-## 显式 logger 的 public ownership
+<a id="显式-logger-的-public-ownership"></a>
 
-public explicit-instance 模型保持 host-owned：
+## 显式 Logger 的公开所有权
+
+公开显式实例模型保持宿主拥有：
 
 ```text
-host 创建 logger_t
+宿主创建 logger_t
     |
-    +-- SDK / caller 借用
+    +-- SDK / 调用方借用
     |
-host 停止并 join 所有 borrower
+宿主停止并 join 所有借用者
     |
-host 销毁 logger_t
+宿主销毁 logger_t
 ```
 
-任何内部 cleanup helper 都不能把 raw borrowed `logger_t *` 自动变成跨线程安全引用。
-并发 destroy 仍属于调用者违反生命周期契约。
+任何内部清理辅助函数都不能把原始借用 `logger_t *` 自动变成跨线程安全引用。
+并发销毁仍属于调用者违反生命周期契约。
 
-## review checklist
+<a id="review-checklist"></a>
+
+## 审查清单
 
 | 问题 | 必须提供的证据 |
 |---|---|
 | 谁创建/获取 | 明确函数或表达式 |
-| 当前 owner | lexical variable、struct、subsystem 或 shared protocol |
-| transfer point | 明确语句/API，并使 source 失效 |
-| final releaser | 明确 destroy/close/join/ref-drop 路径 |
-| borrower | 为什么 borrower 生命周期内不会与 release 竞争 |
-| release failure | 失败是否属于可观察 API 语义 |
-| teardown dependency | LIFO 或显式释放顺序是否正确 |
-| cross-thread use | 明确 lifetime protocol |
-| 多个独立 owner | 说明选择 SHARED 还是 REFCOUNTED |
-| 新增 reference | 若 REFCOUNTED，证明 get/try_get 时对象仍存活 |
+| 当前所有者 | 词法作用域变量、结构体、子系统或共享协议 |
+| 转移点 | 明确语句/API，并使源失效 |
+| 最终释放者 | 明确销毁/关闭/join/ref-drop 路径 |
+| 借用者 | 为什么借用者生命周期内不会与释放竞争 |
+| 释放失败 | 失败是否属于可观察 API 语义 |
+| 销毁依赖 | LIFO 或显式释放顺序是否正确 |
+| 跨线程使用 | 明确生命周期协议 |
+| 多个独立所有者 | 说明选择 SHARED 还是 REFCOUNTED |
+| 新增引用 | 若 REFCOUNTED，证明 get/try_get 时对象仍存活 |
 
-ownership 定义清楚后，再参考 `RESOURCE_CLEANUP.md` 选择 lexical cleanup；
-需要 counted lifetime 时先参考 `REFCOUNTING.md`。
+所有权定义清楚后，再参考 `RESOURCE_CLEANUP.md` 选择词法作用域清理；
+需要带计数的生命周期时先参考 `REFCOUNTING.md`。
