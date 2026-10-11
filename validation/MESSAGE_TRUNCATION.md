@@ -55,3 +55,14 @@ a visible marker, which motivated protecting the final-line boundary too.
 
 The API and known-issues text also now records the Console thread-local SIGPIPE
 behavior already implemented by baseline PR #155.
+
+## Integration with flush release-proof fix
+
+After PR #156 merged as `ae2671e2f3f39a705672b90cf8683c34a814d324`, the
+final PR tree incorporates that main commit. The only textual conflict was
+adjacent Xmake test registrations; both complete targets are retained. Runtime
+changes combine without alteration. Fresh combined focused matrices passed:
+Release static 39/39, Release shared 33/33, and ASan/UBSan static 39/39
+(`detect_leaks=0`). The shared matrix includes six static white-box flush tests,
+not interception inside the production DSO. Full CI must run on the updated PR
+head rather than reusing the earlier standalone head's green checks.
