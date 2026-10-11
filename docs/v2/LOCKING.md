@@ -2,33 +2,37 @@
 
 状态：**#103 第一阶段设计基线**。
 
-本文件定义 Audit-free ABI 2 当前六种锁类的锁图；Audit controller/operation 已退役。修改锁图、增加嵌套或改变 condition predicate 时必须同步更新。
+本文件定义不含 Audit 的 ABI 2 当前六种锁类的锁图；Audit 控制器/操作已退役。修改锁图、增加嵌套或改变条件谓词时必须同步更新。
 
 ## 1. pthread 锁矩阵
 
-| 锁 | 保护对象/职责 | 允许前置锁 | 后续可取锁 | lifetime 作用 | 阻塞上下文 |
+| 锁 | 保护对象/职责 | 允许前置锁 | 后续可取锁 | 生命周期作用 | 阻塞上下文 |
 |---|---|---|---|---|---|
-| Global `g_control_mu` | init/shutdown controller | 无 | `g_lifetime_lock`，随后 instance lock | controller exclusivity，不直接 pin object | MAY_BLOCK |
-| Global `g_lifetime_lock` | `g_logger` publish/unpublish + reader lifetime pin | writer 可持 `g_control_mu`；reader 无 | instance lock | **是：当前 global reader lifetime pin** | MAY_BLOCK |
-| `logger_t.emit_mu` | file/syslog backend mutable state、write/sync/reopen | global lifetime pin / explicit caller scope | 不允许 progress/wait lock | 否 | MAY_BLOCK |
-| `logger_t.progress_mu` | `completed_pos` + `progress_cv` predicate | global lifetime pin / explicit caller scope | 不允许 emit/wait lock | 否 | MAY_BLOCK |
-| `logger_queue_t.wait_mu` | worker sleep predicate + condvar handshake | 无 | 不允许 emit/progress lock | 否 | MAY_BLOCK，仅 slow path |
-| Console `g_console_mu` | FILE output + flush | 无 | 无 | 否 | MAY_BLOCK |
+| Global `g_control_mu` | 初始化/关闭控制器 | 无 | `g_lifetime_lock`，随后实例锁 | 控制器独占性，不直接固定保护对象生命周期 | MAY_BLOCK |
+| Global `g_lifetime_lock` | `g_logger` 发布/撤销发布 + 读者生命周期固定保护（pin） | 写者可持 `g_control_mu`；读者无 | 实例锁 | **是：当前全局读者生命周期固定保护（pin）** | MAY_BLOCK |
+| `logger_t.emit_mu` | 文件/syslog 后端可变状态、写入/同步/重新打开 | 全局生命周期固定保护（pin） / 显式调用方作用域 | 不允许进度/等待锁 | 否 | MAY_BLOCK |
+| `logger_t.progress_mu` | `completed_pos` + `progress_cv` 谓词 | 全局生命周期固定保护（pin） / 显式调用方作用域 | 不允许输出/等待锁 | 否 | MAY_BLOCK |
+| `logger_queue_t.wait_mu` | 工作线程睡眠谓词 + 条件变量握手 | 无 | 不允许输出/进度锁 | 否 | MAY_BLOCK，仅慢速路径 |
+| Console `g_console_mu` | FILE 输出 + 刷新 | 无 | 无 | 否 | MAY_BLOCK |
 
-## 2. 非 pthread-lock 同步机制
+<a id="2-非-pthread-lock-同步机制"></a>
 
-以下不能混进 mutex hierarchy：
+## 2. 非 pthread 锁的同步机制
 
-- file `<active>.logger.lock`：跨进程 ownership；
-- Global `g_ticket`：phase + generation admission；
-- queue `slot.seq`：payload publication + reuse generation；
-- queue `spill_used[]`：spill block ownership/reuse；
-- `running`：worker stop state；
-- `state`：instance admission state；
-- process `live_objects`：census；
-- refcount：独立 owner lifetime（当前无 production object 使用）。
+以下不能混进互斥锁层级：
 
-## 3. instance lock 禁止嵌套
+- 文件 `<active>.logger.lock`：跨进程所有权；
+- Global `g_ticket`：阶段 + 代次准入；
+- 队列 `slot.seq`：负载发布 + 复用代次；
+- 队列 `spill_used[]`：溢出块所有权/复用；
+- `running`：工作线程停止状态；
+- `state`：实例准入状态；
+- 进程 `live_objects`：存活对象计数；
+- 引用计数：独立所有者生命周期（当前无生产环境对象使用）。
+
+<a id="3-instance-lock-禁止嵌套"></a>
+
+## 3. 实例锁禁止嵌套
 
 当前禁止：
 
@@ -41,25 +45,27 @@ progress_mu -> q.wait_mu
 q.wait_mu -> progress_mu
 ```
 
-worker 的流程必须拆成：queue consume -> emit -> progress update，而不是同时持多把 instance lock。
+工作线程的流程必须拆成：队列消费 -> 输出 -> 进度更新，而不是同时持多把实例锁。
 
-## 4. Global lock order
+<a id="4-global-lock-order"></a>
 
-controller 有两种合法阶段：
+## 4. Global 锁顺序
+
+控制器有两种合法阶段：
 
 ```text
-published/global object:
+已发布/全局对象：
 g_control_mu
-    -> g_lifetime_lock (writer)
-        -> instance operation
+    -> g_lifetime_lock（写锁）
+        -> 实例操作
 
-controller-owned candidate/retired object:
+控制器拥有的候选/退役对象：
 g_control_mu
-    -> instance operation
+    -> 实例操作
 ```
 
-第二条只适用于对象尚未 publish，或已经在 lifetime writer 下 unpublish 并完成
-reader drain 之后。此时对象 ownership 已独占转回 controller，lifetime pin 不再
+第二条只适用于对象尚未发布，或已经在生命周期写锁下撤销发布并完成
+读者排空之后。此时对象所有权已独占转回控制器，生命周期固定保护（pin）不再
 承担该对象的可达性证明。
 
 即使允许 `g_control_mu -> instance`，仍禁止：
@@ -68,13 +74,13 @@ reader drain 之后。此时对象 ownership 已独占转回 controller，lifeti
 g_control_mu -> instance -> g_lifetime_lock
 ```
 
-所以不能先拿 instance 再回头进入 lifetime graph。
+所以不能先拿实例锁，再回头进入生命周期锁图。
 
-reader：
+读者：
 
 ```text
-g_lifetime_lock (reader)
-    -> instance operation
+g_lifetime_lock（读锁）
+    -> 实例操作
 ```
 
 禁止反向：
@@ -85,94 +91,102 @@ instance lock -> g_control_mu
 g_lifetime_lock -> g_control_mu
 ```
 
-## 5. condition variable contract
+<a id="5-condition-variable-contract"></a>
 
-`progress_cv` 必须与 `progress_mu` 配对；predicate 是 completion watermark 已达到，
-或 sticky `lifecycle_error` 已发布。工作线程失败退出前在 `progress_mu` 下广播；
+## 5. 条件变量契约
+
+`progress_cv` 必须与 `progress_mu` 配对；谓词是完成水位已达到，
+或已锁存的 `lifecycle_error` 已发布。工作线程失败退出前在 `progress_mu` 下广播；
 等待者必须在同一锁下检查错误，不能等待已不存在的执行者。失败不伪造完成水位，
 也不解除对象借用。完整边界及双向竞争证明见 `WORKER_FAILURE.md`。
 
-`q.wait_cv` 必须与 `q.wait_mu` 配对；predicate 是 queue/running 状态。
+`q.wait_cv` 必须与 `q.wait_mu` 配对；谓词是队列状态与 running 状态。
 
-所有 wait 都必须：
+所有等待都必须：
 
 ```text
-lock mutex
+获取 mutex
 while (!predicate)
     cond_wait
-unlock mutex
+释放 mutex
 ```
 
-signal/broadcast 只是通知，不是状态本身。
+通知/广播只是通知，不是状态本身。
 
 ## 6. guard 使用边界
 
-简单单锁 lexical scope 可以使用 `guard/ACQUIRE`。
+简单单锁词法作用域可以使用 `guard/ACQUIRE`。
 
 以下保留显式控制流：
 
-- join -> destroy -> free teardown；
-- Global control/lifetime 多锁；
-- cancellation restore 与锁释放顺序本身属于 contract 的路径。
+- join -> destroy -> free 的销毁流程；
+- Global 控制/生命周期多锁；
+- 恢复取消与锁释放顺序本身属于契约的路径。
 
 ## 7. lockdep 检查与实现边界
 
-不能通过对 raw normal `pthread_mutex_t` 调 `pthread_mutex_trylock()` 来假装实现 `lockdep_assert_held()`：
+不能通过对未包装的普通 `pthread_mutex_t` 调 `pthread_mutex_trylock()` 来假装实现 `lockdep_assert_held()`：
 
 - 无法可靠区分“当前线程持有”和“其他线程持有”；
-- normal mutex 的 self-try/owner 语义不是内核 lockdep；
-- 可能改变程序状态或把 debug helper 变成同步操作。
+- 普通互斥锁的自身尝试加锁/所有权语义不是内核 lockdep；
+- 可能改变程序状态或把调试辅助函数变成同步操作。
 
-当前实现使用**显式 debug ownership tracking**，仅在 test/debug build 记录：
+当前实现使用**显式调试所有权跟踪**，仅在测试/调试构建记录：
 
 ```text
-lock class
-lock object 地址
+锁类别
+锁对象地址
 线程本地持锁栈与深度
 获取顺序
 ```
 
-可能阻塞的 tracked lock 在 pthread 获取前执行无状态锁序检查，成功后登记；trylock
-先执行 pthread 操作，仅成功时检查并登记。unlock 在 pthread 操作前验证当前线程持锁
-顺序，只有解锁成功后才移除记账。`pthread_cond_wait()` 返回时 mutex 已重新获取，TLS
+可能阻塞的受跟踪锁在 pthread 获取前执行无状态锁序检查，成功后登记；trylock
+先执行 pthread 操作，仅成功时检查并登记。解锁在 pthread 操作前验证当前线程持锁
+顺序，只有解锁成功后才移除记账。`pthread_cond_wait()` 返回时互斥锁已重新获取，TLS
 记账在等待期间保持不变。
 
 生产构建通过 `LOGGER_ENABLE_LOCKDEP=0` 将检查与记账编译为空操作。此机制使用固定锁
 类别关系，不是完整 Linux lockdep，也不观察未接入包装的 pthread 锁。跟踪时机和覆盖
 范围详见 `docs/v2/LOCKDEP.md`。
 
-lockdep 仅接入已建模的锁类别，不要求把项目所有 pthread mutex 替换成新的通用锁抽象。
+lockdep 仅接入已建模的锁类别，不要求把项目所有 pthread 互斥锁替换成新的通用锁抽象。
 未接入跟踪包装的 pthread 锁仍遵守其原有调用契约。
 
-## 8. callback/reentry
+<a id="8-callbackreentry"></a>
 
-持有以下锁时禁止调用未知 host callback：
+## 8. 回调/重入
 
-- Global control/lifetime lock；
-- logger instance locks；
-- Console output lock。
+持有以下锁时禁止调用未知宿主回调：
 
-Logger/Console 当前通过 TLS runtime scope 拒绝同线程直接重入；这不是跨线程 deadlock proof，也不是 signal-handler safety。
+- Global 控制/生命周期锁；
+- Logger 实例锁；
+- Console 输出锁。
 
-## 9. fork/cancellation
+Logger/Console 当前通过 TLS 运行时作用域拒绝同线程直接重入；这不是跨线程死锁证明，也不是信号处理器安全保证。
 
-fork child 不允许接触继承来的 pthread lock state；process identity gate 必须先执行。
+<a id="9-forkcancellation"></a>
 
-cancellation 恢复必须发生在全部 library lock/lifetime pin 释放之后。
+## 9. fork/取消
 
-`pthread_cond_wait()` 返回时 mutex 已重新获取，cleanup/guard 才能负责最终 unlock。
+fork 子进程不允许接触继承来的 pthread 锁状态；进程身份门禁必须先执行。
 
-## 10. 锁变更 review
+取消恢复必须发生在全部库锁/生命周期固定保护（pin）释放之后。
+
+`pthread_cond_wait()` 返回时互斥锁已重新获取，清理/guard 才能负责最终解锁。
+
+<a id="10-锁变更-review"></a>
+
+## 10. 锁变更审查
 
 新增或修改锁必须说明：
 
-1. protects what；
+1. 保护什么；
 2. 执行上下文；
-3. allowed predecessor；
-4. allowed successor；
-5. 是否参与 lifetime proof；
-6. 是否跨 callback/I/O；
-7. condition predicate；
-8. cancellation/fork 影响；
-9. 是否需要 lockdep-style assertion；
-10. failure-path test。
+3. 允许的前置锁；
+4. 允许的后续锁；
+5. 是否参与生命周期证明；
+6. 是否跨回调/I/O；
+7. 条件谓词；
+8. 取消/fork 影响；
+9. 是否需要 lockdep 风格的断言；
+10. 失败路径测试。
