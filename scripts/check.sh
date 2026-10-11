@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/i18n.sh"
 
 profile="${1:-production}"
 build="${BUILD_DIR:-build}"
@@ -9,7 +11,7 @@ shared="${BUILD_SHARED:-n}"
 
 case "$shared" in
   y|n) ;;
-  *) echo "BUILD_SHARED must be y or n" >&2; exit 2 ;;
+  *) logger_message "BUILD_SHARED must be y or n" >&2; exit 2 ;;
 esac
 
 if [ -z "${LOGGER_PROJECT_VERSION:-}" ]; then
@@ -50,13 +52,13 @@ case "$profile" in
     ;;
 
   unit|integration|concurrency|reliability|security|host-owned)
-    echo "profile '$profile' is a compatibility alias; running the complete Xmake suite" >&2
+    profile="$profile" logger_message "profile '\$profile' is a compatibility alias; running the complete Xmake suite" "profile '$profile' is a compatibility alias; running the complete Xmake suite" >&2
     configure_full
     exec xmake test -j1
     ;;
 
   *)
-    echo "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned}" >&2
+    logger_message "usage: scripts/check.sh {fast|production|crash|unit|integration|concurrency|reliability|security|host-owned}" >&2
     exit 2
     ;;
 esac

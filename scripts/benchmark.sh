@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/i18n.sh"
 build="${BUILD_DIR:-build}"
 binary="${BENCH_BIN:-}"
 records="${BENCH_RECORDS:-10000}"
@@ -14,7 +16,7 @@ if [ -z "$binary" ]; then
   binary="$(find "$build" -type f -name bench_matrix -perm -111 -print -quit)"
 fi
 if [ -z "$binary" ] || [ ! -x "$binary" ]; then
-  echo "bench_matrix not found; build it with: xmake -j4 bench_matrix" >&2
+  logger_message "bench_matrix not found; build it with: xmake -j4 bench_matrix" >&2
   exit 2
 fi
 
@@ -32,4 +34,4 @@ PY
   done
 done
 echo
-echo "wrote $csv and $json"
+csv="$csv" json="$json" logger_message 'wrote $csv and $json' "wrote $csv and $json"

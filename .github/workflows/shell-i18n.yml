@@ -1,0 +1,40 @@
+name: Shell 国际化检查
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  shell-gettext:
+    name: GNU gettext 双语与机器输出门禁
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安装 GNU gettext 与 locale 源文件
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gettext locales
+      - name: 创建隔离的 UTF-8 locale
+        run: |
+          mkdir -p "$RUNNER_TEMP/shell-i18n-locales"
+          localedef --no-archive -i en_US -f UTF-8 "$RUNNER_TEMP/shell-i18n-locales/en_US.UTF-8"
+          localedef --no-archive -i zh_CN -f UTF-8 "$RUNNER_TEMP/shell-i18n-locales/zh_CN.UTF-8"
+          echo "LOCPATH=$RUNNER_TEMP/shell-i18n-locales" >> "$GITHUB_ENV"
+      - name: 校验 Shell 语法与完整双语测试
+        run: |
+          sh -n scripts/check.sh
+          sh -n scripts/benchmark.sh
+          sh -n scripts/i18n.sh
+          python3 tests/scripts/test_shell_i18n.py --require-gettext -v
