@@ -73,3 +73,70 @@ release 目录名本身不证明优化或链接口径。复核时保留 `xmake -
 消费者批大小分别以 64、128、256 和 512 条记录进行重复代表性负载测试。选择依据是相对批大小 64 的
 端到端吞吐比几何平均值，而不是挑选单个有利场景。最终保留的固定批大小为 `256`。
 自适应批处理暂缓，直到固定大小对比能够证明按负载切换值得引入额外复杂度。
+
+## 固定到达率与真实文件（公开 API）
+
+`bench_fixed_rate` 是独立测量入口，直接链接生产 `logger`，同时支持静态库与共享 DSO。
+不会修改生产 API、开启测试钩子或把入队耗时称为落盘延迟。示例：
+
+```sh
+export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+xmake f -m release -o build-rate --build_shared=n \
+  --build_tests=n --build_private_tests=n --build_regression_tests=n
+xmake -rvD bench_fixed_rate > fixed-rate-build.log 2>&1
+python3 scripts/benchmark_fixed_rate.py \
+  --binary "$(find build-rate -type f -name bench_fixed_rate -print -quit)" \
+  --library "$(find build-rate -type f -name liblogger.a -print -quit)" \
+  --build-log fixed-rate-build.log --out fixed-rate-results
+```
+
+共享配置将 `--build_shared` 改为 `y` 并指定实际 `liblogger.so.*`。应保存实际编译链接日志，
+验证库与驱动均为 release 优化、无诊断/故障宏，不能只相信目录名。
+驱动仅调用 `include/logger.h` 的公开符号；不包含内部头文件。
+
+默认矩阵为 1/4 线程、64/1024 字节填充负载、每秒 10000/50000/100000 个计划调用、
+1 秒预热 + 3 秒测量、`/dev/null`/真实临时文件、各 3 轮；奇数轮逆序降低顺序偏差。
+输入为均匀绝对时刻 `start + slot / rate`，生产者按全局槽位轮流分担，不将每线程速率误作
+总速率。迟到时仍尝试该槽位，可能出现追赶突发；到达窗口末尾后不再发新调用。
+因此必须同时阅读迟到分位、超过 1ms 的次数和 `generator_missed`，不能把计划速率当成
+已实现的平滑到达率。截止时正在进行的 API 调用仍等待返回并记录全部耗时，不截断尾部。
+预热与测量在同一实例执行，预热先排空并刷新，再重建生产线程/预触测量数组。
+这会产生短暂间隔，不是无间隙长稳态实验。队列容量为 65536，INFO 满队列策略 DROP，
+不轮转、flush_level=OFF。`payload_bytes` 只计 `x` 填充，不含 phase/seq 标记和日志元数据。
+
+指标口径：
+
+- `api_ns`：每次公开异步日志调用从调用前至返回的 P50/P95/P99/最大耗时，包含时钟测量成本。
+  包括被 DROP 的调用，公开 void API 不提供逐条接收结果。数组预触不在测量窗口内。
+  `clock_pair_ns` 为 1000 次连续时钟对控制值，不能直接从分位相减。
+- `arrival_late_ns`：实际调用开始相对原计划时刻的迟到分位，未发出槽位不纳入延迟分位。
+  `scheduled = attempted + generator_missed`，发生器能力不足不能归为 Logger 丢弃。
+- `attempted = enqueued + sync_fallbacks + dropped`；输出停止后还检查完成计数和
+  `emitted + failed` 守恒。`valid` 只证明驱动/计数与 I/O 检查，不表示零丢弃、速率达标或业务 SLO。
+- `output_observed_seconds`/`output_drain_observed_ns`：停止生产后以公开 I/O 完成计数
+  轮询观测排空。1ms 轮询和调度误差使其成为观测上界；不是逐条输出延迟分位。
+- `flush_ns`：排空之后调用一次真实文件 `logger_flush_instance_status()` 的整批 fsync
+  屏障耗时。每阶段一次，不能叫每条日志的落盘 P99，也不证明物理断电安全。
+  `/dev/null` 无 fsync 契约，跳过该测量，销毁只允许预期的 EINVAL。
+- CPU 用户态/内核态秒数和 RSS 峰值来自独立子进程生命周期 `wait4`，包括初始化、预热、
+  采样、排空、原始数组写出、分位排序及销毁，不能与仅测量窗口相除冒充业务 CPU 利用率。
+  内存还包含测量数组，不能称为纯 Logger 内存。文件解析/压缩由父进程在测量之后执行。
+
+原始数据：每次保留 stdout/stderr、退出状态、绝对 UTC 起止、计数/分位、文件系统类型、
+资源数据、压缩后的完整日志及逐槽位延迟数组。`latency.bin.gz` 解压后为本机字节序 uint64：
+每阶段两个值 phase/count，随后 count 个 API 纳秒值，再 count 个迟到纳秒值；重复各阶段。
+API 值 0 表示该槽位未发出。runner 独立重算分位，并逐条验证真实文件的 phase/seq、
+填充长度、无重复、无越界、必须属于尝试槽位、条数等于 emitted；删除/损坏/重复均失败。
+机器信息、原始格式字节序、精确 SHA/tree/dirty diff、关键源码哈希、可执行文件与库哈希、
+构建日志一并保存。共享/容器文件系统的 fsync 结果不等于专用物理磁盘吞吐。
+
+资源限制：单样本总计划数不超过 200 万、测量不超过 30 秒、预热不超过 5 秒，预计输出
+`count × (payload_bytes + 512)` 不超过 1GiB。外层默认 45 秒硬超时，超时杀死该样本进程组；
+文件大小硬上限 1GiB、子进程地址空间上限 2GiB、禁 core。真实文件只位于 runner 自建的
+临时目录，成功/失败均在保存可用证据后清理，可用 `--temp-root` 指定待测文件系统。
+不直接传入业务日志路径。证据目录必须新建，保留证据超过 1GiB 时停止后续样本。
+脚本最多 200 样本；用户需按磁盘空间和观察目标选择矩阵。SIGKILL 或主机崩溃仍可能留下临时目录；正常 Ctrl-C/SIGTERM 会先终止并回收样本子进程。
+
+没有业务目标时，报告每个输入速率下的实际 attempted/emitted、drop、发生器缺失/迟到、
+API 分位、整批 flush、资源和轮次范围；这是可重现的受限负载曲线，不编造通用 QPS 门槛。
+达到最高测试速率且无丢弃也只能给出该环境/窗口的观察下界，不能称理论极限或长期容量。

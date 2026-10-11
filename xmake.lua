@@ -296,6 +296,19 @@ target("bench_logger")
     end
 target_end()
 
+-- 固定到达率驱动只使用公开 API，静态/共享都直接连接生产目标。
+target("bench_fixed_rate")
+    set_kind("binary")
+    set_default(false)
+    add_files("tests/bench_fixed_rate.c")
+    add_deps("logger")
+    add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+    if is_mode("release") then
+        set_optimize("fastest")
+        add_defines("NDEBUG")
+    end
+target_end()
+
 -- 私有输出水位及队列布局只存在于静态链接边界；不扩大共享库 ABI。
 -- 直接复用生产目标，不能用开启锁诊断的回归支持库替代性能测量。
 if not has_config("build_shared") then
@@ -397,6 +410,17 @@ if has_config("build_tests") then
             end)
         target_end()
     end
+
+    target("fixed_rate_verifier_test")
+        set_kind("phony")
+        set_default(false)
+        add_tests("reject_invalid_evidence", {group = "fixed-rate-verifier", timeout = 30})
+        on_test(function (target, opt)
+            local script = path.join(os.projectdir(), "tests/scripts/test_fixed_rate_benchmark.py")
+            local code, errors = os.execv("python3", {script}, {try = true, timeout = 30000})
+            return code == 0, errors
+        end)
+    target_end()
 
     target("version_identity_test")
         set_kind("phony")

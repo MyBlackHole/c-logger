@@ -126,8 +126,8 @@ class BenchmarkBuild(unittest.TestCase):
                             "--build_private_tests=n", "--build_regression_tests=" + regression])
 
             configure("static-config", "n", "n")
-            log = run("static-build", ["xmake", "-rvD", "-j2", "bench_matrix", "bench_logger"])
-            verify_production(log, ["bench_matrix", "bench_logger"])
+            log = run("static-build", ["xmake", "-rvD", "-j2", "bench_matrix", "bench_logger", "bench_fixed_rate"])
+            verify_production(log, ["bench_matrix", "bench_logger", "bench_fixed_rate"])
             self.assertNotIn("logger_regression_support", log)
             self.assertNotIn("logger_test_support", log)
             archive = next((project / "build").rglob("liblogger.a"))
@@ -147,18 +147,18 @@ class BenchmarkBuild(unittest.TestCase):
                            log.replace("-DLOGGER_ENABLE_LOCKDEP=0", "-DLOGGER_ENABLE_LOCKDEP=1"),
                            log.replace("-DLOGGER_ENABLE_FAULT_INJECTION=0", "-DLOGGER_ENABLE_FAULT_INJECTION=1")):
                 with self.assertRaises(AssertionError):
-                    verify_production(broken, ["bench_matrix", "bench_logger"])
+                    verify_production(broken, ["bench_matrix", "bench_logger", "bench_fixed_rate"])
 
             for shared in ("n", "y"):
                 mode = "shared" if shared == "y" else "static"
                 # 清除旧可执行文件，避免静态产物掩盖共享配置的目标缺失。
                 shutil.rmtree(project / "build")
                 configure(mode + "-regression-config", shared, "y", core=True)
-                targets = ["bench_logger", "bench_matrix_accounting_regression"]
+                targets = ["bench_logger", "bench_fixed_rate", "bench_matrix_accounting_regression"]
                 if shared == "n":
                     targets.append("bench_matrix")
                 log = run(mode + "-regression-build", ["xmake", "-rvD", "-j2", *targets])
-                verify_production(log, ["bench_logger"] + (["bench_matrix"] if shared == "n" else []))
+                verify_production(log, ["bench_logger", "bench_fixed_rate"] + (["bench_matrix"] if shared == "n" else []))
                 support = commands(log, "logger_regression_support", True)
                 self.assertTrue(support)
                 self.assertEqual(len(support), len(commands(log, "logger", True)))
@@ -175,6 +175,18 @@ class BenchmarkBuild(unittest.TestCase):
                 self.assertIn("bench_matrix_accounting_regression/benchmark_accounting_smoke", test)
                 self.assertRegex(ANSI.sub("", test), r"0 test\(s\) failed out of 1")
                 run(mode + "-public-sample", ["xmake", "run", "bench_logger", "1", "100"])
+                fixed = next(p for p in (project / "build").rglob("bench_fixed_rate") if p.is_file())
+                fixed_library = next((project / "build").rglob(
+                    "liblogger.a" if shared == "n" else "liblogger.so." + env["LOGGER_PROJECT_VERSION"]))
+                fixed_log = evidence / (mode + "-regression-build.log")
+                run(mode + "-fixed-rate-smoke", ["python3", "scripts/benchmark_fixed_rate.py",
+                    "--binary", str(fixed), "--library", str(fixed_library),
+                    "--build-log", str(fixed_log), "--out", str(evidence / (mode + "-fixed-rate")),
+                    "--threads", "1", "--rates", "100", "--payload-bytes", "64",
+                    "--seconds", "1", "--warmup", "0", "--repeats", "1"])
+                run(mode + "-fixed-rate-budget-rejected", [str(fixed), "1", "2000000", "30", "5",
+                    "3500", "/dev/null", str(project / "must-not-exist.raw")], success=False)
+                self.assertFalse((project / "must-not-exist.raw").exists())
                 if shared == "n":
                     test = run("static-production-test", ["xmake", "test", "-j1", "bench_matrix/*"])
                     self.assertIn("bench_matrix/production_benchmark_accounting_smoke", test)
