@@ -92,7 +92,7 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: ${{ env.XMAKE_VERSION }}
-      - name: 配置内存与未定义行为检查测试集
+      - name: 配置运行时检查测试集
         shell: bash
         run: |
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
@@ -106,7 +106,7 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
             --policies="$policies"
-      - name: 运行启用内存与未定义行为检查的静态库测试集
+      - name: 运行启用运行时检查的静态库测试集
         run: xmake test -j1
       - name: 运行生产 Logger 格式化的 ASan 与 UBSan 回归测试
         if: matrix.sanitizer == 'address-undefined'
