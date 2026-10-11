@@ -1,8 +1,12 @@
 # c-logger 2.0 所有权与生命周期设计
 
-状态：**#102 第一阶段设计基线**。
+状态：**#102 设计基线，已按当前 Audit-free ABI 2 对象图更新**。
 
-本文定义 2.0 的所有权语言、当前对象图和选择生命周期 primitive 的条件。具体 public API 名称、Global 是否保留、Logger 状态机细节仍由 #104/#108 决定。
+当前设计入口见 [README.md](README.md)。Audit/crypto 已退役，不属于本文的对象或验证范围；迁移边界见 [AUDIT_REMOVAL.md](AUDIT_REMOVAL.md)。
+
+本文记录当前实现的所有权语言、对象图和选择生命周期 primitive 的条件。当前保留 Global facade，
+显式实例采用 host-owned borrow/join 模型；public API/ABI 最终冻结仍需 #104/#108 审查，
+未来提案不改变这里记录的现行调用与销毁合同。
 
 核心原则：
 
@@ -34,8 +38,7 @@ REFCOUNTED
 例如：
 
 - `logger_t` 结构性拥有 queue/backend/workspace；
-- queue 结构性拥有 slots/spill pool；
-- Audit runtime 拥有内部同步 Logger 与 checkpoint reservation。
+- queue 结构性拥有 slots/spill pool。
 
 ### BORROWED
 
@@ -272,11 +275,21 @@ queue-owned slot / spill
    | consumer copy
    v
 worker-owned batch workspace
+   |                         consumer copy 完成后（仍在 try_pop 内）
+   |                             -> 归还 spill block
+   |                             -> slot.seq release，slot 可复用
+   |                             -> 推进 dequeue_pos
    |
-   | backend completion
+   | backend output attempt（成功或失败）
    v
-slot/spill reusable
+async_completed / completion watermark
 ```
+
+`logger_queue_try_pop()` 在复制完整 record 后即归还 spill/slot；worker 随后只访问自己的 batch 副本。
+因此 queue storage reuse 与 backend completion 是两个不同事件。`logger_worker_main()` 在
+`emit_batch()` 返回后推进完成计数，并在同步协议正常时于 `progress_mu` 下推进 `completed_pos`。
+后端 I/O 失败也会完成该次尝试并记录错误；completion 不承诺成功或 durable fsync。
+flush 等待 reservation watermark，不能用 queue empty、dequeue 或 slot/spill 可复用替代。
 
 queue 中不能保存 caller 的可变裸指针。
 
@@ -308,7 +321,8 @@ install new owner
 retire old fd
 ```
 
-candidate 失败不得破坏仍可用的 old owner。
+简单 reopen 的 candidate 失败保留仍可用的 old owner。rotation 成功 rename 后，旧 fd 已属于 archive；
+后续 active 创建/同步失败进入 detached 状态，不能继续写旧 archive。两条路径不能合并为“轮转失败永不改变旧状态”。
 
 ### Syslog
 
@@ -353,67 +367,13 @@ release lifetime lock
 destroy old logger while control remains exclusive
 ```
 
-#104 可以保留该模型、删除 Global facade 或换成其他最小充分协议。
+当前 Global facade 使用上述协议。#104 若将来提出替换或删除，必须作为新对象模型决策重新审查，不能把未来选项当作现行行为。
 
 禁止仅因为已有 refcount 就替换成裸 atomic pointer + `inc_not_zero`；这存在“先 free、后访问 refcount 字段”的根本竞态。
 
 ---
 
-## 9. Audit ownership
-
-当前结构：
-
-```text
-Audit controller
-      |
-      | OWNED
-      v
- audit_runtime
-      |
-      +---- OWNED ---- checkpoint_owner
-      |
-      +---- OWNED ---- reserved_log
-      |                    |
-      |                    | MOVED on successful Logger creation
-      |                    v
-      +---- OWNED ---- synchronous logger_t
-```
-
-`g_runtime` 从不暴露给 caller。writer/operation 只在 `g_operation_mu` + generation/admission proof 覆盖期间 BORROW runtime。
-
-shutdown：
-
-```text
-close admission
-    ↓
-operation mutex drains active writer
-    ↓
-unpublish g_runtime
-    ↓
-durable finalization
-    ↓
-destroy nested logger
-    ↓
-close remaining reservations
-    ↓
-free runtime
-```
-
-Audit 的 persistent transaction 与 security state 由 #105 定义。
-
-### reserved_log move
-
-```text
-audit_runtime.reserved_log
-        ↓ MOVED
-logger_t.file_backend
-```
-
-move 后 source 必须恢复 `LOGGER_FILE_EMPTY`，禁止 double close。
-
----
-
-## 10. process census 不是 refcount
+## 9. process census 不是 refcount
 
 `live_objects` 的语义是 process/fork lifecycle census，不是 `logger_t` reference count。
 
@@ -428,9 +388,9 @@ move 后 source 必须恢复 `LOGGER_FILE_EMPTY`，禁止 double close。
 
 ---
 
-## 11. 构造失败 rollback 必须使用同一套 lifetime proof
+## 10. 构造失败 rollback 必须使用同一套 lifetime proof
 
-2.0 必须修正一个重要边界：
+当前构造回滚已遵守以下边界：
 
 > **construct rollback 与 normal destroy 具有同样严格的 proof-before-free 要求。**
 
@@ -451,7 +411,7 @@ WORKER_STARTED
 PUBLISHED
 ```
 
-rollback 只能逆序释放确定已经建立的资源。
+rollback 只释放确定已经建立的资源，并按依赖顺序先停止/join 执行者，再释放其可达资源；不要求互相独立的资源机械地按文本逆序释放。
 
 如果以下 proof 失败：
 
@@ -479,7 +439,7 @@ cleanup failure 的优先级必须单独定义，不能覆盖 primary constructi
 
 ---
 
-## 12. cancellation ownership handoff
+## 11. cancellation ownership handoff
 
 成功构造但尚未把 ownership 返回 caller 时，library 仍是 OWNED。只有函数真正返回指针后 ownership 才转移给 caller。
 
@@ -495,9 +455,9 @@ cancellation 不等价于 transaction rollback。
 
 ---
 
-## 13. fork / dlclose
+## 12. fork / dlclose
 
-fork child 不获得一个“可继续使用”的 logger owner。继承的 pthread 状态、fd 和对象内存保持不可安全复用状态，直到 exec/_exit 或明确受支持的重建流程。
+fork child 不获得一个“可继续使用”的 logger owner。继承的 pthread 状态、fd 和对象内存保持不可安全复用状态，直到 exec/_exit。当前没有 fork reinit 或继承 runtime 的原地重建接口。
 
 不能通过重置 mutex、重置 refcount 或修改 owner pid 伪造安全的新生命周期。
 
@@ -505,7 +465,7 @@ fork child 不获得一个“可继续使用”的 logger owner。继承的 pthr
 
 ---
 
-## 14. 2.0 ownership matrix
+## 13. 2.0 ownership matrix
 
 | 资源 | 创建者 | 结构 owner | borrower | move 点 | quiescence proof | final release |
 |---|---|---|---|---|---|---|
@@ -514,19 +474,16 @@ fork child 不获得一个“可继续使用”的 logger owner。继承的 pthr
 | workspace | logger_t | logger_t | worker | 无 | worker joined | workspace destroy |
 | queue | logger_t | logger_t | producer/worker | 无 | producer quiescence + worker joined | queue destroy |
 | queue slot/spill | queue | queue | producer/consumer 临时访问 | enqueue/consume protocol | slot generation protocol | queue destroy |
-| file backend | constructor | logger_t | emit path | candidate/reservation move | emit path quiescent | file close |
+| file backend | constructor | logger_t | emit path | candidate install | emit path quiescent | file close |
 | syslog backend | constructor | logger_t | emit path | candidate install | emit path quiescent | socket close |
 | global logger | logger_init | Global controller | global calls | candidate publish | lifetime readers drained | global shutdown |
-| audit_runtime | audit_init | Audit controller | audit operation | candidate publish | operation drained | audit shutdown |
-| Audit reserved log | audit_runtime | runtime -> logger_t | recovery/create | logger create success | runtime/logger quiescent | file close |
-| checkpoint owner | audit_runtime | audit_runtime | recovery/write | 无 | operation drained | file close |
 | process census | process layer | process layer | fork gate | 无 | checked decrement | 非对象释放机制 |
 
 #102 后续实现或 #104 对象模型改变时必须同步维护该表。
 
 ---
 
-## 15. 第一阶段设计决定
+## 14. 第一阶段设计决定
 
 当前冻结：
 
@@ -534,16 +491,15 @@ fork child 不获得一个“可继续使用”的 logger owner。继承的 pthr
 2. worker 不持有 parent refcount；
 3. queue/backend/workspace 保持结构性 OWNED；
 4. Global 的 lifetime pin 可在 #104 重做，但不能用裸 pointer + refcount CAS 简化；
-5. Audit runtime 保持 single structural owner + operation borrow，具体格式由 #105 重做；
-6. process census 永远不等价于 object refcount；
-7. constructor rollback 必须升级到 proof-before-free；
-8. refcount primitive 只有真实对象选择 REFCOUNTED 后才进入 production；禁止为了完成 checklist 引入未使用基础设施。
+5. process census 永远不等价于 object refcount；
+6. constructor rollback 已采用 proof-before-free；
+7. refcount primitive 只有真实对象选择 REFCOUNTED 后才进入 production；禁止为了完成 checklist 引入未使用基础设施。
 
 尚未冻结：
 
 - 2.0 public Logger API 是否提供 long-lived get/put；
-- Global facade 是否保留；
-- Logger close/destroy/public status 名称；
+- Global facade 未来是否被新对象模型替换（当前保留）；
+- 最终冻结时是否调整现有 Logger close/destroy/public status API；
 - 哪个未来对象第一个真正需要 REFCOUNTED。
 
-这些问题进入 #104/#108 决策。
+这些未来冻结问题进入 #104/#108 决策；在新决策落地前，当前 public API 与以上生命周期防护持续适用。

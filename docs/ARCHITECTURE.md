@@ -1,6 +1,7 @@
 # c-logger 总体架构
 
-> 本文是 c-logger 的**顶层架构入口**。
+> 本文是含已退役子系统的**历史架构补充记录**，不作为当前设计入口。
+> 当前 Audit-free ABI 2 的唯一设计入口是 [v2/README.md](v2/README.md)。
 > 它回答“系统由什么组成、数据怎么流、谁拥有资源、线程如何协作、哪些边界不能被破坏”。
 >
 > 严格 评审门禁 见 `ARCHITECTURE_INVARIANTS.md`；

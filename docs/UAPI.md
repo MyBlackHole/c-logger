@@ -1,5 +1,8 @@
 # Production v1 公共 ABI / UAPI 规则
 
+> 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
+> Audit/crypto 已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
+
 本项目的公开 C ABI 按 Linux UAPI 的演进纪律维护，而不是按“普通用户态库可以随意修改结构体”
 的方式维护。pre-v1 候选接口不构成兼容承诺；从 Production v1 发布开始，下列规则成为硬约束。
 

@@ -237,12 +237,20 @@ target("logger")
         end
         configure_install_metadata(target, os.mkdir, io.writefile)
 
-        target:add("installfiles", "LICENSE", "API.md", "SECURITY.md", "TESTING.md", "CHANGELOG.md",
-                   {prefixdir = "share/doc/prod_c_logger"})
-        for _, doc in ipairs(os.files(path.join(os.projectdir(), "docs", "*.md"))) do
-            if path.filename(doc):sub(1, 7) ~= "HISTORY" then
-                target:add("installfiles", doc,
-                           {prefixdir = "share/doc/prod_c_logger/docs"})
+        -- Keep the current documentation and its linked dependencies explicit.
+        -- A recursive glob would also ship retired Audit/crypto design records.
+        local doc_manifest = path.join(os.projectdir(), "docs", "INSTALL_MANIFEST.txt")
+        for line in io.lines(doc_manifest) do
+            local doc = line:trim()
+            if doc ~= "" and doc:sub(1, 1) ~= "#" then
+                local source = path.join(os.projectdir(), doc)
+                assert(os.isfile(source), "missing installed document: " .. doc)
+                local prefix = "share/doc/prod_c_logger"
+                local subdir = path.directory(doc)
+                if subdir ~= "." then
+                    prefix = path.join(prefix, subdir)
+                end
+                target:add("installfiles", source, {prefixdir = prefix})
             end
         end
         target:add("installfiles", "examples/installed_consumer/CMakeLists.txt",

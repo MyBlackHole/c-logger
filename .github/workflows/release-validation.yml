@@ -6,6 +6,9 @@ on:
     paths:
       - "VERSION"
       - "LICENSE"
+      - "*.md"
+      - "docs/**"
+      - "validation/AUDIT_TEST_RETIREMENT.md"
       - "xmake.lua"
       - "include/**"
       - "src/**"
@@ -15,6 +18,7 @@ on:
       - "examples/installed_consumer/**"
       - "scripts/check_release_abi.py"
       - "scripts/check_release_assets.py"
+      - "scripts/check_installed_docs.py"
       - "scripts/check_production_artifact.py"
       - "scripts/check_consumer_glibc.py"
       - ".github/workflows/release-publish.yml"

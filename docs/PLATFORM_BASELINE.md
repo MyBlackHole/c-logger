@@ -1,5 +1,8 @@
 # 目标平台构建基线
 
+> 当前支持权威见 [v2/SUPPORT_MATRIX.md](v2/SUPPORT_MATRIX.md)。下文 v1/Audit 专属测试描述为历史证据；
+> 当前普通 Logger 的八点 process/VM 合同见 [LOGGER_CRASH_CONTRACT.md](LOGGER_CRASH_CONTRACT.md)。
+
 ## C 语言与编译器方言
 
 项目的语言基线是 **C11**，但不是 严格 ISO C11。Xmake 的 生产目标 显式使用：
