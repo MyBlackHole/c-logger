@@ -17,7 +17,9 @@ LC_ALL=C scripts/check.sh fast
 ```
 
 由 GNU gettext 按标准 `LC_ALL`、`LC_MESSAGES`、`LANG` 和 `LANGUAGE` 解析语言。
-`C`、`POSIX` 和 `C.UTF-8` 使用英文；`LANGUAGE` 可列出以冒号分隔的回退语言。
+`C`、`POSIX`、`C.UTF-8` 和 `C.utf8` 使用英文；`LANGUAGE` 可列出以冒号分隔的回退语言。
+不同 glibc 对 C.UTF-8 与 LANGUAGE 的组合存在差异，因此仅在 gettext 子进程中将
+有效消息 locale 的 `C.UTF-8` / `C.utf8` 归一为 `C`，不改变随后构建/benchmark 的 locale。
 系统不支持所选 locale 时可能回退英文，请先用 `locale -a` 检查。
 Shell 不新增命令行语言参数，也不读取 Python 工具的 `CLOGGER_LANG`。
 语言设置同样会被调用的第三方工具继承；本脚本不改变第三方工具的输出策略。
@@ -51,7 +53,7 @@ python3 tests/scripts/test_shell_i18n.py -v
 
 完整测试需要 GNU gettext、envsubst、msgfmt，以及 `zh_CN.UTF-8`、`en_US.UTF-8`
 系统 locale。未安装 gettext 运行时的环境仍执行英文/机器输出测试，双语部分明确标为跳过。
-独立 CI 工作流 `shell-i18n.yml` 安装 GNU 工具、通过 `localedef --no-archive` 创建
+独立 CI 工作流 `shell-i18n.yml` 在 Ubuntu 22.04/24.04 安装 GNU 工具、通过 `localedef --no-archive` 创建
 私有 `LOCPATH`，并用 `--require-gettext` 强制检查依赖和 UTF-8 locale；缺项直接失败，
 不允许双语测试静默跳过。本测试无需加入 Xmake 聚合测试。
 

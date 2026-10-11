@@ -79,6 +79,30 @@ class ShellMessages(unittest.TestCase):
             invalid = self.run_script("check.sh", "fast", BUILD_SHARED="invalid", LC_ALL=locale, LANGUAGE=language)
             self.assertEqual(invalid.stderr, ("BUILD_SHARED 必须为 y 或 n" if chinese else "BUILD_SHARED must be y or n") + "\n")
 
+    @unittest.skipUnless(RUNTIME, "GNU gettext/envsubst runtime is optional")
+    def test_locale_precedence_and_child_environment(self):
+        (self.bin / "xmake").write_text(
+            '#!/bin/sh\nprintf "LC_ALL=%s LC_MESSAGES=%s LANG=%s LANGUAGE=%s\\n" '
+            '"${LC_ALL-}" "${LC_MESSAGES-}" "${LANG-}" "${LANGUAGE-}"\n')
+        cases = (("C.UTF-8", "zh_CN.UTF-8", "zh_CN.UTF-8", False),
+                 ("C.utf8", "zh_CN.UTF-8", "zh_CN.UTF-8", False),
+                 ("", "C.UTF-8", "zh_CN.UTF-8", False),
+                 ("", "C.utf8", "zh_CN.UTF-8", False),
+                 ("", "", "C.UTF-8", False),
+                 ("", "", "C.utf8", False),
+                 ("zh_CN.UTF-8", "C.UTF-8", "C.UTF-8", True),
+                 ("", "zh_CN.UTF-8", "C.UTF-8", True))
+        for lc_all, lc_messages, lang, chinese in cases:
+            with self.subTest(lc_all=lc_all, lc_messages=lc_messages, lang=lang):
+                result = self.run_script("check.sh", "unit", LC_ALL=lc_all, LC_MESSAGES=lc_messages,
+                                         LANG=lang, LANGUAGE="zh_CN")
+                self.assertEqual(result.returncode, 0)
+                expected = ("配置 'unit' 是兼容别名；将运行完整 Xmake 测试集" if chinese else
+                            "profile 'unit' is a compatibility alias; running the complete Xmake suite")
+                self.assertEqual(result.stderr, expected + "\n")
+                self.assertEqual(result.stdout,
+                                 (f"LC_ALL={lc_all} LC_MESSAGES={lc_messages} LANG={lang} LANGUAGE=zh_CN\n") * 2)
+
     def test_benchmark_protocol(self):
         import json
         source = (ROOT / "scripts/benchmark.sh").read_text()
