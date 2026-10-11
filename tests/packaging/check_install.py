@@ -27,7 +27,6 @@ p.add_argument('--installed-prefix', type=Path,
                help='Validate an already installed/extracted prefix instead of running an installer')
 p.add_argument('--libdir', default='lib')
 p.add_argument('--includedir', default='include')
-p.add_argument('--legacy', action='store_true')
 p.add_argument('--abi-version', default='2')
 p.add_argument('--symbol-version', default='LOGGER_2.0')
 p.add_argument('--abi-manifest', default='abi/logger-2.0.symbols')
@@ -99,7 +98,6 @@ try:
     assert 'Apache License' in license_text
     assert 'Version 2.0, January 2004' in license_text
     expected_headers = {'logger.h','console.h','logger_export.h','logger_version.h'}
-    if a.legacy: expected_headers.add('logger_fork_compat.h')
     assert {x.name for x in include.iterdir()} == expected_headers
     version_header = (include / 'logger_version.h').read_text()
     assert re.search(r'^#define LOGGER_ABI_VERSION\s+' + re.escape(a.abi_version) + r'\s*$', version_header, re.M)
@@ -112,6 +110,8 @@ try:
         if x.is_file() and x.suffix in ('.cmake','.pc'):
             text = x.read_text()
             assert str(a.source) not in text and str(a.build) not in text, x
+            assert "LOGGER_ENABLE_LEGACY_FORK_HELPER" not in text, x
+            assert "logger_fork_compat" not in text, x
         assert x.name not in {'logger_internal.h','logger_test_support.a','liblogger_test_support.a',
                               'logger_regression_support.a','liblogger_regression_support.a','logger_fault.h'}
     # The copy is a stand-alone consumer tree, not add_subdirectory(Logger).
@@ -127,7 +127,7 @@ try:
     commands=(cb/'compile_commands.json').read_text()
     assert str(a.source/'include') not in commands and str(a.source/'src') not in commands
     assert 'LOGGER_ENABLE_FAULT_INJECTION' not in commands
-    assert 'LOGGER_ENABLE_LEGACY_FORK_HELPER' not in commands or a.legacy
+    assert 'LOGGER_ENABLE_LEGACY_FORK_HELPER' not in commands
     for exe,args in [('logger_consumer',[]),('logger_cpp',[]),('plugin_loader',[cb/'libinstalled_plugin.so'])]:
         wd=work/(exe+' run');wd.mkdir()
         run([cb/exe]+args,cwd=wd)
@@ -159,7 +159,7 @@ try:
     q=work/'query';q.mkdir()
     for requested,component,success in [(version,a.kind,True),(next_patch,a.kind,False),
         (next_major,a.kind,False),(version,'static' if a.kind=='shared' else 'shared',False),
-        (version,'invented',False),(version,'legacy_fork',a.legacy)]:
+        (version,'invented',False),(version,'legacy_fork',False)]:
         (q/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.16)\nproject(query C)\n'
             'find_package(Logger '+requested+' EXACT CONFIG REQUIRED COMPONENTS '+component+')\n')
         run([a.cmake,'-S',q,'-B',work/('query-%d'%counter),'-DLogger_DIR='+str(config_dir)],
@@ -184,25 +184,22 @@ try:
               '--manifest',abi_manifest,
               '--abi-version',a.abi_version,
               '--symbol-version',a.symbol_version]
-        if a.legacy: argv.append('--legacy-fork')
         run(argv)
         # A deliberately impossible GLIBC ceiling must cause a failing gate.
         run(argv+['--max-glibc','2.0'],expected=1)
         names=[n for n in abi_manifest.read_text().splitlines()
                if n and not n.startswith('#')]
-        if a.legacy: names.append('logger_fork_reinit')
         loader=work/'abi-loader'
         run([a.cc,'-std=c11',a.source/'tests/packaging/loader.c','-o',loader,'-ldl'])
         run([loader,dso,a.symbol_version]+names)
     artifact=lib/('liblogger.so' if a.kind=='shared' else 'liblogger.a')
     iso=[sys.executable,a.source/'scripts/check_production_artifact.py',artifact]
-    if a.legacy: iso.append('--legacy-fork')
     run(iso)
     if a.installed_prefix:
         install_check = 'preinstalled package tree'
     else:
         install_check = 'Xmake staged install'
-    report={'passed':True,'kind':a.kind,'legacy':a.legacy,'abi_version':a.abi_version,
+    report={'passed':True,'kind':a.kind,'abi_version':a.abi_version,
             'symbol_version':a.symbol_version,'abi_manifest':str(abi_manifest),
             'install_driver':'xmake',
             'work':str(work),'commands':log,

@@ -10,7 +10,6 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('archive', type=Path)
-parser.add_argument('--legacy-fork', action='store_true', help='allow the opt-in process-creation helper')
 args = parser.parse_args()
 archive = args.archive.resolve(strict=True)
 
@@ -36,12 +35,19 @@ for line in symbols.splitlines():
         failures.append('retired Audit symbol: ' + line)
     if any(name in line for name in ['logger_fault_should_fail', 'logger_fault_short_write', 'logger_fault_crash_if_requested']):
         failures.append(line)
-if not args.legacy_fork:
-    if '/proc/self/task' in strings:
-        failures.append('/proc/self/task')
-    for line in symbols.splitlines():
-        if re.search(r'\b(fork|vfork|posix_spawn|logger_fork_reinit|logger_process_thread_count|logger_process_arm_clean_fork|logger_process_finish_clean_fork)\b', line):
-            failures.append(line)
+if '/proc/self/task' in strings:
+    failures.append('/proc/self/task')
+process_helpers = {'fork', 'vfork', 'posix_spawn', 'posix_spawnp',
+                   'logger_fork_reinit', 'logger_process_thread_count',
+                   'logger_process_arm_clean_fork', 'logger_process_finish_clean_fork',
+                   'logger_global_stop_for_clean_fork', 'logger_global_lifetime_broken'}
+for line in symbols.splitlines():
+    parts = line.split()
+    # nm -A prefixes each symbol with the artifact path. Inspect the symbol,
+    # not a directory name such as build-fork, when rejecting process helpers.
+    # Keep compiler clone suffixes (for example .constprop.0) forbidden.
+    if parts and parts[-1].split('@', 1)[0].split('.', 1)[0] in process_helpers:
+        failures.append(line)
 # No crypto backend may be brought in by this library, even in a debug build.
 # Inspect all archive symbols so accidentally statically linked API objects are
 # rejected as well. Exported audit_crypto_* names are not external crypto APIs.

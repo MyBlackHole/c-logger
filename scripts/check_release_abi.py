@@ -16,12 +16,10 @@ def run(*args):
                           env=dict(os.environ, LC_ALL='C')).stdout
 
 
-def inspect(artifact, manifest, legacy=False, max_glibc=None, machine=None, elf_class=None,
+def inspect(artifact, manifest, max_glibc=None, machine=None, elf_class=None,
             abi_version='2', symbol_version='LOGGER_2.0'):
     names = {s.strip() for s in manifest.read_text().splitlines()
              if s.strip() and not s.lstrip().startswith('#')}
-    if legacy:
-        names.add('logger_fork_reinit')
     errors = []
     if artifact.read_bytes()[:8] == b'!<arch>\n':
         raise ValueError('Check the final shared ELF/consumer for GLIBC requirements; archives have no final dynamic ABI')
@@ -87,7 +85,6 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('artifact', type=Path)
     p.add_argument('--manifest', type=Path, default=Path(__file__).resolve().parents[1] / 'abi/logger-2.0.symbols')
-    p.add_argument('--legacy-fork', action='store_true')
     p.add_argument('--max-glibc', help='Optional deployment baseline ceiling, e.g. 2.25; FAIL rather than rewrite version requirements')
     p.add_argument('--machine', help='Exact readelf Machine value for the target, e.g. Advanced Micro Devices X86-64')
     p.add_argument('--elf-class', choices=('ELF32', 'ELF64'), help='Required target ELF class')
@@ -104,7 +101,7 @@ def main():
         p.error('--symbol-version must look like LOGGER_1.0')
     try:
         report = inspect(a.artifact.resolve(strict=True), a.manifest.resolve(strict=True),
-                         a.legacy_fork, a.max_glibc, a.machine, a.elf_class,
+                         a.max_glibc, a.machine, a.elf_class,
                          a.abi_version, a.symbol_version)
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(json.dumps({'passed': False, 'error': str(e)}, indent=2))

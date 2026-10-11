@@ -10,12 +10,6 @@ option("build_shared")
     set_description("Build the production logger as a shared library")
 option_end()
 
-option("legacy_fork")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Build the compatibility-only logger_fork_reinit helper")
-option_end()
-
 option("build_tests")
     set_default(false)
     set_showmenu(true)
@@ -53,7 +47,6 @@ end
 
 local function configure_install_metadata(target, mkdir, writefile)
     local shared = target:kind() == "shared"
-    local legacy = has_config("legacy_fork")
     local generated = path.join(target:autogendir(), "install")
     mkdir(generated)
 
@@ -67,7 +60,6 @@ set(Logger_CRYPTO_IMPLEMENTATION "none")
 set(Logger_RELEASE_CANDIDATE %s)
 set(Logger_shared_FOUND %s)
 set(Logger_static_FOUND %s)
-set(Logger_legacy_fork_FOUND %s)
 include("${CMAKE_CURRENT_LIST_DIR}/LoggerTargets.cmake")
 foreach(_comp IN LISTS Logger_FIND_COMPONENTS)
   if((NOT DEFINED Logger_${_comp}_FOUND OR NOT Logger_${_comp}_FOUND)
@@ -76,16 +68,13 @@ foreach(_comp IN LISTS Logger_FIND_COMPONENTS)
   endif()
 endforeach()
 ]], project_version, abi_version, cmake_bool(release_candidate),
-       cmake_bool(shared), cmake_bool(not shared), cmake_bool(legacy))
+       cmake_bool(shared), cmake_bool(not shared))
     local config_file = path.join(generated, "LoggerConfig.cmake")
     writefile(config_file, config)
 
     local compile_definitions = {}
     if not shared then
         table.insert(compile_definitions, "LOGGER_STATIC_DEFINE=1")
-    end
-    if legacy then
-        table.insert(compile_definitions, "LOGGER_ENABLE_LEGACY_FORK_HELPER=1")
     end
     local definitions = table.concat(compile_definitions, ";")
     local library_type = shared and "SHARED" or "STATIC"
@@ -144,9 +133,6 @@ endif()
     if not shared then
         pc_definitions = pc_definitions .. " -DLOGGER_STATIC_DEFINE=1"
     end
-    if legacy then
-        pc_definitions = pc_definitions .. " -DLOGGER_ENABLE_LEGACY_FORK_HELPER=1"
-    end
     local pc = string.format([[prefix=${pcfiledir}/../..
 exec_prefix=${prefix}
 libdir=${prefix}/lib
@@ -200,10 +186,6 @@ target("logger")
     for _, source in ipairs(logger_sources) do
         add_files(source)
     end
-    if has_config("legacy_fork") then
-        add_files("src/logger_fork.c")
-        add_defines("LOGGER_ENABLE_LEGACY_FORK_HELPER=1", {public = true})
-    end
 
     -- Match the production dialect/visibility contract rather than inheriting
     -- Xmake's built-in release rule (which strips by default).
@@ -245,9 +227,6 @@ target("logger")
                     "include/logger_export.h", {prefixdir = "logger"})
     add_installfiles("$(builddir)/generated/logger_version.h",
                      {prefixdir = "include/logger"})
-    if has_config("legacy_fork") then
-        add_headerfiles("include/logger_fork_compat.h", {prefixdir = "logger"})
-    end
 
     on_load(function (target)
         if project_version == "0.0.0" or not version_major then
@@ -280,9 +259,6 @@ target("logger")
                            "invalid ABI symbol in " .. manifest .. ": " .. name)
                     table.insert(out, "    " .. name .. ";\n")
                 end
-            end
-            if has_config("legacy_fork") then
-                table.insert(out, "    logger_fork_reinit;\n")
             end
             table.insert(out, "  local: *;\n};\n")
 
@@ -345,17 +321,6 @@ target("syslog_client_example")
     add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                {force = true})
 target_end()
-
-if has_config("legacy_fork") then
-    target("fork_reinit_example")
-        set_kind("binary")
-        set_default(false)
-        add_files("examples/fork_reinit.c")
-        add_deps("logger")
-        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                   {force = true})
-    target_end()
-end
 
 local package_kind = has_config("build_shared") and "shared" or "static"
 local package_basename =
@@ -487,10 +452,6 @@ if has_config("build_private_tests") or has_config("build_regression_tests") the
         end
         for _, source in ipairs(audit_sources) do
             add_files(source)
-        end
-        if has_config("legacy_fork") then
-            add_files("src/logger_fork.c")
-            add_defines("LOGGER_ENABLE_LEGACY_FORK_HELPER=1", {public = true})
         end
         add_files("src/logger_fault.c")
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
@@ -630,10 +591,6 @@ if has_config("build_regression_tests") then
         end
         for _, source in ipairs(audit_sources) do
             add_files(source)
-        end
-        if has_config("legacy_fork") then
-            add_files("src/logger_fork.c")
-            add_defines("LOGGER_ENABLE_LEGACY_FORK_HELPER=1", {public = true})
         end
         add_cflags("-std=gnu11", "-fPIC", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                    "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0", {force = true})
@@ -1293,35 +1250,6 @@ if has_config("build_regression_tests") then
                       {runargs = scenario, timeout = 15})
         end
     target_end()
-
-    if has_config("legacy_fork") then
-        target("fork_reinit_regression")
-            set_kind("binary")
-            set_default(false)
-            add_files("tests/regression/test_fork_reinit.c")
-            add_deps("logger_regression_support")
-            add_includedirs("src")
-            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                       {force = true})
-            for _, symbol in ipairs({
-                "fork", "opendir", "close", "calloc", "pthread_atfork"
-            }) do
-                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
-            end
-            for _, scenario in ipairs({
-                "async", "sync", "drain", "no-init", "console-only",
-                "after-shutdown", "context", "raw-guard", "thread-busy",
-                "explicit-busy", "explicit-only", "audit-busy", "proc-failure",
-                "fork-failure", "io-failure", "close-failure",
-                "creation-failure", "registration-failure", "earlier-handler",
-                "nested", "repeat", "explicit-recreate", "audit-conflict"
-            }) do
-                add_tests("fork_reinit_" .. scenario,
-                          {runargs = scenario, timeout = 20})
-            end
-        target_end()
-
-    end
 
     -- Treat process-fork exit 77 as an accepted skip-equivalent result.
     target("process_fork_regression")

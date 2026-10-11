@@ -70,20 +70,9 @@ example_sdk_options_t opts = {"backup", example_to_logger, log};
 首选宿主 工作线程 启动后首次初始化，或 exec 后初始化。
 同步单线程 prefork 可以作为将来的窄契约设计，但当前版本不因移除 /proc 扫描就自动支持。
 
-原 `logger_fork_reinit()` 在默认产物中不再提供。旧应用明确开启：
-
-```sh
-export LOGGER_PROJECT_VERSION="$(cat VERSION)"
-xmake f -m release -o build-compat \
-  --build_shared=n \
-  --legacy_fork=y \
-  --build_regression_tests=y
-xmake -j4 logger fork_reinit_example
-```
-
-兼容产物仍含原来的 /proc 检查、clean token 和 fork 操作，旧限制不变。
-默认核心产物没有这些函数/字符串；PID/atfork 的防御性拒绝仍保留。
-默认核心产物不再导出 prepare/after-fork marker；内部 atfork/PID guard 直接拒绝继承运行时，child 需要 exec。
+`logger_fork_reinit()`、兼容头文件与构建选项已移除。生产产物没有 /proc 线程扫描、
+clean token 或 fork 操作；PID/atfork 的防御性拒绝仍保留。
+内部 guard 不重绑 child 身份、不修复继承锁，继承运行时的 child 需要 exec。
 
 ## ABI/构建
 

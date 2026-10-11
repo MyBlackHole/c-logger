@@ -160,9 +160,6 @@ static void child_guard_matrix(void)
 	errno = 0;
 	if (logger_create(&cfg) != NULL || errno != ECHILD)
 		_exit(11);
-#if LOGGER_ENABLE_LEGACY_FORK_HELPER
-	CHILD_POSIX(logger_fork_reinit(), 12);
-#endif
 	CHILD_VOID(LOG_INFO("INHERITED_FORBIDDEN"), 14);
 	CHILD_POSIX(logger_flush_status(), 15);
 	CHILD_POSIX(logger_reopen(), 16);

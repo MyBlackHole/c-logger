@@ -92,9 +92,8 @@ recovery/commit 语义。
 |---|---|---|---|---|---|
 | atfork 注册 | `pthread_once/pthread_atfork` | 进程 | 无 | 进程生命周期 | SHARED |
 | 活动对象计数 | 原子 acquire/release | 进程生命周期协议 | 计数递增/递减 | 配对 release | SHARED |
-| `/proc/self/task DIR *`（旧版辅助接口） | `opendir` | 线程计数函数 | 无 | 显式 `closedir` | EXPLICIT |
 
-旧版 DIR 关闭保持显式，因为其失败会参与函数返回结果。
+旧版受控 fork helper 与 `/proc/self/task` 扫描已移除；进程防护不接管宿主线程或进程创建。
 
 ## 工作线程/队列的共享生命周期
 
