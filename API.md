@@ -1,7 +1,8 @@
 # 当前 API 与集成边界
 
-本文描述 main 的普通 Logger/Console 接入；当前开发 ABI 为 SONAME 2 / `LOGGER_2.0`，
-默认47个公开 C 符号，清单见 `abi/logger-2.0.symbols`。2.0 最终公开合同尚未冻结。
+本文描述 2.0 稳定发布准备中的普通 Logger/Console 接入；当前 ABI 为 SONAME 2 / `LOGGER_2.0`，
+默认47个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
+[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)按已有可执行快照整理，待最终固定源码验收；本文不表示已经发布。
 Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅适用于 `release/1.x`。
 `logger_fork_reinit()` 与对应构建选项、兼容头文件已移除。
 
@@ -85,11 +86,11 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 结构体本身在 init/create 期间复制为内部快照；其中的字符串指针只在该调用期间借用，
 调用者必须保证其有效且不被并发修改。完整规则见 `docs/UAPI.md`。
 
-当前开发产物使用 SONAME 2 / `LOGGER_2.0`，安装元数据为 `LOGGER_ABI_VERSION=2`；不得冒充 v1 兼容包。
+当前产物使用 SONAME 2 / `LOGGER_2.0`，安装元数据为 `LOGGER_ABI_VERSION=2`；不得冒充 v1 兼容包。
 
 完整集成示例和关闭顺序见 [HOST_OWNED.md](docs/HOST_OWNED.md)。
 
-## 文件所有权加固（当前开发契约）
+## 文件所有权契约
 
 即使在 NONE/EXTERNAL 模式下，普通文件目标也只能由单个实例拥有。针对同一已绑定目录/基础文件名
 创建独立 Logger 时会返回 EBUSY；应改为共享同一个 Logger。后端会一直保留目录文件描述符以及

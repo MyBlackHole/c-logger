@@ -40,8 +40,8 @@ local abi_version = "2"
 local symbol_version = "LOGGER_2.0"
 local abi_manifest = "abi/logger-2.0.symbols"
 local release_candidate = version_major == "0"
--- Package identity describes this development tree, not release approval.
-local package_identity = "ABI " .. abi_version .. " development"
+-- 包身份只描述 ABI，不表示发布审批或验收状态。
+local package_identity = "ABI " .. abi_version
 
 local function cmake_bool(value)
     return value and "TRUE" or "FALSE"

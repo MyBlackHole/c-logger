@@ -1,4 +1,4 @@
-# Development-only 2.0 ABI: Audit symbols intentionally removed. Do not use globs.
+# ABI 2 稳定发布准备清单：不包含 Audit 符号，禁止通配符；合同待最终验收。
 console_debug
 console_debug_source
 console_error

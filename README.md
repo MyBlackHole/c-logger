@@ -1,17 +1,17 @@
 <a id="c-logger--20-开发主线--production-v1-已发布"></a>
 
-# C Logger — 2.0 开发主线 / 生产版 v1 已发布
+# C Logger — 2.0 稳定发布准备
 
-> `main` 已进入 2.0 架构重构阶段；生产版 v1 由 `release/1.x` 维护，正式发布基线仍是 `v1.0.0`。\
-> 根 `VERSION=2.0.0` 标识当前 ABI 2 开发产物；2.0 公开 API/ABI 尚未最终冻结，当前 `main` 不应被当作 2.0 正式版本使用。
+> `main` 正在准备 2.0.0 生产稳定版；当前合同已整理，最终固定源码与发布包尚待验收。\
+> 根 `VERSION=2.0.0`、ABI 2 不表示发布已经完成。已发布 v1 仍由 `release/1.x` 维护。
 
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
-当前开发 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47 个公开 C ABI 符号**。
+当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47 个公开 C ABI 符号**。
 
-> **开发身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
-> 不得用当前 main 替换 SONAME 1 的正式包。2.0 最终合同与发布验收尚未完成，参见
+> **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
+> 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、
 > [迁移状态](docs/v2/AUDIT_REMOVAL.md)和[当前限制](docs/KNOWN_ISSUES.md)。
 
 ## 构建与安装
@@ -32,11 +32,11 @@ xmake -j4 logger
 xmake install -o /opt/logger/"$(cat VERSION)"-static logger
 ```
 
-共享产物使用 `liblogger.so.<VERSION>`，开发 ABI 的 SONAME 为 `liblogger.so.2`；静态产物为
+共享产物使用 `liblogger.so.<VERSION>`，ABI 的 SONAME 为 `liblogger.so.2`；静态产物为
 `liblogger.a`。生产库默认关闭故障注入，并使用隐藏可见性 +
 `LOGGER_2.0` ELF 符号版本。
 
-当前开发 ABI 允许列表由 `abi/logger-2.0.symbols` 维护；变更必须经过 ABI 评审。
+当前 ABI 允许列表由 `abi/logger-2.0.symbols` 维护；变更必须经过 ABI 评审。
 已发布 v1 的允许列表与 `release/1.x` 仅用于历史维护，不能证明当前 ABI 2 产物兼容 v1。
 
 ## 下游接入
@@ -102,8 +102,9 @@ xmake test -j1
 xmake pack -f targz -o xpack-out
 ```
 
-XPack 自动生成 TGZ 与同名 SHA-256，标题标识 `ABI 2 development`。版本号对齐和构建成功均不是正式发布授权。
-普通 main 推送不触发发布；正式发布要求另行批准的现存 v2 标签、最终合同冻结和精确提交的完整验收。
+XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，不包含已发布状态承诺。版本号对齐和构建成功均不是正式发布授权。
+普通 main 推送不触发发布；正式发布要求另行批准的现存 v2 标签、合同确认和精确源码的完整验收。
+[2.0.0 发布说明](docs/RELEASE_NOTES_2.0.0.md)记录当前范围、迁移和证据边界。
 
 发布工程细节见 [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md)。
 
@@ -135,7 +136,7 @@ XPack 自动生成 TGZ 与同名 SHA-256，标题标识 `ABI 2 development`。�
 - [项目语言约定](docs/PROJECT_LANGUAGE.md)
 - [项目协作约定](AGENTS.md)
 
-- [2.0 开发设计权威](docs/v2/README.md)
+- [2.0 设计权威](docs/v2/README.md)
 - [2.0 支持基线](docs/v2/SUPPORT_MATRIX.md)
 - [2.0 Linux C 编码规范](docs/v2/CODING_STYLE.md)
 - [2.0 执行上下文规范](docs/v2/EXECUTION_CONTEXT.md)
