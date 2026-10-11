@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/tool_i18n.py"
+      - "scripts/benchmark_fixed_rate.py"
       - "locales/**"
       - "src/**"
       - "include/**"

@@ -296,3 +296,9 @@ zone、bad-date、bad-zone、cached-bad、truncation 九项；`format_checked_pr
 file_rename/short-write/syslog-path 与四个真实轮转环境钩子。process_fork 保留17个普通
 Logger/Console/context场景；原21项的4个Audit入口专属场景退役。锁失败保留6个普通场景。
 逐项迁移记录见 [Audit 清理覆盖映射](validation/AUDIT_TEST_RETIREMENT.md)。
+
+## 固定到达率基准的验收器
+
+`bench_fixed_rate` 使用真实生产公开 API，静态/共享都可构建。运行和证据边界见
+`BENCHMARK.md` 的“固定到达率与真实文件”章节。`tests/scripts/test_fixed_rate_benchmark.py`
+独立验证原始数组分位、缺失/重复/损坏文件与未尝试记录的拒绝；这类验证器单测不是性能验收。
