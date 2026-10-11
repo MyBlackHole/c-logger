@@ -3,6 +3,7 @@ name: v2-engineering-baseline
 on:
   pull_request:
     paths:
+      - "locales/**"
       - "src/**"
       - "include/**"
       - "tests/**"
@@ -15,6 +16,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "locales/**"
       - "src/**"
       - "include/**"
       - "tests/**"

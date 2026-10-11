@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import re
 import subprocess
 import sys
@@ -52,7 +51,7 @@ def changed_source_paths(base: str) -> list[str]:
     ]
 
 
-def check_added_lines(base: str, errors: list[str]) -> None:
+def check_added_lines(base: str, errors: list[str], _=lambda message: message) -> None:
     path = ""
 
     for raw in source_diff(base).splitlines():
@@ -68,22 +67,20 @@ def check_added_lines(base: str, errors: list[str]) -> None:
 
         for name, pattern in FORBIDDEN_CALLS:
             if pattern.search(line):
-                errors.append(f"{path}: new code uses forbidden {name}()")
+                errors.append(_("{path}: new code uses forbidden {name}()").format(path=path, name=name))
 
         if STRNCPY.search(line) and "V2_FIXED_WIDTH_OK" not in line:
             errors.append(
-                f"{path}: new strncpy() requires fixed-width justification "
-                "and V2_FIXED_WIDTH_OK marker"
+                _("{path}: new strncpy() requires fixed-width justification and V2_FIXED_WIDTH_OK marker").format(path=path)
             )
 
         if RAW_ALWAYS_INLINE.search(line):
             errors.append(
-                f"{path}: use logger_compiler.h abstraction "
-                "instead of raw always_inline"
+                _("{path}: use logger_compiler.h abstraction instead of raw always_inline").format(path=path)
             )
 
 
-def check_trailing_newline(base: str, errors: list[str]) -> None:
+def check_trailing_newline(base: str, errors: list[str], _=lambda message: message) -> None:
     for path in changed_source_paths(base):
         try:
             with open(path, "rb") as stream:
@@ -92,24 +89,25 @@ def check_trailing_newline(base: str, errors: list[str]) -> None:
             continue
 
         if data and not data.endswith(b"\n"):
-            errors.append(f"{path}: source file must end with a newline")
+            errors.append(_("{path}: source file must end with a newline").format(path=path))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("base", help="merge base ref, for example origin/main")
+    from tool_i18n import parser_for
+    parser, _ = parser_for('Check added source lines against the v2 baseline without rewriting legacy code.')
+    parser.add_argument("base", help=_('merge base ref, for example origin/main'))
     args = parser.parse_args()
 
     errors: list[str] = []
-    check_added_lines(args.base, errors)
-    check_trailing_newline(args.base, errors)
+    check_added_lines(args.base, errors, _)
+    check_trailing_newline(args.base, errors, _)
 
     if errors:
         for item in errors:
             print(f"error: {item}", file=sys.stderr)
         return 1
 
-    print("v2 added-line policy: ok")
+    print(_("v2 added-line policy: ok"))
     return 0
 
 

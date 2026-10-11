@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "scripts/tool_i18n.py"
+      - "locales/**"
       - "VERSION"
       - "LICENSE"
       - "*.md"

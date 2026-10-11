@@ -3,6 +3,8 @@ name: core-validation
 on:
   pull_request:
     paths:
+      - "scripts/tool_i18n.py"
+      - "locales/**"
       - "src/**"
       - "include/**"
       - "tests/**"

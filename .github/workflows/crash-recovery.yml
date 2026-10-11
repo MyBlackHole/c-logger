@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "scripts/tool_i18n.py"
+      - "locales/**"
       - "src/**"
       - "include/**"
       - "tests/test_crash_recovery.c"
@@ -19,6 +21,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "scripts/tool_i18n.py"
+      - "locales/**"
       - "xmake.lua"
       - "VERSION"
       - "src/**"

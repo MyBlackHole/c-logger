@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Verify the exact Xmake process-crash suite and emit machine-readable evidence."""
+"""核验 Xmake 进程崩溃测试的精确集合，并输出机器可读证据。"""
 
 from __future__ import annotations
 
+# JSON/JUnit 证据保持原样；仅人读帮助与终端汇总进入翻译目录。
 import argparse
 import json
 import re
@@ -23,19 +24,18 @@ TEST_RESULT = re.compile(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Verify Xmake process-crash logs against the fixed eight-case ordinary Logger contract."
-    )
-    parser.add_argument("logs", nargs="+", type=Path, help="xmake test output log")
+    from tool_i18n import parser_for
+    parser, _ = parser_for('Verify Xmake process-crash logs against the fixed eight-case ordinary Logger contract.')
+    parser.add_argument("logs", nargs="+", type=Path, help=_('xmake test output log'))
     parser.add_argument(
         "--output",
         type=Path,
-        help="optional JSON evidence file containing the observed test set per run",
+        help=_('optional JSON evidence file containing the observed test set per run'),
     )
     parser.add_argument(
         "--junit-dir",
         type=Path,
-        help="optional directory for one JUnit XML report per input log",
+        help=_('optional directory for one JUnit XML report per input log'),
     )
     return parser.parse_args()
 
@@ -48,8 +48,8 @@ def results_from_log(path: Path) -> dict[str, tuple[str, float]]:
         if match:
             name, status, seconds = match.groups()
             if name in results:
-                # A repeated result must not overwrite an earlier failure or
-                # make an accidentally duplicated run look like an exact set.
+                # 重复结果不得覆盖先前的失败，也不得让意外重复执行的测试
+                # 看起来仍符合精确集合。
                 results[name] = ("duplicate", results[name][1] + float(seconds))
             else:
                 results[name] = (status, float(seconds))
@@ -110,7 +110,9 @@ def write_junit(
 
 
 def main() -> int:
+    from tool_i18n import resolve_languages, translation
     args = parse_args()
+    _ = translation(resolve_languages(args.lang)).gettext
     evidence = {
         "contract": "ordinary-logger-crash-v1",
         "boundary": "process SIGKILL; not VM or physical power loss",
@@ -158,15 +160,14 @@ def main() -> int:
         if missing or unexpected or failed_cases:
             failed = True
             print(
-                f"{path}: crash suite mismatch/failure: "
-                f"missing={sorted(missing)}, unexpected={sorted(unexpected)}, "
-                f"failed={failed_cases}",
+                _("{path}: crash suite mismatch/failure: missing={missing}, unexpected={unexpected}, failed={failed}").format(
+                    path=path, missing=sorted(missing), unexpected=sorted(unexpected), failed=failed_cases),
                 file=sys.stderr,
             )
         else:
             print(
-                f"{path}: verified {len(selected)} process-crash tests: "
-                + ", ".join(sorted(selected))
+                _("{path}: verified {count} process-crash tests: {tests}").format(
+                    path=path, count=len(selected), tests=", ".join(sorted(selected)))
             )
 
     if args.output:
