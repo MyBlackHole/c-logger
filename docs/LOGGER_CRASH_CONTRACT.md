@@ -1,14 +1,14 @@
 <a id="ordinary-logger-crash-and-vm-evidence-contract"></a>
 
-# 普通 Logger 崩溃与 VM 证据契约
+# 普通 Logger 进程崩溃证据契约
 
 本文是当前主线契约，取代基于 Audit 的崩溃验收。
 不承诺 Audit 事务、检查点、哈希链或自动修复撕裂尾部。
 历史发布说明描述旧产品，不予重写。
 
 普通 Logger 的基本 API 验收覆盖参数与返回值、并发、资源、轮转，以及正常 flush/关闭
-语义；保留进程 SIGKILL 故障回归。VM/掉电测试是可选扩展证据，不是每次基本 API
-验收的前置条件。这不取消 [API](../API.md) 既有的 flush/fsync 契约，也不新增丢失保证。
+语义；保留进程 SIGKILL 故障回归。当前不维护 VM/断电测试，专用程序、脚本、
+构建目标与 CI 已移除。这不取消 [API](../API.md) 既有的 flush/fsync 契约，也不新增丢失保证。
 
 <a id="what-is-acknowledged"></a>
 
@@ -36,7 +36,7 @@
 
 <a id="eight-cut-points-applied-to-both-harnesses"></a>
 
-## 两套测试框架都使用的八个切断点
+## 进程测试使用的八个切断点
 
 | 切断点 | 实际停止边界 | 被中断的序号 010 |
 | --- | --- | --- |
@@ -67,22 +67,13 @@
 
 ## 测试矩阵迁移，不静默缩减覆盖
 
-| 旧证据 | 新证据或明确退役 |
-| --- | --- |
-| VM `acknowledged` | 普通 Logger 的 `acknowledged`，现在也覆盖进程 SIGKILL |
-| VM `before_audit_fsync` | 普通 Logger 实际的 `before_file_fsync`，现在也覆盖进程 SIGKILL |
-| 进程/VM `after_audit_fsync` | 普通 Logger 实际的 `after_file_fsync` |
-| 进程 `rotation_crash_sha256` | 普通 Logger 的 `rotation_after_file_fsync`，现在也覆盖 VM |
-| 四个 `file_crash_sha256_file_after_*` / VM 轮转点 | 保留相同四个真实文件后端钩子；使用完整普通 Logger 字节判定器 |
-| `before_state_rename` | 退役：Audit 检查点事务在普通 Logger 中没有对应机制 |
-| `after_state_rename` | 退役：Audit 检查点事务在普通 Logger 中没有对应机制 |
-| `after_checkpoint_commit` | 退役：Audit 检查点事务在普通 Logger 中没有对应机制 |
-
 旧进程用例集有九项：四项 Audit fsync/检查点、一项 Audit 轮转，以及四项文件轮转。
-移除三项仅用于检查点的场景，再增加已确认/fsync 前的进程检查后，共八项。
-旧 VM 用例集有十项：移除这三个仅用于检查点的点，再增加轮转后的 fsync 点后，共八项。
-`scripts/crash_contract.py` 在两种 JSON 证据格式中记录此映射。
+移除 `before_state_rename`、`after_state_rename`、`after_checkpoint_commit` 三项
+仅用于 Audit 检查点的场景；普通 Logger 没有对应机制。数据 fsync、轮转与四个文件
+切换点改用普通 Logger 字节判定器，再增加已确认/fsync 前的进程检查后，共八项。
+`scripts/crash_contract.py` 在进程 JSON 证据中记录此映射。
 历史 Audit 轮转及 busy/cwd 测试已另行退役；普通 `process-crash` 分组不变。
+旧 VM 矩阵及其报告仅为历史记录，当前无对应测试入口。
 
 <a id="distinct-failure-boundaries-and-evidence"></a>
 
@@ -91,14 +82,6 @@
 - 进程：新 exec 的写入进程通过管道报告精确到达的切断点，控制器随后才发送
   `SIGKILL`。标记错误/缺失或十秒超时都判失败，即使清理过程终止了写入进程也一样。
   控制器要求实际的 `WIFSIGNALED` / `SIGKILL` 状态。内核及其页缓存仍然存活。
-- VM：客户机向串口控制台打印精确切断点后等待，不清理，也不执行客户机同步。
-  宿主必须收到该行，随后用 SIGKILL 终止 QEMU，验证信号返回码，
-  再使用同一个原始磁盘重启（`cache=none`）。恢复启动必须打印成功标记，
-  客户机程序以零退出，QEMU 也必须成功关闭。客户机页缓存会在终止时丢失。
-- 现有 VM CI 在原始 ext4 与 XFS 上都运行完整八个切断点，包括 PR。
-  本文将其定位为可选扩展验证；测试代码及现有自动触发配置不因本次验收范围校准而改变。
-  串口日志记录客户机内核/文件系统及每次文件清单结果；`vm-matrix.json`
-  记录所选切断点、迁移、阶段标记和 QEMU 结果。
 - 进程 CI 保留既有共享/静态构建配置矩阵和重复策略
   （PR：共享配置一次；main/手动：两种配置各三次）。两种配置都有意执行私有静态支持归档，
   不是通过生产共享 DSO 注入故障。精确用例集检查输出 JSON 和 JUnit；
@@ -119,10 +102,9 @@ xmake f -m release -o build --build_shared=n --build_private_tests=y
 xmake test -g process-crash -j1 -vD | tee crash.log
 python3 scripts/check_crash_matrix.py crash.log --output crash-matrix.json --junit-dir .
 xmake test -g crash-verifier -j1 -vD
-xmake vm_powercut_guest
 ```
 
 独立的判定器变异测试覆盖每一种允许的 fsync 前字节前缀长度，分别带有和不带恢复后缀；
 还覆盖基线、恢复记录、归档内容的缺失/重复/篡改，以及恶意命名空间测试样本。
-它还检查 Xmake 和完整 VM 矩阵是否与声明的切断点集合一致。
-这是判定器检查，不能代替真正终止进程或 VM。
+它还检查 Xmake 进程矩阵是否与声明的切断点集合一致。
+这是判定器检查，不能代替真正终止进程。

@@ -1,3 +1,5 @@
+> 当前范围说明：本文保留迁移时的历史执行记录。VM/断电测试现已移除，不再是当前维护的测试或待完成门禁；普通八点进程 SIGKILL 回归与既有 flush/fsync 契约保留。当前合同见 [LOGGER_CRASH_CONTRACT.md](../docs/LOGGER_CRASH_CONTRACT.md)。
+
 # Audit support retirement: retained ordinary Logger coverage
 
 Baseline: `cea39bb9a3d711de994e8dab003976e6c3f6abf4`, identical source tree to

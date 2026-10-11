@@ -64,10 +64,10 @@ Unix 数据报，重连由后续日志触发，不提供磁盘重试队列、历
 Logger/Console 不是信号安全 API；支持延迟取消或入口前禁用取消，不支持一般
 ASYNC+ENABLE 取消、跨调用 longjmp/pthread_exit 或宿主取消私有工作线程。
 
-普通文件故障回归保留八个进程崩溃切点；ext4/XFS 各八个 QEMU SIGKILL、同盘重启
-和恢复追加切点作为可选扩展验证，不要求每次基本 API 发布补跑 VM/掉电测试。
+普通文件故障回归保留八个进程崩溃切点；当前不维护 VM/断电测试，
+其专用测试程序、运行脚本、构建目标及 CI 已移除。
 既有 flush/fsync 契约不变。私有崩溃程序链接静态支持库，不等于生产共享 DSO 内部注入。
-这些受控虚拟存储证据不是物理断电、RAID/HBA/设备易失缓存或任意部署存储栈认证。
+历史受控虚拟存储证据不是当前测试覆盖，也不是物理断电、RAID/HBA/设备易失缓存或任意部署存储栈认证。
 详见[崩溃合同](LOGGER_CRASH_CONTRACT.md)和[已知边界](KNOWN_ISSUES.md)。
 
 ## 已有验证与最终发布验收
@@ -83,7 +83,7 @@ ASYNC+ENABLE 取消、跨调用 longjmp/pthread_exit 或宿主取消私有工作
 前序 #168 的成功记录另包含[发布包验证](https://github.com/MyBlackHole/c-logger/actions/runs/38123451968)、
 [最低内核](https://github.com/MyBlackHole/c-logger/actions/runs/38123451964)和
 [VM 断电](https://github.com/MyBlackHole/c-logger/actions/runs/38123451955)。这些是已有工程证据，
-不冒充上述 main 或最终发布 SHA 的执行，也不要求在每次最终 SHA 重新运行 VM。
+不冒充上述 main 或最终发布 SHA 的执行。VM 断电流程现已移除，旧记录仅供历史追溯。
 相关源码、构建输入及验证条件相同的历史平台证据，可按[发布工程](RELEASE_ENGINEERING.md)
 记录等价承接，保留旧 SHA/run ID 并注明未重新执行。适用 main 检查全绿不等于所有
 发布检查均在该 SHA 跑过，包的 `SOURCE_COMMIT` 仍须如实标识实际构建源码。

@@ -23,7 +23,7 @@ CI 固定使用 Xmake 3.1.1；工程最低要求提升为 2.8.5：SONAME version
 项目版本号只从仓库根目录 `VERSION` 读取。Xmake 描述域不开放文件 I/O，因此调用方
 先执行 `export LOGGER_PROJECT_VERSION="$(cat VERSION)"`，随后 configure/build/test/pack
 及其子进程都读取同一环境变量。CI 使用 `GITHUB_ENV` 在每个 Xmake job 内固定该值。
-生成的 `logger_version.h`、XPack 包名以及所有 CI（包括 VM power-cut）都不维护第二份
+生成的 `logger_version.h`、XPack 包名以及所有 CI 都不维护第二份
 发布版本号。
 
 ## 第一阶段覆盖
@@ -123,12 +123,12 @@ CI 对 25 个 production-linked core tests 分别运行：
 这一步最初验证 Xmake 能把 sanitizer 同时应用到 production static logger 与测试 executable。
 后续完整 regression parity 已迁入 Xmake，旧 CMake sanitizer gate 也已随 native CI 退役。
 
-## Crash / VM power-cut parity
+## 进程崩溃验证一致性
 
 当前 main 的 focused process-crash 已迁移为八个普通 Logger case：acknowledged、data
 fsync 前/后、真实 rotation 后的 data fsync、四个 file rotation switch 点。
 三个纯 Audit checkpoint 点明确退役，不再将历史 Audit hash-chain 成功当成普通 Logger 验收。
-新旧九项/十项到八项的逐项映射见 [crash 合同](LOGGER_CRASH_CONTRACT.md)。
+旧进程九项到八项的迁移见 [crash 合同](LOGGER_CRASH_CONTRACT.md)。
 
 八项统一使用 Xmake 原生 `group = "process-crash"`。`check_crash_matrix.py` 从实际日志核对
 精确集合，缺失、意外新增或失败均使 gate 失败，并保留JSON/JUnit/原始日志。
@@ -136,9 +136,8 @@ fsync 前/后、真实 rotation 后的 data fsync、四个 file rotation switch 
 专用 workflow 保持 main/manual 的 shared/static 配置各三次；PR只执行shared配置一次。
 两个配置的 crash executable 都链接静态 `logger_test_support`，不等于生产DSO内注入。
 
-QEMU guest 同样使用此普通 Logger fixture，静态链接仅测试支持库。PR和main/manual均运行
-完整8点×ext4/XFS矩阵，串口确认目标hook之后才SIGKILL QEMU，再同盘启动验证十条唯一
-baseline及两条恢复记录的完整字节。这里没有Audit chain verify，且不替代物理硬件断电验收。
+当前不维护 VM/断电测试，专用 guest、运行脚本、构建目标与 CI 已移除。
+历史结果只描述旧提交；最低内核 VM 兼容性验证继续保留。
 
 ## Install parity 3A
 
@@ -406,7 +405,7 @@ Xmake workflow 覆盖，因此不再保留第二套 CMake CI。为避免删掉�
 
 项目自身的 CMake build system 已完成退役：
 
-- production shared/static、tests、sanitizer、crash、VM power-cut、benchmark candidate、
+- production shared/static、tests、sanitizer、crash、benchmark candidate、
   install 与 packaging 均由 Xmake 驱动；
 - ABI allowlist 已迁到中立的 `abi/logger-1.0.symbols`；
 - 根 `CMakeLists.txt` 与旧 CMake packaging/helper 文件不再属于当前工程；
