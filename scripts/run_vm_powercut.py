@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Boot a minimal Linux guest twice, killing QEMU after acknowledged audit writes."""
+"""Boot a minimal Linux guest twice, killing QEMU at ordinary Logger persistence boundaries."""
 
 import argparse
 import gzip
 import lzma
+import json
 import os
 from pathlib import Path
 import shutil
@@ -11,6 +12,8 @@ import signal
 import subprocess
 import sys
 import time
+
+from crash_contract import MIGRATION, POINTS
 
 
 def _copy_module(stage, source):
@@ -128,7 +131,7 @@ def boot(root, kernel, kernel_release, disk, binary, filesystem, phase, point, t
         seen = False
         try:
             while time.monotonic() < deadline:
-                if marker in log.read_bytes():
+                if marker in log.read_bytes().splitlines():
                     seen = True
                     if phase == "write":
                         os.killpg(proc.pid, signal.SIGKILL)
@@ -146,6 +149,11 @@ def boot(root, kernel, kernel_release, disk, binary, filesystem, phase, point, t
     print(f"{phase}: marker observed; serial log: {log}", flush=True)
     if phase == "write" and proc.returncode != -signal.SIGKILL:
         raise RuntimeError(f"QEMU did not die by SIGKILL: {proc.returncode}")
+    if phase == "recover" and (proc.returncode != 0 or
+                               b"GUEST_EXIT_0" not in log.read_bytes().splitlines()):
+        raise RuntimeError(f"recovery guest did not shut down successfully: {proc.returncode}")
+    return {"phase": phase, "marker": marker.decode(), "marker_seen": seen,
+            "qemu_returncode": proc.returncode, "serial_log": str(log)}
 
 
 def main():
@@ -155,14 +163,10 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--filesystem", choices=("ext4", "xfs"), required=True)
-    parser.add_argument("--point", choices=(
-        "acknowledged", "before_audit_fsync", "after_audit_fsync",
-        "before_state_rename", "after_state_rename", "after_checkpoint_commit",
-        "file_after_archive_rename", "file_after_archive_dirsync",
-        "file_after_active_open", "file_after_active_dirsync"), required=True)
+    parser.add_argument("--point", choices=POINTS, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    disk = args.output / "audit-disk.raw"
+    disk = args.output / "logger-disk.raw"
     with disk.open("wb") as file:
         file.truncate(512 * 1024 * 1024)
     if args.filesystem == "ext4":
@@ -170,10 +174,27 @@ def main():
     else:
         mkfs = ["mkfs.xfs", "-f", "-q", str(disk)]
     subprocess.run(mkfs, check=True)
-    for phase in ("write", "recover"):
-        boot(args.output, args.kernel.resolve(), args.kernel_release,
-             disk.resolve(), args.binary.resolve(), args.filesystem,
-             phase, args.point, 180)
+    evidence = {
+        "contract": "ordinary-logger-crash-v1",
+        "boundary": "QEMU SIGKILL + same raw disk reboot; not physical power loss",
+        "filesystem": args.filesystem, "point": args.point,
+        "kernel_release": args.kernel_release, "migration": MIGRATION,
+        "phases": [], "status": "running",
+    }
+    report = args.output / "vm-matrix.json"
+    try:
+        for phase in ("write", "recover"):
+            evidence["phases"].append(boot(
+                args.output, args.kernel.resolve(), args.kernel_release,
+                disk.resolve(), args.binary.resolve(), args.filesystem,
+                phase, args.point, 180))
+        evidence["status"] = "passed"
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        evidence["status"] = "failed"
+        evidence["error"] = str(error)
+        raise
+    finally:
+        report.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":

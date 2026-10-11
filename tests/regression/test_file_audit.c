@@ -33,14 +33,6 @@ static int child(int argc, char **argv)
 	CHECK(!strcmp(argv[3], "sha256"));
 	audit_integrity_t alg = AUDIT_INTEGRITY_SHA256;
 	audit_config_t c = cfg("app", alg);
-	if (!strcmp(argv[1], "--crash")) {
-		c.rotation.mode = LOGGER_ROTATE_SIZE;
-		c.rotation.max_file_size = 1;
-		c.rotation.retention_days = 0;
-		CHECK(setenv("LOGGER_CRASH_POINT", argv[2], 1) == 0);
-		CHECK(audit_init(&c) == 0);
-		CHECK(!"requested crash hook was not reached");
-	}
 	if (!strcmp(argv[1], "--state-busy")) {
 		c.name = "other";
 		c.chain_state_path = "app.audit.state";
@@ -49,29 +41,6 @@ static int child(int argc, char **argv)
 	}
 	CHECK(0);
 	return 1;
-}
-static void crash(const char *point, audit_integrity_t alg)
-{
-	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	CHECK(dirfd >= 0);
-	audit_config_t c = cfg("app", alg);
-	CHECK(audit_init(&c) == 0);
-	audit_event_t e = audit_test_event("BASELINE");
-	CHECK(audit_write(&e) == 0 && audit_shutdown_status() == 0);
-	audit_ckpt_t before;
-	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &before) == 0);
-	char *args[] = { exe, "--crash", (char *)point, "sha256", NULL };
-	subprocess(args, 197);
-	CHECK(audit_init(&c) == 0);
-	e.event = "RECOVERED";
-	CHECK(audit_write(&e) == 0);
-	CHECK(audit_shutdown_status() == 0);
-	audit_ckpt_t after;
-	CHECK(audit_checkpoint_load_at(dirfd, "app.audit.state", &after) == 0);
-	CHECK(memcmp(before.hash, after.hash, 32) != 0);
-	CHECK(audit_recover_set_at(dirfd, "app", "app.audit.log", &after) == 0);
-	CHECK(count_event("RECOVERED") == 1);
-	CHECK(close(dirfd) == 0);
 }
 static void logger_blocks_audit(int state)
 {
@@ -144,7 +113,7 @@ int main(int argc, char **argv)
 {
 	if (argc > 1 && !strncmp(argv[1], "--", 2))
 		return child(argc, argv);
-	CHECK(argc == 2 || argc == 3);
+	CHECK(argc == 2);
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 	CHECK(n > 0);
 	exe[n] = 0;
@@ -158,10 +127,8 @@ int main(int argc, char **argv)
 		audit_blocks_logger();
 	else if (!strcmp(argv[1], "cwd"))
 		audit_cwd();
-	else {
-		CHECK(argc == 3 && !strcmp(argv[2], "sha256"));
-		crash(argv[1], AUDIT_INTEGRITY_SHA256);
-	}
+	else
+		CHECK(!"unknown historical Audit scenario");
 	audit_test_cleanup(dir);
 	return 0;
 }

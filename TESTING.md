@@ -60,22 +60,26 @@ scripts/check.sh production
 
 ### 专项崩溃测试
 
-9 个 持久性 进程崩溃用例 使用 Xmake 原生 `process-crash` 分组：
+8 个普通 Logger 持久性进程崩溃用例使用 Xmake 原生 `process-crash` 分组：
 
 ```sh
 scripts/check.sh crash
 # 或
 xmake test -g process-crash -j1
+xmake test -g crash-verifier -j1
 ```
 
-集合固定为：
+固定集合：已确认 baseline、普通 data fsync 前/后、真实轮转后的 data fsync 后、以及
+四个现有 file rotation switch 切断点。每项都在 pipe 确认真实切点后由父进程 SIGKILL，
+枚举 active + archives 逐字节验证唯一 baseline，再重开、追加和验证两个 recovery 记录。
+未确认 pre-fsync 尾部与已确认记录分开验收，普通 Logger 不自动修复 torn tail。
 
-- 4 个 Audit 检查点/fsync 切断点；
-- 1 个 Audit 轮转 崩溃恢复；
-- 4 个 file 轮转 switch 切断点。
-
-专用 `crash-recovery` CI 会 共享库/静态库 各执行 3 次，并用
-`scripts/check_crash_matrix.py` 从实际 Xmake log 核对精确集合，输出 JSON、JUnit 和原始日志。
+原 9 项中的三个纯 Audit checkpoint 点明确退役；普通 Logger 没有对应 checkpoint 合同。
+详细新旧映射、未确认尾部规则和真实切点见 [普通 Logger crash 合同](docs/LOGGER_CRASH_CONTRACT.md)。
+专用 `crash-recovery` CI 在 main/manual 对 shared/static 配置各执行 3 次，PR执行shared配置一次；
+私有 crash binary 始终链接静态测试支持 archive，不代表生产 shared DSO 注入。
+`scripts/check_crash_matrix.py` 核对精确八项并输出 JSON、JUnit 和原始日志。
+`crash-verifier` 用正负向 mutation fixture 验证验收器不会放过缺失、重复或损坏。
 
 ### Raw fork 防御
 
@@ -151,21 +155,21 @@ library。不能把 static wrapper test 误称为 DSO 内部拦截。
 
 ## QEMU 断电
 
-`.github/workflows/vm-powercut.yml` 构建 static test-only `vm_powercut_guest`，对 10 个 cut
-point 在 ext4 与 XFS 两种 raw 文件系统 image 上执行真实 QEMU SIGKILL、同盘重启、恢复、
-追加与 Audit chain verify。
-
-覆盖：
+`.github/workflows/vm-powercut.yml` 构建 static test-only `vm_powercut_guest`，对相同 8 个普通
+Logger cut point 在 ext4 与 XFS raw filesystem image 上执行真实 QEMU SIGKILL、同盘重启、
+完整 baseline 字节校验、重新打开和追加验证。PR和main/manual均运行完整8×2矩阵。
 
 - acknowledged baseline；
-- `before_audit_fsync` / `after_audit_fsync`；
-- `before_state_rename` / `after_state_rename` / `after_checkpoint_commit`；
+- `before_file_fsync` / `after_file_fsync` / `rotation_after_file_fsync`；
 - `file_after_archive_rename` / `file_after_archive_dirsync`；
 - `file_after_active_open` / `file_after_active_dirsync`。
 
-这证明 GitHub 运行器 上 virtual x86_64 + raw ext4/XFS + QEMU 存储路径的恢复行为，不替代
-真实服务器断电、RAID/HBA/NVMe/SATA 易失缓存、实际目标 挂载/存储栈 或最低
-支持 内核 的验收。
+原 10 点中的三个纯 Audit checkpoint 点退役，新增 rotated post-fsync 点。不存在 Audit chain
+verify 承诺。真实 syscall/hook、逐项映射与JSON证据见 [crash 合同](docs/LOGGER_CRASH_CONTRACT.md)。
+
+这证明指定运行器上 virtual x86_64 + raw ext4/XFS + QEMU 存储路径的恢复行为，不替代
+真实服务器物理断电、RAID/HBA/NVMe/SATA 易失缓存、实际目标挂载/存储栈或最低支持内核验收。
+普通进程 SIGKILL 保留宿主页缓存，与终止整台 QEMU 的边界不同。
 
 ## Queue 基准测试
 

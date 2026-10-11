@@ -502,21 +502,40 @@ if has_config("build_private_tests") then
     target("crash_recovery_test")
         set_kind("binary")
         set_default(false)
-        add_files("tests/test_crash_recovery.c")
+        add_files("tests/test_crash_recovery.c", "tests/crash_support.c")
         add_deps("logger_test_support")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_ldflags("-Wl,--wrap=logger_fault_crash_if_requested",
+                    "-Wl,--wrap=fsync", "-Wl,--wrap=clock_gettime", {force = true})
+        -- Ordinary Logger's exact eight-point process-crash contract.
         for _, point in ipairs({
-            "after_audit_fsync",
-            "before_state_rename",
-            "after_state_rename",
-            "after_checkpoint_commit"
+            "acknowledged", "before_file_fsync", "after_file_fsync",
+            "rotation_after_file_fsync", "file_after_archive_rename",
+            "file_after_archive_dirsync", "file_after_active_open",
+            "file_after_active_dirsync"
         }) do
             add_tests("crash_" .. point, {
                 group = "process-crash",
                 runargs = point,
-                timeout = 10
+                timeout = 20
             })
         end
+    target_end()
+
+    target("crash_contract_test")
+        set_kind("phony")
+        set_default(false)
+        add_deps("crash_recovery_test")
+        add_tests("verifier", {group = "crash-verifier", timeout = 60})
+        on_test(function (target, opt)
+            local binary = path.absolute(target:dep("crash_recovery_test"):targetfile())
+            local script = path.join(os.projectdir(), "tests", "test_crash_contract.py")
+            local code, errors = os.execv("python3", {script, "--binary", binary}, {
+                try = true,
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
     target_end()
 
     target("syslog_multi_test")
@@ -528,7 +547,7 @@ if has_config("build_private_tests") then
         add_tests("default", {timeout = 5})
     target_end()
 
-    -- Fixed nine-case process-crash evidence set.
+    -- Historical Audit-only regression, outside the ordinary Logger crash gate.
     target("audit_rotation_crash_regression")
         set_kind("binary")
         set_default(false)
@@ -538,7 +557,6 @@ if has_config("build_private_tests") then
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         add_ldflags("-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
         add_tests("rotation_crash_sha256", {
-            group = "process-crash",
             runargs = {"rotation", "sha256"},
             timeout = 30
         })
@@ -554,28 +572,17 @@ if has_config("build_private_tests") then
         for _, scenario in ipairs({"logger-busy", "state-busy", "audit-busy", "cwd"}) do
             add_tests("file_audit_" .. scenario, {runargs = scenario, timeout = 20})
         end
-        for _, point in ipairs({
-            "file_after_archive_rename",
-            "file_after_archive_dirsync",
-            "file_after_active_open",
-            "file_after_active_dirsync"
-        }) do
-            add_tests("file_crash_sha256_" .. point, {
-                group = "process-crash",
-                runargs = {point, "sha256"},
-                timeout = 20
-            })
-        end
     target_end()
 
     -- The QEMU guest deliberately links only the test-support archive.
     target("vm_powercut_guest")
         set_kind("binary")
         set_default(false)
-        add_files("tests/vm_powercut.c")
+        add_files("tests/vm_powercut.c", "tests/crash_support.c")
         add_deps("logger_test_support")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        add_ldflags("-static", "-Wl,--wrap=logger_fault_crash_if_requested", {force = true})
+        add_ldflags("-static", "-Wl,--wrap=logger_fault_crash_if_requested",
+                    "-Wl,--wrap=fsync", "-Wl,--wrap=clock_gettime", {force = true})
     target_end()
 end
 

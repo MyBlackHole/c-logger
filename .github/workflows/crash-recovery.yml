@@ -7,13 +7,14 @@ on:
       - "src/**"
       - "include/**"
       - "tests/test_crash_recovery.c"
-      - "tests/regression/test_audit_rotation_crash.c"
-      - "tests/regression/test_file_audit.c"
-      - "tests/regression/audit_support.h"
-      - "tests/regression/record_support.h"
-      - "tests/regression/crypto_support.h"
+      - "tests/crash_support.c"
+      - "tests/crash_support.h"
+      - "tests/test_crash_contract.py"
+      - "xmake.lua"
+      - "VERSION"
       - "tests/regression/support.h"
       - "scripts/check_crash_matrix.py"
+      - "scripts/crash_contract.py"
       - ".github/workflows/crash-recovery.yml"
   push:
     branches: [main]
@@ -24,6 +25,7 @@ on:
       - "include/**"
       - "tests/**"
       - "scripts/check_crash_matrix.py"
+      - "scripts/crash_contract.py"
       - ".github/workflows/crash-recovery.yml"
 
 permissions:
@@ -80,6 +82,11 @@ jobs:
               overall=1
             fi
           done
+
+          xmake test -g crash-verifier -j1 -vD 2>&1 | tee crash-verifier.log
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            overall=1
+          fi
 
           python3 scripts/check_crash_matrix.py \
             "${logs[@]}" \
