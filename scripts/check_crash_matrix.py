@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Verify the exact Xmake process-crash suite and emit machine-readable evidence."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
