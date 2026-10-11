@@ -1,23 +1,25 @@
-# Lockless / Atomic Protocol Proof Template
+<a id="lockless--atomic-protocol-proof-template"></a>
 
-任何新 lockless、atomic state machine、seqcount-like 或 RCU-like 方案在实现前复制本模板填写。
+# 无锁访问/原子协议证明模板
+
+任何新的无锁访问、原子状态机、类 seqcount 或类 RCU 方案，在实现前都应复制并填写本模板。
 
 ## 1. 目的
 
 - 要消除/避免的锁或竞争是什么？
-- benchmark/正确性问题证据是什么？
+- 基准测试/正确性问题证据是什么？
 
 ## 2. 参与者
 
 ```text
-Thread/role A:
-Thread/role B:
-Thread/role C:
+线程/角色 A：
+线程/角色 B：
+线程/角色 C：
 ```
 
 ## 3. 共享对象
 
-| 对象 | atomic/ordinary | writer | reader | lifetime owner |
+| 对象 | 原子/普通 | 写者 | 读者 | 生命周期所有者 |
 |---|---|---|---|---|
 | | | | | |
 
@@ -25,62 +27,80 @@ Thread/role C:
 
 列出所有状态和合法转换。
 
-## 5. linearization points
+<a id="5-linearization-points"></a>
 
-每个操作必须指出唯一或可证明的 linearization point。
+## 5. 线性化点
 
-## 6. publication
+每个操作必须指出唯一或可证明的线性化点。
+
+<a id="6-publication"></a>
+
+## 6. 发布
 
 ```text
-payload writes
-  -> release operation
-  -> acquire observation
-  -> payload reads
+负载写入
+  -> release 操作
+  -> acquire 观察
+  -> 负载读取
 ```
 
-逐条写明 atomic object 与 memory order。
+逐条写明原子对象与内存序。
 
-## 7. happens-before
+<a id="7-happens-before"></a>
 
-列出每条必要 HB edge；不能只写“用了 atomic”。
+## 7. 先发生于（happens-before）
 
-## 8. reclamation
+列出每条必要 HB 边；不能只写“用了原子操作”。
+
+<a id="8-reclamation"></a>
+
+## 8. 内存回收
 
 - 谁决定对象不再可达？
-- reader 如何退出？
-- final free 之前的 proof 是什么？
-- refcount/RCU/join/lock 分别承担什么，不承担什么？
+- 读者如何退出？
+- 最终释放内存之前的证明是什么？
+- 引用计数/RCU/join/锁分别承担什么，不承担什么？
 
-## 9. ABA / wraparound
+<a id="9-aba--wraparound"></a>
 
-- generation/counter 是否会 wrap？
+## 9. ABA / 回绕
+
+- 代次/计数器是否会回绕？
 - 地址是否可能复用？
 - CAS 是否可能把新对象误认成旧对象？
 
-## 10. wakeup/progress
+<a id="10-wakeupprogress"></a>
 
-- blocking / lock-free / wait-free？
-- lost wakeup 是否可能？
-- starvation 是否允许？
-- force wake/shutdown 怎么处理？
+## 10. 唤醒/进度
 
-## 11. failure/retry
+- 可阻塞 / 无锁（lock-free） / 无等待（wait-free）？
+- 唤醒丢失是否可能？
+- 饥饿是否允许？
+- 强制唤醒/关闭怎么处理？
 
-- CAS retry 是否重复 side effect？
-- partial publication 如何处理？
-- failure 是否可以安全回滚？
+<a id="11-failureretry"></a>
 
-## 12. C11 legality
+## 11. 失败/重试
+
+- CAS 重试是否重复副作用？
+- 部分发布如何处理？
+- 失败是否可以安全回滚？
+
+<a id="12-c11-legality"></a>
+
+## 12. C11 合法性
 
 明确证明不存在普通对象的无同步并发读写。
 
-## 13. verification
+<a id="13-verification"></a>
 
-- unit/white-box；
-- concurrency litmus；
+## 13. 验证
+
+- 单元/白盒测试；
+- 并发试金石测试；
 - TSan；
-- fault injection；
-- stress；
-- benchmark。
+- 故障注入；
+- 压力测试；
+- 基准测试。
 
-没有完整 proof 的 lockless 设计不得仅凭性能理由进入 production。
+没有完整证明的无锁访问设计不得仅凭性能理由进入生产环境。

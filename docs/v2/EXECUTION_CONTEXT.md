@@ -12,25 +12,35 @@ CALLBACK
 TEARDOWN
 ```
 
-### INIT
+<a id="init"></a>
 
-对象尚未 publish。允许构造资源，但失败必须完整 rollback。
+### 初始化（INIT）
 
-### PUBLIC_API
+对象尚未发布。允许构造资源，但失败必须完整回滚。
 
-由宿主线程调用。是否可阻塞、是否属于 hot path 由第二维标签决定。
+<a id="public_api"></a>
 
-### WORKER
+### 公开 API（PUBLIC_API）
 
-库自己的后台执行者。允许执行已明确授权的阻塞 I/O，但不能因此绕过 shutdown/quiescence protocol。
+由宿主线程调用。是否可阻塞、是否属于热路径由第二维标签决定。
 
-### CALLBACK
+<a id="worker"></a>
 
-由外部或内部 callback 驱动。必须明确 reentry 和锁约束，默认禁止形成反向等待。
+### 工作线程（WORKER）
 
-### TEARDOWN
+库自己的后台执行者。允许执行已明确授权的阻塞 I/O，但不能因此绕过关闭/静止状态协议。
 
-对象已经关闭 admission 或进入停止路径。只允许 teardown contract 中定义的操作。
+<a id="callback"></a>
+
+### 回调（CALLBACK）
+
+由外部或内部回调驱动。必须明确重入和锁约束，默认禁止形成反向等待。
+
+<a id="teardown"></a>
+
+### 销毁（TEARDOWN）
+
+对象已经关闭准入或进入停止路径。只允许销毁契约中定义的操作。
 
 ## 能力与约束
 
@@ -54,22 +64,22 @@ CALLBACK + MUST_NOT_BLOCK + NO_ALLOC
 ## 规则
 
 - 只有 MAY_BLOCK 上下文才能进行条件等待、不可控文件系统 I/O 或可能长期等待的 pthread 操作。
-- HOT_PATH 禁止无界 allocation、无界等待和未证明的同步开销。
-- NO_ALLOC 上下文不得通过 helper 间接分配。
+- HOT_PATH 禁止无界分配、无界等待和未证明的同步开销。
+- NO_ALLOC 上下文不得通过辅助函数间接分配。
 - CALLBACK 必须明确是否 REENTRANT；未声明时按不可重入设计。
 - TEARDOWN 不应为了完成清理再依赖大规模、可能失败的新分配。
-- 每个新 blocking call 在 review 中必须回答“为什么当前上下文允许阻塞”。
+- 每个新阻塞调用在审查中必须回答“为什么当前上下文允许阻塞”。
 
 ## 时间规则
 
-- wall-clock 日志时间：`CLOCK_REALTIME`。
-- timeout/deadline/retry/cooldown：`CLOCK_MONOTONIC`。
-- 优先 absolute monotonic deadline，避免反复计算 relative timeout。
-- ns/us/ms 转换必须 overflow-safe。
+- 墙上时钟日志时间：`CLOCK_REALTIME`。
+- 超时/截止时间/重试/冷却：`CLOCK_MONOTONIC`。
+- 优先绝对单调时钟截止时间，避免反复计算相对超时。
+- ns/us/ms 转换必须防止溢出。
 
 ## 栈规则
 
-- worker/public/callback 都必须有受控 stack footprint。
+- 工作线程/公开 API/回调都必须有受控栈占用。
 - 禁止大尺寸局部数组和深递归。
-- large scratch 使用有界 heap/workspace。
-- #101 关闭前建立 frame-size 编译门禁。
+- 大块临时存储使用有界堆/工作区。
+- #101 关闭前建立栈帧大小编译门禁。

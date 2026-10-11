@@ -1,119 +1,127 @@
-# Queue sleep/wakeup C11 proof
+<a id="queue-sleepwakeup-c11-proof"></a>
 
-状态：**#103 第二阶段 production contract**。
+# 队列睡眠/唤醒的 C11 证明
 
-本文件证明 queue 的 self-paced sleep/wakeup handshake。它不证明整个 MPSC
-queue，也不把 condition variable 当成 payload publication primitive。
+状态：**#103 第二阶段生产契约**。
+
+本文件证明队列的自节奏睡眠/唤醒握手。它不证明整个 MPSC
+队列，也不把条件变量当成负载发布原语。
 
 ## 1. 目的
 
-producer 在 worker 没有准备睡眠时不获取 `wait_mu`、不调用
-`pthread_cond_signal()`，保留 self-paced notification；同时必须保证最后一条
-record 不会因为 lost wakeup 永久留在 queue 中。
+生产者在工作线程没有准备睡眠时不获取 `wait_mu`、不调用
+`pthread_cond_signal()`，保留自节奏通知；同时必须保证最后一条
+记录不会因为唤醒丢失永久留在队列中。
 
 危险结果只有一个：
 
 ```text
-worker recheck 看不到新 record
-AND
-producer 看不到 worker 已 arm
-AND
-worker 随后进入 cond_wait
+工作线程重新检查时看不到新记录
+并且
+生产者看不到工作线程已建立等待准备
+并且
+工作线程随后进入 cond_wait
 ```
 
-## 2. 为什么删除旧 SC-fence handshake
+<a id="2-为什么删除旧-sc-fence-handshake"></a>
+
+## 2. 为什么删除旧 SC 栅栏握手
 
 旧实现使用：
 
 ```text
-worker:   store waiting=1 -> SC fence -> load slot.seq
-producer: store slot.seq   -> SC fence -> load waiting
+工作线程：存储 waiting=1 -> SC 栅栏 -> 加载 slot.seq
+生产者：  存储 slot.seq  -> SC 栅栏 -> 加载 waiting
 ```
 
-在实际主流架构上它可以表现为经典 Store-Buffering fence idiom，但 #103 的底线
+在实际主流架构上它可以表现为经典存储缓冲（Store-Buffering）栅栏惯用法，但 #103 的底线
 不是“当前 CPU 看起来工作”，而是 **ISO C11/C17 可证明**。
 
-WG14 DR 407 对 C11/C17 的 SC-fence 规则明确保留了这样的警告：SC fence 的
-total order 只直接覆盖 fence 本身，混用较弱 ordering 时不能一般化地声称恢复
-sequential consistency。后来 C++ P0668 又专门加强了 SC-fence 语义。
+WG14 DR 407 对 C11/C17 的 SC 栅栏规则明确保留了这样的警告：SC 栅栏的
+全序只直接覆盖栅栏本身，混用较弱内存序时不能一般化地声称恢复
+顺序一致性。后来 C++ P0668 又专门加强了 SC 栅栏语义。
 
-因此 c-logger 不把更晚的 C++ 加强规则倒灌成 C11 proof。旧双 fence 从
-production protocol 中删除。
+因此 c-logger 不把更晚的 C++ 加强规则倒灌成 C11 证明。旧双栅栏从
+生产协议中删除。
 
-## 3. 新协议：单 atomic RMW handoff
+<a id="3-新协议单-atomic-rmw-handoff"></a>
+
+## 3. 新协议：单原子变量 RMW 交接
 
 `consumer_waiting` 仍只表示 0/1：
 
 ```text
-0 = worker 未承诺睡眠
-1 = worker 在 wait_mu 下已经 arm，准备 recheck/cond_wait
+0 = 工作线程未承诺睡眠
+1 = 工作线程在 wait_mu 下已建立等待准备，准备重新检查/cond_wait
 ```
 
 但并发阶段对它的访问规则改变为：
 
-> 初始化之后，只要 producer/worker/force-wake 仍可能并发，所有修改都必须是
-> acq_rel read-modify-write；禁止加入 plain atomic store 修改该状态。
+> 初始化之后，只要生产者/工作线程/强制唤醒仍可能并发，所有修改都必须是
+> acq_rel 读-改-写；禁止加入普通原子存储修改该状态。
 
-worker：
+工作线程：
 
 ```text
-lock wait_mu
-exchange(waiting, 1, acq_rel)       // arm
-recheck queue/running
-  work/stop -> exchange(waiting, 0, acq_rel) -> unlock
-  empty/run -> pthread_cond_wait
+获取 wait_mu
+exchange(waiting, 1, acq_rel)       // 建立等待准备
+重新检查队列/running
+  有工作/停止 -> exchange(waiting, 0, acq_rel) -> 解锁
+  队列为空/继续运行 -> pthread_cond_wait
                ...
-exchange(waiting, 0, acq_rel)       // disarm
-unlock
+exchange(waiting, 0, acq_rel)       // 解除等待准备
+解锁
 ```
 
-producer：
+生产者：
 
 ```text
-write payload
-slot.seq = published (release)
-fetch_or(waiting, 0, acq_rel)       // RMW probe; value itself不变
-  old == 0 -> return
-  old == 1 -> lock wait_mu
+写入负载
+slot.seq = 已发布值（release）
+fetch_or(waiting, 0, acq_rel)       // RMW 探测；值本身不变
+  old == 0 -> 返回
+  old == 1 -> 获取 wait_mu
               exchange(waiting, 0, acq_rel)
-                old == 1 -> signal
-                old == 0 -> someone already resolved the wait state
-              unlock
+                old == 1 -> 通知
+                old == 0 -> 已有执行者处理了该等待状态
+              解锁
 ```
 
-shutdown：
+关闭：
 
 ```text
 running = 0
-lock wait_mu
+获取 wait_mu
 exchange(waiting, 0, acq_rel)
-cond_signal                          // unconditional force wake
-unlock
+cond_signal                          // 无条件强制唤醒
+解锁
 ```
 
 ## 4. C11 基础
 
-本 proof 只依赖 C11/C17 的三个基础性质：
+本证明只依赖 C11/C17 的三个基础性质：
 
-1. 每个 atomic object 有自己的 modification order；
-2. atomic read-modify-write 总是读取该 modification order 中紧邻其写入之前的
-   最后一个 value；
-3. release operation 与读取其值/其 release sequence 值的 acquire operation
+1. 每个原子对象有自己的修改顺序；
+2. 原子读-改-写总是读取该修改顺序中紧邻其写入之前的
+   最后一个值；
+3. release 操作与读取其值/其释放序列值的 acquire 操作
    建立 synchronizes-with，进而形成 happens-before。
 
 `atomic_exchange_explicit(..., memory_order_acq_rel)` 和
 `atomic_fetch_or_explicit(..., memory_order_acq_rel)` 同时承担 acquire 与
 release。
 
-## 5. payload publication 不变
+<a id="5-payload-publication-不变"></a>
 
-Queue record 的 linearization/publication point 仍然是：
+## 5. 负载发布不变
+
+队列记录的线性化/发布点仍然是：
 
 ```c
 atomic_store_explicit(&slot->seq, pos + 1, memory_order_release);
 ```
 
-consumer 只有：
+消费者只有：
 
 ```c
 atomic_load_explicit(&slot->seq, memory_order_acquire) == pos + 1
@@ -121,70 +129,76 @@ atomic_load_explicit(&slot->seq, memory_order_acquire) == pos + 1
 
 后才读取普通 `slot.record`。
 
-wakeup handoff 不替代 `slot.seq` publication，只保证 worker 在“决定是否睡眠”
-这一点不会与 producer 双向互相 miss。
+唤醒交接不替代 `slot.seq` 发布，只保证工作线程与生产者在“决定是否睡眠”
+这一点不会同时漏看对方的状态。
 
-## 6. MPSC reservation gap 边界
+<a id="6-mpsc-reservation-gap-边界"></a>
 
-MPSC 的 `enqueue_pos` 只分配 position，不发布 payload。因此 producer 可以出现：
+## 6. MPSC 预留空洞边界
+
+MPSC 的 `enqueue_pos` 只分配位置，不发布负载。因此生产者可以出现：
 
 ```text
-P0 reserve position N      // head, 暂未 publish
-P1 reserve position N+1
-P1 publish N+1
-P1 probe waiting
-worker arm
-worker recheck position N  // 仍然 empty
+P0 预留位置 N      // 队首，暂未发布
+P1 预留位置 N+1
+P1 发布 N+1
+P1 探测 waiting
+工作线程建立等待准备
+工作线程重新检查位置 N  // 仍为空
 ```
 
-所以“worker acquire 了某个 producer 的 wakeup handoff”**不等于**“当前 dequeue
-head 一定已经可消费”。最小 proof 中的 Q 必须理解为：**关闭当前 head gap 的
-publication**。
+所以“工作线程 acquire 了某个生产者的唤醒交接”**不等于**“当前出队
+队首一定已经可消费”。最小证明中的 Q 必须理解为：**填补当前队首空洞的
+发布**。
 
-上述 gap 不会造成 lost wake：
+上述空洞不会造成唤醒丢失：
 
-1. 如果 head producer P0 在 worker arm **之前** publish + probe，则 P0 的 RMW
-   也进入同一 handoff chain，worker arm acquire 之后 recheck 能看到 head
-   publication；
-2. 如果 P0 在 worker arm **之后** publish，则它必须在 publication 后执行自己的
-   RMW probe；worker 尚需睡眠时 waiting=1，因此 P0 进入 signal slow path；
-3. 如果中间已有 producer/worker/force-wake resolver 把 waiting 清成 0，则由
-   第 7 节的 resolver 规则保证该 wait cycle 已经被解决。
+1. 如果队首生产者 P0 在工作线程建立等待准备 **之前** 发布 + 探测，则 P0 的 RMW
+   也进入同一交接链，工作线程建立等待准备并执行 acquire 之后重新检查能看到队首
+   发布；
+2. 如果 P0 在工作线程建立等待准备 **之后** 发布，则它必须在发布后执行自己的
+   RMW 探测；工作线程尚需睡眠时 waiting=1，因此 P0 进入通知慢速路径；
+3. 如果中间已有生产者、工作线程或强制唤醒路径承担处理职责，把 waiting 清成 0，则由
+   第 7 节的等待处理责任规则保证该等待周期已经被解决。
 
-如果某 producer reserve 了 head position 后永久不再 publish，则 queue 本身已经
-因为 reservation hole 无法前进；这是 MPSC producer progress/cancellation 问题，
-不是 wakeup handshake 可以修复的问题。production logger API 在 runtime scope
-内禁用 deferred cancellation，避免在 queue publication 临界路径中被取消。
+如果某生产者预留了队首位置后永久不再发布，则队列本身已经
+因为预留空洞无法前进；这是 MPSC 生产者进度/取消问题，
+不是唤醒握手可以修复的问题。生产 Logger API 在运行时作用域
+内禁用延迟取消，避免在队列发布临界路径中被取消。
 
-`queue_wakeup_litmus` 的并发核心测试直接建模 head publisher；另有确定性
-reservation-gap case 验证“later slot 先 publish 后，head publisher 仍负责
-resolve 已 arm waiter”。
+`queue_wakeup_litmus` 的并发核心测试直接建模队首发布者；另有确定性
+预留空洞场景验证“后续槽位先发布后，队首发布者仍负责
+处理已经建立等待准备的等待者”。
 
-## 6. 最小两线程 proof
+<a id="6-最小两线程-proof"></a>
+
+## 6. 最小两线程证明
 
 定义：
 
 ```text
-Q = producer release-publish slot.seq
-P = producer acq_rel RMW probe waiting (fetch_or 0)
+Q = 生产者以 release 发布 slot.seq
+P = 生产者通过 acq_rel RMW 探测 waiting（fetch_or 0）
 
-A = worker acq_rel RMW arm waiting=1
-R = worker acquire recheck slot.seq
+A = 工作线程通过 acq_rel RMW 设置 waiting=1，建立等待准备
+R = 工作线程以 acquire 重新检查 slot.seq
 ```
 
-且有 program order：
+且有程序顺序：
 
 ```text
 Q sequenced-before P
 A sequenced-before R
 ```
 
-因为 A、P 都是同一个 `consumer_waiting` 上的 RMW，它们在该 atomic 的
-modification order 中必有先后。
+因为 A、P 都是同一个 `consumer_waiting` 上的 RMW，它们在该原子变量的
+修改顺序中必有先后。
 
-### Case 1: P 在 A 之前
+<a id="case-1-p-在-a-之前"></a>
 
-如果两者之间没有其他 modification，A 必须读取 P 写入的 0。
+### 情形 1： P 在 A 之前
+
+如果两者之间没有其他修改，A 必须读取 P 写入的 0。
 
 P 是 release，A 是 acquire，因此：
 
@@ -198,47 +212,51 @@ Q -> P  synchronizes-with  A -> R
 Q happens-before R
 ```
 
-所以 R 对对应 `slot.seq` 的 acquire observation 不能继续观察 Q 之前的
-generation；worker 会看到该 record 已发布，不会睡眠。
+所以 R 对对应 `slot.seq` 的 acquire 观察不能继续观察 Q 之前的
+代次；工作线程会看到该记录已发布，不会睡眠。
 
-如果 P 与 A 之间存在其他 producer 的 acq_rel RMW，它们逐个 acquire 前驱、
-再 release 给后继，形成传递 handoff chain；结论不变。
+如果 P 与 A 之间存在其他生产者的 acq_rel RMW，它们逐个 acquire 前驱、
+再 release 给后继，形成传递交接链；结论不变。
 
-### Case 2: A 在 P 之前
+<a id="case-2-a-在-p-之前"></a>
 
-没有 intervening clear 时，P 的 RMW 必须读取 A 写入的 1，因此返回
-`old == 1`，producer 进入 `wait_mu` slow path。
+### 情形 2： A 在 P 之前
 
-worker 从 arm 到决定 cond_wait 一直持有同一把 `wait_mu`：
+没有中间的清零操作时，P 的 RMW 必须读取 A 写入的 1，因此返回
+`old == 1`，生产者进入 `wait_mu` 慢速路径。
 
-- worker recheck 若已经看到 work/stop，会先 disarm 并 unlock；
-- worker 若仍决定睡眠，`pthread_cond_wait()` 原子释放 mutex 并进入等待；
-- producer 取得 mutex 后 claim 1->0，并 signal。
+工作线程从建立等待准备到决定 cond_wait 一直持有同一把 `wait_mu`：
 
-所以 producer 不会把 signal 发在 worker “已经承诺睡、但还没进入 wait” 的缝隙里。
+- 工作线程重新检查时若已看到待处理工作或停止状态，会先解除等待准备并解锁；
+- 工作线程若仍决定睡眠，`pthread_cond_wait()` 原子释放互斥锁并进入等待；
+- 生产者取得互斥锁后通过 1->0 取得通知职责，并发出通知。
 
-## 8. intervening 0 为什么安全
+所以生产者不会把通知发在工作线程“已经承诺睡、但还没进入等待”的缝隙里。
+
+<a id="8-intervening-0-为什么安全"></a>
+
+## 8. 中间出现的 0 为什么安全
 
 MPSC 下 P 可能在 A 之后，却读到 0；这只能因为 A 与 P 之间已经出现新的
-modification。production 中能把 1 变成 0 的路径只有：
+修改。生产环境中能把 1 变成 0 的路径只有：
 
-1. **producer signal claim**：持 `wait_mu` 的 producer 清 1->0，随后 signal；
-2. **worker disarm**：worker 自己 recheck 后决定不睡，或从 wait 返回后退出该
-   wait cycle；
-3. **force wake**：shutdown 持 `wait_mu` 清状态并无条件 signal。
+1. **生产者取得通知职责**：持 `wait_mu` 的生产者清 1->0，随后通知；
+2. **工作线程解除等待准备**：工作线程自己重新检查后决定不睡，或从等待返回后退出该
+   等待周期；
+3. **强制唤醒**：关闭路径持 `wait_mu` 清状态并无条件通知。
 
-三种 0 都已经把“这一次 arm 是否还需要通知”解决掉。因此后来 producer probe
-读到 0 可以直接 fast-return，不构成 lost wake。
+三种 0 都已经把“这一次建立等待准备是否还需要通知”解决掉。因此后来生产者探测
+读到 0 可以直接快速返回，不构成唤醒丢失。
 
 ## 9. 为什么所有修改都必须是 RMW
 
-设多个 producer 在 worker arm 前连续 publish：
+设多个生产者在工作线程建立等待准备前连续发布：
 
 ```text
 Q1 -> P1 -> P2 -> P3 -> A
 ```
 
-P1/P2/P3/A 都是 acq_rel RMW。每个 RMW 读取 modification order 的直接前驱：
+P1/P2/P3/A 都是 acq_rel RMW。每个 RMW 读取修改顺序的直接前驱：
 
 ```text
 P1 release
@@ -247,107 +265,119 @@ P1 release
         -> A acquire
 ```
 
-因此 publication happens-before 可以沿 chain 传递给 A。
+因此发布操作的 happens-before 关系可以沿链传递给 A。
 
-如果中间插入一个 plain store(0)，后续 A 可以只 acquire 那个 store，而不是
-producer 的 release chain；proof 会被破坏。所以：
+如果中间插入一个普通的存储 0 操作，后续 A 可以只 acquire 那个存储，而不是
+生产者的 release 链；证明会被破坏。所以：
 
 ```text
-atomic_init(..., 0)      // publish 前允许
-plain store while live   // 禁止
-acq_rel RMW while live   // 必须
+atomic_init(..., 0)      // 发布前允许
+并发生存期内使用普通存储   // 禁止
+并发生存期内使用 acq_rel RMW // 必须
 ```
 
-litmus harness 在两侧线程都停在 barrier 时使用 relaxed store 重置下一轮，这是
-测试 quiescent setup，不是 production 并发协议。
+试金石测试框架在两侧线程都停在屏障时使用 relaxed 存储重置下一轮，这是
+测试静止状态下的准备步骤，不是生产环境并发协议。
 
-## 10. multi-producer
+<a id="10-multi-producer"></a>
 
-多个 producer 的 probe 都是 `fetch_or(waiting, 0, acq_rel)`：
+## 10. 多生产者
 
-- waiting=0 时它们仍形成 RMW modification-order/release-acquire chain；
-- worker 后来的 arm acquire 最后一项即可传递看到先前 publications；
-- waiting=1 时一个或多个 producer 可能进入 slow path；
-- 在 `wait_mu` 下只有第一个 `claim_signal()` 能从 1 清成 0 并 signal；
-- 后续 producer claim 读到 0，直接退出。
+多个生产者的探测都是 `fetch_or(waiting, 0, acq_rel)`：
 
-因此 MPSC 不要求“每个 producer 都 signal”；只要求当前 arm 有一个 resolver。
+- waiting=0 时它们仍形成 RMW 修改顺序/release-acquire 链；
+- 工作线程后续建立等待准备时，以 acquire 读取最后一项即可传递地看到先前发布操作；
+- waiting=1 时一个或多个生产者可能进入慢速路径；
+- 在 `wait_mu` 下只有第一个 `claim_signal()` 能从 1 清成 0 并通知；
+- 后续生产者尝试取得通知职责时读到 0，直接退出。
 
-## 11. condvar / spurious wakeup
+因此 MPSC 不要求“每个生产者都通知”；只要求为当前等待准备指定一个承担处理职责的执行者。
+
+<a id="11-condvar--spurious-wakeup"></a>
+
+## 11. 条件变量 / 虚假唤醒
 
 `wait_cv` 只是阻塞通知，不是状态。
 
-worker 始终：
+工作线程始终：
 
 ```text
-lock wait_mu
-while (queue empty && running)
-    arm
-    recheck
+获取 wait_mu
+while (队列为空 && running)
+    建立等待准备
+    重新检查
     cond_wait
-disarm
-unlock
+解除等待准备
+解锁
 ```
 
-每次返回都重新检查 predicate，因此 spurious wakeup 安全。
+每次返回都重新检查谓词，因此虚假唤醒安全。
 
-## 12. shutdown / failure
+<a id="12-shutdown--failure"></a>
 
-- shutdown 的 `logger_queue_wake_force()` 不依赖 waiting hint，始终 signal；
-- `running=0` 后 worker predicate loop 会退出；
+## 12. 关闭/失败
+
+- 关闭的 `logger_queue_wake_force()` 不依赖等待提示，始终通知；
+- `running=0` 后工作线程谓词循环会退出；
 - `pthread_cond_wait()` 错误写入 `lifecycle_error` 并转 STOPPING；
-- queue storage final free 仍依赖 worker join/quiescence，不依赖
+- 最终释放队列存储仍依赖工作线程 join/静止状态，不依赖
   `consumer_waiting`。
 
-## 13. ABA / wraparound
+<a id="13-aba--wraparound"></a>
 
-`consumer_waiting` 不是 generation/identity，只是当前 wait-cycle 的 handoff
-state。其正确性来自：
+## 13. ABA / 回绕
 
-- 单 consumer；
-- `wait_mu` 串行化 arm -> recheck -> sleep/disarm；
-- 同一 atomic 的 RMW modification order；
-- producer resolver 规则。
+`consumer_waiting` 不是代次/身份，只是当前等待周期的交接
+状态。其正确性来自：
 
-queue position/generation wraparound 仍由 `slot.seq` 单独处理。
+- 单消费者；
+- `wait_mu` 串行化建立等待准备 -> 重新检查 -> 睡眠/解除等待准备；
+- 同一原子变量的 RMW 修改顺序；
+- 生产者承担等待处理职责的规则。
 
-## 14. progress 与成本
+队列位置/代次回绕仍由 `slot.seq` 单独处理。
 
-整体协议不是 lock-free/wait-free：
+<a id="14-progress-与成本"></a>
 
-- worker 可以阻塞在 condvar；
-- producer probe fast path不拿 mutex，但每个成功 enqueue 增加一个 acq_rel RMW；
-- 观察到 waiting=1 的 producer 可以阻塞在 `wait_mu`；
-- queue full/spill exhausted 仍按 bounded-overload policy 返回。
+## 14. 进度与成本
 
-RMW 会增加 `consumer_waiting` cacheline 的写竞争，因此 #103 必须用既有
-queue-benchmark 对比吞吐/notification。若性能不可接受，应在 #104 重新选择
-wakeup primitive；不能以未证明的 C11 协议换性能。
+整体协议不是无锁（lock-free）/无等待（wait-free）：
 
-## 15. C11 data-race 合法性
+- 工作线程可以阻塞在条件变量；
+- 生产者探测快速路径不拿互斥锁，但每个成功入队增加一个 acq_rel RMW；
+- 观察到 waiting=1 的生产者可以阻塞在 `wait_mu`；
+- 队列已满/溢出块耗尽仍按有界过载策略返回。
 
-- `slot.seq`、`consumer_waiting`、`running` 都是 atomic；
-- payload 由 `slot.seq` release/acquire 发布；
-- wait-entry 由 `wait_mu` 与 condvar contract 串行化；
+RMW 会增加 `consumer_waiting` 缓存行的写竞争，因此 #103 必须用既有
+queue-benchmark对比吞吐/通知。若性能不可接受，应在 #104 重新选择
+唤醒原语；不能以未证明的 C11 协议换性能。
+
+<a id="15-c11-data-race-合法性"></a>
+
+## 15. C11 数据竞争合法性
+
+- `slot.seq`、`consumer_waiting`、`running` 都是原子变量；
+- 负载由 `slot.seq` release/acquire 发布；
+- 等待入口由 `wait_mu` 与条件变量契约串行化；
 - 本协议不存在依赖 `volatile` 或普通共享对象的无同步读写。
 
 ## 16. 验证
 
-- `queue_notify_regression`：确定性覆盖 wait-entry gap；
-- `queue_wakeup_litmus`：直接竞争 worker arm 与 producer RMW probe，禁止
-  “worker misses record && producer misses arm”；
-- `queue_mpsc_regression`：8 producer + single consumer；
-- TSan：覆盖 notify/MPSC/litmus；
-- shutdown force-wake regression；
-- queue benchmark：评估每 enqueue 一次 acq_rel RMW 的代价。
+- `queue_notify_regression`：确定性覆盖等待入口缝隙；
+- `queue_wakeup_litmus`：直接竞争工作线程建立等待准备与生产者 RMW 探测，禁止
+  “工作线程漏看记录 && 生产者漏看工作线程已建立等待准备”；
+- `queue_mpsc_regression`：8 个生产者 + 单消费者；
+- TSan：覆盖通知/MPSC/试金石测试；
+- 关闭强制唤醒回归；
+- 队列基准测试：评估每入队一次 acq_rel RMW 的代价。
 
-测试是 proof evidence，不替代以上 C11 reasoning。
+测试是证明证据，不替代以上 C11 推理。
 
 ## 17. 规范依据
 
-- ISO/IEC 9899:2018 5.1.2.4 / 7.17.3：atomic modification order、
-  release sequence、release/acquire synchronizes-with；
-- ISO/IEC 9899:2018 7.17.7：atomic read-modify-write generic operations；
-- WG14 DR 407：SC fence 的边界与 C11/C17 修订背景；
-- C++ P0668 仅作为“后来标准为何加强 SC fence”的历史证据，不作为本 C11
-  correctness proof 的前提。
+- ISO/IEC 9899:2018 5.1.2.4 / 7.17.3：原子修改顺序、
+  释放序列、release/acquire synchronizes-with；
+- ISO/IEC 9899:2018 7.17.7：原子读-改-写泛型操作；
+- WG14 DR 407：SC 栅栏的边界与 C11/C17 修订背景；
+- C++ P0668 仅作为“后来标准为何加强 SC 栅栏”的历史证据，不作为本 C11
+  正确性证明的前提。
