@@ -5,8 +5,8 @@
 
 ## 尚未完成的发布事项
 
-- 根 VERSION 暂为1.0.0，ABI已切至SONAME 2 / LOGGER_2.0；开发包不得作为v1兼容产物发布。
-- 2.0公开API/ABI最终冻结、发布触发策略和文档收敛尚需完成。CI通过不等于正式release授权。
+- 根 VERSION=2.0.0，与SONAME 2 / LOGGER_2.0和安装/打包元数据一致；这是ABI 2开发身份，不是正式release或v1兼容承诺。
+- 2.0公开API/ABI最终冻结和精确提交的完整发布验收尚需完成。发布门禁只接受显式现存v2 tag；CI通过不等于正式release授权。
 - Audit/crypto源码和专用测试已退役；private/regression支持库仍用于普通Logger故障与锁检测，不能进入安装产物。
 - 每次生产候选必须在精确提交上验证GCC/Clang、shared/static、ASan/UBSan、TSan、安装消费、制品隔离和平台门禁。旧提交上的成功不能移用。
 

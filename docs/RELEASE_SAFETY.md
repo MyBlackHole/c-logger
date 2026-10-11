@@ -1,7 +1,7 @@
 # 显式发布门禁与安全迁移顺序
 
-本变更只关闭 `main` 自动发布入口并验证显式发布来源；不修改 `VERSION`、包标题、
-仓库权限或 secrets，也不代表批准任何正式 tag、手动 dispatch 或 release。
+阶段 A 只关闭 `main` 自动发布入口并验证显式发布来源；版本与包标题由独立的阶段 B 迁移。
+两阶段均不修改仓库权限或 secrets，也不代表批准任何正式 tag、手动 dispatch 或 release。
 
 ## 门禁合同
 
@@ -27,7 +27,7 @@
 
 ### A. 单独合并门禁
 
-1. 先审查本 PR 和本地/PR 测试；保持 `VERSION` 和包标题不变。
+1. 先审查门禁 PR 和本地/PR 测试；该 PR 保持 `VERSION` 和包标题不变。
 2. 合并前记录 `main` SHA、现有 release 与资产基线，并读取仓库 Actions runs 的
    `queued`、`in_progress`、`waiting`、`pending` 状态，筛出 `release-publish`。
    若存在旧发布活动，暂停合并并报告；不要擅自取消发布或改变仓库权限。
@@ -41,8 +41,9 @@
 ### B. 另一个 PR 才迁移版本和标题
 
 只有 A 的合并及线上无发布副作用核验完成后，才在另一个 PR 中迁移 `VERSION`、包标题
-和相应文档。本 PR 不执行这一阶段。该阶段仍不创建正式 tag、不触发 dispatch、
-不执行 release；未来正式发布需另外批准。
+和相应文档：`VERSION=2.0.0`，XPack 标题与 pkg-config 描述为 `ABI 2 development`。
+这只对齐开发身份，不代表 public API/ABI 最终冻结。该阶段仍不创建正式 tag、不触发
+dispatch、不执行 release；未来正式发布需另外批准。
 
 ## 过渡和并发边界
 
