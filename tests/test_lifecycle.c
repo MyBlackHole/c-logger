@@ -27,11 +27,11 @@ int main(void)
 		if (pthread_create(&t[i], 0, producer, 0))
 			return 2;
 	usleep(20000);
-	logger_shutdown(); /* races intentionally with producers */
+	logger_shutdown(); /* 有意与生产者竞争 */
 	atomic_store(&go, 0);
 	for (int i = 0; i < 8; i++)
 		pthread_join(t[i], 0);
-	/* post-shutdown global logging must be harmless */
+	/* 关闭后的全局日志调用必须无害 */
 	LOG_INFO("ignored after shutdown");
 	return 0;
 }

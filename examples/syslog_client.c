@@ -39,7 +39,7 @@ int main(int argc, char **argv)
 		       metrics.failed_records, metrics.last_error);
 	} else if (!error)
 		error = errno;
-	/* No other users exist. Even an I/O-error return frees the instance. */
+	/* 没有其他使用者。即使返回 I/O 错误也会释放实例。 */
 	if (logger_destroy_status(log) != 0 && !error)
 		error = errno;
 	if (error) {
