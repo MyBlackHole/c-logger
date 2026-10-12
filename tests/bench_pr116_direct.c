@@ -112,7 +112,7 @@ int main(int argc, char **argv)
 	uint64_t nt, nr, bytes, cap;
 	if (argc != 5 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &bytes) || number(argv[4], &cap)) {
-		fputs("usage: threads records payload_bytes queue_capacity\n", stderr);
+		fputs("usage: threads records bytes capacity\n", stderr);
 		return 2;
 	}
 	if (nt < 1 || nt > 16 || nr < 1 || nr > 20000 || bytes < 1 ||
