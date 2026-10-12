@@ -5,6 +5,18 @@
 static int fail_close, fail_join, fail_cond_destroy, fail_mutex_destroy;
 static int selected_fd = -1;
 static logger_t *subject;
+static int subject_freed;
+
+/* 只在仍然有效的对象上注入 destroy 失败，不对活跃同步对象调用
+ * 真正的 pthread_*_destroy。额外检查最终 logger_t 是否发生 free。
+ */
+void __real_free(void *);
+void __wrap_free(void *p)
+{
+	if (p == subject)
+		++subject_freed;
+	__real_free(p);
+}
 
 int __real_close(int);
 int __wrap_close(int fd)
@@ -96,12 +108,14 @@ int main(int argc, char **argv)
 	l = NULL; /* 销毁在每种返回情况下都消耗公开所有权 */
 	CHECK(expected ? rc == -1 && errno == expected : rc == 0);
 	if (lifecycle_error) {
-		/* 生命周期证明失败：实现必须故意保留对象与资源，
-		 * 而不是释放仍可能被访问的内存。
+		/* 失败注入在对象已合法静止后直接返回 EBUSY；测试不依赖
+		 * 对仍有使用者的 pthread 对象执行 destroy 的未定义行为。
 		 */
+		CHECK(subject_freed == 0);
 		CHECK(logger_process_object_count() == 1);
 		return 0;
 	}
+	CHECK(subject_freed == 1);
 	CHECK(logger_process_object_count() == 0);
 	if (selected_fd >= 0)
 		CHECK(fcntl(selected_fd, F_GETFD) == -1 && errno == EBADF);
