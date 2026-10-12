@@ -731,7 +731,7 @@ if has_config("build_regression_tests") then
         {"source_ownership_regression", "tests/regression/test_source_ownership.c",
             {"logger_format_line"}},
         {"destroy_status_regression", "tests/regression/test_destroy_status.c",
-            {"close", "pthread_join", "pthread_cond_destroy",
+            {"close", "free", "pthread_join", "pthread_cond_destroy",
              "pthread_mutex_destroy"}},
         {"constructor_rollback_regression",
             "tests/regression/test_constructor_rollback.c",
