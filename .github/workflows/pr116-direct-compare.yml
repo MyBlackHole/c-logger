@@ -1,0 +1,165 @@
+name: pr116-direct-production-comparison
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/pr116-direct-compare.yml"
+      - "tests/bench_pr116_direct.c"
+      - "scripts/compare_pr116_production.py"
+      - "tests/scripts/test_pr116_compare.py"
+      - "BENCHMARK.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pr116-direct-compare.yml"
+      - "tests/bench_pr116_direct.c"
+      - "scripts/compare_pr116_production.py"
+      - "tests/scripts/test_pr116_compare.py"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BEFORE_REF: c694c1220ea0df46b15e2cd72d67a610ca262e3f
+      AFTER_REF: 61b619d2461843b0bc9e49c5b4d324cead9da774
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 安装固定 Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: 验证独立判定器
+        run: python3 tests/scripts/test_pr116_compare.py -v
+
+      - name: 固定 PR #116 历史源码与修改范围
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BEFORE_REF^{commit}"
+          git cat-file -e "$AFTER_REF^{commit}"
+          test "$(git show "$BEFORE_REF:VERSION")" = "1.0.0"
+          test "$(git show "$AFTER_REF:VERSION")" = "1.0.0"
+          git diff --quiet "$BEFORE_REF" "$AFTER_REF" -- include/logger.h tests/bench_matrix.c
+          changed="$(git diff --name-only "$BEFORE_REF" "$AFTER_REF" -- src)"
+          expected="$(printf '%s\n' src/logger_queue.c src/logger_queue.h src/logger_worker.c)"
+          test "$changed" = "$expected"
+          git diff --check "$BEFORE_REF" "$AFTER_REF"
+          echo "历史前版本: $BEFORE_REF"
+          echo "历史后版本: $AFTER_REF"
+          echo "生产运行时代码差异仅为队列与工作线程的 3 个文件"
+
+      - name: 分别构建生产静态库和相同的公开 API 驱动
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pr116-build-evidence
+          xmake --version | tee pr116-build-evidence/xmake-version.txt
+          cc --version | head -1 | tee pr116-build-evidence/compiler.txt
+          uname -a > pr116-build-evidence/uname.txt
+          lscpu > pr116-build-evidence/lscpu.txt
+          for label in before after; do
+            if [ "$label" = before ]; then
+              ref="$BEFORE_REF"
+            else
+              ref="$AFTER_REF"
+            fi
+            tree="$RUNNER_TEMP/pr116-$label"
+            git worktree add --detach "$tree" "$ref"
+            test "$(git -C "$tree" rev-parse HEAD)" = "$ref"
+            cp tests/bench_pr116_direct.c "$tree/tests/bench_pr116_direct.c"
+            # 对两个历史提交附加完全相同的非生产目标；
+            # 历史生产库目标和源码必须逐字不变。
+            cat >> "$tree/xmake.lua" <<'XMAKE_TARGET'
+
+          -- PR #116 测量专用：不进入生产库，也不安装。
+          target("bench_pr116_direct")
+              set_kind("binary")
+              set_default(false)
+              add_files("tests/bench_pr116_direct.c")
+              add_deps("logger")
+              add_includedirs("include")
+              add_cflags("-std=gnu11", "-O3", "-DNDEBUG", "-Wall", "-Wextra",
+                         "-Werror", {force = true})
+              add_syslinks("pthread")
+          target_end()
+          XMAKE_TARGET
+            test -z "$(git -C "$tree" diff --name-only -- src include)"
+            (
+              cd "$tree"
+              export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+              xmake f -m release -o build-pr116 --build_shared=n \
+                --build_tests=n --build_private_tests=n \
+                --build_regression_tests=n --legacy_fork=n
+              xmake -rvD -j2 bench_pr116_direct
+            ) > "pr116-build-evidence/$label-build.log" 2>&1 || {
+              tail -150 "pr116-build-evidence/$label-build.log"
+              exit 1
+            }
+            grep -q -- '-O3' "pr116-build-evidence/$label-build.log"
+            grep -q 'LOGGER_ENABLE_FAULT_INJECTION=0' \
+              "pr116-build-evidence/$label-build.log"
+            if grep -Eq 'liblogger_(regression|test)_support[.]a' \
+              "pr116-build-evidence/$label-build.log"; then
+              echo "错误：链接了测试支持库" >&2
+              exit 1
+            fi
+            bin="$(find "$tree/build-pr116" -type f -name bench_pr116_direct -print -quit)"
+            lib="$(find "$tree/build-pr116" -type f -name liblogger.a -print -quit)"
+            test -n "$bin" && test -n "$lib"
+            test -x "$bin"
+            file "$bin" "$lib" | tee "pr116-build-evidence/$label-files.txt"
+            sha256sum "$bin" "$lib" | tee "pr116-build-evidence/$label-hashes.txt"
+            git -C "$tree" diff --name-only > \
+              "pr116-build-evidence/$label-overlay-changes.txt"
+            if [ "$label" = before ]; then
+              echo "PR116_BEFORE_BIN=$bin" >> "$GITHUB_ENV"
+              echo "PR116_BEFORE_LIB=$lib" >> "$GITHUB_ENV"
+            else
+              echo "PR116_AFTER_BIN=$bin" >> "$GITHUB_ENV"
+              echo "PR116_AFTER_LIB=$lib" >> "$GITHUB_ENV"
+            fi
+          done
+
+      - name: 同运行器交替负载和独立计数验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/compare_pr116_production.py \
+            --before-bin "$PR116_BEFORE_BIN" \
+            --after-bin "$PR116_AFTER_BIN" \
+            --before-lib "$PR116_BEFORE_LIB" \
+            --after-lib "$PR116_AFTER_LIB" \
+            --out pr116-direct-results \
+            --repeats 4 --records 2000 --pressure-records 10000 \
+            --timeout 30
+
+      - name: 发布对照摘要
+        if: always()
+        shell: bash
+        run: |
+          if [ -f pr116-direct-results/summary.md ]; then
+            cat pr116-direct-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f pr116-direct-results/error.txt ]; then
+            cat pr116-direct-results/error.txt >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 保存固定源码、生产构建及原始逐轮证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr116-production-direct-comparison
+          path: |
+            pr116-build-evidence/
+            pr116-direct-results/
+          if-no-files-found: warn
+          retention-days: 30
