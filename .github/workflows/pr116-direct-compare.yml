@@ -38,7 +38,7 @@ jobs:
           xmake-version: "3.1.1"
 
       - name: 验证独立判定器
-        run: python3 -m unittest -v tests/scripts/test_pr116_compare.py
+        run: python3 tests/scripts/test_pr116_compare.py -v
 
       - name: 固定 PR #116 历史源码与修改范围
         shell: bash
