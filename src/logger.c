@@ -298,9 +298,11 @@ static void logger_ctor_note_proof_error(logger_t *l, int rc)
 		memory_order_release, memory_order_relaxed);
 }
 
-/* 只回滚构造已完成的资源。同步、线程回收或存活对象计数失败意味着
- * 生命周期证明失败：立即停止并故意保留未发布的容器。
- * 调用者保留原始构造 errno；此返回值用于清理诊断。
+/* 构造候选尚未对外发布，无合法外部借用者；只回滚已完成的资源。
+ * 若已启动工作线程，须先停止并 join，才能释放它可访问的存储。
+ * 同步对象的 destroy 返回码不是“没有使用者”的证明：调用前就必须
+ * 满足静默期前提。销毁/线程回收/计数错误作为额外不变量故障保守保留容器。
+ * 调用者保留原始构造 errno；此返回值只用于清理诊断。
  */
 static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 {
@@ -596,8 +598,11 @@ static int dispose_body(logger_t *l, int *released)
 		return 0;
 	}
 
-	/* 按生命周期顺序先停止发布和执行，再证明工作线程与同步对象无人使用，
-	 * 最后释放依赖存储。证明失败时保留半退役对象，避免把不变量错误变成释放后使用。
+	/* 前提：宿主已停止并等待全部外部借用者结束，禁止新的原始指针访问。
+	 * 状态 STOPPING 不能自动排空外部借用者；成功 join 只证明内部工作线程
+	 * 已退出。满足这些先决条件后再销毁同步对象和依赖存储；
+	 * pthread_*_destroy 成功返回不能代替静默期证明。
+	 * 不变量检查失败时保留半退役对象，避免释放后使用。
 	 */
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
 			      memory_order_release);
@@ -663,7 +668,9 @@ static int dispose_body(logger_t *l, int *released)
 		}
 	}
 
-	/* 这些销毁操作是生命周期断言，不是尽力而为的清理。 */
+	/* 外部借用者已静止且工作线程已 join；以下销毁只做额外不变量
+	 * 检查，不是检测并发使用者的通用机制。失败时停止最终释放。
+	 */
 	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
 	if (destroy_rc) {
 		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
