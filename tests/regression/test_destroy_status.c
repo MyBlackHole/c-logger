@@ -13,8 +13,10 @@ static int subject_freed;
 void __real_free(void *);
 void __wrap_free(void *p)
 {
-	if (p == subject)
+	if (subject && p == subject) {
 		++subject_freed;
+		subject = NULL;
+	}
 	__real_free(p);
 }
 
