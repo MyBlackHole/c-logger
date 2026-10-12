@@ -263,6 +263,22 @@ jobs:
       - name: 运行回归支持用例
         run: xmake test -j1
 
+      - name: 验证锁跟踪翻译单元的宏配置正反例
+        shell: bash
+        run: |
+          set -euo pipefail
+          generated="$(find build -type f -name logger_version.h -print -quit)"
+          test -n "$generated"
+          flags=(-std=gnu11 -DLOGGER_STATIC_DEFINE=1 -Iinclude -Isrc "-I$(dirname "$generated")" -fsyntax-only)
+          # 用真实测试源码而非手写无关的宏片段检验编译模式。
+          cc "${flags[@]}" -DLOGGER_ENABLE_LOCKDEP=1 tests/regression/test_lockdep.c
+          if cc "${flags[@]}" -DLOGGER_ENABLE_LOCKDEP=0 tests/regression/test_lockdep.c > lockdep-disabled.log 2>&1; then
+            echo "错误：禁用 Lockdep 的测试翻译单元不应编译通过" >&2
+            exit 1
+          fi
+          grep -F 'lockdep regression requires LOGGER_ENABLE_LOCKDEP=1' lockdep-disabled.log
+
+
 
   # Keep the historical job id stable for branch-protection continuity, but
   # exercise the complete default-static test surface rather than only core tests.
