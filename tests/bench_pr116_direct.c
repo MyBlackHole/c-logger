@@ -77,8 +77,8 @@ static void *produce(void *opaque)
 
 	for (uint64_t i = 0; i < p->count; ++i) {
 		uint64_t start = clock_ns();
-		logger_log(p->logger, LOGGER_INFO, "bench", __FILE__,
-			   __LINE__, __func__, "%s", p->payload);
+		logger_log(p->logger, LOGGER_INFO, "bench", __FILE__, __LINE__,
+			   __func__, "%s", p->payload);
 		uint64_t diff = clock_ns() - start;
 		p->latency[i] = diff ? diff : 1;
 	}
@@ -111,14 +111,14 @@ int main(int argc, char **argv)
 {
 	uint64_t nt, nr, bytes, cap;
 	if (argc != 5 || number(argv[1], &nt) || number(argv[2], &nr) ||
-	    number(argv[3], &bytes) || number(argv[4], &cap) ||
-	    nt < 1 || nt > 16 || nr < 1 || nr > 20000 ||
-	    bytes < 1 || bytes > 1024 || cap < 64 || cap > 65536 ||
-	    nt * nr > 200000) {
+	    number(argv[3], &bytes) || number(argv[4], &cap)) {
 		fprintf(stderr, "usage: %s threads records payload_bytes queue_capacity\n",
 			argv[0]);
 		return 2;
 	}
+	if (nt < 1 || nt > 16 || nr < 1 || nr > 20000 || bytes < 1 ||
+	    bytes > 1024 || cap < 64 || cap > 65536 || nt * nr > 200000)
+		return 2;
 
 	char *message = malloc((size_t)bytes + 1);
 	uint64_t *latency = calloc((size_t)(nt * nr), sizeof(*latency));
@@ -144,10 +144,13 @@ int main(int argc, char **argv)
 		return 4;
 	}
 
-	struct start_gate gate = {
-		.mutex = PTHREAD_MUTEX_INITIALIZER,
-		.cond = PTHREAD_COND_INITIALIZER
-	};
+	struct start_gate gate = { 0 };
+	if (pthread_mutex_init(&gate.mutex, NULL))
+		return 3;
+	if (pthread_cond_init(&gate.cond, NULL)) {
+		pthread_mutex_destroy(&gate.mutex);
+		return 3;
+	}
 	size_t started = 0;
 	for (; started < (size_t)nt; ++started) {
 		args[started].logger = logger;
@@ -187,8 +190,7 @@ int main(int argc, char **argv)
 			drained = 1;
 			break;
 		}
-		struct timespec sleep_time = { .tv_sec = 0,
-					      .tv_nsec = 1000000L };
+		struct timespec sleep_time = { .tv_sec = 0, .tv_nsec = 1000000L };
 		nanosleep(&sleep_time, NULL);
 	}
 	uint64_t output_end = clock_ns();
@@ -214,37 +216,37 @@ int main(int argc, char **argv)
 	struct rusage usage = { 0 };
 	getrusage(RUSAGE_SELF, &usage);
 
-	printf("{\"threads\":%" PRIu64 ",\"records_per_thread\":%" PRIu64
-	       ",\"payload_bytes\":%" PRIu64 ",\"queue_capacity\":%" PRIu64
-	       ",\"attempted\":%zu,\"enqueued\":%" PRIu64
-	       ",\"emitted\":%" PRIu64 ",\"failed\":%" PRIu64
-	       ",\"dropped\":%" PRIu64 ",\"sync_fallbacks\":%" PRIu64
-	       ",\"spill_exhaustions\":%" PRIu64
-	       ",\"queue_storage_bytes\":%" PRIu64
-	       ",\"producer_wake_signals\":%" PRIu64
-	       ",\"worker_wait_count\":%" PRIu64
-	       ",\"producer_seconds\":%.9f,\"end_to_end_seconds\":%.9f"
-	       ",\"producer_logs_per_sec\":%.3f,\"end_to_end_logs_per_sec\":%.3f"
-	       ",\"api_p50_ns\":%" PRIu64 ",\"api_p95_ns\":%" PRIu64
-	       ",\"api_p99_ns\":%" PRIu64
-	       ",\"rss_peak_kib\":%ld,\"user_cpu_sec\":%.6f"
-	       ",\"system_cpu_sec\":%.6f,\"valid\":%s}\n",
-	       nt, nr, bytes, cap, count, metrics.enqueued,
-	       io.emitted_records, io.failed_records, drops,
-	       metrics.sync_fallbacks, diag.spill_exhaustions,
-	       diag.queue_storage_bytes, diag.producer_wake_signals,
-	       diag.worker_wait_count, producer_seconds,
-	       end_to_end_seconds,
-	       producer_seconds > 0 ? count / producer_seconds : 0.0,
+	printf("{\"threads\":%" PRIu64 ",\"records_per_thread\":%" PRIu64,
+	       nt, nr);
+	printf(",\"payload_bytes\":%" PRIu64 ",\"queue_capacity\":%" PRIu64,
+	       bytes, cap);
+	printf(",\"attempted\":%zu,\"enqueued\":%" PRIu64,
+	       count, metrics.enqueued);
+	printf(",\"emitted\":%" PRIu64 ",\"failed\":%" PRIu64,
+	       io.emitted_records, io.failed_records);
+	printf(",\"dropped\":%" PRIu64 ",\"sync_fallbacks\":%" PRIu64,
+	       drops, metrics.sync_fallbacks);
+	printf(",\"spill_exhaustions\":%" PRIu64, diag.spill_exhaustions);
+	printf(",\"queue_storage_bytes\":%" PRIu64, diag.queue_storage_bytes);
+	printf(",\"producer_wake_signals\":%" PRIu64,
+	       diag.producer_wake_signals);
+	printf(",\"worker_wait_count\":%" PRIu64, diag.worker_wait_count);
+	printf(",\"producer_seconds\":%.9f,\"end_to_end_seconds\":%.9f",
+	       producer_seconds, end_to_end_seconds);
+	printf(",\"producer_logs_per_sec\":%.3f",
+	       producer_seconds > 0 ? count / producer_seconds : 0.0);
+	printf(",\"end_to_end_logs_per_sec\":%.3f",
 	       end_to_end_seconds > 0 ?
-		       io.emitted_records / end_to_end_seconds : 0.0,
-	       valid ? pct(latency, count, 50) : 0,
-	       valid ? pct(latency, count, 95) : 0,
-	       valid ? pct(latency, count, 99) : 0,
-	       usage.ru_maxrss,
-	       usage.ru_utime.tv_sec + usage.ru_utime.tv_usec / 1e6,
-	       usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1e6,
-	       valid ? "true" : "false");
+		       io.emitted_records / end_to_end_seconds : 0.0);
+	printf(",\"api_p50_ns\":%" PRIu64, valid ? pct(latency, count, 50) : 0);
+	printf(",\"api_p95_ns\":%" PRIu64, valid ? pct(latency, count, 95) : 0);
+	printf(",\"api_p99_ns\":%" PRIu64, valid ? pct(latency, count, 99) : 0);
+	printf(",\"rss_peak_kib\":%ld", usage.ru_maxrss);
+	printf(",\"user_cpu_sec\":%.6f",
+	       usage.ru_utime.tv_sec + usage.ru_utime.tv_usec / 1e6);
+	printf(",\"system_cpu_sec\":%.6f",
+	       usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1e6);
+	printf(",\"valid\":%s}\n", valid ? "true" : "false");
 	fflush(stdout);
 	logger_destroy(logger);
 	pthread_mutex_destroy(&gate.mutex);
