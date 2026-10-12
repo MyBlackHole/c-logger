@@ -112,8 +112,7 @@ int main(int argc, char **argv)
 	uint64_t nt, nr, bytes, cap;
 	if (argc != 5 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &bytes) || number(argv[4], &cap)) {
-		fprintf(stderr, "usage: %s threads records payload_bytes queue_capacity\n",
-			argv[0]);
+		fputs("usage: threads records payload_bytes queue_capacity\n", stderr);
 		return 2;
 	}
 	if (nt < 1 || nt > 16 || nr < 1 || nr > 20000 || bytes < 1 ||
@@ -190,7 +189,7 @@ int main(int argc, char **argv)
 			drained = 1;
 			break;
 		}
-		struct timespec sleep_time = { .tv_sec = 0, .tv_nsec = 1000000L };
+		struct timespec sleep_time = { 0, 1000000L };
 		nanosleep(&sleep_time, NULL);
 	}
 	uint64_t output_end = clock_ns();
@@ -216,16 +215,16 @@ int main(int argc, char **argv)
 	struct rusage usage = { 0 };
 	getrusage(RUSAGE_SELF, &usage);
 
-	printf("{\"threads\":%" PRIu64 ",\"records_per_thread\":%" PRIu64,
-	       nt, nr);
-	printf(",\"payload_bytes\":%" PRIu64 ",\"queue_capacity\":%" PRIu64,
-	       bytes, cap);
-	printf(",\"attempted\":%zu,\"enqueued\":%" PRIu64,
-	       count, metrics.enqueued);
-	printf(",\"emitted\":%" PRIu64 ",\"failed\":%" PRIu64,
-	       io.emitted_records, io.failed_records);
-	printf(",\"dropped\":%" PRIu64 ",\"sync_fallbacks\":%" PRIu64,
-	       drops, metrics.sync_fallbacks);
+	printf("{\"threads\":%" PRIu64, nt);
+	printf(",\"records_per_thread\":%" PRIu64, nr);
+	printf(",\"payload_bytes\":%" PRIu64, bytes);
+	printf(",\"queue_capacity\":%" PRIu64, cap);
+	printf(",\"attempted\":%zu", count);
+	printf(",\"enqueued\":%" PRIu64, metrics.enqueued);
+	printf(",\"emitted\":%" PRIu64, io.emitted_records);
+	printf(",\"failed\":%" PRIu64, io.failed_records);
+	printf(",\"dropped\":%" PRIu64, drops);
+	printf(",\"sync_fallbacks\":%" PRIu64, metrics.sync_fallbacks);
 	printf(",\"spill_exhaustions\":%" PRIu64, diag.spill_exhaustions);
 	printf(",\"queue_storage_bytes\":%" PRIu64, diag.queue_storage_bytes);
 	printf(",\"producer_wake_signals\":%" PRIu64,
@@ -233,11 +232,14 @@ int main(int argc, char **argv)
 	printf(",\"worker_wait_count\":%" PRIu64, diag.worker_wait_count);
 	printf(",\"producer_seconds\":%.9f,\"end_to_end_seconds\":%.9f",
 	       producer_seconds, end_to_end_seconds);
-	printf(",\"producer_logs_per_sec\":%.3f",
-	       producer_seconds > 0 ? count / producer_seconds : 0.0);
-	printf(",\"end_to_end_logs_per_sec\":%.3f",
-	       end_to_end_seconds > 0 ?
-		       io.emitted_records / end_to_end_seconds : 0.0);
+	double producer_rate = 0.0;
+	double output_rate = 0.0;
+	if (producer_seconds > 0)
+		producer_rate = count / producer_seconds;
+	if (end_to_end_seconds > 0)
+		output_rate = io.emitted_records / end_to_end_seconds;
+	printf(",\"producer_logs_per_sec\":%.3f", producer_rate);
+	printf(",\"end_to_end_logs_per_sec\":%.3f", output_rate);
 	printf(",\"api_p50_ns\":%" PRIu64, valid ? pct(latency, count, 50) : 0);
 	printf(",\"api_p95_ns\":%" PRIu64, valid ? pct(latency, count, 95) : 0);
 	printf(",\"api_p99_ns\":%" PRIu64, valid ? pct(latency, count, 99) : 0);
