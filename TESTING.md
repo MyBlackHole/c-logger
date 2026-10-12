@@ -302,3 +302,55 @@ Logger/Console/context场景；原21项的4个Audit入口专属场景退役。�
 `bench_fixed_rate` 使用真实生产公开 API，静态/共享都可构建。运行和证据边界见
 `BENCHMARK.md` 的“固定到达率与真实文件”章节。`tests/scripts/test_fixed_rate_benchmark.py`
 独立验证原始数组分位、缺失/重复/损坏文件与未尝试记录的拒绝；这类验证器单测不是性能验收。
+
+## 两轮工程复审的验证证据与失败路径矩阵（#130）
+
+此矩阵记录**当前不含 Audit 的 ABI 2** 对原始复审 #121 已确认问题的
+测试入口与验证边界，不把规则扫描、编译成功、故障注入或 CI 整体绿色
+互相替代。原始问题复现固定在历史源码 06efa9e139e0d589c77d42456f8a62e7925cc795；
+对应修改均保留自己的 PR head 和 CI 证据，历史结果不能冒充最新 main 重跑。
+
+| 契约 | 修复/历史范围 | 真实可证伪验证 | 仍不证明什么 |
+|---|---|---|---|
+| #122 审计编码拒绝非法时间 | #131，旧含 Audit 代码 | 历史 #131 的正常/格式错误生产库对照及原始日志 | 当前 ABI 2 已移除 Audit/密码学；不能重引历史专用测试作为当前发布前提 |
+| #123 构造与工作线程抢先失败 | #132 | core-validation 运行 run_worker_startup.sh：normal、sync、create-error、worker-first、worker-live、join-error、destroy-error、creator-first、global-worker-first；直接链接实际生产静态库并检查 join/free、errno | 不能自动证明运行中 flush/watermark |
+| #124 工作线程失败与 flush 终止 | 已修复 | core-validation 运行 run_worker_failure.sh：等待者先/后、预留空洞、multiple、spurious、取消、后端错误与正常 drain 共 13 场景；生产库链接期注入与 ASan/UBSan、TSan 对照 | 人为合成 EIO 不等于默认 pthread_cond_wait 常见失败；故障成功退出不能冒充任意环境活性证明 |
+| #125 锁获取/释放错误传播 | 已修复 | xmake 中 lock_failure_regression：normal、emit、emit-unlock、queue-notify、queue-signal、force-wake 六项；实际 pthread 包装入口注入后断言未错误执行临界区/解锁及错误可见性 | 不说明有效非健壮 mutex 正常会返回合成的 EAGAIN |
+| #126 锁序在真实阻塞前检查 | 已修复 | lockdep_regression 的 real-recursive、real-abba、real-unlock 和 trylock/rwlock 正反例；错误路径在子进程中预期中止，检查不会等到死锁后才触发 | 跟踪六类已建模锁，不是完整进程中所有 pthread 锁的自动证明 |
+| #127 双 SC 栅栏最小模型 | #195 | N1570 7.17.3(11) 双全序推导及 RMW 完整协议边界 | 最小模型成立不等于旧整个 MPSC 已被证明 |
+| #128 唤醒改动性能成本 | #197 | 两次历史 #116 生产静态库同条件直接前后对照，完整逐轮计数、延迟分位、DROP/回退与二进制 SHA；详见 validation/PR116_DIRECT_PERFORMANCE_20261012.md | 历史 ABI 1 无法代替当前 ABI 2 的硬件性能/业务 SLO |
+| #129 销毁前静默期与安全释放 | #196 | destroy_status_regression 与 constructor_rollback_regression：正常/失败返回、外部 borrow 责任、worker join、free 拦截及资源保留 | pthread destroy 的成功返回不是外部无使用者证明 |
+
+### 配置一致性硬门禁
+
+现行 Xmake 构建边界是：
+
+- 生产 logger：LOGGER_ENABLE_LOCKDEP=0、LOGGER_ENABLE_FAULT_INJECTION=0。
+- 回归支持库 logger_regression_support：LOCKDEP=1、FAULT_INJECTION=0。
+- 私有故障支持库 logger_test_support：LOCKDEP=1、FAULT_INJECTION=1，绝不安装。
+- lockdep_regression 翻译单元自身必须 LOCKDEP=1，以防在测试源中意外
+  编译为无操作内联；实际真实锁用例必须按预期中止，而不是只调用跟踪器。
+
+除了既有 Xmake 实际编译、负向回归和生产制品隔离，xmake-parity 的 regression-tests
+在成功运行回归后，直接对同一个 tests/regression/test_lockdep.c
+执行正反编译：LOCKDEP=1 必须成功、LOCKDEP=0 必须因专用编译断言失败，
+并核对实际失败消息。**这不是文本搜索替代语义**；生产库/回归库本身是否正确链接
+仍由 Xmake 实际编译与测试结果检验，不因扫描宏字符串绿色就认为并发安全。
+
+### 证据身份和阶段状态
+
+- 实际 GitHub CI 的 SHA、workflow/job/run、工具链、构建产物、原始错误输出，
+  应引用相应 PR 的精确 head；例如 #132 的 [完整验证记录](https://github.com/MyBlackHole/c-logger/pull/132#issuecomment-6037796635)
+  与 #196 的 11 项工作流，不能替代未经执行的新提交身份。
+- 某些链接期测试产物的 SHA 记录在其 CI 日志和运行制品；若没有产物哈希或
+  此轮未重新执行，必须明确写“本轮未运行”，不能复制旧 SHA 假装新测试。
+- #103 的设计文档、锁矩阵、原子交接及用户态可行性结论已经落地；
+  泛化原子 load/store 包装、generic completion、seqcount、RCU/SRCU
+  在当前生产设计中均有理由不采用。是否完成**全部**并发/对象阶段仍需
+  分别检查实际失败矩阵、边界、R7 控制器阶段前提，而不能靠旧总议题勾选或 PR 数量。
+- #121 中 R7（控制器持有尚未发布的候选/退役对象时的实例锁阶段前提）
+  仍属于待审契约边界；类别跟踪器不能单独证明对象阶段。
+- 纯风格债务只做独立提交，不与上述生命周期、并发、锁语义问题混在一起。
+
+本节是验证入口、已知证据和未验证边界的索引；不自动扩大正式 2.0.0
+发布硬门槛，不恢复已经移除的 Audit/VM 断电测试，也不虚构未指定的生产 QPS/P99 阈值。
