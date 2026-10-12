@@ -289,8 +289,10 @@ int logger_queue_destroy(logger_queue_t *q)
 	if (wait_error)
 		return -wait_error;
 
-	/* 释放存储前先证明生命周期。如果任一同步对象仍有使用者，
-	 * 则故意保留全部队列存储，不释放等待者或生产者仍可访问的内存。
+	/* 调用方须先保证外部生产者静止、工作线程已 join，因而此处
+	 * 不再有对 wait_mu/wait_cv 及槽位的并发访问。pthread_*_destroy
+	 * 的返回码不是使用者检测器；仍被使用时调用 destroy 可能是未定义行为。
+	 * 将非零返回视作额外不变量失败，保守保留队列存储。
 	 */
 	int rc = pthread_cond_destroy(&q->wait_cv);
 	if (rc)
