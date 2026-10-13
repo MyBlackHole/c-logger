@@ -767,7 +767,7 @@ if has_config("build_regression_tests") then
              "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
              "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
              "logger_create", "logger_destroy_status", "logger_file_write",
-             "logger_file_reopen", "logger_stderr_writev_all", "fsync"}},
+             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "free"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
             {"logger_create", "logger_destroy_status", "logger_file_write",
              "logger_file_reopen", "logger_queue_push", "logger_format_line",
@@ -1218,6 +1218,18 @@ if has_config("build_regression_tests") then
         for _, scenario in ipairs({"writer", "acquire-fail"}) do
             add_tests("global_proof_handoff_" .. scenario,
                       {runargs = {"proof-handoff", scenario}, timeout = 20})
+        end
+    target_end()
+
+    -- R7 对象阶段每项独立进程，禁止在锁所有权不确定后重复清理。
+    target("global_lifecycle_regression")
+        for _, scenario in ipairs({
+            "normal", "candidate-writer-failure", "candidate-retain",
+            "shutdown-writer-failure", "shutdown-unlock-failure",
+            "shutdown-retain", "shutdown-io-receipt"
+        }) do
+            add_tests("global_r7_" .. scenario,
+                      {runargs = {"r7-stage", scenario}, timeout = 25})
         end
     target_end()
 
