@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "global_support.h"
 #include <stdarg.h>
+#include <stdint.h>
 #include <sys/wait.h>
 
 /* 库中没有钩子。GNU ld 包装函数控制精确的加锁前与后端内部边界；
@@ -12,6 +13,10 @@ static _Atomic int delayed, release_delayed, entered, release_backend;
 static _Atomic int writer_waiting, read_count, pause_create, pause_destroy,
 	pause_write;
 static _Atomic int fail_create, create_count, fail_dispose;
+/* R7 只追踪 logger_t 容器的实际 free，不把 destroy 返回码当作释放证明。 */
+static _Atomic uintptr_t tracked_instance;
+static _Atomic unsigned tracked_frees, tracked_destroy_calls;
+static _Atomic int reject_destroy_without_receipt;
 static _Atomic int recurse_create, recurse_destroy, recurse_write,
 	recurse_reopen, recurse_bootstrap;
 static _Atomic int recursion_checked, pause_bootstrap, fail_sync;
@@ -48,6 +53,17 @@ int __real_pthread_join(pthread_t, void **);
 int __real_pthread_cond_destroy(pthread_cond_t *);
 logger_t *__real_logger_create(const logger_config_t *);
 int __real_logger_destroy_status(logger_t *);
+void __real_free(void *);
+
+void __wrap_free(void *ptr)
+{
+	if (ptr && (uintptr_t)ptr ==
+		   atomic_load_explicit(&tracked_instance, memory_order_acquire)) {
+		atomic_fetch_add_explicit(&tracked_frees, 1, memory_order_relaxed);
+		atomic_store_explicit(&tracked_instance, 0, memory_order_release);
+	}
+	__real_free(ptr);
+}
 int __real_logger_file_write(logger_file_t *, const char *, size_t,
 			     const struct timespec *, int);
 int __real_logger_file_reopen(logger_file_t *);
@@ -179,10 +195,21 @@ logger_t *__wrap_logger_create(const logger_config_t *cfg)
 		errno = ENOSPC;
 		return NULL;
 	}
-	return __real_logger_create(cfg);
+	logger_t *created = __real_logger_create(cfg);
+	if (created)
+		atomic_store_explicit(&tracked_instance, (uintptr_t)created,
+					      memory_order_release);
+	return created;
 }
 int __wrap_logger_destroy_status(logger_t *l)
 {
+	atomic_fetch_add_explicit(&tracked_destroy_calls, 1,
+				  memory_order_relaxed);
+	/* 受控故障发生在最终释放前，不触碰真实同步对象。 */
+	if (atomic_exchange(&reject_destroy_without_receipt, 0)) {
+		errno = EIO;
+		return -1;
+	}
 	if (atomic_exchange(&pause_destroy, 0)) {
 		atomic_store(&entered, 1);
 		wait_flag(&release_backend);
@@ -552,6 +579,121 @@ static void unlock_shutdown_handoff(int acquire_fails)
 	CHECK(access("new.log", F_OK) == -1 && errno == ENOENT);
 }
 
+
+/* 下面每项独立进程运行：失败的 lock/proof 路径不在测试中非法销毁。
+ * 生产实现没有增加 hook，所有拒绝都作用于真实链接入口。
+ */
+static void r7_poisoned_state(void)
+{
+	int error = EIO;
+	pthread_t verifier;
+
+	CHECK(!pthread_create(&verifier, NULL, verify_poisoned_controller,
+			      &error));
+	CHECK(!pthread_join(verifier, NULL));
+	CHECK(logger_process_object_count() == 1);
+	CHECK(!atomic_load(&tracked_frees));
+	CHECK(atomic_load(&tracked_instance) != 0);
+}
+
+static void r7_stage_contract(const char *scenario)
+{
+	logger_config_t cfg = config_for("old.log", 0);
+	logger_config_t next = config_for("new.log", 0);
+
+	if (!strcmp(scenario, "normal")) {
+		CHECK(!logger_init(&cfg));
+		CHECK(logger_process_object_count() == 1);
+		CHECK(!atomic_load(&tracked_frees));
+		LOG_INFO("r7-first-generation");
+		CHECK(!logger_flush_status() && !stop_status());
+		CHECK(logger_process_object_count() == 0);
+		CHECK(atomic_load(&tracked_frees) == 1);
+		CHECK(!logger_init(&next) && !stop_status());
+		CHECK(logger_process_object_count() == 0);
+		CHECK(atomic_load(&tracked_frees) == 2);
+		CHECK(atomic_load(&tracked_destroy_calls) == 2);
+		return;
+	}
+
+	if (!strcmp(scenario, "candidate-writer-failure")) {
+		/* 候选从未对外发布；回滚销毁成功后才能创建新一代。 */
+		fail_writer = EDEADLK;
+		CHECK(logger_init(&cfg) == -1 && errno == EDEADLK);
+		CHECK(atomic_load(&create_count) == 1);
+		CHECK(atomic_load(&tracked_destroy_calls) == 1);
+		CHECK(atomic_load(&tracked_frees) == 1);
+		CHECK(logger_process_object_count() == 0);
+		CHECK(logger_flush_status() == -1 && errno == ENODEV);
+		CHECK(!logger_init(&next) && !stop_status());
+		CHECK(atomic_load(&tracked_frees) == 2);
+		return;
+	}
+
+	if (!strcmp(scenario, "candidate-retain")) {
+		/* 写锁获取失败，且候选销毁没有释放回执：禁止后继发布。 */
+		fail_writer = EDEADLK;
+		atomic_store(&reject_destroy_without_receipt, 1);
+		CHECK(logger_init(&cfg) == -1 && errno == EDEADLK);
+		CHECK(atomic_load(&tracked_destroy_calls) == 1);
+		r7_poisoned_state();
+		return;
+	}
+
+	CHECK(!logger_init(&cfg));
+	CHECK(logger_process_object_count() == 1);
+	CHECK(!atomic_load(&tracked_frees));
+
+	if (!strcmp(scenario, "shutdown-writer-failure")) {
+		/* 关闭写锁获取失败后回滚 STOPPING，并保留原实例。 */
+		fail_writer = EDEADLK;
+		CHECK(stop_status() == -1 && errno == EDEADLK);
+		CHECK(!atomic_load(&tracked_frees));
+		CHECK(logger_process_object_count() == 1);
+		CHECK(logger_init(&next) == -1 && errno == EALREADY);
+		LOG_INFO("r7-existing-generation");
+		CHECK(!logger_flush_status() && !stop_status());
+		CHECK(atomic_load(&tracked_frees) == 1);
+		CHECK(logger_process_object_count() == 0);
+		CHECK(!logger_init(&next) && !stop_status());
+		CHECK(atomic_load(&tracked_frees) == 2);
+		return;
+	}
+	if (!strcmp(scenario, "shutdown-unlock-failure")) {
+		/* 模拟写锁解锁失败，真实写锁仍持有；禁止再次 free/unlock。 */
+		fail_rw_unlock = EIO;
+		CHECK(stop_status() == -1 && errno == EIO);
+		CHECK(!atomic_load(&tracked_destroy_calls));
+		r7_poisoned_state();
+		int old_cancel;
+		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+					      &old_cancel));
+		CHECK(old_cancel == PTHREAD_CANCEL_DISABLE);
+		return;
+	}
+	if (!strcmp(scenario, "shutdown-retain")) {
+		/* 撤销发布成功，但销毁未实际执行，不得清空 g_retired。 */
+		atomic_store(&reject_destroy_without_receipt, 1);
+		CHECK(stop_status() == -1 && errno == EIO);
+		CHECK(atomic_load(&tracked_destroy_calls) == 1);
+		r7_poisoned_state();
+		return;
+	}
+	if (!strcmp(scenario, "shutdown-io-receipt")) {
+		/* 真实 final free 成功，返回合成 EIO：回执允许后续新代次。 */
+		atomic_store(&fail_dispose, 1);
+		CHECK(stop_status() == -1 && errno == EIO);
+		CHECK(atomic_load(&tracked_destroy_calls) == 1);
+		CHECK(atomic_load(&tracked_frees) == 1);
+		CHECK(logger_process_object_count() == 0);
+		CHECK(!stop_status());
+		CHECK(!logger_init(&next) && !stop_status());
+		CHECK(atomic_load(&tracked_frees) == 2);
+		return;
+	}
+	CHECK(!"unknown R7 object-stage scenario");
+}
+
 static void release_proof_failure(const char *kind)
 {
 	/* 全局锁失败不需要工作线程；只有线程回收或队列销毁测试
@@ -732,6 +874,9 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "release-proof")) {
 		CHECK(argc == 3);
 		release_proof_failure(argv[2]);
+	} else if (!strcmp(argv[1], "r7-stage")) {
+		CHECK(argc == 3);
+		r7_stage_contract(argv[2]);
 	} else if (!strcmp(argv[1], "proof-handoff")) {
 		CHECK(argc == 3);
 		unlock_shutdown_handoff(!strcmp(argv[2], "acquire-fail"));
