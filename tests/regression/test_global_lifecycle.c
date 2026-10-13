@@ -57,10 +57,10 @@ void __real_free(void *);
 
 void __wrap_free(void *ptr)
 {
-	if (ptr && (uintptr_t)ptr ==
-		   atomic_load_explicit(&tracked_instance, memory_order_acquire)) {
-		atomic_fetch_add_explicit(&tracked_frees, 1, memory_order_relaxed);
-		atomic_store_explicit(&tracked_instance, 0, memory_order_release);
+	uintptr_t candidate = atomic_load(&tracked_instance);
+	if (ptr && (uintptr_t)ptr == candidate) {
+		atomic_fetch_add(&tracked_frees, 1);
+		atomic_store(&tracked_instance, 0);
 	}
 	__real_free(ptr);
 }
@@ -197,8 +197,7 @@ logger_t *__wrap_logger_create(const logger_config_t *cfg)
 	}
 	logger_t *created = __real_logger_create(cfg);
 	if (created)
-		atomic_store_explicit(&tracked_instance, (uintptr_t)created,
-					      memory_order_release);
+		atomic_store(&tracked_instance, (uintptr_t)created);
 	return created;
 }
 int __wrap_logger_destroy_status(logger_t *l)
@@ -578,7 +577,6 @@ static void unlock_shutdown_handoff(int acquire_fails)
 	CHECK(logger_init(&replacement) == -1 && errno == EIO);
 	CHECK(access("new.log", F_OK) == -1 && errno == ENOENT);
 }
-
 
 /* 下面每项独立进程运行：失败的 lock/proof 路径不在测试中非法销毁。
  * 生产实现没有增加 hook，所有拒绝都作用于真实链接入口。
