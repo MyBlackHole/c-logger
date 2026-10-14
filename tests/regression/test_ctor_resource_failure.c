@@ -101,15 +101,14 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mu,
 }
 
 int __real_pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *);
-int __wrap_pthread_cond_init(pthread_cond_t *cv,
-			     const pthread_condattr_t *attr)
+int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *a)
 {
 	unsigned call = ++cond_calls;
 	if (fault == FAULT_COND && call == target) {
 		++refused;
 		return EAGAIN;
 	}
-	return __real_pthread_cond_init(cv, attr);
+	return __real_pthread_cond_init(cv, a);
 }
 
 int __real_pthread_create(pthread_t *, const pthread_attr_t *,
@@ -169,8 +168,10 @@ int main(int argc, char **argv)
 		logger_t *candidate = logger_create(&cfg);
 		CHECK(candidate == NULL);
 		CHECK(refused == 1);
-		CHECK(errno == (fault == FAULT_MUTEX || fault == FAULT_COND ?
-				       EAGAIN : ENOMEM));
+		int expected_error = ENOMEM;
+		if (fault == FAULT_MUTEX || fault == FAULT_COND)
+			expected_error = EAGAIN;
+		CHECK(errno == expected_error);
 		CHECK(created_workers == 0);
 		assert_no_leaks(); /* 部分构造不得遗留已分配工作区/同步对象。 */
 		fault = FAULT_NONE;
