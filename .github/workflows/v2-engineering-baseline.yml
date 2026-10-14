@@ -42,6 +42,12 @@ jobs:
       - name: 检查差异中的空白问题
         shell: bash
         run: git diff --check "origin/${{ github.base_ref }}...HEAD"
+      - name: 检验资源与同步语义检查器的正反例
+        run: python3 tests/scripts/test_semantic_failure_paths.py -v
+
+      - name: 检查生产资源与同步语义
+        run: python3 scripts/check_semantic_failure_paths.py
+
       - name: 检查新增源码行
         shell: bash
         run: python3 scripts/check_v2_diff.py "origin/${{ github.base_ref }}"
@@ -129,6 +135,12 @@ jobs:
 
       - name: 检查互斥锁错误处理门禁
         run: python3 scripts/check_lock_error_policy.py
+
+      - name: 检验资源与同步语义检查器的正反例
+        run: python3 tests/scripts/test_semantic_failure_paths.py -v
+
+      - name: 检查生产资源与同步语义
+        run: python3 scripts/check_semantic_failure_paths.py
 
       - name: 运行完整静态库测试集
         shell: bash

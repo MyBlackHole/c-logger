@@ -4,6 +4,7 @@
 #include <fcntl.h>
 static int fail_close, fail_join, fail_cond_destroy, fail_mutex_destroy;
 static int selected_fd = -1;
+static int selected_close_calls;
 static logger_t *subject;
 static int subject_freed;
 
@@ -23,10 +24,17 @@ void __wrap_free(void *p)
 int __real_close(int);
 int __wrap_close(int fd)
 {
+	int selected = fd == selected_fd && selected_fd >= 0;
+	if (selected)
+		++selected_close_calls;
+	/* 先由内核真正关闭 fd，再返回模拟的 EINTR / EIO。
+	 * Linux close(EINTR) 后 fd 可能已被复用，不可重试此整数。
+	 */
 	int rc = __real_close(fd);
-	if (fd == selected_fd && fail_close) {
+	if (selected && fail_close) {
+		int error = fail_close;
 		fail_close = 0;
-		errno = EIO;
+		errno = error;
 		return -1;
 	}
 	return rc;
@@ -95,15 +103,21 @@ int main(int argc, char **argv)
 		fail_cond_destroy = 1;
 	else if (!strcmp(argv[1], "mutex-destroy-error"))
 		fail_mutex_destroy = 1;
-	if (!strcmp(argv[1], "close-error")) {
+	if (!strcmp(argv[1], "close-error") ||
+	    !strcmp(argv[1], "close-eintr")) {
 		selected_fd = l->file_backend.fd;
-		fail_close = 1;
+		fail_close = !strcmp(argv[1], "close-eintr") ? EINTR : EIO;
 	}
 	int lifecycle_error = fail_join || fail_cond_destroy || fail_mutex_destroy;
-	int expected = io_error ? ENOSPC :
-		       fail_close ? EIO :
-		       fail_join ? EDEADLK :
-		       (fail_cond_destroy || fail_mutex_destroy) ? EBUSY : 0;
+	int expected = 0;
+	if (io_error)
+		expected = ENOSPC;
+	else if (fail_close)
+		expected = fail_close;
+	else if (fail_join)
+		expected = EDEADLK;
+	else if (fail_cond_destroy || fail_mutex_destroy)
+		expected = EBUSY;
 	for (int i = 0; i < (io_error ? 1 : 1000); ++i)
 		LOGGER_INFO(l, "test", "record=%d", i);
 	int rc = logger_destroy_status(l);
@@ -119,8 +133,10 @@ int main(int argc, char **argv)
 	}
 	CHECK(subject_freed == 1);
 	CHECK(logger_process_object_count() == 0);
-	if (selected_fd >= 0)
+	if (selected_fd >= 0) {
+		CHECK(selected_close_calls == 1);
 		CHECK(fcntl(selected_fd, F_GETFD) == -1 && errno == EBADF);
+	}
 	if (!io_error)
 		CHECK(log_contains("dispose.log", "record=999"));
 	subject = NULL;

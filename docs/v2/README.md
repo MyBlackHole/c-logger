@@ -43,6 +43,7 @@
 - [GLOBAL_R7_PROOF.md](GLOBAL_R7_PROOF.md)：控制器候选/退役对象阶段与最终释放的独立证明（#199）。
 - [MEMORY_MODEL.md](MEMORY_MODEL.md)：C11 内存模型、发布与无锁访问证明，由 #103 维护。
 - [LOCKDEP.md](LOCKDEP.md)：当前六种锁类的调试/测试检查与边界。
+- [SEMANTIC_FAILURE_POLICY.md](SEMANTIC_FAILURE_POLICY.md)：生产资源/同步语义门禁、故障注入映射及误报边界（#106）。
 - [QUEUE_WAKEUP_PROOF.md](QUEUE_WAKEUP_PROOF.md)：队列唤醒的 C11 证明。
 - [LOCKLESS_PROOF_TEMPLATE.md](LOCKLESS_PROOF_TEMPLATE.md)：新增无锁访问协议的审查模板。
 - [WORKER_STARTUP.md](WORKER_STARTUP.md) / [WORKER_FAILURE.md](WORKER_FAILURE.md)：工作线程启动与失败退出合同。
