@@ -429,8 +429,41 @@ pthread_cond_init 的调用。正常路径先验证当前的 9 / 1 / 3 / 2 次�
 由 adjacent 正式判定为 direct。
 
 本轮目标把当前资源清单 direct 提升至 **18/22**；
-另外 4 处文件目录、协调锁以及 fdopendir 获取仍要独立判断是否
-需要精确故障注入，不得因为其他构造路径全绿就宣称其已覆盖。
+后续四个文件目录/协调锁/DIR 获取点已由 `test_file_acquisition.c`
+提供精确故障场景，但仅在本轮适用 CI 全部成功并合并后，才可把
+当前静态资源清单整体视为 **22/22 direct**。其中每项 direct
+表示已审查的指定返回错误路径，不是所有故障模式的穷尽。
+
+## #106 文件资源取得失败的逐点回归
+
+`tests/regression/test_file_acquisition.c` 通过 GNU ld `--wrap`
+对真正的生产静态库四种入口进行精确失败控制：
+
+- bind-directory：`open(O_DIRECTORY)` 返回 EACCES，禁止错误发布，
+  未获得的 fd 不可伪造为需关闭资源。
+- lock-file：`openat(... .logger.lock ...)` 返回 EMFILE，
+  已取得的父目录 fd 必须归还，后继初始化能够成功。
+- retention-directory：轮转成功、进入保留清理时，
+  `openat(dirfd, ".", O_DIRECTORY)` 返回 EMFILE，
+  不得提前关闭新活动 fd；可在后继轮转恢复。
+- fdopendir：轮转后获取到临时目录 fd，但 `fdopendir(fd)`
+  返回 ENOMEM；该调用没有接管 fd，其原所有者必须实际关闭一次，
+  不能产生已释放 fd 的复用或双重关闭。
+
+附加 healthy 正常对照，合计 5 个独立进程场景；
+测试会统计由生产文件后端获得的 fd 与关闭/closedir，
+核对系统进程 fd 数恢复、已取得描述符释放、新活动文件不因
+单次保留清理失败错误退役。原有错误响应与恢复边界分别断言。
+
+`tests/regression/run_file_acquisition.sh` 直接链接**当前检出的生产
+liblogger.a**，而不是支持库，并输出精确 SOURCE_COMMIT、
+编译器、被测库和驱动 SHA-256 及每个场景结果；普通、ASan+UBSan、
+TSan 都纳入 core-validation。Xmake 回归目标另外共享同一份测试源。
+
+**在本 PR 精确 head 的全部适用 CI 成功并合并之前**，
+资源审查清单的 direct 变更仍只是待验收声明；不能把源码清单改动
+冒充已经通过的真实运行验证。该测试不能等价替代所有系统调用
+返回错误、极端文件系统语义或物理掉电证明。
 
 ## #106 资源获取审查清单
 
