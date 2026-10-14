@@ -802,6 +802,8 @@ if has_config("build_regression_tests") then
         {"file_backend_regression", "tests/regression/test_file_backend.c",
             {"openat", "fsync", "close", "clock_gettime",
              "logger_file_rename_noreplace", "unlinkat", "flock", "writev"}},
+        {"file_acquisition_regression", "tests/regression/test_file_acquisition.c",
+            {"open", "openat", "fdopendir", "close", "closedir"}},
         {"file_platform_regression", "tests/regression/test_file_platform.c",
             {"syscall"}},
         {"file_global_regression", "tests/regression/test_file_global.c",
@@ -1420,6 +1422,16 @@ if has_config("build_regression_tests") then
         }) do
             add_tests("file_" .. scenario,
                       {runargs = scenario, timeout = 20})
+        end
+    target_end()
+
+    target("file_acquisition_regression")
+        for _, scenario in ipairs({
+            "healthy", "bind-directory", "lock-file",
+            "retention-directory", "fdopendir"
+        }) do
+            add_tests("file_acquisition_" .. scenario,
+                      {runargs = scenario, timeout = 25})
         end
     target_end()
 
