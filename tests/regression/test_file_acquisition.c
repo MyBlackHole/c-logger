@@ -38,6 +38,14 @@ static void got_fd(int fd)
 	descriptors[acquired++] = (struct descriptor){ .fd = fd };
 }
 
+static int tracked_live_fd(int fd)
+{
+	for (unsigned i = 0; i < acquired; ++i)
+		if (descriptors[i].fd == fd && !descriptors[i].released)
+			return 1;
+	return 0;
+}
+
 static void released_fd(int fd)
 {
 	for (unsigned i = acquired; i > 0; --i) {
@@ -130,7 +138,7 @@ int __wrap_closedir(DIR *directory)
 	int fd = dirfd(directory);
 	CHECK(fd >= 0);
 	int rc = __real_closedir(directory);
-	if (!rc) {
+	if (!rc && tracked_live_fd(fd)) {
 		++closedir_calls;
 		released_fd(fd); /* libc closedir 内部 close 不一定会经过 --wrap。 */
 	}
@@ -223,6 +231,10 @@ int main(int argc, char **argv)
 		selected = FAULT_NONE;
 		struct timespec stamp = { 1700000000, 0 };
 		CHECK(!logger_file_write(&file, "c", 1, &stamp, 1));
+		/* 失败的轮转已经装入新的空活动 fd。先写满，再触发
+		 * 一次正常轮转，验证 retention 及 DIR 所有权恢复。
+		 */
+		CHECK(!logger_file_write(&file, "d", 1, &stamp, 1));
 	} else
 		two_writes(&file, 0);
 	CHECK(!logger_file_close_status(&file));
