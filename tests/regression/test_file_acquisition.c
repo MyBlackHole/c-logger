@@ -140,7 +140,8 @@ int __wrap_closedir(DIR *directory)
 	int rc = __real_closedir(directory);
 	if (!rc && tracked_live_fd(fd)) {
 		++closedir_calls;
-		released_fd(fd); /* libc closedir 内部 close 不一定会经过 --wrap。 */
+		/* libc closedir 内部 close 不一定会经过 --wrap。 */
+		released_fd(fd);
 	}
 	return rc;
 }
@@ -199,14 +200,15 @@ int main(int argc, char **argv)
 		CHECK(!"unknown file resource acquisition scenario");
 
 	unsigned baseline = open_descriptor_count();
-	logger_rotation_config_t rotation = {
-		.mode = LOGGER_ROTATE_SIZE,
-		.max_file_size = 1,
-		.retention_days = 1
-	};
+	logger_rotation_config_t rotation = { 0 };
+	rotation.mode = LOGGER_ROTATE_SIZE;
+	rotation.max_file_size = 1;
+	rotation.retention_days = 1;
 	logger_file_t file = LOGGER_FILE_EMPTY;
 	if (selected == FAULT_BIND_DIRECTORY || selected == FAULT_LOCK_FILE) {
-		int expected = selected == FAULT_BIND_DIRECTORY ? EACCES : EMFILE;
+		int expected = EMFILE;
+		if (selected == FAULT_BIND_DIRECTORY)
+			expected = EACCES;
 		errno = 0;
 		CHECK(logger_file_init(&file, "out.log", rotation, 0600) == -1);
 		CHECK(errno == expected && failed == 1);
