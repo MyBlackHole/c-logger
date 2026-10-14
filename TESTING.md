@@ -409,6 +409,29 @@ global_r7_publish_cas_poison：在 LOCKDEP=1 的回归支持库中对
 47 符号、SONAME/符号版本和安装消费由发布工作流独立覆盖。最终接口冻结
 必须以批准的固定提交重新审核，不得将设计选择或旧 CI 结果冒充发布通过。
 
+## #106 构造资源逐点故障注入
+
+`tests/regression/test_ctor_resource_failure.c` 在测试可执行文件中以
+GNU ld --wrap 拦截真实生产静态库对 calloc、malloc、pthread_mutex_init、
+pthread_cond_init 的调用。正常路径先验证当前的 9 / 1 / 3 / 2 次获取，
+随后由每个独立进程模拟 1 次获取失败，并确认：
+
+- 构造返回 NULL 并保留 ENOMEM / EAGAIN 的原始失败码；
+- 未启动 worker、Logger 的 live_objects 归零；
+- 每个成功取得的堆分配均被真实 free 一次，不以析构返回码冒充 free；
+- 清除故障后同一进程能重新创建、刷新并正常销毁一个异步实例。
+
+测试目标通过 Xmake `ctor_resource_failure_regression` 注册；
+`run_ctor_resource_failure.sh` 额外直接链接**当前检出的生产静态归档**，
+记录源码 commit、库/驱动 SHA-256、编译器和每个失败场景的原始结果。
+在普通、ASan+UBSan、TSan 配置下运行，且不启用生产故障宏或增加
+运行时代码。只有精确 PR head 的 CI 成功，才能将对应清单条目
+由 adjacent 正式判定为 direct。
+
+本轮目标把当前资源清单 direct 提升至 **18/22**；
+另外 4 处文件目录、协调锁以及 fdopendir 获取仍要独立判断是否
+需要精确故障注入，不得因为其他构造路径全绿就宣称其已覆盖。
+
 ## #106 资源获取审查清单
 
 `validation/resource_acquisitions.tsv` 在本次基线列出全部 22 个直接
