@@ -71,6 +71,11 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/regression/run_ctor_resource_failure.sh core-build | tee core-build/ctor-resource.log
+      - name: 运行文件 fd 与 DIR 所有权的生产库精确故障回归
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/regression/run_file_acquisition.sh core-build | tee core-build/file-acquisition.log
       - name: 运行 Global R7 候选/退役对象的生产静态库回归
         shell: bash
         run: |
@@ -89,6 +94,7 @@ jobs:
           cp core-build/global-r7.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/close-eintr.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/ctor-resource.log logger-format-evidence/ 2>/dev/null || true
+          cp core-build/file-acquisition.log logger-format-evidence/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -181,6 +187,18 @@ jobs:
           fi
           xmake -j2 logger
           bash tests/regression/run_ctor_resource_failure.sh sanitizer-build "$sanitizer"
+
+      - name: 文件 fd/DIR 取得失败的真实生产库 ASan/UBSan/TSan 检查
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            sanitizer="address,undefined"
+          else
+            sanitizer="thread"
+          fi
+          xmake -j2 logger
+          bash tests/regression/run_file_acquisition.sh sanitizer-build "$sanitizer"
 
       - name: 运行 Global R7 正常/故障路径的生产库运行时检查
         shell: bash
