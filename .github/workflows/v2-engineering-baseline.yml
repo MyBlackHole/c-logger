@@ -48,6 +48,12 @@ jobs:
       - name: 检查生产资源与同步语义
         run: python3 scripts/check_semantic_failure_paths.py
 
+      - name: 测试资源获取清单的正反例
+        run: python3 tests/scripts/test_resource_acquisitions.py -v
+
+      - name: 检查新增或变更资源获取点的所有权与失败证据
+        run: python3 scripts/check_resource_acquisitions.py
+
       - name: 检查新增源码行
         shell: bash
         run: python3 scripts/check_v2_diff.py "origin/${{ github.base_ref }}"
@@ -141,6 +147,12 @@ jobs:
 
       - name: 检查生产资源与同步语义
         run: python3 scripts/check_semantic_failure_paths.py
+
+      - name: 测试资源获取清单的正反例
+        run: python3 tests/scripts/test_resource_acquisitions.py -v
+
+      - name: 检查新增或变更资源获取点的所有权与失败证据
+        run: python3 scripts/check_resource_acquisitions.py
 
       - name: 运行完整静态库测试集
         shell: bash
