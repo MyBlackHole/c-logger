@@ -36,7 +36,7 @@
 - [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)：平台、工具链与构建支持边界。
 - [CODING_STYLE.md](CODING_STYLE.md)：Linux 风格 C 编码与编译器规则。
 - [EXECUTION_CONTEXT.md](EXECUTION_CONTEXT.md)：执行位置、阻塞/分配/热路径约束。
-- [ARCHITECTURE.md](ARCHITECTURE.md)：2.0 总体组件与对象模型，随 #104 收敛。
+- [ARCHITECTURE.md](ARCHITECTURE.md)：当前 2.0 对象/状态机设计审查基线，定义所有权、发布、退役、错误与后端边界（#104）；不代表获批发布。
 - [INVARIANTS.md](INVARIANTS.md)：2.0 不变量，随各子计划逐步冻结。
 - [OWNERSHIP.md](OWNERSHIP.md)：所有权/生命周期图，主要由 #102 维护。
 - [LOCKING.md](LOCKING.md)：锁职责、顺序与 lockdep 风格的契约，由 #103 维护。
