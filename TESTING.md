@@ -421,6 +421,13 @@ global_r7_publish_cas_poison：在 LOCKDEP=1 的回归支持库中对
 - 生产源码里对 close() 的 EINTR 循环重试失败关闭；
   不拒绝按语义需要重试的 fsync/read/write。
 
+链接期的 fd 故障回归也在 Xmake 的 destroy_status_regression 注册
+close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
+出的真实生产静态归档额外验证：先真正 close，再合成 EINTR/EIO，
+要求只发生一次对该 fd 的关闭、报告错误、最终释放 logger_t。
+该入口在普通/ASan+UBSan/TSan 中执行，不修改生产库或启用私有
+测试故障宏，记录源码 SHA、编译器、归档与驱动哈希及逐场景成功结果。
+
 在当前源码上直接执行：
 
     python3 tests/scripts/test_semantic_failure_paths.py -v
