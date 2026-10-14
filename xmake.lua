@@ -1433,6 +1433,22 @@ if has_config("build_regression_tests") then
             add_tests("file_acquisition_" .. scenario,
                       {runargs = scenario, timeout = 25})
         end
+        -- 文件实例和归档是可见持久工件：每个用例必须有独立 cwd。
+        -- 若失败，保留真实 stderr，而不是仅返回 Xmake 聚合结果。
+        on_test(function (target, opt)
+            local testname = opt.name:gsub("[^%w_-]", "_")
+            local rundir = path.join(target:autogendir(), "file-acquisition", testname)
+            os.tryrm(rundir)
+            os.mkdir(rundir)
+            local args = table.wrap(opt.runargs or target:get("runargs"))
+            local code, errors = os.execv(path.absolute(target:targetfile()), args, {
+                try = true,
+                timeout = opt.run_timeout or 25000,
+                curdir = rundir,
+                envs = opt.runenvs
+            })
+            return code == 0, errors or ("exit code: " .. tostring(code))
+        end)
     target_end()
 
     target("file_platform_regression")
