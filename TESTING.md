@@ -512,3 +512,25 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 拉取请求与 Ubuntu 20.04 GCC/Clang 基线均执行以上测试和实际检查。
 当前版本没有 Audit/密钥熵源或通用引用计数原语，不生成伪覆盖；
 任何新资源取得点仍要明确写出实际失败回滚测试、所有者及最终释放前提。
+
+## #107 模糊测试与属性回归
+
+[模糊测试与属性模型规范](docs/v2/FUZZ_PROPERTY_POLICY.md)明确公开
+配置、脱敏和有界队列当前实际使用的变异范围、预期判定和未覆盖边界。
+固定种子入口通过 Xmake 运行：
+
+- `public_fuzz_property_test`：以 4 个固定种子各生成 2048 次
+  受界公开 API 输入，验证实际 Logger 创建/错误返回及脱敏内容和哨兵。
+- `queue_model_properties`：以 6 个固定种子各执行 2500 步
+  入队/出队序列，与独立 FIFO 参考模型对照并验证溢出池归还。
+- `tests/fuzz/corpus/` 包含 9 个可以直接用作 Clang libFuzzer 输入的
+  原始文本种子。core-validation 的 `public-fuzz` 使用真正
+  `-fsanitize=fuzzer,address,undefined`，并对当前 Logger 生产源码
+  的**测试专用归档**启用 `inline-8bit-counters,pc-table,trace-cmp` 覆盖插桩，
+  对归档本身存在覆盖回调进行失败关闭验证。正式交付库仍单独
+  保持无模糊测试插桩；固定 seed 与有限运行次数的实际输入、
+  源提交、产物哈希及回调符号均保留为证据。
+
+这些测试故意不替代现行八生产者 MPSC、唤醒 litmus、锁错误注入和
+进程 SIGKILL 崩溃矩阵。故障触发时必须保留并固化最小复现输入；
+不能因为一轮 fuzz 无崩溃就把语义、性能或持久化宣布全部完成。

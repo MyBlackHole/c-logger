@@ -44,6 +44,7 @@
 - [MEMORY_MODEL.md](MEMORY_MODEL.md)：C11 内存模型、发布与无锁访问证明，由 #103 维护。
 - [LOCKDEP.md](LOCKDEP.md)：当前六种锁类的调试/测试检查与边界。
 - [SEMANTIC_FAILURE_POLICY.md](SEMANTIC_FAILURE_POLICY.md)：生产资源获取清单、同步语义门禁、故障注入矩阵及误报边界（#106）。
+- [FUZZ_PROPERTY_POLICY.md](FUZZ_PROPERTY_POLICY.md)：当前公开配置/脱敏有界模糊测试与 FIFO/溢出池属性模型（#107）。
 - [QUEUE_WAKEUP_PROOF.md](QUEUE_WAKEUP_PROOF.md)：队列唤醒的 C11 证明。
 - [LOCKLESS_PROOF_TEMPLATE.md](LOCKLESS_PROOF_TEMPLATE.md)：新增无锁访问协议的审查模板。
 - [WORKER_STARTUP.md](WORKER_STARTUP.md) / [WORKER_FAILURE.md](WORKER_FAILURE.md)：工作线程启动与失败退出合同。
