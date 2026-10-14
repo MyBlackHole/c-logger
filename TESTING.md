@@ -531,4 +531,3 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 这些测试故意不替代现行八生产者 MPSC、唤醒 litmus、锁错误注入和
 进程 SIGKILL 崩溃矩阵。故障触发时必须保留并固化最小复现输入；
 不能因为一轮 fuzz 无崩溃就把语义、性能或持久化宣布全部完成。
-
