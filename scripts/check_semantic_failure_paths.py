@@ -58,6 +58,14 @@ def inspect_text(text: str, label: str) -> list[str]:
     errors: set[str] = set()
 
     for found in DISCARDED_WAIT_OR_RWLOCK.finditer(code):
+        # 真实生产源码允许把赋值表达式换行，例如：
+        # int wait_rc =
+        #     pthread_cond_wait(...);
+        # 仅靠行首匹配会把右值误判成被丢弃的独立语句。
+        previous = code[:found.start()].rstrip()
+        if previous and (previous[-1] in "=(,+-*/%&|^!?:"
+                         or re.search(r"\\breturn$", previous)):
+            continue
         errors.add(
             f"{label}:{line_number(code, found.start('name'))}: "
             f"{found.group('name')}() 返回值被丢弃"
