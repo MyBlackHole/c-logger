@@ -64,7 +64,7 @@ def inspect_text(text: str, label: str) -> list[str]:
         # 仅靠行首匹配会把右值误判成被丢弃的独立语句。
         previous = code[:found.start()].rstrip()
         if previous and (previous[-1] in "=(,+-*/%&|^!?:"
-                         or re.search(r"\\breturn$", previous)):
+                         or re.search(r"\breturn$", previous)):
             continue
         errors.add(
             f"{label}:{line_number(code, found.start('name'))}: "
