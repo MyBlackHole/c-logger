@@ -28,12 +28,22 @@ static uint32_t next_random(uint32_t *state)
 
 static size_t text_length(unsigned choice)
 {
-	static const size_t lengths[] = {
-		0, 1, LOGGER_QUEUE_INLINE_TEXT - 1,
-		LOGGER_QUEUE_INLINE_TEXT, LOGGER_QUEUE_INLINE_TEXT + 1,
-		700, 900
-	};
-	return lengths[choice % (sizeof(lengths) / sizeof(lengths[0]))];
+	switch (choice % 7u) {
+	case 0:
+		return 0;
+	case 1:
+		return 1;
+	case 2:
+		return LOGGER_QUEUE_INLINE_TEXT - 1u;
+	case 3:
+		return LOGGER_QUEUE_INLINE_TEXT;
+	case 4:
+		return LOGGER_QUEUE_INLINE_TEXT + 1u;
+	case 5:
+		return 700;
+	default:
+		return 900;
+	}
 }
 
 static void write_record(logger_message_t *m, uint32_t *seed, int serial)
@@ -42,7 +52,8 @@ static void write_record(logger_message_t *m, uint32_t *seed, int serial)
 	memset(m, 0, sizeof(*m));
 	m->level = LOGGER_INFO;
 	m->line = serial;
-	m->metadata_mask = LOGGER_RECORD_META_MODULE | LOGGER_RECORD_META_SOURCE;
+	m->metadata_mask = LOGGER_RECORD_META_MODULE |
+			   LOGGER_RECORD_META_SOURCE;
 	m->module = "model";
 	m->file = "prefix/model.c";
 	m->func = "queue_property";
