@@ -109,10 +109,15 @@ int main(int argc, char **argv)
 		fail_close = !strcmp(argv[1], "close-eintr") ? EINTR : EIO;
 	}
 	int lifecycle_error = fail_join || fail_cond_destroy || fail_mutex_destroy;
-	int expected = io_error ? ENOSPC :
-		       fail_close ? fail_close :
-		       fail_join ? EDEADLK :
-		       (fail_cond_destroy || fail_mutex_destroy) ? EBUSY : 0;
+	int expected = 0;
+	if (io_error)
+		expected = ENOSPC;
+	else if (fail_close)
+		expected = fail_close;
+	else if (fail_join)
+		expected = EDEADLK;
+	else if (fail_cond_destroy || fail_mutex_destroy)
+		expected = EBUSY;
 	for (int i = 0; i < (io_error ? 1 : 1000); ++i)
 		LOGGER_INFO(l, "test", "record=%d", i);
 	int rc = logger_destroy_status(l);
