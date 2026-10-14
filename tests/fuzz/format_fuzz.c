@@ -64,18 +64,45 @@ static void number(struct sample *s, long value)
 	append(s, part);
 }
 
+static const char *reference_time(unsigned index, time_t *sec)
+{
+	switch (index) {
+	case 0:
+		*sec = 1700000000;
+		return "2023-11-14T22:13:20";
+	case 1:
+		*sec = 951782400;
+		return "2000-02-29T00:00:00";
+	default:
+		*sec = 2147483647;
+		return "2038-01-19T03:14:07";
+	}
+}
+
+static const char *reference_level(unsigned level)
+{
+	switch (level) {
+	case 0:
+		return "TRACE";
+	case 1:
+		return "DEBUG";
+	case 2:
+		return "INFO";
+	case 3:
+		return "WARN";
+	case 4:
+		return "ERROR";
+	case 5:
+		return "FATAL";
+	case 6:
+		return "OFF";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 static void prepare(struct sample *s, const uint8_t *data, size_t size)
 {
-	static const time_t seconds[] = { 1700000000, 951782400, 2147483647 };
-	static const char *const dates[] = {
-		"2023-11-14T22:13:20",
-		"2000-02-29T00:00:00",
-		"2038-01-19T03:14:07"
-	};
-	static const char *const levels[] = {
-		"TRACE", "DEBUG", "INFO", "WARN",
-		"ERROR", "FATAL", "OFF", "UNKNOWN"
-	};
 	unsigned options = byte(data, size, 0);
 	unsigned level = byte(data, size, 1) % 8u;
 	unsigned time_index = byte(data, size, 2) % 3u;
@@ -89,7 +116,7 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	c->include_tid = (options >> 3) & 1u;
 	c->include_source = (options >> 4) & 1u;
 	m->level = level == 7 ? (logger_level_t)255 : (logger_level_t)level;
-	m->ts.tv_sec = seconds[time_index];
+	const char *date = reference_time(time_index, &m->ts.tv_sec);
 	m->ts.tv_nsec = (long)word(data, size, 5) * 15001L;
 	m->pid = (pid_t)word(data, size, 9);
 	m->tid = m->pid + 17;
@@ -107,14 +134,15 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	m->file = (nulls & 2u) ? NULL : s->path;
 	m->func = (nulls & 4u) ? NULL : s->function;
 
-	append(s, dates[time_index]);
+	append(s, date);
 	char fractional[32];
 	int n = snprintf(fractional, sizeof(fractional), ".%06ld+0000 ",
 			 m->ts.tv_nsec / 1000L);
 	REQUIRE(n > 0 && (size_t)n < sizeof(fractional));
 	append(s, fractional);
-	append(s, levels[level]);
-	for (size_t i = strlen(levels[level]); i < 5; ++i)
+	const char *level_name = reference_level(level);
+	append(s, level_name);
+	for (size_t i = strlen(level_name); i < 5; ++i)
 		append(s, " ");
 	if (c->detail >= LOGGER_DETAIL_VERBOSE && c->include_pid) {
 		append(s, " pid=");
@@ -204,12 +232,17 @@ static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
 	char *out = (char *)buffer + GUARD;
 	size_t n = SIZE_MAX;
 	int rc = logger_format_line_checked(logger, &s->message, out, cap, &n);
-	int expected_rc = cap < 2 ? -EOVERFLOW :
-			  s->invalid_nsec ? -EINVAL :
-			  cap <= s->length ? -EOVERFLOW : 0;
-	REQUIRE(matches(buffer, cap, rc, n, expected_rc,
-			expected_rc ? "" : s->expected,
-			expected_rc ? 0 : s->length));
+	int expected_rc = 0;
+	if (cap < 2)
+		expected_rc = -EOVERFLOW;
+	else if (s->invalid_nsec)
+		expected_rc = -EINVAL;
+	else if (cap <= s->length)
+		expected_rc = -EOVERFLOW;
+	const char *want = expected_rc ? "" : s->expected;
+	size_t want_n = expected_rc ? 0 : s->length;
+	int ok = matches(buffer, cap, rc, n, expected_rc, want, want_n);
+	REQUIRE(ok);
 	if (!s->invalid_nsec) {
 		char wanted[LIMIT];
 		size_t length = 0;
@@ -248,13 +281,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	logger_t *logger = logger_create(&s->config);
 	REQUIRE(logger);
 	long valid_nsec = s->message.ts.tv_nsec;
-	if (s->invalid_nsec)
-		s->message.ts.tv_nsec = (byte(data, size, 3) & 1u) ?
-					       1000000000L : -1L;
-	size_t caps[] = { 0, 1, 2, s->length, s->length + 1,
-			  s->length + 2, word(data, size, 5) % LIMIT,
-			  LOGGER_LINE_MAX };
-	check_capacity(logger, s, caps[byte(data, size, 4) % 8u], 0);
+	if (s->invalid_nsec) {
+		s->message.ts.tv_nsec = -1;
+		if (byte(data, size, 3) & 1u)
+			s->message.ts.tv_nsec = 1000000000L;
+	}
+	size_t choice = byte(data, size, 4) % 8u;
+	size_t cap = LOGGER_LINE_MAX;
+	if (choice < 3)
+		cap = choice;
+	else if (choice < 6)
+		cap = s->length + choice - 3;
+	else if (choice == 6)
+		cap = word(data, size, 5) % LIMIT;
+	check_capacity(logger, s, cap, 0);
 	/* 每次失败后恢复纳秒，重测完整输出，覆盖复用相同时间戳缓存。 */
 	s->message.ts.tv_nsec = valid_nsec;
 	s->invalid_nsec = 0;
@@ -283,8 +323,10 @@ int main(int argc, char **argv)
 	char *end = NULL;
 	errno = 0;
 	unsigned long seed = exercise_oracle ? 107 : strtoul(argv[1], &end, 10);
-	REQUIRE(exercise_oracle || (end != argv[1] && !*end && !errno &&
-				     seed <= UINT32_MAX));
+	if (!exercise_oracle) {
+		REQUIRE(end != argv[1] && *end == 0);
+		REQUIRE(!errno && seed <= UINT32_MAX);
+	}
 	uint32_t state = seed ? (uint32_t)seed : UINT32_C(0x9e3779b9);
 	for (unsigned i = 0; i < 512; ++i) {
 		uint8_t input[64];
@@ -294,13 +336,13 @@ int main(int argc, char **argv)
 			state ^= state << 5;
 			input[j] = (uint8_t)state;
 		}
-		input[0] = (input[0] & ~3u) | (i & 3u);
+		input[0] = (input[0] & ~3u) | ((i / 8u) & 3u);
 		input[4] = (uint8_t)(i % 8u);
 		REQUIRE(!LLVMFuzzerTestOneInput(input, sizeof(input)));
 	}
 	REQUIRE(!exercise_oracle || negative_checks == 512u * 6u);
-	printf("format properties PASS seed=%lu inputs=512 rejected=%u\n",
-	       seed, negative_checks);
+	printf("format PASS seed=%lu inputs=512 rejected=%u\n", seed,
+	       negative_checks);
 	return 0;
 }
 #endif
