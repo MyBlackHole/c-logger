@@ -212,6 +212,50 @@ jobs:
           xmake -j2 logger
           bash tests/regression/run_global_r7.sh sanitizer-build "$sanitizer"
 
+  public-fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: 配置 Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: ${{ env.XMAKE_VERSION }}
+      - name: 使用 Clang 构建真实生产库的模糊测试目标
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang --version | head -n1
+          xmake f -m debug -o fuzz-build --toolchain=clang \
+            --build_shared=n \
+            --policies=build.sanitizer.address,build.sanitizer.undefined
+          xmake -j2 logger
+          mapfile -t libraries < <(find fuzz-build -type f -name liblogger.a -print)
+          test "${#libraries[@]}" -eq 1
+          clang -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -DLOGGER_STATIC_DEFINE=1 -Iinclude -I"fuzz-build/generated" \
+            -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+            tests/fuzz/public_fuzz.c "${libraries[0]}" -pthread \
+            -o fuzz-public
+          mkdir -p fuzz-evidence/corpus
+          cp tests/fuzz/corpus/* fuzz-evidence/corpus/
+          git rev-parse HEAD > fuzz-evidence/SOURCE_COMMIT
+          sha256sum "${libraries[0]}" fuzz-public | tee fuzz-evidence/sha256.txt
+      - name: 执行固定种子的有界真实 libFuzzer 与 ASan/UBSan
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASAN_OPTIONS=detect_leaks=1 timeout 120s ./fuzz-public \
+            -seed=107 -runs=3000 -max_len=128 -timeout=10 \
+            -artifact_prefix="$PWD/fuzz-evidence/" \
+            fuzz-evidence/corpus 2>&1 | tee fuzz-evidence/libfuzzer.log
+      - name: 保留种子、源码身份、产物哈希与模糊测试证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-fuzz-evidence
+          path: fuzz-evidence/
+          retention-days: 14
+
   shared-abi:
     runs-on: ubuntu-24.04
     steps:
