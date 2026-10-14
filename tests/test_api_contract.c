@@ -24,8 +24,8 @@ int main(void)
 
 	/* 此兼容状态入口不能被误改为 POSIX 风格 -1 + errno。 */
 	errno = 0;
-	if (logger_log_sync_status(NULL, LOGGER_INFO, NULL, NULL, 0,
-				   NULL, "%s", "invalid") != -EINVAL)
+	int rc = logger_log_sync_status(NULL, LOGGER_INFO, NULL, NULL, 0, NULL, "x");
+	if (rc != -EINVAL)
 		return 4;
 
 	/* Global 的未初始化与无效配置同样使用可观察的 POSIX 错误。 */
