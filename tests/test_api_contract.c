@@ -24,7 +24,8 @@ int main(void)
 
 	/* 此兼容状态入口不能被误改为 POSIX 风格 -1 + errno。 */
 	errno = 0;
-	int rc = logger_log_sync_status(NULL, LOGGER_INFO, NULL, NULL, 0, NULL, "x");
+	/* 空元数据用 C11 零指针常量；唯一被测错误是无实例。 */
+	int rc = logger_log_sync_status(NULL, LOGGER_INFO, 0, 0, 0, 0, "x");
 	if (rc != -EINVAL)
 		return 4;
 
