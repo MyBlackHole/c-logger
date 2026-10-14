@@ -737,6 +737,10 @@ if has_config("build_regression_tests") then
             "tests/regression/test_constructor_rollback.c",
             {"calloc", "free", "pthread_create", "pthread_cond_init", "pthread_cond_destroy",
              "pthread_mutex_destroy", "logger_process_object_release"}},
+        {"ctor_resource_failure_regression",
+            "tests/regression/test_ctor_resource_failure.c",
+            {"calloc", "malloc", "free", "pthread_mutex_init", "pthread_cond_init",
+             "pthread_create"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
         {"bench_matrix_accounting_regression", "tests/bench_matrix.c"},
@@ -985,6 +989,20 @@ if has_config("build_regression_tests") then
         }) do
             add_tests("constructor_rollback_" .. scenario,
                       {runargs = scenario, timeout = 15})
+        end
+    target_end()
+
+    target("ctor_resource_failure_regression")
+        add_tests("healthy", {runargs = "healthy", timeout = 20})
+        for index = 1, 9 do
+            add_tests("calloc_" .. index,
+                      {runargs = {"calloc", tostring(index)}, timeout = 20})
+        end
+        for _, kind in ipairs({{"malloc", 1}, {"mutex", 3}, {"cond", 2}}) do
+            for index = 1, kind[2] do
+                add_tests(kind[1] .. "_" .. index,
+                          {runargs = {kind[1], tostring(index)}, timeout = 20})
+            end
         end
     target_end()
 
