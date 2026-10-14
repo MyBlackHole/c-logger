@@ -8,14 +8,14 @@
 /* 同一入口可由 clang -fsanitize=fuzzer 或固定种子回放驱动。
  * 只调用已经安装的公开 Logger API，不包含私有故障钩子。
  */
-#define REQUIRE(cond)                                                       \
-	do {                                                                \
-		if (!(cond)) {                                              \
-			fprintf(stderr, "%s:%d: %s (errno=%d)\n",         \
-				__FILE__, __LINE__, #cond, errno);           \
-			abort();                                                \
-		}                                                           \
-	} while (0)
+static void fuzz_fail(const char *condition, int line)
+{
+	fprintf(stderr, "public_fuzz.c:%d: %s (errno=%d)\n",
+		line, condition, errno);
+	abort();
+}
+
+#define REQUIRE(cond) ((cond) ? (void)0 : fuzz_fail(#cond, __LINE__))
 
 static void mask_property(const uint8_t *data, size_t size)
 {
@@ -97,7 +97,7 @@ static void config_property(const uint8_t *data, size_t size)
 		expected_error = EPROTONOSUPPORT;
 		break;
 	case 2:
-		future.config.struct_size = (uint32_t)(sizeof(future.config) - 1u);
+		--future.config.struct_size;
 		expected_error = EINVAL;
 		break;
 	case 3:
@@ -121,7 +121,8 @@ static void config_property(const uint8_t *data, size_t size)
 		expected_error = EINVAL;
 		break;
 	case 8:
-		future.config.overflow[LOGGER_INFO] = (logger_overflow_policy_t)999;
+		future.config.overflow[LOGGER_INFO] =
+			(logger_overflow_policy_t)999;
 		expected_error = EINVAL;
 		break;
 	case 9:
