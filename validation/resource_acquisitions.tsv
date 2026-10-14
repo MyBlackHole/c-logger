@@ -1,0 +1,23 @@
+file	api	arguments	count	owner	failure_test	coverage	rationale
+src/logger.c	calloc	1,sizeof(*l)	1	创建者暂持有 logger_t，成功后宿主拥有	tests/regression/test_constructor_rollback.c	adjacent	构造失败必须先回滚已创建的附属资源；现有用例观察最终释放，尚未单独模拟最初 calloc 失败
+src/logger.c	pthread_cond_init	&l->progress_cv,NULL	1	logger_t 拥有刷新完成条件变量	tests/regression/test_constructor_rollback.c	adjacent	失败沿构造回滚，销毁错误另由回归验证；缺少针对该 init 精确失败的单独注入
+src/logger.c	pthread_create	&l->worker,NULL,logger_worker_main,l	1	logger_t 拥有单个工作线程，worker 借用 logger_t	tests/regression/test_worker_startup.c	direct	创建失败、worker 抢先失败与 join 次序有生产库正反对照
+src/logger.c	pthread_mutex_init	&l->emit_mu,NULL	1	logger_t 拥有输出互斥锁	tests/regression/test_constructor_rollback.c	adjacent	构造回滚必须按已初始化标记释放；当前未单独模拟 emit_mu 初始化返回错误
+src/logger.c	pthread_mutex_init	&l->progress_mu,NULL	1	logger_t 拥有刷新进度互斥锁	tests/regression/test_constructor_rollback.c	adjacent	构造回滚及销毁异常有测试，仍需定向验证进度锁初始化错误
+src/logger_file.c	fdopendir	fd	1	目录迭代器接管局部候选 fd，退出时 closedir	tests/regression/test_file_backend.c	adjacent	获取 DIR 成功后原 fd 所有权转移；当前缺少定向 fdopendir 失败注入
+src/logger_file.c	open	dir,O_RDONLY|O_DIRECTORY|O_CLOEXEC	1	文件后端拥有绑定目录描述符 dir_fd	tests/regression/test_file_backend.c	adjacent	绑定目录在构造失败时必须归还，现有文件路径/目录错误回归覆盖邻近路径
+src/logger_file.c	openat	"f->dir_fd,""."",O_RDONLY|O_DIRECTORY|O_CLOEXEC"	1	保留清理过程临时持有的目录描述符	tests/regression/test_file_backend.c	adjacent	候选目录 fd 被 fdopendir 接管或退出清理；尚未逐一注入此 openat 错误
+src/logger_file.c	openat	f->dir_fd,f->lock_name,O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK,0600	1	文件后端持有跨进程协调锁文件描述符	tests/regression/test_file_backend.c	adjacent	创建/独占获取失败不能发布文件实例；锁文件争用测试属真实路径验证
+src/logger_file.c	openat	f->dir_fd,f->name,flags,f->mode	1	候选活动文件描述符，验证成功后转给文件后端	tests/regression/test_file_backend.c	direct	活动 fd 的 openat 失败、替换、回滚和归档切点在真实后端回归中验证
+src/logger_queue.c	calloc	q->cap,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_constructor_rollback.c	adjacent	失败时不发布队列，已建立的资源按结构所有者回收；尚未定位每个 calloc 的单点错误
+src/logger_queue.c	calloc	q->spill_cap,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_constructor_rollback.c	adjacent	分配失败必须归还已分配主槽位；队列回滚已测，精确内存失败需额外注入
+src/logger_queue.c	pthread_cond_init	&q->wait_cv,NULL	1	logger_queue_t 拥有消费者等待条件变量	tests/regression/test_constructor_rollback.c	direct	队列条件变量初始化返回失败与最终回滚直接注入并验证
+src/logger_queue.c	pthread_mutex_init	&q->wait_mu,NULL	1	logger_queue_t 拥有消费者等待互斥锁	tests/regression/test_constructor_rollback.c	adjacent	等待互斥锁销毁失败已覆盖，单独 mutex_init 获取失败尚未定向注入
+src/logger_syslog.c	socket	AF_UNIX,SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0	1	Syslog 后端拥有非阻塞 UNIX socket 描述符	tests/regression/test_syslog_faults.c	direct	socket 创建/连接/关闭错误由真实 Syslog 故障回归验证
+src/logger_worker.c	calloc	1,sizeof(*workspace)	1	logger_t 拥有 worker workspace，线程仅借用	tests/regression/test_worker_startup.c	adjacent	构造未完成时不暴露执行器；失败回滚与 worker 生命周期测试覆盖相邻边界
+src/logger_worker.c	calloc	capacity,sizeof(*batch)	1	worker workspace 拥有批处理消息存储	tests/regression/test_worker_startup.c	adjacent	只有全部批处理存储就绪才能启动 worker；尚未逐个注入此分配失败
+src/logger_worker.c	calloc	capacity,sizeof(*copy)	1	worker workspace 拥有批处理 iovec 拷贝	tests/regression/test_worker_startup.c	adjacent	复制输出向量属于内部有界缓冲，分配失败必须在 worker 发布前回滚
+src/logger_worker.c	calloc	capacity,sizeof(*failed)	1	worker workspace 拥有逐项错误位	tests/regression/test_worker_startup.c	adjacent	未发布候选工作区在分配失败时释放其它批次资源，尚缺精确分配注入
+src/logger_worker.c	calloc	capacity,sizeof(*lens)	1	worker workspace 拥有输出长度数组	tests/regression/test_worker_startup.c	adjacent	长度数组与行缓冲一起构成工作区，必须一同回滚或转移所有权
+src/logger_worker.c	calloc	capacity,sizeof(*vec)	1	worker workspace 拥有批处理 iovec 数组	tests/regression/test_worker_startup.c	adjacent	消费者输出向量需先全部分配，随后才可向工作线程转移借用
+src/logger_worker.c	malloc	capacity*LOGGER_LINE_MAX	1	worker workspace 拥有有界格式化行内存	tests/regression/test_worker_startup.c	adjacent	固定容量行缓冲分配失败必须停止构造；逐获取点验证仍是单独债务
