@@ -1,0 +1,81 @@
+name: format-fuzz-properties
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "xmake.lua"
+      - "VERSION"
+      - "tests/fuzz/**"
+      - "tests/regression/run_format_properties.sh"
+      - ".github/workflows/format-fuzz-properties.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "include/**"
+      - "xmake.lua"
+      - "VERSION"
+      - "tests/fuzz/**"
+      - "tests/regression/run_format_properties.sh"
+      - ".github/workflows/format-fuzz-properties.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  format-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [plain, address-undefined, thread, fuzzer]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+      - name: 构建当前生产源码的静态目标
+        shell: bash
+        env:
+          KIND: ${{ matrix.kind }}
+        run: |
+          set -euo pipefail
+          export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+          args=()
+          case "$KIND" in
+            plain) compiler=gcc; toolchain=gcc ;;
+            address-undefined)
+              compiler=clang; toolchain=clang
+              args+=(--policies=build.sanitizer.address,build.sanitizer.undefined)
+              ;;
+            thread)
+              compiler=gcc; toolchain=gcc
+              args+=(--policies=build.sanitizer.thread)
+              ;;
+            fuzzer)
+              compiler=clang; toolchain=clang
+              args+=(--policies=build.sanitizer.address,build.sanitizer.undefined)
+              args+=(--cxflags=-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp)
+              ;;
+          esac
+          echo "CC=$compiler" >> "$GITHUB_ENV"
+          xmake f -m debug -o format-build --build_shared=n \
+            --build_tests=n --build_private_tests=n --build_regression_tests=n \
+            --toolchain="$toolchain" "${args[@]}"
+          xmake -j2 logger
+      - name: 执行真实静态库的格式化模型与负向校验
+        shell: bash
+        env:
+          KIND: ${{ matrix.kind }}
+        run: bash tests/regression/run_format_properties.sh format-build "$KIND"
+      - name: 保留来源、编译器、归档哈希、语料和原始结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-validation-${{ matrix.kind }}
+          path: format-build/format-evidence/
+          retention-days: 14
