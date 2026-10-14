@@ -510,6 +510,22 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+    -- #107 公开 API 的确定性输入变异，静态/共享均链接真实生产库。
+    -- 同一个测试源另由 Clang libFuzzer 直接以任意字节驱动。
+    target("public_fuzz_property_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/fuzz/public_fuzz.c")
+        add_deps("logger")
+        add_defines("LOGGER_FUZZ_STANDALONE=1")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                   {force = true})
+        for _, seed in ipairs({"1", "107", "20261014", "4294967295"}) do
+            add_tests("public_seed_" .. seed,
+                      {runargs = seed, timeout = 30})
+        end
+    target_end()
+
     target("message_truncation_production_test")
         set_kind("binary")
         set_default(false)
@@ -719,6 +735,7 @@ if has_config("build_regression_tests") then
 
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
+        {"queue_model_properties", "tests/regression/test_queue_properties.c"},
         {"queue_wakeup_litmus", "tests/regression/test_queue_wakeup_litmus.c"},
         {"lockdep_regression", "tests/regression/test_lockdep.c"},
         {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
@@ -839,6 +856,13 @@ if has_config("build_regression_tests") then
             add_tests("default", {timeout = 15})
         target_end()
     end
+
+    target("queue_model_properties")
+        for _, seed in ipairs({"1", "7", "107", "4096", "20261014", "4294967295"}) do
+            add_tests("queue_model_seed_" .. seed,
+                      {runargs = seed, timeout = 30})
+        end
+    target_end()
 
     -- test_lockdep.c 必须与链接的回归支持库使用相同的调试契约；否则
     -- logger_lockdep.h 会在该测试翻译单元中编译为生产用空操作内联函数。
