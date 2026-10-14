@@ -40,7 +40,7 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
 | pthread create/join、worker 抢先失败 | run_worker_startup.sh、run_worker_failure.sh | 真实生产静态库的启动和工作线程故障、join/停止/保守保留；注入的 EIO 是受控模拟 |
 | 互斥锁/读写锁、条件等待/通知与锁类 | test_lock_failure.c、test_lockdep.c、test_global_lifecycle.c | 获取错误不进入临界区、解锁未知保留、条件错误通知、递归/ABBA 与 R7 对象阶段；不证明所有 pthread 锁天然会返回模拟错误 |
 | Global 对象发布和退役 | run_global_r7.sh 与 global_r7_publish_cas_poison | 生产静态库阶段与真实 final free；精确 RUNNING CAS 失败由同源码 LOCKDEP=1 测试归档注入，**不冒充生产 .a 内部直接暂停** |
-| 文件 openat、写入/短写、fsync、close、rename 与轮转 | test_file_backend.c、test_destroy_status.c、test_rotation_mutations.py | 真实后端状态、错误传播、回滚或已提交轮转后的 detached 语义；不是存储设备物理掉电证明 |
+| 文件 openat、写入/短写、fsync、close、rename 与轮转 | test_file_backend.c、test_destroy_status.c、run_close_eintr.sh、test_rotation_mutations.py | 真实生产库在 close 后合成 EIO/EINTR，断言同一 fd 只关闭一次、容器最终释放；轮转状态错误可见，但不证明设备物理掉电 |
 | Syslog socket/connect/send/close、EINTR 和背压 | test_syslog_faults.c、test_syslog_config.c | 非阻塞重连、容错和计数；不证明 Syslog 守护进程已持久化 |
 | bounded MPSC、完成水位、队列等待 | test_queue_wakeup_litmus.c、test_worker_failure.c | 发布、唤醒、预留空洞、已进入 flush 的失败退出与 DROP/SYNC；不代替 C11 全协议推导 |
 | 生产支持库隔离 | check_production_artifact.py、生产/私有支持库对照和发布包检查 | 生产 LOCKDEP=0、FAULT_INJECTION=0，故障环境变量/符号不得进生产 ELF/归档与安装包 |
