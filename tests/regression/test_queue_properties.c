@@ -52,8 +52,8 @@ static void write_record(logger_message_t *m, uint32_t *seed, int serial)
 	memset(m, 0, sizeof(*m));
 	m->level = LOGGER_INFO;
 	m->line = serial;
-	m->metadata_mask = LOGGER_RECORD_META_MODULE |
-			   LOGGER_RECORD_META_SOURCE;
+	m->metadata_mask = LOGGER_RECORD_META_MODULE;
+	m->metadata_mask |= LOGGER_RECORD_META_SOURCE;
 	m->module = "model";
 	m->file = "prefix/model.c";
 	m->func = "queue_property";
