@@ -51,8 +51,15 @@ NULL 值使用 `[REDACTED]`。检查足够容量下的确切内容，
 `tests/fuzz/corpus/` 中的九个纯文本初始语料适用于真实 Clang
 libFuzzer。核心验证另编译**真实生产静态库**的 Clang
 ASan/UBSan 版本，以 `-fsanitize=fuzzer,address,undefined` 加载
-同一测试源；限制 `-seed=107 -runs=3000 -max_len=128`，
-并保存输入语料、SOURCE_COMMIT、产物哈希、原始 fuzzer 日志。
+同一测试源。**测试专用** Clang 构建额外设置
+`-fsanitize-coverage=trace-pc-guard,trace-cmp`，并核对
+`liblogger.a` 中确实包含 sanitizer 覆盖回调，否则失败关闭，
+不能把仅 harness 插桩的覆盖数字冒充生产代码的引导结果。
+这份插桩归档不是可安装或正式发布的生产二进制；
+release-validation 继续单独检查未插桩的真实交付产物。
+模糊任务限制 `-seed=107 -runs=3000 -max_len=128`，
+并保存输入语料、SOURCE_COMMIT、库与驱动的哈希、覆盖回调符号
+及原始 fuzzer 日志。
 
 有限 `-runs` 和固定种子只是可复现的**有界持续集成烟测**，
 不是长期覆盖率引导的模糊测试服务，更不能推导输入空间全覆盖。
