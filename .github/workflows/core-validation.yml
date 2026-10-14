@@ -216,6 +216,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: 导出与其他生产构建相同的单一版本身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
       - name: 配置 Xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
