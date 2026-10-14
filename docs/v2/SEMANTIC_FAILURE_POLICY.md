@@ -50,9 +50,10 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
   **adjacent** 仅表示邻接生命周期/正常或失败回归，不表示逐获取点
   已被专门注入错误。新增构造专项回归以 9 个 calloc、1 个 malloc、
   3 个 mutex_init、2 个 cond_init 拒绝路径进行逐获取点验证：
-  在本轮检查通过后，22 处调用中 18 处为 direct，剩余 4 处文件目录/
-  协调描述符获取仍仅属于 adjacent。不能把清单验证绿色误当成
-  后四处已经完成逐点故障注入。
+  该阶段已有 18/22 处为 direct；新增针对绑定目录、协调锁文件、
+  保留目录、fdopendir 的四个定向场景。在**本 PR 的最终 CI 通过且合并**
+  后才能宣称当前清单达到 22/22 direct；这依然不是所有潜在
+  动态获取、文件系统错误、取消及并发交错的完整证明。
 
 `scripts/check_resource_acquisitions.py` 的清单比较采用词法扫描和 C11
 直接调用形式，移除注释/字符串里的伪调用，保留获取表达式里
@@ -75,7 +76,7 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
 | pthread create/join、worker 抢先失败 | run_worker_startup.sh、run_worker_failure.sh | 真实生产静态库的启动和工作线程故障、join/停止/保守保留；注入的 EIO 是受控模拟 |
 | 互斥锁/读写锁、条件等待/通知与锁类 | test_lock_failure.c、test_lockdep.c、test_global_lifecycle.c | 获取错误不进入临界区、解锁未知保留、条件错误通知、递归/ABBA 与 R7 对象阶段；不证明所有 pthread 锁天然会返回模拟错误 |
 | Global 对象发布和退役 | run_global_r7.sh 与 global_r7_publish_cas_poison | 生产静态库阶段与真实 final free；精确 RUNNING CAS 失败由同源码 LOCKDEP=1 测试归档注入，**不冒充生产 .a 内部直接暂停** |
-| 文件 openat、写入/短写、fsync、close、rename 与轮转 | test_file_backend.c、test_destroy_status.c、run_close_eintr.sh、test_rotation_mutations.py | 真实生产库在 close 后合成 EIO/EINTR，断言同一 fd 只关闭一次、容器最终释放；轮转状态错误可见，但不证明设备物理掉电 |
+| 文件 open/openat、fdopendir、写入/短写、fsync、close、rename 与轮转 | test_file_acquisition.c、run_file_acquisition.sh、test_file_backend.c、test_destroy_status.c、run_close_eintr.sh、test_rotation_mutations.py | 精确注入绑定目录、协调锁、保留目录与 DIR 获取失败并检查所有成功取得的 fd/DIR 归还、失败码、下一次正常恢复；已有真实 close(EINTR) 回归。与设备物理掉电、所有 libc 内部错误分支仍不同 |
 | Syslog socket/connect/send/close、EINTR 和背压 | test_syslog_faults.c、test_syslog_config.c | 非阻塞重连、容错和计数；不证明 Syslog 守护进程已持久化 |
 | bounded MPSC、完成水位、队列等待 | test_queue_wakeup_litmus.c、test_worker_failure.c | 发布、唤醒、预留空洞、已进入 flush 的失败退出与 DROP/SYNC；不代替 C11 全协议推导 |
 | 生产支持库隔离 | check_production_artifact.py、生产/私有支持库对照和发布包检查 | 生产 LOCKDEP=0、FAULT_INJECTION=0，故障环境变量/符号不得进生产 ELF/归档与安装包 |
