@@ -233,7 +233,7 @@ jobs:
           xmake f -m debug -o fuzz-build --toolchain=clang \
             --build_shared=n \
             --policies=build.sanitizer.address,build.sanitizer.undefined \
-            --cxflags="-fsanitize-coverage=trace-pc-guard,trace-cmp"
+            --cxflags="-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp"
           xmake -j2 logger
           mapfile -t libraries < <(find fuzz-build -type f -name liblogger.a -print)
           test "${#libraries[@]}" -eq 1
@@ -241,7 +241,8 @@ jobs:
           # 对真正的 logger 归档自身验证覆盖回调，而不是
           # 只由 fuzz harness 提供可见的覆盖反馈。
           nm -u "${libraries[0]}" > fuzz-evidence/coverage-symbols.txt
-          grep -Fq '__sanitizer_cov_trace_pc_guard' fuzz-evidence/coverage-symbols.txt
+          grep -Fq '__sanitizer_cov_8bit_counters_init' fuzz-evidence/coverage-symbols.txt
+          grep -Fq '__sanitizer_cov_pcs_init' fuzz-evidence/coverage-symbols.txt
           clang -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
             -DLOGGER_STATIC_DEFINE=1 -Iinclude -I"fuzz-build/generated" \
             -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
