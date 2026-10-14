@@ -767,7 +767,8 @@ if has_config("build_regression_tests") then
              "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
              "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
              "logger_create", "logger_destroy_status", "logger_file_write",
-             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "free"}},
+             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "free",
+             "logger_lockdep_assert_held"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
             {"logger_create", "logger_destroy_status", "logger_file_write",
              "logger_file_reopen", "logger_queue_push", "logger_format_line",
@@ -1181,6 +1182,11 @@ if has_config("build_regression_tests") then
     target_end()
 
     target("global_lifecycle_regression")
+        -- 与 regression_support 源码采用同一 LOCKDEP=1 ABI/编译契约。
+        -- 仅回归库提供此断言，真实生产库中它是空内联。
+        add_defines("LOGGER_ENABLE_LOCKDEP=1")
+        add_tests("global_r7_publish_cas_poison",
+                  {runargs = "publish-cas-poison", timeout = 20})
         for _, op in ipairs({
             "write", "flush", "flush-void", "reopen",
             "level", "dropped", "metrics", "io", "diagnostics", "file-metrics"
