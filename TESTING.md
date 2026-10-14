@@ -408,3 +408,26 @@ global_r7_publish_cas_poison：在 LOCKDEP=1 的回归支持库中对
 配置版本与未来尾部检查由 config_abi_test 独立覆盖；C11/C++11 ABI 布局、
 47 符号、SONAME/符号版本和安装消费由发布工作流独立覆盖。最终接口冻结
 必须以批准的固定提交重新审核，不得将设计选择或旧 CI 结果冒充发布通过。
+
+## #106 资源与同步语义门禁
+
+[当前故障和语义门禁范围](docs/v2/SEMANTIC_FAILURE_POLICY.md)
+明确区分完整编译器警告、mutex guard 检查、CAS 内存序清单、
+新增行风格、资源/同步语义，以及真实生产库失败路径回归。
+新增检查器不取代已有 `check_lock_error_policy.py` 和
+`check_cas_orders.py`，只补充两条高风险规则：
+
+- 生产源码里丢弃 pthread 读写锁和条件等待的返回结果时失败关闭；
+- 生产源码里对 close() 的 EINTR 循环重试失败关闭；
+  不拒绝按语义需要重试的 fsync/read/write。
+
+在当前源码上直接执行：
+
+    python3 tests/scripts/test_semantic_failure_paths.py -v
+    python3 scripts/check_semantic_failure_paths.py
+
+正反例覆盖合法 fsync 重试、注释/字符串、非法 close 重试、
+被丢弃的同步操作以及源码目录缺失时的失败关闭。
+拉取请求与 Ubuntu 20.04 GCC/Clang 基线均执行以上测试和实际检查。
+当前版本没有 Audit/密钥熵源或通用引用计数原语，不生成伪覆盖；
+任何新资源取得点仍要明确写出实际失败回滚测试、所有者及最终释放前提。
