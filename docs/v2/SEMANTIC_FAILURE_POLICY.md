@@ -12,6 +12,7 @@
 | C11 CAS 内存序 | 显式成功/失败内存序、合法组合、未经评审的修改和新增 CAS 拒绝 | scripts/check_cas_orders.py、配置清单及负向变异 |
 | 新增源码行与格式 | 特定不安全字符串函数、禁止直接 always_inline、源码差异格式及新增行 | scripts/check_v2_diff.py、check_source_format.py |
 | **资源/同步失败语义** | 对 src/、include/ 的指定 pthread rwlock/cond 等调用结果丢弃和 close(EINTR) 循环重试失败关闭 | scripts/check_semantic_failure_paths.py、tests/scripts/test_semantic_failure_paths.py |
+| **资源获取审查清单** | 生产 src/include 资源获取调用的 API/参数签名、所有者、失效回滚测试来源、直接或相邻覆盖分级；新增或变参必须显式审核 | scripts/check_resource_acquisitions.py、validation/resource_acquisitions.tsv、tests/scripts/test_resource_acquisitions.py |
 
 新的资源/同步语义检查器**扫描整个当前生产源码树，而非只检查新增行**；
 由拉取请求门禁和 Ubuntu 20.04 GCC/Clang 工程基线同时执行。
@@ -31,6 +32,37 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
 仍须人工说明谁创建、所有者、转移点、失败回滚和最终释放。
 现有 mutex guard 的特殊 cleanup destructor 按既有单独检查器处理，
 不以统一禁止所有 (void) cleanup 调用来制造误报。
+
+## 1.1 资源获取审查清单的失败关闭边界
+
+`validation/resource_acquisitions.tsv` 登记当前源码中的 **22 处显式资源
+获取调用**，涵盖 Logger 和 worker 的 malloc/calloc、文件目录/活动/
+协调 fd、Syslog socket，以及线程和互斥锁/条件变量初始化。
+
+清单每行必须包含：
+
+- 获取入口及规范化参数签名、重复次数；不用行号作稳定身份，
+  但改变分配长度、获取标志、资源字段或增加调用会引发清单漂移。
+- 结构性所有者及所有权移交点，禁止把 fd/线程/内存指针的“被使用”
+  直接视为“已拥有或已释放”。
+- 仓库内真实存在的测试源文件、验证等级和文字理由。
+  **direct** 表示已有明确的定向获取失败/回滚验证；
+  **adjacent** 仅表示邻接生命周期/正常或失败回归，不表示逐获取点
+  已被专门注入错误。当前基线中只有部分位置属于 direct，
+  其余是需要继续评审的显式覆盖债务，不能被“清单验证绿色”掩盖。
+
+`scripts/check_resource_acquisitions.py` 的清单比较采用词法扫描和 C11
+直接调用形式，移除注释/字符串里的伪调用，保留获取表达式里
+字符串常量的真实取值，并支持跨行和嵌套参数。
+对于资源获取 API 的间接调用、调用包装层内的所有权错误、
+返回值未检查、数组越界、别名或动态路径解析，该工具没有 AST/
+跨函数数据流推理能力，也不证明所指向的测试确实触发每一个位置。
+新增或变更资源获取必须由审查者检查业务语义、实际失败用例与
+最后释放条件，不能通过机械添加一个已有测试文件名来满足合同。
+
+此清单不是任何新资源引入的许可：若 `adjacent` 对应的错误路径
+确实尚未单独覆盖，应在本 Issue / 后续独立任务中继续补齐，
+不能以源码签名一致代替真实回滚和内存安全证明。
 
 ## 2. 失败注入和正反回归映射
 

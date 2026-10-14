@@ -409,6 +409,24 @@ global_r7_publish_cas_poison：在 LOCKDEP=1 的回归支持库中对
 47 符号、SONAME/符号版本和安装消费由发布工作流独立覆盖。最终接口冻结
 必须以批准的固定提交重新审核，不得将设计选择或旧 CI 结果冒充发布通过。
 
+## #106 资源获取审查清单
+
+`validation/resource_acquisitions.tsv` 在本次基线列出全部 22 个直接
+堆分配/描述符获取/线程创建/同步对象初始化位置，各条记录带获取参数、
+所有者、现有测试文件、验证等级（direct 或 adjacent）及理由。
+`adjacent` **不表示**该位置已单独被注入失败；这是后续
+设计审核和新增真实故障测试的清单，不是清除所有资源回滚风险的证明。
+
+    python3 tests/scripts/test_resource_acquisitions.py -v
+    python3 scripts/check_resource_acquisitions.py
+
+检查器支持审查清单严格表头、字段非空、合法测试文件、重复项拒绝、
+调用变化/新增/删除、参数常量变化和计数漂移的负向测试，并
+保持注释/字符串、跨行规范化等合法源码不误报。
+它与现有 CAS 内存序清单、锁返回值检查及运行时故障注入相互独立，
+不引入生产代码与公开 ABI 变更。拉取请求与 Ubuntu 20.04 GCC/Clang
+工程基线均执行上述命令；修改清单须人工复核真实所有权和失败回滚证据。
+
 ## #106 资源与同步语义门禁
 
 [当前故障和语义门禁范围](docs/v2/SEMANTIC_FAILURE_POLICY.md)
