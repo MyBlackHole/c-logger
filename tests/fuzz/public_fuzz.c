@@ -10,8 +10,7 @@
  */
 static void fuzz_fail(const char *condition, int line)
 {
-	fprintf(stderr, "public_fuzz.c:%d: %s (errno=%d)\n",
-		line, condition, errno);
+	fprintf(stderr, "%d: %s errno=%d\n", line, condition, errno);
 	abort();
 }
 
