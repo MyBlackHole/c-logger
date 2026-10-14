@@ -40,6 +40,7 @@
 - [INVARIANTS.md](INVARIANTS.md)：2.0 不变量，随各子计划逐步冻结。
 - [OWNERSHIP.md](OWNERSHIP.md)：所有权/生命周期图，主要由 #102 维护。
 - [LOCKING.md](LOCKING.md)：锁职责、顺序与 lockdep 风格的契约，由 #103 维护。
+- [GLOBAL_R7_PROOF.md](GLOBAL_R7_PROOF.md)：控制器候选/退役对象阶段与最终释放的独立证明（#199）。
 - [MEMORY_MODEL.md](MEMORY_MODEL.md)：C11 内存模型、发布与无锁访问证明，由 #103 维护。
 - [LOCKDEP.md](LOCKDEP.md)：当前六种锁类的调试/测试检查与边界。
 - [QUEUE_WAKEUP_PROOF.md](QUEUE_WAKEUP_PROOF.md)：队列唤醒的 C11 证明。

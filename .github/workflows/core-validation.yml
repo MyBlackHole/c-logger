@@ -61,6 +61,11 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/regression/run_worker_failure.sh core-build | tee core-build/worker-failure.log
+      - name: 运行 Global R7 候选/退役对象的生产静态库回归
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/regression/run_global_r7.sh core-build | tee core-build/global-r7.log
       - name: 保留精确源码快照与回归证据
         if: always()
         shell: bash
@@ -71,6 +76,7 @@ jobs:
           cp core-build/logger-format.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/worker-startup.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/worker-failure.log logger-format-evidence/ 2>/dev/null || true
+          cp core-build/global-r7.log logger-format-evidence/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -139,6 +145,18 @@ jobs:
           fi
           xmake -j2 logger
           bash tests/regression/run_worker_failure.sh sanitizer-build "$sanitizer"
+
+      - name: 运行 Global R7 正常/故障路径的生产库运行时检查
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            sanitizer="address,undefined"
+          else
+            sanitizer="thread"
+          fi
+          xmake -j2 logger
+          bash tests/regression/run_global_r7.sh sanitizer-build "$sanitizer"
 
   shared-abi:
     runs-on: ubuntu-24.04

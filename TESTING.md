@@ -354,3 +354,21 @@ Logger/Console/context场景；原21项的4个Audit入口专属场景退役。�
 
 本节是验证入口、已知证据和未验证边界的索引；不自动扩大正式 2.0.0
 发布硬门槛，不恢复已经移除的 Audit/VM 断电测试，也不虚构未指定的生产 QPS/P99 阈值。
+
+## Global R7 候选/退役对象的生产库验证（#199）
+
+对象阶段不等同于锁类别。当前生产态的完整证明和限制见
+[Global R7 阶段证明](docs/v2/GLOBAL_R7_PROOF.md)。
+
+专项入口使用真实生产静态归档，正常模式与 Sanitizer 可共享测试源：
+
+    bash tests/regression/run_global_r7.sh core-build
+    bash tests/regression/run_global_r7.sh sanitizer-build address,undefined
+    bash tests/regression/run_global_r7.sh sanitizer-build thread
+
+每个注入场景为独立进程，覆盖候选发布失败后实际 free、销毁没有回执的
+retained 对象、STOPPING 回滚、写锁解锁失败、最终释放后的非致命错误与
+旧读者的完成衔接。驱动捕获实际 logger_t 地址并拦截 free 校验，
+不从 pthread destroy 返回值或 live_objects 归零推导最终 free。
+记录源码完整 SHA、归档/驱动 hash、编译器、各场景退出结果。
+没有实际工作流通过前，这一入口只表示待执行的验收计划。

@@ -40,6 +40,7 @@ docs/v2/ARCHITECTURE.md
 docs/v2/AUDIT_REMOVAL.md
 docs/v2/CODING_STYLE.md
 docs/v2/EXECUTION_CONTEXT.md
+docs/v2/GLOBAL_R7_PROOF.md
 docs/v2/INVARIANTS.md
 docs/v2/LOCKDEP.md
 docs/v2/LOCKING.md
