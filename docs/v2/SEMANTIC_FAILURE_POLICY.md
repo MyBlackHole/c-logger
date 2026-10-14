@@ -48,8 +48,11 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
 - 仓库内真实存在的测试源文件、验证等级和文字理由。
   **direct** 表示已有明确的定向获取失败/回滚验证；
   **adjacent** 仅表示邻接生命周期/正常或失败回归，不表示逐获取点
-  已被专门注入错误。当前基线中只有部分位置属于 direct，
-  其余是需要继续评审的显式覆盖债务，不能被“清单验证绿色”掩盖。
+  已被专门注入错误。新增构造专项回归以 9 个 calloc、1 个 malloc、
+  3 个 mutex_init、2 个 cond_init 拒绝路径进行逐获取点验证：
+  在本轮检查通过后，22 处调用中 18 处为 direct，剩余 4 处文件目录/
+  协调描述符获取仍仅属于 adjacent。不能把清单验证绿色误当成
+  后四处已经完成逐点故障注入。
 
 `scripts/check_resource_acquisitions.py` 的清单比较采用词法扫描和 C11
 直接调用形式，移除注释/字符串里的伪调用，保留获取表达式里
@@ -68,7 +71,7 @@ unchecked pthread 或 ownership 问题已经穷举。涉及新资源所有权的
 
 | 资源/协议边界 | 真实故障测试入口（当前源码） | 判定内容与限制 |
 |---|---|---|
-| 候选 malloc/calloc、队列和同步对象构造 | test_constructor_rollback.c、test_destroy_status.c | init/destroy 失败、部分构造和最终 free 计数；不是任意分配点的形式化覆盖 |
+| 候选 malloc/calloc、队列和同步对象构造 | test_ctor_resource_failure.c、run_ctor_resource_failure.sh、test_constructor_rollback.c、test_destroy_status.c | 真实生产库逐点模拟本体 calloc、队列与 worker 的 calloc/malloc、两种同步对象 init 失败并核验已分配存储全部 free、进程对象计数归零、下一代成功；仍不证明任意新获取点已被枚举 |
 | pthread create/join、worker 抢先失败 | run_worker_startup.sh、run_worker_failure.sh | 真实生产静态库的启动和工作线程故障、join/停止/保守保留；注入的 EIO 是受控模拟 |
 | 互斥锁/读写锁、条件等待/通知与锁类 | test_lock_failure.c、test_lockdep.c、test_global_lifecycle.c | 获取错误不进入临界区、解锁未知保留、条件错误通知、递归/ABBA 与 R7 对象阶段；不证明所有 pthread 锁天然会返回模拟错误 |
 | Global 对象发布和退役 | run_global_r7.sh 与 global_r7_publish_cas_poison | 生产静态库阶段与真实 final free；精确 RUNNING CAS 失败由同源码 LOCKDEP=1 测试归档注入，**不冒充生产 .a 内部直接暂停** |
