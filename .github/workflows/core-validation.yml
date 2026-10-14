@@ -39,11 +39,16 @@ jobs:
           xmake-version: ${{ env.XMAKE_VERSION }}
       - name: 运行完整静态库正确性测试集
         run: |
+          set -euo pipefail
           xmake f -m release -o core-build \
             --build_shared=n \
             --build_tests=y \
             --build_private_tests=y \
             --build_regression_tests=y
+          # 先执行真实生产归档的失败注入，失败时能看到准确断言位置，
+          # 而不是仅靠 Xmake 的批量测试失败摘要定位。
+          xmake -j2 logger
+          bash tests/regression/run_file_acquisition.sh core-build | tee core-build/file-acquisition.log
           xmake test -j1
       - name: 运行生产 Logger 格式化回归测试
         shell: bash
@@ -71,11 +76,6 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/regression/run_ctor_resource_failure.sh core-build | tee core-build/ctor-resource.log
-      - name: 运行文件 fd 与 DIR 所有权的生产库精确故障回归
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash tests/regression/run_file_acquisition.sh core-build | tee core-build/file-acquisition.log
       - name: 运行 Global R7 候选/退役对象的生产静态库回归
         shell: bash
         run: |
