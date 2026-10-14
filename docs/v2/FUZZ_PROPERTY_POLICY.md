@@ -52,7 +52,7 @@ NULL 值使用 `[REDACTED]`。检查足够容量下的确切内容，
 libFuzzer。核心验证另编译**真实生产静态库**的 Clang
 ASan/UBSan 版本，以 `-fsanitize=fuzzer,address,undefined` 加载
 同一测试源。**测试专用** Clang 构建额外设置
-`-fsanitize-coverage=trace-pc-guard,trace-cmp`，并核对
+`-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp`，并核对
 `liblogger.a` 中确实包含 sanitizer 覆盖回调，否则失败关闭，
 不能把仅 harness 插桩的覆盖数字冒充生产代码的引导结果。
 这份插桩归档不是可安装或正式发布的生产二进制；
