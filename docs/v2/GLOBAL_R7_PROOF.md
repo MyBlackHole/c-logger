@@ -59,6 +59,40 @@ tests/regression/run_global_r7.sh 直接链接当前检出构建的生产静态�
 实际编译器、受测归档及测试驱动 SHA-256，以及每个场景的最终结果。
 Xmake 仍保留带锁跟踪的原回归支持库场景，以便两条验证链互补。
 
+## G_STARTING → G_RUNNING 强 CAS 失败的精确受控交错
+
+普通生产归档的 #200 回归已经覆盖候选写锁获取失败、实例撤销与真实
+最终释放，但无法仅用公共调用保证精确命中**先通过 poison 检查、
+随后发布 CAS 失败**的窗口。#199 的新增测试将该窗口与其他失败路径区分：
+
+1. 从 IDLE 进入全局引导日志，取得生命周期读锁；使用链接期 pthread
+   解锁包装，暂时保留该读者的真实锁。另一线程开始 logger_init，
+   创建尚未发布的候选并等待生命周期写锁。
+2. 允许读者**真实释放**读锁，但将合成 EIO 的返回报告延后；
+   创建线程取得写锁，通过当前 poison 检查，在
+   logger_lockdep_assert_held(GLOBAL_LIFETIME) 的位置暂停。
+3. 仅当确认候选确实存在、创建者已越过首次 poison 检查时，
+   才让读者报告 EIO，沿真实 Global 失败路径发布 BROKEN。
+   然后允许创建者执行既有 G_STARTING→G_RUNNING 强 CAS。
+4. 强 CAS 必须失败；该分支保持写锁撤销 g_logger、退役候选并
+   以真实 free 包装确认容器仅释放一次，同时拒绝新代次与全部
+   Global 读入口。若意外通过早期错误检查、未进入退役分支、提前
+   free、双重 free 或错误发布 RUNNING，断言必须失败。
+
+暂停点依赖 **LOGGER_ENABLE_LOCKDEP=1 的回归支持归档**：
+源码仍来自当前项目，但这项锁类断言在生产库中由空内联实现。
+实际执行通过 GNU ld --wrap 拦截测试归档中的真实断言与 pthread
+入口，不添加任何生产故障钩子，也不重新实现 Global 状态机。
+生产静态库只能独立运行其他 R7 场景，不能把这项白盒精确注入
+冒称“生产归档直接命中了该 CAS 分支”。
+
+专用用例是 Xmake 中的 global_r7_publish_cas_poison，其他生产
+static/ASan+UBSan/TSan 场景仍由 run_global_r7.sh 承担。
+**只有精确 head 的回归/运行时检查真正执行成功后**，上述步骤才
+转成有效的验收证据。该测试覆盖受控指令交错，不枚举全部
+C11 与 POSIX 调度；所有权和 happens-before 仍要依靠本文件
+第 1～8 条推导。
+
 ## 验证边界
 
 注入的 EIO、EDEADLK 等不意味着有效的 POSIX 普通锁天然会返回这些值；

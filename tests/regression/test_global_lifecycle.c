@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "global_support.h"
+#include "logger_lockdep.h"
 #include <stdarg.h>
 #include <stdint.h>
 #include <sys/wait.h>
@@ -30,10 +31,34 @@ static _Thread_local int handoff_reader, handoff_writer;
 static _Atomic int handoff_reader_at_unlock, handoff_writer_at_lock;
 static _Atomic int handoff_release_reader, handoff_release_writer;
 static _Atomic int handoff_fail_writer;
+#if LOGGER_ENABLE_LOCKDEP
+/* 仅使用回归支持库的真实锁类断言作为暂停边界。
+ * 生产 liblogger.a 中该断言为空内联，不增加任何生产测试钩子。
+ */
+static _Thread_local int r7_pause_before_publish;
+static _Atomic int r7_publish_assert_reached, r7_resume_publish;
+static _Atomic int r7_pause_after_real_unlock, r7_reader_released;
+static _Atomic int r7_report_unlock_error, r7_reader_error;
+#endif
 static _Thread_local int capture_control;
 static _Thread_local pthread_t rejected_worker;
 static _Thread_local int saw_rejected_join;
 static pthread_mutex_t *control_mutex;
+#if LOGGER_ENABLE_LOCKDEP
+void __real_logger_lockdep_assert_held(logger_lock_class_t, const void *);
+void __wrap_logger_lockdep_assert_held(logger_lock_class_t class_id,
+				       const void *lock)
+{
+	if (r7_pause_before_publish &&
+	    class_id == LOGGER_LOCK_GLOBAL_LIFETIME) {
+		r7_pause_before_publish = 0;
+		atomic_store(&r7_publish_assert_reached, 1);
+		wait_flag(&r7_resume_publish);
+	}
+	__real_logger_lockdep_assert_held(class_id, lock);
+}
+#endif
+
 int __real_fsync(int);
 int __wrap_fsync(int fd)
 {
@@ -119,6 +144,15 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 		atomic_store(&handoff_reader_at_unlock, 1);
 		wait_flag(&handoff_release_reader);
 		CHECK(__real_pthread_rwlock_unlock(rw) == 0);
+#if LOGGER_ENABLE_LOCKDEP
+		/* 读者真实释放生命周期锁后，先暂停错误的报告。
+		 * 让控制器已经越过检查 poison 的位置，再触发 BROKEN。
+		 */
+		if (atomic_load(&r7_pause_after_real_unlock)) {
+			atomic_store(&r7_reader_released, 1);
+			wait_flag(&r7_report_unlock_error);
+		}
+#endif
 		return EIO;
 	}
 	if (fail_rw_unlock) {
@@ -578,6 +612,74 @@ static void unlock_shutdown_handoff(int acquire_fails)
 	CHECK(access("new.log", F_OK) == -1 && errno == ENOENT);
 }
 
+#if LOGGER_ENABLE_LOCKDEP
+/* G_IDLE 引导写入合法获取生命周期读锁，供故障注入控制真正的读者。
+ * 与模拟直接写 ticket 不同：错误通过真实 Global 读者解锁路径发布。
+ */
+static void *r7_bootstrap_reader(void *unused)
+{
+	(void)unused;
+	handoff_reader = 1;
+	errno = 0;
+	LOG_INFO("r7-bootstrap-reader");
+	atomic_store(&r7_reader_error, errno);
+	return NULL;
+}
+
+static void *r7_publication_writer(void *arg)
+{
+	r7_pause_before_publish = 1;
+	return init_call(arg);
+}
+
+static void r7_exact_publication_cas_failure(void)
+{
+	logger_config_t next = config_for("new.log", 0);
+	pthread_t reader, publisher;
+	call_result_t published = { 0 };
+
+	/* 读者保持锁，直到初始化者创建候选并准备获取写锁。 */
+	atomic_store(&r7_pause_after_real_unlock, 1);
+	CHECK(!pthread_create(&reader, NULL, r7_bootstrap_reader, NULL));
+	wait_flag(&handoff_reader_at_unlock);
+	CHECK(!pthread_create(&publisher, NULL, r7_publication_writer,
+			      &published));
+
+	/* 真实读锁先释放，但读者尚未发布合成 EIO。
+	 * 创建线程必须取得写锁并越过 global_lock_error() 首次检查。
+	 */
+	atomic_store(&handoff_release_reader, 1);
+	wait_flag(&r7_reader_released);
+	wait_flag(&r7_publish_assert_reached);
+	CHECK(atomic_load(&create_count) == 1);
+	CHECK(logger_process_object_count() == 1);
+	CHECK(!atomic_load(&tracked_destroy_calls));
+	CHECK(!atomic_load(&tracked_frees));
+
+	/* 仅在初始化线程已通过当前代次检查后报告错误：
+	 * 否则只验证其提前检测 BROKEN，根本不会触发发布 CAS 失败分支。
+	 */
+	atomic_store(&r7_report_unlock_error, 1);
+	CHECK(!pthread_join(reader, NULL));
+	CHECK(atomic_load(&r7_reader_error) == EIO);
+
+	/* 现在才允许运行实际 G_STARTING -> G_RUNNING 强 CAS；
+	 * 必须失败，撤销未发布指针并真正完成候选退役。
+	 */
+	atomic_store(&r7_resume_publish, 1);
+	CHECK(!pthread_join(publisher, NULL));
+	CHECK(published.rc == -1 && published.error == EIO);
+	CHECK(atomic_load(&tracked_destroy_calls) == 1);
+	CHECK(atomic_load(&tracked_frees) == 1);
+	CHECK(!atomic_load(&tracked_instance));
+	CHECK(!logger_process_object_count());
+
+	all_rejected(EIO);
+	CHECK(logger_init(&next) == -1 && errno == EIO);
+	CHECK(access("new.log", F_OK) == -1 && errno == ENOENT);
+}
+#endif
+
 /* 下面每项独立进程运行：失败的 lock/proof 路径不在测试中非法销毁。
  * 生产实现没有增加 hook，所有拒绝都作用于真实链接入口。
  */
@@ -878,6 +980,11 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "proof-handoff")) {
 		CHECK(argc == 3);
 		unlock_shutdown_handoff(!strcmp(argv[2], "acquire-fail"));
+#if LOGGER_ENABLE_LOCKDEP
+	} else if (!strcmp(argv[1], "publish-cas-poison")) {
+		CHECK(argc == 2);
+		r7_exact_publication_cas_failure();
+#endif
 	} else if (!strcmp(argv[1], "shutdown-error"))
 		shutdown_error(0);
 	else if (!strcmp(argv[1], "shutdown-fsync"))
