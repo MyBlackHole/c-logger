@@ -59,6 +59,19 @@ class SemanticFailurePaths(unittest.TestCase):
         )
         self.assertEqual([], self.fixture("int probe(void) {\n" + valid + "}"))
 
+    def test_multiline_return_value_use_is_accepted(self):
+        # 真实 worker 采用这种跨行赋值；不得把右值单独判为裸调用。
+        source = (
+            "int f(void) {\\n"
+            "int rc =\\n"
+            "    pthread_cond_wait(&cv, &mu);\\n"
+            "if (rc) return rc;\\n"
+            "return\\n"
+            "    pthread_rwlock_unlock(&rw);\\n"
+            "}\\n"
+        )
+        self.assertEqual([], self.fixture(source))
+
     def test_close_eintr_retry_do_while_is_rejected(self):
         source = (
             "void probe(void) {\n"
