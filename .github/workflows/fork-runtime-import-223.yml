@@ -1,0 +1,134 @@
+name: fork-runtime-bounded-import
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['.github/workflows/fork-runtime-import-223.yml']
+permissions:
+  contents: read
+jobs:
+  import:
+    if: github.repository == 'MyBlackHole/c-logger' && github.event.pull_request.number == 223 && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feature/fork-runtime-integration-218'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 只向指定集成分支导入固定摘要的源码
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_BRANCH: ${{ github.head_ref }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: python
+        run: |
+          """One-time, fixed-hash import into PR #223's existing feature branch only."""
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import tempfile
+          import urllib.request
+          import zlib
+
+          REPO = 'MyBlackHole/c-logger'
+          BRANCH = 'feature/fork-runtime-integration-218'
+          BASE_TREE = '7ba621d451be307525b6f2d8be0eb0a947fc36b8'
+          TARGET_TREE = '91d387c18ea1aa7e242d1a3ad783bc7ce98417ab'
+          PARTS = [
+              'cec7ee7ac08a08d6cb9e7a5e3bcec492faf0eb81',
+              '78c1898b3d9177032a160ef5a434a00a8abdf5c3',
+              'd1dd20cec4477b83f65ade8f300b8174888f2acc',
+              '6f1d53e3c9096efbe34e3302abfacbc4771b9015',
+              'a747b3d422ab7d7dac6772e72d601a1b234fdfda',
+              '9a679d25a6a69f8717afab6c5b7121859a946354',
+              'adbdfc2b0a54bcb61ed57c816a8db8143c4aec90',
+              '728a1dc7b7e52073b95d82841360bfe720dbbb4d',
+              '4c193344a7f6b6a05f4d9ae95bd6db5f650c8511',
+              'd51c768151f36ab046815ecfc34947fe8845c459',
+              'af8ead0d6c708d84ff3922bb24d57e8f2762d841',
+          ]
+
+          def git(*args, env=None):
+              return subprocess.check_output(['git', *args], env=env, text=True).strip()
+
+          def code_tree():
+              with tempfile.TemporaryDirectory() as directory:
+                  env = os.environ.copy()
+                  env['GIT_INDEX_FILE'] = str(Path(directory) / 'index')
+                  git('read-tree', git('write-tree'), env=env)
+                  git('update-index', '--force-remove',
+                      '.github/workflows/fork-runtime-import-223.yml',
+                      '.github/workflows/fork-runtime-validation.yml', env=env)
+                  return git('write-tree', env=env)
+
+          if os.environ['GITHUB_REPOSITORY'] != REPO:
+              raise SystemExit('Repository mismatch')
+          if os.environ['EXPECTED_BRANCH'] != BRANCH:
+              raise SystemExit('Branch mismatch')
+          head = os.environ['EXPECTED_HEAD']
+          if git('rev-parse', 'HEAD') != head:
+              raise SystemExit('Checkout identity mismatch')
+          if code_tree() == TARGET_TREE:
+              print('SOURCE_IMPORT_ALREADY_PRESENT')
+              raise SystemExit(0)
+          if code_tree() != BASE_TREE:
+              raise SystemExit('Unexpected source base; reconcile before retry')
+          if git('status', '--porcelain'):
+              raise SystemExit('Dirty checkout')
+
+          token = os.environ['GH_TOKEN']
+          pieces = []
+          for sha in PARTS:
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{REPO}/git/blobs/{sha}',
+                  headers={'Authorization': 'Bearer ' + token,
+                           'Accept': 'application/vnd.github+json',
+                           'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  item = json.load(response)
+              if item.get('sha') != sha or item.get('encoding') != 'base64':
+                  raise SystemExit('Blob metadata mismatch')
+              raw = base64.b64decode(item['content'])
+              identity = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+              if identity != sha or len(raw) > 6000:
+                  raise SystemExit('Blob content mismatch')
+              pieces.append(raw)
+          compressed = b''.join(pieces)
+          if len(compressed) != 60054 or hashlib.sha256(compressed).hexdigest() != \
+                  '76de6c51c1f7766ffa7b96e4946b8e9073b74f837e39dcf01327a9da9fe0a137':
+              raise SystemExit('Compressed payload mismatch')
+          stream = zlib.decompressobj()
+          patch = stream.decompress(compressed, 211711)
+          if (not stream.eof or stream.unconsumed_tail or stream.unused_data or
+                  len(patch) != 211710 or hashlib.sha256(patch).hexdigest() !=
+                  '8d7e210587200716c00d1a9ea22a2e284e089c9e0cf19e45e597eeffc509ffe8'):
+              raise SystemExit('Patch identity mismatch')
+          path = Path(os.environ['RUNNER_TEMP']) / 'logger-runtime-fixed.patch'
+          path.write_bytes(patch)
+          git('apply', '--check', '--index', str(path))
+          git('apply', '--index', str(path))
+          if code_tree() != TARGET_TREE:
+              raise SystemExit('Imported source tree mismatch')
+          git('diff', '--cached', '--check')
+          # Use the job-scoped token only for this exact existing branch. Never force-push.
+          env = os.environ.copy()
+          env['GIT_CONFIG_COUNT'] = '1'
+          env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
+          env['GIT_CONFIG_VALUE_0'] = 'AUTHORIZATION: basic ' + base64.b64encode(
+              ('x-access-token:' + token).encode()).decode()
+          remote = f'https://github.com/{REPO}.git'
+          actual = git('ls-remote', remote, 'refs/heads/' + BRANCH, env=env).split()[0]
+          if actual != head:
+              raise SystemExit('Remote branch changed; refusing to overwrite')
+          git('-c', 'user.name=github-actions[bot]', '-c',
+              'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+              'commit', '-m', 'feat: 导入经摘要与 Git 树核验的 fork 独立运行域候选\n\n关联 #218、#223。来源补丁及目标树固定，导入不代替测试验收；不写 main、不发布标签。')
+          git('push', remote, 'HEAD:refs/heads/' + BRANCH, env=env)
+          print('SOURCE_IMPORT_COMMIT=' + git('rev-parse', 'HEAD'))
+          print('SOURCE_IMPORT_CODE_TREE=' + code_tree())
