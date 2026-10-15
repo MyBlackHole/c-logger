@@ -1,23 +1,23 @@
 file	api	arguments	count	owner	failure_test	coverage	rationale
-src/logger.c	calloc	1,sizeof(*l)	1	创建者暂持有 logger_t，成功后宿主拥有	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger.c	pthread_cond_init	&l->progress_cv,NULL	1	logger_t 拥有刷新完成条件变量	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 cond-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
+src/logger.c	calloc	1,sizeof(*l)	1	创建者暂持有 logger_t，成功后宿主拥有	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger.c	pthread_cond_init	&l->progress_cv,NULL	1	logger_t 拥有刷新完成条件变量	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 cond-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
 src/logger.c	pthread_create	&l->worker,NULL,logger_worker_main,l	1	logger_t 拥有单个工作线程，worker 借用 logger_t	tests/regression/test_worker_startup.c	direct	创建失败、worker 抢先失败与 join 次序有生产库正反对照
-src/logger.c	pthread_mutex_init	&l->emit_mu,NULL	1	logger_t 拥有输出互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger.c	pthread_mutex_init	&l->progress_mu,NULL	1	logger_t 拥有刷新进度互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-2 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_file.c	fdopendir	fd	1	目录迭代器接管局部候选 fd，退出时 closedir	tests/regression/test_file_acquisition.c	direct	受控 fdopendir 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；以本 PR 实际通过的工作流为准
-src/logger_file.c	open	dir,O_RDONLY|O_DIRECTORY|O_CLOEXEC	1	文件后端拥有绑定目录描述符 dir_fd	tests/regression/test_file_acquisition.c	direct	受控 bind-directory 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；以本 PR 实际通过的工作流为准
-src/logger_file.c	openat	"f->dir_fd,""."",O_RDONLY|O_DIRECTORY|O_CLOEXEC"	1	保留清理过程临时持有的目录描述符	tests/regression/test_file_acquisition.c	direct	受控 retention-directory 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；以本 PR 实际通过的工作流为准
-src/logger_file.c	openat	f->dir_fd,f->lock_name,O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK,0600	1	文件后端持有跨进程协调锁文件描述符	tests/regression/test_file_acquisition.c	direct	受控 lock-file 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；以本 PR 实际通过的工作流为准
+src/logger.c	pthread_mutex_init	&l->emit_mu,NULL	1	logger_t 拥有输出互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger.c	pthread_mutex_init	&l->progress_mu,NULL	1	logger_t 拥有刷新进度互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-2 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_file.c	fdopendir	fd	1	目录迭代器接管局部候选 fd，退出时 closedir	tests/regression/test_file_acquisition.c	direct	受控 fdopendir 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；#207 已验收合并；后续获取变更须重新验证
+src/logger_file.c	open	dir,O_RDONLY|O_DIRECTORY|O_CLOEXEC	1	文件后端拥有绑定目录描述符 dir_fd	tests/regression/test_file_acquisition.c	direct	受控 bind-directory 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；#207 已验收合并；后续获取变更须重新验证
+src/logger_file.c	openat	"f->dir_fd,""."",O_RDONLY|O_DIRECTORY|O_CLOEXEC"	1	保留清理过程临时持有的目录描述符	tests/regression/test_file_acquisition.c	direct	受控 retention-directory 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；#207 已验收合并；后续获取变更须重新验证
+src/logger_file.c	openat	f->dir_fd,f->lock_name,O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK,0600	1	文件后端持有跨进程协调锁文件描述符	tests/regression/test_file_acquisition.c	direct	受控 lock-file 取得失败的生产库测试确认 errno、已取得 fd 归还、无泄漏及恢复；#207 已验收合并；后续获取变更须重新验证
 src/logger_file.c	openat	f->dir_fd,f->name,flags,f->mode	1	候选活动文件描述符，验证成功后转给文件后端	tests/regression/test_file_backend.c	direct	活动 fd 的 openat 失败、替换、回滚和归档切点在真实后端回归中验证
-src/logger_queue.c	calloc	q->cap,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-2 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_queue.c	calloc	q->spill_cap,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-3 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
+src/logger_queue.c	calloc	q->cap,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-2 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_queue.c	calloc	q->spill_cap,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-3 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
 src/logger_queue.c	pthread_cond_init	&q->wait_cv,NULL	1	logger_queue_t 拥有消费者等待条件变量	tests/regression/test_constructor_rollback.c	direct	队列条件变量初始化返回失败与最终回滚直接注入并验证
-src/logger_queue.c	pthread_mutex_init	&q->wait_mu,NULL	1	logger_queue_t 拥有消费者等待互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-3 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
+src/logger_queue.c	pthread_mutex_init	&q->wait_mu,NULL	1	logger_queue_t 拥有消费者等待互斥锁	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 mutex-3 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
 src/logger_syslog.c	socket	AF_UNIX,SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0	1	Syslog 后端拥有非阻塞 UNIX socket 描述符	tests/regression/test_syslog_faults.c	direct	socket 创建/连接/关闭错误由真实 Syslog 故障回归验证
-src/logger_worker.c	calloc	1,sizeof(*workspace)	1	logger_t 拥有 worker workspace，线程仅借用	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-4 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	calloc	capacity,sizeof(*batch)	1	worker workspace 拥有批处理消息存储	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-5 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	calloc	capacity,sizeof(*copy)	1	worker workspace 拥有批处理 iovec 拷贝	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-7 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	calloc	capacity,sizeof(*failed)	1	worker workspace 拥有逐项错误位	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-9 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	calloc	capacity,sizeof(*lens)	1	worker workspace 拥有输出长度数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-8 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	calloc	capacity,sizeof(*vec)	1	worker workspace 拥有批处理 iovec 数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-6 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
-src/logger_worker.c	malloc	capacity*LOGGER_LINE_MAX	1	worker workspace 拥有有界格式化行内存	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 malloc-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；以本 PR 最新 CI 验收为准
+src/logger_worker.c	calloc	1,sizeof(*workspace)	1	logger_t 拥有 worker workspace，线程仅借用	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-4 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	calloc	capacity,sizeof(*batch)	1	worker workspace 拥有批处理消息存储	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-5 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	calloc	capacity,sizeof(*copy)	1	worker workspace 拥有批处理 iovec 拷贝	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-7 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	calloc	capacity,sizeof(*failed)	1	worker workspace 拥有逐项错误位	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-9 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	calloc	capacity,sizeof(*lens)	1	worker workspace 拥有输出长度数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-8 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	calloc	capacity,sizeof(*vec)	1	worker workspace 拥有批处理 iovec 数组	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 calloc-6 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
+src/logger_worker.c	malloc	capacity*LOGGER_LINE_MAX	1	worker workspace 拥有有界格式化行内存	tests/regression/test_ctor_resource_failure.c	direct	逐获取点注入 malloc-1 使真实生产构造返回错误，核验内存逐项释放、对象计数归零和随后重新创建；#206 已验收合并；后续获取变更须重新验证
