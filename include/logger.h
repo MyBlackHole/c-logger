@@ -296,6 +296,15 @@ typedef struct {
  * 应在指针所有权转移期间禁用取消。调用者拥有所有成功返回的指针，
  * 并且必须为之后的取消安排清理。
  */
+/* 显式初始化当前进程的 Logger 引导状态，不创建实例。
+ * 成功返回 0；已就绪返回 -EALREADY，并发初始化返回 -EAGAIN，
+ * 同线程注册重入返回 -EDEADLK；注册失败返回负错误码，允许显式重试。
+ * 所有返回路径保留调用方 errno；不能从信号处理函数调用。
+ * 当前首阶段尚无继承资源隔离，fork 子方仍返回 -ECHILD（包括对象计数为零）。
+ * 不以该入口或注册成功声明 fork 子方完整运行态已经可重建。
+ */
+LOGGER_API int logger_process_init(void);
+
 LOGGER_API logger_t *logger_create(const logger_config_t *);
 LOGGER_API void logger_context_set(const logger_context_t *);
 LOGGER_API void logger_context_clear(void);

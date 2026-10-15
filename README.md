@@ -8,7 +8,7 @@
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
-当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47 个公开 C ABI 符号**。
+当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 48 个当前公开 C ABI 符号**。
 
 > **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
 > 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、
@@ -126,6 +126,12 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 把日志回调转交给自己持有的实例。
 
 ## fork 边界
+
+#218 正在按不兼容旧 API 的方向建设子方显式重新初始化。本阶段只新增
+`logger_process_init()` 进程引导入口及单一注册状态机；**还没有子方资源隔离，
+因此初始化后的 fork 子进程调用该接口仍为 `-ECHILD`**。详见
+[进程引导合同与下一阶段](docs/v2/PROCESS_BOOTSTRAP.md)。完整新 API 尚未冻结。
+
 
 当前库不提供 `logger_fork_reinit()` 或其他进程创建辅助接口，也不扫描宿主线程列表。
 宿主负责进程创建、线程退出与首次初始化时机。继承运行时后的原始 fork 仍由 PID/atfork
