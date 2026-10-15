@@ -54,11 +54,15 @@ python3 validation/evidence/fuzz-20261014/replay.py --mode public-fuzzer --print
 在独立目录检出该提交、安装对应 GCC/Clang 与 Xmake 3.1.1 后执行：
 
 ```sh
+XMAKE_CONFIGDIR=/tmp/c-logger-xmake-config \
 python3 validation/evidence/fuzz-20261014/replay.py \
   --mode public-fuzzer --source-dir /tmp/c-logger-historical-source \
   --output-dir /tmp/c-logger-new-replay
 ```
 
+Xmake 默认在项目内写本地配置；此处通过其 `XMAKE_CONFIGDIR` 环境变量
+改放源码外，不修改历史 `.gitignore`，也不隐藏未跟踪的源码改动。
+工作流为每种模式设置独立的临时配置目录，源码洁净断言保持严格。
 新输出必须在源码目录之外且不能预先存在。操作系统和工具链按本轮
 实际值记录；不要求与历史二进制哈希一致，也不自动下载执行归档内代码。
 覆盖插桩归档不属于发布库，普通交付的 ELF/ABI/无测试插桩验证不变。
