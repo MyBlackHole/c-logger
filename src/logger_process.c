@@ -1,30 +1,31 @@
+#include "logger.h"
 #include "logger_process.h"
 
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <unistd.h>
 
-/* Linux 的 pid_t 可放入 int。处理函数状态与进程标识必须无锁；
- * 拒绝子进程的路径禁止经过 libatomic 内部锁。
- */
+/* PID 与初始化票据在子进程拒绝路径中也要使用，不能落入 libatomic 锁。 */
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "fork guard requires lock-free int");
 static _Atomic int owner_pid;
 static _Atomic int forked_child;
-/* 进程级存活对象计数，只用于 fork 与生命周期门禁。
- * 这不是每个 logger 的引用计数：它不会延长任何 logger_t 的生命周期，
- * 计数归零也不会触发对象释放。
- */
+/* 负数表示阶段，正数完整保存最近一次注册错误，不额外发布普通错误字段。 */
+enum process_phase {
+	PROCESS_IDLE = 0,
+	PROCESS_STARTING = -1,
+	PROCESS_READY = -2
+};
+static _Atomic int process_ticket;
+static _Thread_local int initializing;
+/* 这不是实例引用计数，也不是全部在途操作/继承资源的清单。 */
 static _Atomic unsigned live_objects;
-static pthread_once_t register_once = PTHREAD_ONCE_INIT;
-static int registration_error; /* 由 pthread_once 发布 */
 
 void logger_process_invalidate_child(void)
 {
-	/* 这里绝不能覆盖或销毁 pthread 对象，也不能释放继承来的 fd。
-	 * 继承的运行时保持原样，直到 exec 或 _exit。
-	 */
+	/* 本阶段尚未建立资源快照，绝不清 PID 或复用继承的锁/队列。 */
 	atomic_store_explicit(&forked_child, 1, memory_order_relaxed);
 }
 
@@ -33,38 +34,106 @@ int logger_process_is_child(void)
 	if (atomic_load_explicit(&forked_child, memory_order_relaxed))
 		return 1;
 	int owner = atomic_load_explicit(&owner_pid, memory_order_acquire);
-	/* 同时覆盖应用子进程处理函数早于本库注册、以及注册窗口内 fork 的情况。
-	 * 这里不承诺支持 vfork/clone。
-	 */
+	/* 覆盖注册尚未完成及宿主更早注册的 child handler。 */
 	return owner != 0 && owner != (int)getpid();
 }
 
-static void register_guard(void)
+static int claim_process(void)
 {
-	registration_error =
-		pthread_atfork(NULL, NULL, logger_process_invalidate_child);
-}
-
-int logger_process_ensure(void)
-{
-	if (atomic_load_explicit(&forked_child, memory_order_relaxed))
+	if (logger_process_is_child())
 		return -ECHILD;
-	int owner = atomic_load_explicit(&owner_pid, memory_order_acquire);
 	int current = (int)getpid();
-	if (owner != 0 && owner != current)
-		return -ECHILD;
 	int expected = 0;
+
+	/* 注册前就发布 PID。子方不得等待消失线程的 STARTING 票据。 */
 	(void)atomic_compare_exchange_strong_explicit(&owner_pid, &expected,
 						      current,
 						      memory_order_release,
 						      memory_order_relaxed);
-	if (expected != 0 && expected != current)
-		return -ECHILD;
-	/* 先发布进程标识，再进入 pthread_once 注册。
-	 * 如果 fork 发生在其他线程安装处理函数期间，子进程不能进入继承来的 once 锁。
+	return expected != 0 && expected != current ? -ECHILD : 0;
+}
+
+static int initialize_process(void)
+{
+	int rc = claim_process();
+	if (rc)
+		return rc;
+	if (initializing)
+		return -EDEADLK;
+	int ticket;
+
+	ticket = atomic_load_explicit(&process_ticket, memory_order_acquire);
+	if (ticket == PROCESS_READY)
+		return -EALREADY;
+	if (ticket == PROCESS_STARTING)
+		return -EAGAIN;
+
+	/* 在取得初始化所有权前禁止取消，避免票据永久停在 STARTING。
+	 * 完成发布后恢复调用方策略；待定取消不会撤销已注册的进程能力。
 	 */
-	int rc = pthread_once(&register_once, register_guard);
-	return rc ? -rc : -registration_error;
+	int old_cancel;
+	rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_cancel);
+	if (rc)
+		return -rc;
+	if (!atomic_compare_exchange_strong_explicit(
+		    &process_ticket, &ticket, PROCESS_STARTING,
+		    memory_order_acq_rel, memory_order_acquire)) {
+		rc = ticket == PROCESS_READY ? -EALREADY : -EAGAIN;
+	} else {
+		initializing = 1;
+		int error = pthread_atfork(NULL, NULL,
+					   logger_process_invalidate_child);
+		/* 只有注册成功才发布 READY；显式调用可以重试正数错误票据。
+		 * 注册成功后再也不进入此分支，不会重复安装处理函数。
+		 */
+		atomic_store_explicit(&process_ticket,
+				      error ? error : PROCESS_READY,
+				      memory_order_release);
+		initializing = 0;
+		rc = -error;
+	}
+	int restore = pthread_setcancelstate(old_cancel, NULL);
+	return rc ? rc : -restore;
+}
+
+int logger_process_init(void)
+{
+	/* 新接口只返回 0/-errno；不让内部 libc 调用改写调用方的 errno。 */
+	int saved = errno;
+	int rc = initialize_process();
+
+	errno = saved;
+	return rc;
+}
+
+int logger_process_ensure(void)
+{
+	/* 现有入口在本增量仍按需进入同一个状态机，不保留 pthread_once 路径。
+	 * 后续公开接口迁移会使初始化成为显式前提；这里不是子方恢复入口。
+	 */
+	for (;;) {
+		if (logger_process_is_child())
+			return -ECHILD;
+		if (initializing)
+			return -EDEADLK;
+		int ticket = atomic_load_explicit(&process_ticket,
+						  memory_order_acquire);
+		if (ticket == PROCESS_READY)
+			return 0;
+		/* 普通操作不能静默重试注册失败；只允许显式初始化重试。 */
+		if (ticket > 0)
+			return -ticket;
+		if (ticket == PROCESS_STARTING) {
+			/* 仅冷启动等待；正常日志的 READY 快路径不执行此调用。 */
+			(void)sched_yield();
+			continue;
+		}
+		int rc = logger_process_init();
+		if (rc == -EALREADY)
+			return 0;
+		if (rc != -EAGAIN)
+			return rc;
+	}
 }
 
 int logger_process_object_acquire(void)

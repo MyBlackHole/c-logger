@@ -59,3 +59,4 @@ validation/AUDIT_TEST_RETIREMENT.md
 # 当前稳定发布准备合同与说明。
 abi/LOGGER_2_0_CONTRACT.md
 docs/RELEASE_NOTES_2.0.0.md
+docs/v2/PROCESS_BOOTSTRAP.md

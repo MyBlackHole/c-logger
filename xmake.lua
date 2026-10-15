@@ -510,6 +510,18 @@ if has_config("build_tests") then
             add_tests("default", {timeout = spec[3]})
         target_end()
     end
+    -- #218 进程初始化的真实生产静态/共享入口。
+    target("process_init_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_process_init.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "prefork", "implicit"}) do
+            add_tests(mode, {runargs = mode, group = "process-init", timeout = 20})
+        end
+    target_end()
+
     -- #107 公开 API 的确定性输入变异，静态/共享均链接真实生产库。
     -- 同一个测试源另由 Clang libFuzzer 直接以任意字节驱动。
     target("public_fuzz_property_test")
@@ -732,6 +744,31 @@ if has_config("build_regression_tests") then
         add_syslinks("pthread", {public = true})
         add_includedirs("include", "$(builddir)/generated", {public = true})
     target_end()
+
+    -- 同一测试分别链接生产静态归档和白盒支持归档，不伪称 DSO 内部拦截。
+    local process_init_libraries = {{"process_init_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(process_init_libraries, {"process_init_production_regression", "logger"})
+    end
+    for _, spec in ipairs(process_init_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_process_init.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_atfork", "pthread_setcancelstate", "sched_yield"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"register-error", "repeat-errors", "reentrant",
+                                   "concurrent", "retry-concurrent", "fork-window",
+                                   "fork-installed", "earlier-handler", "cancel-init",
+                                   "disable-error", "restore-error", "fork-failed-state"}) do
+                add_tests(mode, {runargs = mode, group = "process-init", timeout = 20})
+            end
+        target_end()
+    end
 
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},

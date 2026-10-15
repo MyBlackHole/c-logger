@@ -15,9 +15,15 @@ GCC >=9、Clang >=10；公开头文件支持 C++11 消费方。项目构建、�
 以 Xmake 为准，CI 固定 3.1.1；CMake 与 pkg-config 是下游消费接口。
 musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/SUPPORT_MATRIX.md)。
 
+## #218 开发增量状态
+
+新增 `logger_process_init()` 只实现进程引导注册、并发发布及显式错误重试；
+它尚不提供继承资源隔离或 fork 子进程重初始化。完整新 API 和该功能仍待实现，
+本说明不能据此作为正式发布通过证明。见 [进程引导合同](v2/PROCESS_BOOTSTRAP.md)。
+
 ## ABI 破坏与迁移
 
-- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和 47 个公开 C 符号。
+- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和 48 个当前公开 C 符号。
   不可替换 SONAME 1 库；必须使用同版头文件重新构建并验收消费方，不承诺 v1 源码兼容。
 - 删除 Audit/crypto 产品、`audit.h` 和 `audit_*` 导出。普通日志不提供审计事务、
   哈希链、不可变存储或可信锚点。旧审计用户继续使用 `release/1.x`，或迁移独立组件。
@@ -29,7 +35,7 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
   内部轮转要求 `RENAME_NOREPLACE`，不以覆盖归档降级；目录必须可信。
 
 具体公开合同见 [API](../API.md)、[配置规则](UAPI.md)和[宿主持有集成](HOST_OWNED.md)。
-上述版本身份和符号数量已经存在于准备基线；[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
+版本身份已存在于准备基线；新增初始化符号使本阶段导出增为48个，不能倒写为历史基线数量。[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
 按现有可执行快照整理，最终稳定 ABI/API 的发布确认须与最终源码验收一并记录，
 不能仅凭旧开发文案断言实现未完成，也不能仅凭本稿断言合同已经冻结。
 

@@ -1,11 +1,11 @@
 #ifndef LOGGER_PROCESS_H
 #define LOGGER_PROCESS_H
 
-/* Logger、Console 共享的私有进程级所有权守卫。
- * ensure 只在父进程侧完成注册，返回 0 / -errno。
- * 进入 pthread_once、锁、内存分配或 I/O 前必须先检查子进程状态。
- * 进程标识不在继承运行时的子进程中重新绑定；子进程必须 exec。
- * 这是防御性拒绝机制，不是通用的异步信号安全日志 API。
+/* Logger、Console 共享的进程准入检查。
+ * 当前既有入口仍可按需初始化，但只经过 logger_process_init 的单一状态机。
+ * 普通调用不重试注册失败；显式 process_init 才能发起重试。
+ * fork 子方必须先于票据等待和 pthread 调用拒绝。本增量没有子方资源隔离，
+ * 不能将新公开初始化入口误称为已经支持子进程重新初始化。
  */
 int logger_process_ensure(void);
 int logger_process_is_child(void);

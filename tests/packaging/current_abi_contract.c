@@ -1,6 +1,7 @@
 #include <console.h>
 #include <logger.h>
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -224,7 +225,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* 精确公开函数类型契约：47 个默认生产导出。 */
+/* 精确公开函数类型契约：48 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -242,6 +243,7 @@ ABI_FN(console_warn, int, const char *, ...);
 ABI_FN(logger_context_clear, void, void);
 ABI_FN(logger_context_get, logger_context_t, void);
 ABI_FN(logger_context_set, void, const logger_context_t *);
+ABI_FN(logger_process_init, int, void);
 ABI_FN(logger_create, logger_t *, const logger_config_t *);
 ABI_FN(logger_destroy, void, logger_t *);
 ABI_FN(logger_destroy_status, int, logger_t *);
@@ -315,5 +317,15 @@ static int defaults_match(void)
 
 int main(void)
 {
-	return defaults_match();
+	int rc = defaults_match();
+	if (rc)
+		return rc;
+	/* 真实安装库的 C/C++11 调用，不仅检查头文件中存在声明。 */
+	int (*initialize)(void) = logger_process_init;
+	errno = EDOM;
+	if (initialize() != 0 || errno != EDOM)
+		return 10;
+	if (initialize() != -EALREADY || errno != EDOM)
+		return 11;
+	return 0;
 }

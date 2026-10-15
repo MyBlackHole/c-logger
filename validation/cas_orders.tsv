@@ -20,3 +20,4 @@ src/logger_process.c	weak	&live_objects	n-1	acq_rel	acquire	1	有界对象计数
 src/logger_queue.c	weak	&q->spill_used[word]	desired	acq_rel	relaxed	1	在 release 清位后取得 spill 独占复用权；失败只选择另一个位。
 src/logger_queue.c	weak	&q->enqueue_pos	pos+1	relaxed	relaxed	1	只预留唯一队列位置；正文由独立 slot.seq release/acquire 发布。
 src/logger_worker.c	strong	&l->lifecycle_error	wait_rc	release	relaxed	1	发布 worker 等待失败；失败时的期望值不再使用。
+src/logger_process.c	strong	&process_ticket	PROCESS_STARTING	acq_rel	acquire	1	显式取得唯一初始化者；成功注册前不发布 READY，错误票据允许显式重试。

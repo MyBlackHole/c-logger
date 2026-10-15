@@ -11,13 +11,20 @@ SONAME 为 `liblogger.so.2`，ELF 默认符号版本为 `LOGGER_2.0`。
 默认值和函数类型快照；`.cpp` 原样包含 `.c`。C11检查精确函数类型；C++11独立检查
 布局、数值和默认初始化器，不宣称C++模板检查覆盖了所有C函数属性。
 
-准备来源：55046bfe2833a13aac848f1575c763be3af868eb。以下断言及默认值代码原样摘录自该快照，
-本次未修改测试源。最终验收以发布标签解析的源码及独立记录 `SOURCE_COMMIT` 为准；
-这里不嵌入文档自身的提交号。源快照 SHA-256：`c8e0a2b93ae5ab799da5d49c3baab72bf15ec2d09e2e6a5d4123307dc8feeac2`。
+历史准备来源为 `55046bfe2833a13aac848f1575c763be3af868eb`。#218 首个代码增量
+新增 `logger_process_init` 类型及真实安装调用验证；下方断言节按现行源码更新，
+不再冒称与历史快照原样一致。现行 C 测试源 SHA-256：
+`94f6ea19c8b6341e83e11f4142d647b71f3c147d009e5d57461794f262f5fdf7`。
+最终验收以固定源码和独立记录的 `SOURCE_COMMIT` 为准。
+
+本轮为新 API 的分阶段建设：48 导出不是新的最终冻结，`logger_create/destroy`
+等完整接口迁移及 fork 子方资源隔离仍由 #218 跟踪，不维持永久旧新双路径。
+新增初始化接口使用 `0/-errno` 并保留 errno；其子方仍返回 `-ECHILD`，不声称
+已完成 fork 后重新初始化。详细状态见 [进程引导合同](../docs/v2/PROCESS_BOOTSTRAP.md)。
 
 ## 兼容接口面与演进
 
-2.0.0 当前合同包含47个生产C导出；不含Audit/crypto或旧fork辅助接口。
+2.0.0 当前合同包含48个生产C导出；不含Audit/crypto或旧fork辅助接口。
 从v1迁移必须重新构建和验收，不承诺v1源码或二进制兼容。待本合同最终验收确认后，
 兼容2.x更新应保持既有类型大小/对齐/字段偏移、数值、精确函数类型、配置版本及已有默认语义。
 新增接口须显式ABI评审，不能用通配符扩大导出；破坏布局、函数类型、数值或所有权/错误
@@ -37,7 +44,10 @@ SONAME 为 `liblogger.so.2`，ELF 默认符号版本为 `LOGGER_2.0`。
 [生命周期](../docs/LIFECYCLE.md)和[崩溃合同](../docs/LOGGER_CRASH_CONTRACT.md)交叉核对。
 下面数值快照不能替代这些语义。
 
-## #108 公开错误模型决策及生命周期冻结边界
+## 原 #108 公开错误模型决策及生命周期冻结边界
+
+以下保留原实例接口的阶段决策；新增 process_init 的 0/-errno 与 errno 保留规则
+以上方 #218 说明为准。它不是再次确认未来新 API 必须沿用旧错误模型。
 
 ### 比较和选择
 
@@ -49,7 +59,7 @@ SONAME 为 `liblogger.so.2`，ELF 默认符号版本为 `LOGGER_2.0`。
 | B：公开状态为 0 / -1 并设置 errno；内部为 0 / -errno | 与文件/进程操作的正常调用惯例一致，能把资源关闭错误与恢复状态明确报告给宿主；已有生产实现和安装方使用此契约 | **选择为默认规则** |
 | C：新增公开错误枚举与细节对象 | 为当前普通 Logger 引入额外公开类型、返回值和生命周期，并不能解决日志队列的异步失败；缺少必须升级 ABI 的明确需求 | 本次不采用 |
 
-**唯一明确保留的历史公开例外**：logger_log_sync_status() 直接返回
+**原实例接口中明确保留的历史公开例外**：logger_log_sync_status() 直接返回
 0 / 负 errno（例如非法输入为 -EINVAL、过长为 -EOVERFLOW）。
 它不是统一的 POSIX 状态接口，也不能把返回 -1 当作所有错误的判定条件。
 同一实参、返回值和函数指针类型属于已验证的 ABI 2 语义快照；若将来计划
@@ -85,7 +95,7 @@ errno，不能假定 void 接口会提供每条记录是否已接收的确认。
 - tests/test_config_abi.c 验证配置默认、版本/大小/值拒绝和未来结构的
   零尾/非零尾规则；未以旧 1.x 短结构前缀冒充 2.0 兼容。
 - tests/packaging/current_abi_contract.c 与其 C++11 消费方冻结类型大小、
-  对齐、偏移、数值常量、默认值及 47 个函数签名；ELF 检查独立验收
+  对齐、偏移、数值常量、默认值及 48 个函数签名；ELF 检查独立验收
   allowlist、SONAME 2、LOGGER_2.0 符号版本，不以编译成功替代 ABI 检查。
 - 发布验证还须以最终固定源码实际生成的 static/shared TGZ，分别在
   最低受支持环境与新系统运行安装后的 C/C++11/pkg-config/PIC SDK 消费方。
@@ -312,7 +322,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* 精确公开函数类型契约：47 个默认生产导出。 */
+/* 精确公开函数类型契约：48 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -330,6 +340,7 @@ ABI_FN(console_warn, int, const char *, ...);
 ABI_FN(logger_context_clear, void, void);
 ABI_FN(logger_context_get, logger_context_t, void);
 ABI_FN(logger_context_set, void, const logger_context_t *);
+ABI_FN(logger_process_init, int, void);
 ABI_FN(logger_create, logger_t *, const logger_config_t *);
 ABI_FN(logger_destroy, void, logger_t *);
 ABI_FN(logger_destroy_status, int, logger_t *);
@@ -408,6 +419,6 @@ static int defaults_match(void)
 
 ## 验证要求
 
-最终源码须通过当前C11/C++11可执行契约、真实共享库47符号/版本/SONAME检查、静态和共享
+最终源码须通过当前C11/C++11可执行契约、真实共享库48符号/版本/SONAME检查、静态和共享
 安装消费方、配置负向测试与生产隔离检查。仅编译本文或仅数出符号不能替代它们。
 最终验收结果及来源按[发布工程](../docs/RELEASE_ENGINEERING.md)记录；未执行项保持未验收。

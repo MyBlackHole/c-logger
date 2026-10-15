@@ -39,6 +39,7 @@ logger_log
 logger_log_source
 logger_log_sync_status
 logger_mask_secret
+logger_process_init
 logger_redact
 logger_reopen
 logger_reopen_instance
