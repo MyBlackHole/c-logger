@@ -21,6 +21,8 @@ enum failure {
 	FAIL_UNMAP
 };
 static int fault;
+static int allocation_errno = ENOMEM;
+static _Atomic unsigned mapping_calls;
 static unsigned countdown;
 static _Atomic int entered;
 static _Atomic int release_holder;
@@ -58,8 +60,9 @@ static int failing(int which)
 
 void *__wrap_mmap(void *p, size_t n, int prot, int flags, int fd, off_t off)
 {
+	atomic_fetch_add(&mapping_calls, 1);
 	if (failing(FAIL_MAP)) {
-		errno = ENOMEM;
+		errno = allocation_errno;
 		return MAP_FAILED;
 	}
 	return __real_mmap(p, n, prot, flags, fd, off);
@@ -68,7 +71,7 @@ void *__wrap_mmap(void *p, size_t n, int prot, int flags, int fd, off_t off)
 int __wrap_madvise(void *p, size_t n, int advice)
 {
 	if (failing(FAIL_ADVICE)) {
-		errno = ENOMEM;
+		errno = allocation_errno;
 		return -1;
 	}
 	return __real_madvise(p, n, advice);
@@ -300,21 +303,47 @@ static void early_child(void)
 
 static void allocation_failures(void)
 {
-	size_t before = logger_runtime_current()->allocation_count;
+	struct logger_runtime *runtime = logger_runtime_current();
+	size_t before = runtime->allocation_count;
+	size_t owned_before = runtime->owned_count;
 	logger_config_t cfg = cfg_for("failed.log");
-	/* 一个实例、两个队列数组、七个工作区分配，逐次拒绝其 DONTFORK。 */
-	for (unsigned i = 1; i <= 10; ++i) {
-		fault = FAIL_ADVICE;
-		countdown = i;
-		logger_t *l = logger_create(&cfg);
-		CHECK(l == NULL && countdown == 0);
-		CHECK(logger_runtime_current()->allocation_count == before);
-		CHECK(logger_process_object_count() == 1);
+	const int failures[] = { FAIL_MAP, FAIL_ADVICE };
+	const int errors[] = { ENOMEM, EIO };
+	unsigned cases = 0;
+
+	/* 一个实例、两个队列数组、七个工作区映射，逐点拒绝真实系统调用。
+	 * 非 ENOMEM 错误必须原样返回；首错后不再取得后续候选映射。
+	 */
+	for (unsigned f = 0; f < sizeof(failures) / sizeof(failures[0]); ++f) {
+		for (unsigned e = 0; e < sizeof(errors) / sizeof(errors[0]);
+		     ++e) {
+			for (unsigned i = 1; i <= 10; ++i) {
+				allocation_errno = errors[e];
+				fault = failures[f];
+				countdown = i;
+				atomic_store(&mapping_calls, 0);
+				logger_t *l = logger_create(&cfg);
+				int error = errno;
+
+				CHECK(l == NULL && countdown == 0);
+				CHECK(error == allocation_errno);
+				CHECK(atomic_load(&mapping_calls) == i);
+				CHECK(runtime->allocation_count == before);
+				CHECK(runtime->owned_count == owned_before);
+				CHECK(logger_process_object_count() == 1);
+				/* 失败后同一进程、同一路径可真正创建与释放。 */
+				l = logger_create(&cfg);
+				CHECK(l);
+				CHECK(logger_destroy_status(l) == 0);
+				CHECK(runtime->allocation_count == before);
+				CHECK(runtime->owned_count == owned_before);
+				++cases;
+			}
+		}
 	}
-	logger_t *l = logger_create(&cfg);
-	CHECK(l);
-	CHECK(logger_destroy_status(l) == 0);
-	CHECK(logger_runtime_current()->allocation_count == before);
+	allocation_errno = ENOMEM;
+	CHECK(cases == 40);
+	printf("ALLOCATION_FAILURE_CASES=%u\n", cases);
 }
 
 int main(int argc, char **argv)

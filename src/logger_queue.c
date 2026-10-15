@@ -243,9 +243,11 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 
 	logger_queue_slot_t *slots __free(runtime_free) =
 		logger_runtime_calloc(q->cap, sizeof(*slots));
+	if (!slots)
+		return -1;
 	logger_queue_spill_t *spills __free(runtime_free) =
 		logger_runtime_calloc(q->spill_cap, sizeof(*spills));
-	if (!slots || !spills)
+	if (!spills)
 		return -1;
 
 	for (size_t i = 0; i < q->cap; ++i)

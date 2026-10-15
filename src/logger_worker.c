@@ -35,24 +35,32 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 
 	logger_worker_workspace_t *workspace __free(runtime_free) =
 		logger_runtime_calloc(1, sizeof(*workspace));
+	if (!workspace)
+		return NULL;
 	logger_message_t *batch __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*batch));
+	if (!batch)
+		return NULL;
 	struct iovec *vec __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*vec));
+	if (!vec)
+		return NULL;
 	struct iovec *copy __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*copy));
+	if (!copy)
+		return NULL;
 	char *lines __free(runtime_free) =
 		logger_runtime_malloc(capacity * LOGGER_LINE_MAX);
+	if (!lines)
+		return NULL;
 	size_t *lens __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*lens));
+	if (!lens)
+		return NULL;
 	unsigned char *failed __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*failed));
-
-	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
-	    !failed) {
-		errno = ENOMEM;
+	if (!failed)
 		return NULL;
-	}
 
 	workspace->capacity = capacity;
 	/* 所有权转移：词法作用域内的分配所有者 -> 工作区对象。
@@ -351,7 +359,7 @@ void *logger_worker_main(void *p)
 			/* waiting 必须在持有 wait_mu 时发布，并且发布后重新检查
 			 * 队列和 running。这样生产者如果在任一窗口发布记录：
 			 * - 没看到 waiting：本次复查会看到记录；
-			 * - 看到了 waiting：会在同一互斥锁下发送信号通知。
+			 * - 看到了 waiting：本次复查也会看到记录，或在配对锁下通知。
 			 */
 			while (logger_queue_empty(&l->q) &&
 			       atomic_load_explicit(&l->running,
