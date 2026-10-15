@@ -19,7 +19,7 @@ binary="$build/worker-failure-regression"
     -pthread -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join \
     -Wl,--wrap=pthread_mutex_lock -Wl,--wrap=pthread_mutex_unlock \
     -Wl,--wrap=pthread_cond_wait -Wl,--wrap=pthread_cond_broadcast \
-    -Wl,--wrap=strrchr -Wl,--wrap=logger_file_writev -Wl,--wrap=free \
+    -Wl,--wrap=strrchr -Wl,--wrap=logger_file_writev -Wl,--wrap=logger_runtime_free \
     -o "$binary"
 printf 'SOURCE_COMMIT=%s\n' "$(git rev-parse HEAD)"
 printf 'SOURCE_STATUS=%s\n' "$(git status --porcelain --untracked-files=no)"

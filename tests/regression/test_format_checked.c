@@ -20,6 +20,7 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
 {
 	if (fail_format) {
 		fail_format = 0;
+		errno = EILSEQ;
 		return -1;
 	}
 	return __real_vsnprintf(out, cap, fmt, ap);
@@ -35,6 +36,7 @@ int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
 {
 	if (fail_format) {
 		fail_format = 0;
+		errno = EILSEQ;
 		return -1;
 	}
 	return __real___vsnprintf_chk(out, cap, flag, object_size, fmt, ap);

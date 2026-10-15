@@ -1,3 +1,4 @@
+#include "logger_libc.h"
 #include "logger_internal.h"
 #include <errno.h>
 #include <stdarg.h>
@@ -31,10 +32,10 @@ static int append(char *out, size_t cap, size_t *used, const char *fmt, ...)
 		return -EOVERFLOW;
 	va_list ap;
 	va_start(ap, fmt);
-	int n = vsnprintf(out + *used, cap - *used, fmt, ap);
+	int n = logger_libc_vsnprintf(out + *used, cap - *used, fmt, ap);
 	va_end(ap);
 	if (n < 0)
-		return -EILSEQ;
+		return -(errno ? errno : EILSEQ);
 	size_t room = cap - *used;
 	if ((size_t)n >= room) {
 		*used += room - 1;
@@ -117,10 +118,12 @@ static int format_line(const logger_t *l, const logger_message_t *m,
 		 * 看起来像有效的旧秒缓存命中。
 		 */
 		timestamp.valid = 0;
-		if (!localtime_r(&sec, &tm) ||
-		    !strftime(timestamp.date, sizeof(timestamp.date),
-			      "%Y-%m-%dT%H:%M:%S", &tm) ||
-		    !strftime(timestamp.zone, sizeof(timestamp.zone), "%z", &tm)) {
+		if (!logger_libc_localtime_r(&sec, &tm) ||
+		    !logger_libc_strftime(timestamp.date,
+					  sizeof(timestamp.date),
+					  "%Y-%m-%dT%H:%M:%S", &tm) ||
+		    !logger_libc_strftime(timestamp.zone,
+					  sizeof(timestamp.zone), "%z", &tm)) {
 			/* 普通诊断输出保留原有的可见回退文本。
 			 * 严格输出会在下方、任何后端操作之前拒绝该情况。
 			 */
@@ -138,11 +141,11 @@ static int format_line(const logger_t *l, const logger_message_t *m,
 	int rc, truncated = 0;
 #define ADD(...) do { \
 	rc = append(out, cap - 1, &used, __VA_ARGS__); \
-	if (strict && rc) \
-		return rc; \
-	if (rc == -EOVERFLOW) \
-		truncated = 1; \
-} while (0)
+		if (rc && (strict || rc != -EOVERFLOW))        \
+			return rc;                             \
+		if (rc == -EOVERFLOW)                          \
+			truncated = 1;                         \
+	} while (0)
 	ADD("%s.%06ld%s %-5s", timestamp.date, m->ts.tv_nsec / 1000L,
 	    timestamp.zone, logger_level_name(m->level));
 	logger_detail_t detail = logger_internal_detail(l);
@@ -181,8 +184,11 @@ size_t logger_format_line(const logger_t *l, const logger_message_t *m,
 	size_t length = 0;
 	int rc = format_line(l, m, out, cap, &length, 0);
 
-	if (rc)
+	if (rc) {
+		if (out && cap)
+			out[0] = 0;
 		errno = -rc;
+	}
 	return length;
 }
 
@@ -197,4 +203,9 @@ int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
 	if (rc && out && cap)
 		out[0] = 0;
 	return rc;
+}
+
+void logger_format_reset_child(void)
+{
+	timestamp.valid = 0;
 }

@@ -37,8 +37,8 @@ static void note_allocation(void *p)
 	allocations[allocation_count++].ptr = p;
 }
 
-void *__real_calloc(size_t, size_t);
-void *__wrap_calloc(size_t n, size_t size)
+void *__real_logger_runtime_calloc(size_t, size_t);
+void *__wrap_logger_runtime_calloc(size_t n, size_t size)
 {
 	unsigned call = ++calloc_calls;
 	if (fault == FAULT_CALLOC && call == target) {
@@ -46,13 +46,13 @@ void *__wrap_calloc(size_t n, size_t size)
 		errno = ENOMEM;
 		return NULL;
 	}
-	void *p = __real_calloc(n, size);
+	void *p = __real_logger_runtime_calloc(n, size);
 	note_allocation(p);
 	return p;
 }
 
-void *__real_malloc(size_t);
-void *__wrap_malloc(size_t size)
+void *__real_logger_runtime_malloc(size_t);
+void *__wrap_logger_runtime_malloc(size_t size)
 {
 	unsigned call = ++malloc_calls;
 	if (fault == FAULT_MALLOC && call == target) {
@@ -60,13 +60,13 @@ void *__wrap_malloc(size_t size)
 		errno = ENOMEM;
 		return NULL;
 	}
-	void *p = __real_malloc(size);
+	void *p = __real_logger_runtime_malloc(size);
 	note_allocation(p);
 	return p;
 }
 
-void __real_free(void *);
-void __wrap_free(void *p)
+int __real_logger_runtime_free(void *);
+int __wrap_logger_runtime_free(void *p)
 {
 	if (p) {
 		int found = 0;
@@ -85,7 +85,7 @@ void __wrap_free(void *p)
 				CHECK(allocations[i].ptr != p);
 		}
 	}
-	__real_free(p);
+	return __real_logger_runtime_free(p);
 }
 
 int __real_pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *);
@@ -150,6 +150,12 @@ static void choose_case(const char *kind, unsigned index)
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2 || argc == 3);
+	/* 域构造的四个 mutex/rwlock 由独立运行域故障矩阵覆盖。
+	 * 本用例只统计实例构造原有的取得点，先完成一次真实进程初始化。
+	 */
+	CHECK(logger_process_init() == 0);
+	mutex_calls = 0;
+	cond_calls = 0;
 	if (argc == 3) {
 		char *end = NULL;
 		unsigned long chosen = strtoul(argv[2], &end, 10);

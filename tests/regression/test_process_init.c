@@ -19,6 +19,7 @@ static _Atomic int disable_error;
 static _Atomic int restore_error;
 static _Atomic int strict_child;
 static int init_result;
+static int early_handler_done;
 static _Thread_local int observing_wait;
 
 int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
@@ -161,12 +162,27 @@ static void child_reject(void)
 		_exit(31);
 }
 
+static void early_child_reject(void)
+{
+	child_reject();
+	early_handler_done = 1;
+}
+
 static void fork_reject(void)
 {
 	pid_t pid = fork();
 	CHECK(pid >= 0);
 	if (!pid) {
-		child_reject();
+		/* 更早处理函数已验证注册顺序拒绝；本库处理函数完成后
+		 * 显式初始化现在可以成功，不再要求它永久返回 ECHILD。
+		 * 普通入口在显式初始化之前仍须保持拒绝。
+		 */
+		if (early_handler_done) {
+			if (logger_process_ensure() != -ECHILD)
+				_exit(32);
+		} else {
+			child_reject();
+		}
 		_exit(0);
 	}
 	wait_ok(pid);
@@ -229,7 +245,8 @@ int main(int argc, char **argv)
 		ready_works();
 		CHECK(atomic_load(&registration_calls) == 1);
 	} else if (!strcmp(mode, "earlier-handler")) {
-		CHECK(__real_pthread_atfork(NULL, NULL, child_reject) == 0);
+		CHECK(__real_pthread_atfork(NULL, NULL, early_child_reject) ==
+		      0);
 		CHECK(logger_process_init() == 0);
 		fork_reject();
 		ready_works();

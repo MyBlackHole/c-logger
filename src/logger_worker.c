@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_runtime.h"
 #include "logger_internal.h"
 #include "logger_cleanup.h"
 #include "logger_sigpipe.h"
@@ -32,16 +33,20 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	if (!capacity)
 		capacity = 1;
 
-	logger_worker_workspace_t *workspace __free(free) =
-		calloc(1, sizeof(*workspace));
-	logger_message_t *batch __free(free) =
-		calloc(capacity, sizeof(*batch));
-	struct iovec *vec __free(free) = calloc(capacity, sizeof(*vec));
-	struct iovec *copy __free(free) = calloc(capacity, sizeof(*copy));
-	char *lines __free(free) = malloc(capacity * LOGGER_LINE_MAX);
-	size_t *lens __free(free) = calloc(capacity, sizeof(*lens));
-	unsigned char *failed __free(free) =
-		calloc(capacity, sizeof(*failed));
+	logger_worker_workspace_t *workspace __free(runtime_free) =
+		logger_runtime_calloc(1, sizeof(*workspace));
+	logger_message_t *batch __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*batch));
+	struct iovec *vec __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*vec));
+	struct iovec *copy __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*copy));
+	char *lines __free(runtime_free) =
+		logger_runtime_malloc(capacity * LOGGER_LINE_MAX);
+	size_t *lens __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*lens));
+	unsigned char *failed __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*failed));
 
 	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
 	    !failed) {
@@ -67,13 +72,13 @@ void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
 {
 	if (!workspace)
 		return;
-	free(workspace->failed);
-	free(workspace->lens);
-	free(workspace->lines);
-	free(workspace->copy);
-	free(workspace->vec);
-	free(workspace->batch);
-	free(workspace);
+	logger_runtime_free(workspace->failed);
+	logger_runtime_free(workspace->lens);
+	logger_runtime_free(workspace->lines);
+	logger_runtime_free(workspace->copy);
+	logger_runtime_free(workspace->vec);
+	logger_runtime_free(workspace->batch);
+	logger_runtime_free(workspace);
 }
 
 
@@ -125,6 +130,15 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 			return rc;
 	} else {
 		n = logger_format_line(l, m, line, sizeof(line));
+		if (!n) {
+			int error = errno ? errno : EILSEQ;
+			logger_note_io_error(l, error);
+			atomic_fetch_add_explicit(&l->failed_records, 1,
+						  memory_order_relaxed);
+			atomic_fetch_add_explicit(&l->sync_completed, 1,
+						  memory_order_release);
+			return -error;
+		}
 	}
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
 					     memory_order_acquire);
@@ -185,19 +199,30 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		       size_t count)
 {
 	memset(workspace->failed, 0, count);
+	int format_error = 0;
 	for (size_t i = 0; i < count; ++i) {
 		char *line = workspace_line(workspace, i);
 		workspace->lens[i] =
 			logger_format_line(l, &workspace->batch[i], line,
 					   LOGGER_LINE_MAX);
+		if (!workspace->lens[i] && !format_error)
+			format_error = errno ? errno : EILSEQ;
 		workspace->vec[i].iov_base = line;
 		workspace->vec[i].iov_len = workspace->lens[i];
 	}
-
-	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
-	int lock_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
-	if (lock_rc) {
+	if (format_error) {
+		/* 批量输出尚未开始；拒绝整批，不能把零长度计成成功记录。 */
 		memset(workspace->failed, 1, count);
+		logger_note_io_error(l, format_error);
+		goto account_batch;
+	}
+
+	{
+		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+		int lock_rc =
+			ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
+		if (lock_rc) {
+			memset(workspace->failed, 1, count);
 		logger_note_io_error(l, -lock_rc);
 		logger_note_lifecycle_error(l, -lock_rc);
 		goto account_batch;
@@ -248,6 +273,7 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		memset(workspace->failed, 1, count);
 		logger_note_io_error(l, -unlock_rc);
 		logger_note_synchronization_error(l, unlock_rc);
+		}
 	}
 
 account_batch:

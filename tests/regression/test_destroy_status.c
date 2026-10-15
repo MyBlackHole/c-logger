@@ -11,14 +11,14 @@ static int subject_freed;
 /* 只在仍然有效的对象上注入 destroy 失败，不对活跃同步对象调用
  * 真正的 pthread_*_destroy。额外检查最终 logger_t 是否发生 free。
  */
-void __real_free(void *);
-void __wrap_free(void *p)
+int __real_logger_runtime_free(void *);
+int __wrap_logger_runtime_free(void *p)
 {
 	if (subject && p == subject) {
 		++subject_freed;
 		subject = NULL;
 	}
-	__real_free(p);
+	return __real_logger_runtime_free(p);
 }
 
 int __real_close(int);

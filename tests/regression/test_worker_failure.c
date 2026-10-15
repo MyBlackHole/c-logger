@@ -53,7 +53,7 @@ int __real_pthread_cond_broadcast(pthread_cond_t *);
 char *__real_strrchr(const char *, int);
 int __real_logger_file_writev(logger_file_t *, struct iovec *, int, size_t,
 			      const struct timespec *, int);
-void __real_free(void *);
+int __real_logger_runtime_free(void *);
 
 static int healthy_worker(void)
 {
@@ -197,14 +197,14 @@ int __wrap_pthread_join(pthread_t id, void **result)
 	return rc;
 }
 
-void __wrap_free(void *ptr)
+int __wrap_logger_runtime_free(void *ptr)
 {
 	if (instance && ptr == instance) {
 		CHECK(joined == 1);
 		++released;
 		instance = NULL;
 	}
-	__real_free(ptr);
+	return __real_logger_runtime_free(ptr);
 }
 
 static void *produce(void *arg)

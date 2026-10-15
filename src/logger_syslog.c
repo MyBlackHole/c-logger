@@ -1,5 +1,7 @@
 #define _GNU_SOURCE
+#include "logger_libc.h"
 #include "logger_syslog.h"
+#include "logger_fork_fd.h"
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -67,7 +69,7 @@ static int broken_association(int error)
 static void close_fd(logger_syslog_t *s, int fd)
 {
 	/* Linux close 即使遇到 EINTR 也会释放 fd。重试可能关闭已复用的 fd。 */
-	if (close(fd) != 0) {
+	if (logger_fork_close(fd) != 0) {
 		++s->metrics.close_failures;
 		s->metrics.last_close_error = errno ? errno : EIO;
 	}
@@ -125,7 +127,8 @@ static int connect_once(logger_syslog_t *s, int *deferable)
 {
 	*deferable = 0;
 	++s->metrics.connect_attempts;
-	int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	int fd = logger_fork_socket(
+		AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	if (fd < 0)
 		goto failed;
 	struct sockaddr_un address = { 0 };
@@ -235,9 +238,10 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 	if (n > SYSLOG_PACKET_MAX)
 		return record_failure(s, EMSGSIZE);
 	char packet[SYSLOG_PACKET_MAX];
-	int prefix = snprintf(packet, sizeof(packet),
-			      "<%u>%s[%ld]: ", s->facility | priority(level),
-			      s->ident, (long)getpid());
+	int prefix = logger_libc_snprintf(
+		packet, sizeof(packet),
+		"<%u>%s[%ld]: ", s->facility | priority(level), s->ident,
+		(long)getpid());
 	if (prefix < 0 || (size_t)prefix >= sizeof(packet))
 		return record_failure(s, EOVERFLOW);
 	if (n && line[n - 1] == '\n')

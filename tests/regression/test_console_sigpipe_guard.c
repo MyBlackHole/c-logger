@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "console.h"
 #include "support.h"
+#include "logger_runtime.h"
 #include <signal.h>
 
 /* 罕见的守卫设置或解锁失败只注入白盒静态库。
@@ -18,10 +19,7 @@ int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_lock(mutex);
-	if (armed && !rc) {
-		if (!console_mutex)
-			console_mutex = mutex;
-		CHECK(mutex == console_mutex);
+	if (armed && !rc && mutex == console_mutex) {
 		++locks;
 	}
 	return rc;
@@ -85,6 +83,8 @@ int main(int argc, char **argv)
 	config.verbosity = CONSOLE_DEBUG;
 	config.color = CONSOLE_COLOR_NEVER;
 	console_init(&config);
+	/* 只注入 Console 锁；格式协调锁不属于本用例的释放对象。 */
+	console_mutex = &logger_runtime_current()->console_mu;
 	sigset_t before;
 	sigset_t after;
 	CHECK(!pthread_sigmask(SIG_SETMASK, NULL, &before));

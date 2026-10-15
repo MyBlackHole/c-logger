@@ -20,7 +20,7 @@ fi
 "${CC:-cc}" -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -DLOGGER_STATIC_DEFINE=1 -Iinclude -Isrc -I"$build/generated" \
     "${flags[@]}" tests/regression/test_ctor_resource_failure.c "$library" \
-    -pthread -Wl,--wrap=calloc -Wl,--wrap=malloc -Wl,--wrap=free \
+    -pthread -Wl,--wrap=logger_runtime_calloc -Wl,--wrap=logger_runtime_malloc -Wl,--wrap=logger_runtime_free \
     -Wl,--wrap=pthread_mutex_init -Wl,--wrap=pthread_cond_init \
     -Wl,--wrap=pthread_create -o "$binary"
 

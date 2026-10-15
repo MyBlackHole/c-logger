@@ -20,7 +20,7 @@ fi
 "${CC:-cc}" -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -DLOGGER_STATIC_DEFINE=1 -Iinclude -Isrc -I"$build/generated" \
     "${flags[@]}" tests/regression/test_destroy_status.c "$library" \
-    -pthread -Wl,--wrap=free -Wl,--wrap=close \
+    -pthread -Wl,--wrap=logger_runtime_free -Wl,--wrap=close \
     -Wl,--wrap=pthread_join -Wl,--wrap=pthread_cond_destroy \
     -Wl,--wrap=pthread_mutex_destroy -o "$binary"
 

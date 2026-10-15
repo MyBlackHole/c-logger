@@ -14,11 +14,14 @@ typedef enum {
 	LOGGER_LOCK_INSTANCE_PROGRESS,
 	LOGGER_LOCK_QUEUE_WAIT,
 	LOGGER_LOCK_CONSOLE,
+	LOGGER_LOCK_RUNTIME_FORMAT,
+	LOGGER_LOCK_RUNTIME_RESOURCE,
 	LOGGER_LOCK_CLASS_NR
 } logger_lock_class_t;
 
 #if LOGGER_ENABLE_LOCKDEP
 
+void logger_lockdep_reset_child(void);
 void logger_lockdep_check_acquire(logger_lock_class_t, const void *);
 void logger_lockdep_check_release(logger_lock_class_t, const void *);
 void logger_lockdep_acquire(logger_lock_class_t, const void *);
@@ -29,6 +32,10 @@ void logger_lockdep_assert_not_held(logger_lock_class_t, const void *);
 const char *logger_lockdep_class_name(logger_lock_class_t);
 
 #else
+
+static inline void logger_lockdep_reset_child(void)
+{
+}
 
 static inline void logger_lockdep_check_acquire(logger_lock_class_t class_id,
 						 const void *lock)

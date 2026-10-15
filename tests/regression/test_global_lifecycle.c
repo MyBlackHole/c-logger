@@ -78,16 +78,16 @@ int __real_pthread_join(pthread_t, void **);
 int __real_pthread_cond_destroy(pthread_cond_t *);
 logger_t *__real_logger_create(const logger_config_t *);
 int __real_logger_destroy_status(logger_t *);
-void __real_free(void *);
+int __real_logger_runtime_free(void *);
 
-void __wrap_free(void *ptr)
+int __wrap_logger_runtime_free(void *ptr)
 {
 	uintptr_t candidate = atomic_load(&tracked_instance);
 	if (ptr && (uintptr_t)ptr == candidate) {
 		atomic_fetch_add(&tracked_frees, 1);
 		atomic_store(&tracked_instance, 0);
 	}
-	__real_free(ptr);
+	return __real_logger_runtime_free(ptr);
 }
 int __real_logger_file_write(logger_file_t *, const char *, size_t,
 			     const struct timespec *, int);

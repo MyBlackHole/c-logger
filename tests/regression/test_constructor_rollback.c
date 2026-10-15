@@ -25,21 +25,21 @@ static int queue_init_failure;
 static int queue_init_failed;
 static unsigned release_calls;
 
-void *__real_calloc(size_t, size_t);
-void *__wrap_calloc(size_t count, size_t size)
+void *__real_logger_runtime_calloc(size_t, size_t);
+void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
-	void *p = __real_calloc(count, size);
+	void *p = __real_logger_runtime_calloc(count, size);
 	if (p && count == 1 && size == sizeof(logger_t) && !candidate)
 		candidate = p;
 	return p;
 }
 
-void __real_free(void *);
-void __wrap_free(void *p)
+int __real_logger_runtime_free(void *);
+int __wrap_logger_runtime_free(void *p)
 {
 	if (p == candidate)
 		candidate_freed = 1;
-	__real_free(p);
+	return __real_logger_runtime_free(p);
 }
 
 int __real_pthread_create(pthread_t *, const pthread_attr_t *,

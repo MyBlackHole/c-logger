@@ -1,7 +1,9 @@
 #define _GNU_SOURCE
+#include "logger_libc.h"
 #include "logger_file.h"
 #include "logger_fault.h"
 #include "logger_cleanup.h"
+#include "logger_fork_fd.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,6 +15,14 @@
 #include <time.h>
 #include <unistd.h>
 
+static void fork_close_cleanup(int fd)
+{
+	int saved = errno;
+	(void)logger_fork_close(fd);
+	errno = saved;
+}
+DEFINE_FREE(fork_close_fd, int, if (_T >= 0) fork_close_cleanup(_T))
+
 static int internal_rotation(const logger_file_t *f)
 {
 	return f->rotation.mode == LOGGER_ROTATE_SIZE ||
@@ -23,7 +33,8 @@ static int internal_rotation(const logger_file_t *f)
 static int wall_day(time_t sec, int *day)
 {
 	struct tm t;
-	if (!localtime_r(&sec, &t) || t.tm_year < -1900 || t.tm_year > 8099)
+	if (!logger_libc_localtime_r(&sec, &t) || t.tm_year < -1900 ||
+	    t.tm_year > 8099)
 		return -EOVERFLOW;
 	*day = (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
 	return 0;
@@ -76,7 +87,7 @@ int logger_file_close_status(logger_file_t *f)
 	for (unsigned i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
 		int fd = *fds[i];
 		*fds[i] = -1;
-		if (fd >= 0 && close(fd) < 0 && !error)
+		if (fd >= 0 && logger_fork_close(fd) < 0 && !error)
 			error = errno;
 	}
 	return error ? -error : 0;
@@ -156,7 +167,8 @@ static int bind_path(logger_file_t *f, const char *path)
 		dir[dlen] = 0;
 	} else
 		memcpy(dir, ".", 2);
-	f->dir_fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	f->dir_fd =
+		logger_fork_open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
 	if (f->dir_fd < 0)
 		return -errno;
 	errno = 0;
@@ -222,10 +234,10 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 	f->iov_max = iov_max > 0 && iov_max <= INT_MAX ? (int)iov_max : 16;
 	int rc = bind_path(f, path);
 	if (!rc && f->managed) {
-		f->lock_fd = openat(f->dir_fd, f->lock_name,
-				    O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW |
-					    O_NONBLOCK,
-				    0600);
+		f->lock_fd = logger_fork_openat(f->dir_fd, f->lock_name,
+						O_RDWR | O_CREAT | O_CLOEXEC |
+							O_NOFOLLOW | O_NONBLOCK,
+						0600);
 		if (f->lock_fd < 0)
 			rc = -errno;
 		if (!rc)
@@ -252,7 +264,7 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 }
 
 /* 不截断任何文件。O_NONBLOCK 使被替换的 FIFO 在验证时失败，
- * 而不是让 open() 挂起。目录祖先必须可信。
+ * 而不是让 logger_fork_open() 挂起。目录祖先必须可信。
  */
 static int open_candidate(logger_file_t *f, int exclusive, int *out,
 			  struct stat *st)
@@ -265,8 +277,8 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
-	int fd __free(close_fd) =
-		openat(f->dir_fd, f->name, flags, f->mode);
+	int fd __free(fork_close_fd) =
+		logger_fork_openat(f->dir_fd, f->name, flags, f->mode);
 	if (fd < 0)
 		return -errno;
 	rc = check_named_fd(f->dir_fd, f->name, fd, st);
@@ -360,13 +372,13 @@ static int file_reopen_impl(logger_file_t *f)
 		rc = sync_directory(f);
 	if (rc) {
 		if (fd >= 0)
-			(void)close(fd);
+			(void)logger_fork_close(fd);
 		errno = -rc;
 		return -1;
 	}
 	int old_fd = f->fd;
 	install_fd(f, fd, &st, day);
-	if (close(old_fd) < 0)
+	if (logger_fork_close(old_fd) < 0)
 		return -1; /* 新 fd 已装入；不要重试 close */
 	return 0;
 }
@@ -408,7 +420,7 @@ static int timestamp_valid(struct timespec t)
 {
 	struct tm tm;
 	return t.tv_nsec >= 0 && t.tv_nsec < 1000000000 &&
-	       gmtime_r(&t.tv_sec, &tm) && tm.tm_year >= -1900 &&
+	       logger_libc_gmtime_r(&t.tv_sec, &tm) && tm.tm_year >= -1900 &&
 	       tm.tm_year <= 8099;
 }
 
@@ -432,11 +444,12 @@ static int archive_name(logger_file_t *f, const struct timespec *t, char *out,
 {
 	struct tm tm;
 	char stamp[32];
-	if (!timestamp_valid(*t) || !gmtime_r(&t->tv_sec, &tm) ||
-	    strftime(stamp, sizeof(stamp), "%Y%m%dT%H%M%S", &tm) != 15u)
+	if (!timestamp_valid(*t) || !logger_libc_gmtime_r(&t->tv_sec, &tm) ||
+	    logger_libc_strftime(stamp, sizeof(stamp), "%Y%m%dT%H%M%S", &tm) !=
+		    15u)
 		return -EOVERFLOW;
-	int n = snprintf(out, cap, "%s.%s.%06ldZ%s", f->stem, stamp,
-			 t->tv_nsec / 1000, f->ext);
+	int n = logger_libc_snprintf(out, cap, "%s.%s.%06ldZ%s", f->stem, stamp,
+				     t->tv_nsec / 1000, f->ext);
 	return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
 }
 
@@ -469,14 +482,14 @@ static int retention(logger_file_t *f, time_t now)
 	if (!f->rotation.retention_days)
 		return 0;
 	/* 独立的目录描述避免与绑定目录共享 readdir 的偏移。 */
-	int fd __free(close_fd) =
-		openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	int fd __free(fork_close_fd) = logger_fork_openat(
+		f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
 	if (fd < 0)
 		return -errno;
-	DIR *d = fdopendir(fd);
+	DIR *d = logger_fork_fdopendir(fd);
 	if (!d)
 		return -errno;
-	/* fdopendir() 已接管描述符所有权；下方 closedir() 仍显式调用，
+	/* logger_fork_fdopendir() 已接管描述符所有权；下方 logger_fork_closedir() 仍显式调用，
 	 * 因为其失败会影响保留策略的结果。
 	 */
 	(void)take_fd(fd);
@@ -511,7 +524,7 @@ static int retention(logger_file_t *f, time_t now)
 		++f->metrics.retention_deletions;
 		changed = 1;
 	}
-	if (closedir(d) && !rc)
+	if (logger_fork_closedir(d) && !rc)
 		rc = -errno;
 	if (changed) {
 		f->dir_dirty = 1;
@@ -590,13 +603,13 @@ static int rotate_impl(logger_file_t *f)
 		logger_fault_crash_if_requested("file_after_active_dirsync");
 	if (rc) {
 		if (candidate >= 0)
-			(void)close(candidate);
+			(void)logger_fork_close(candidate);
 		f->switch_error = -rc;
 		return rc;
 	}
 	int old_fd = f->fd;
 	install_fd(f, candidate, &st, day);
-	if (close(old_fd))
+	if (logger_fork_close(old_fd))
 		return -errno;
 	return retention(f, t.tv_sec);
 }

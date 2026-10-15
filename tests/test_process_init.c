@@ -40,8 +40,8 @@ static void cold(void)
 	CHECK(pid >= 0);
 	if (!pid) {
 		errno = EDOM;
-		/* 新接口不能在资源隔离尚未实现时使旧实例重新可用。 */
-		if (logger_process_init() != -ECHILD || errno != EDOM)
+		/* 继承资源隔离完成后建立新域；不复活旧实例。 */
+		if (logger_process_init() != 0 || errno != EDOM)
 			_exit(10);
 		_exit(0);
 	}
@@ -56,7 +56,7 @@ static void cold(void)
 	pid = fork();
 	CHECK(pid >= 0);
 	if (!pid)
-		_exit(logger_process_init() == -ECHILD ? 0 : 11);
+		_exit(logger_process_init() == 0 ? 0 : 11);
 	wait_ok(pid);
 	leave_temp(path);
 }

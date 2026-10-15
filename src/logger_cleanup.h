@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "logger_compiler.h"
+#include "logger_runtime.h"
 #include "logger_lockdep.h"
 
 #define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
@@ -250,6 +251,12 @@ static CLEANUP_ALWAYS_INLINE void __cleanup_release_file(FILE *file)
 }
 
 DEFINE_FREE(free, void *, if (_T) __cleanup_release_free(_T))
+DEFINE_FREE(
+	runtime_free, void *, if (_T) {
+		int saved = errno;
+		(void)logger_runtime_free(_T);
+		errno = saved;
+	})
 DEFINE_FREE(close_fd, int, if (_T >= 0) __cleanup_release_fd(_T))
 DEFINE_FREE(fclose, FILE *, if (_T) __cleanup_release_file(_T))
 

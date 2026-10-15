@@ -534,3 +534,11 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 这些测试故意不替代现行八生产者 MPSC、唤醒 litmus、锁错误注入和
 进程 SIGKILL 崩溃矩阵。故障触发时必须保留并固化最小复现输入；
 不能因为一轮 fuzz 无崩溃就把语义、性能或持久化宣布全部完成。
+
+## #218 fork 描述符快照
+
+`fork_resources_test` 直接链接生产静态/共享库，验证真实继承引用关闭、父方持续输出
+及子方存活时的锁寿命。`xmake test -g fork-fd -j1` 执行私有快照十五场景和七项
+词法门禁检查；静态配置对真实生产归档和支持归档分别执行。高 fd 两项在系统硬
+限额不足32769时明确输出 `FORK_FD_SKIP`，不得从聚合成功推导这些用例已经通过。
+详见 [fork 描述符隔离](docs/v2/FORK_FD_SNAPSHOT.md)。本阶段仍不能重建子方运行域。

@@ -1,0 +1,11 @@
+file	api	arguments	count	owner	failure_test	coverage	rationale
+src/logger.c	logger_runtime_calloc	1,sizeof(*l)	1	创建者暂持有 logger_t，成功后宿主拥有	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_queue.c	logger_runtime_calloc	q->cap,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_queue.c	logger_runtime_calloc	q->spill_cap,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	1,sizeof(*workspace)	1	logger_t 拥有 worker workspace，线程仅借用	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*batch)	1	worker workspace 拥有批处理消息存储	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*copy)	1	worker workspace 拥有批处理 iovec 拷贝	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*failed)	1	worker workspace 拥有逐项错误位	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*lens)	1	worker workspace 拥有输出长度数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*vec)	1	worker workspace 拥有批处理 iovec 数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_worker.c	logger_runtime_malloc	capacity*LOGGER_LINE_MAX	1	worker workspace 拥有有界格式化行内存	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
