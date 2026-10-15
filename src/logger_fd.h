@@ -43,7 +43,8 @@ static inline int logger_fd_valid(const struct logger_owned_fd *owner)
 }
 
 /* 显式移交给仍使用原始 int 的所有者；调用方必须接住返回值。 */
-static inline LOGGER_MUST_CHECK int logger_fd_take(struct logger_owned_fd *owner)
+static inline LOGGER_MUST_CHECK int
+logger_fd_take(struct logger_owned_fd *owner)
 {
 	int fd = owner->value;
 
