@@ -1,0 +1,80 @@
+name: fork-registration-validation
+
+on:
+  pull_request:
+    paths:
+      - "src/logger_process.c"
+      - "tests/regression/test_process_fork.c"
+      - "tests/scripts/check_fork_registration_probe.py"
+      - "xmake.lua"
+      - ".github/workflows/fork-registration-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/logger_process.c"
+      - "tests/regression/test_process_fork.c"
+      - "tests/scripts/check_fork_registration_probe.py"
+      - "xmake.lua"
+      - ".github/workflows/fork-registration-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gcc, clang]
+        mode: [plain, address-undefined]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+      - name: 记录源码与实际工具链
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > evidence/source-tree.txt
+          xmake --version > evidence/xmake.txt
+          ${{ matrix.toolchain }} --version > evidence/compiler.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: 配置并运行原有全部 fork 场景
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${{ matrix.mode }}" = address-undefined ]; then
+            extra+=(--policies=build.sanitizer.address,build.sanitizer.undefined)
+          fi
+          xmake f -y -m debug -o probe-build --toolchain=${{ matrix.toolchain }} \
+            --build_shared=n --build_tests=n --build_private_tests=n \
+            --build_regression_tests=y "${extra[@]}"
+          xmake test -v -j1 'process_fork_regression/*' 2>&1 | tee evidence/xmake-tests.log
+      - name: 验证探针的正向对照及两种明确拒绝
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/scripts/check_fork_registration_probe.py --selftest
+          mapfile -t binaries < <(find probe-build -type f -name process_fork_regression)
+          test "${#binaries[@]}" -eq 1
+          python3 tests/scripts/check_fork_registration_probe.py \
+            --binary "${binaries[0]}" --output evidence/oracle
+      - name: 保存精确源码
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p evidence
+          cp tests/regression/test_process_fork.c evidence/
+          cp tests/scripts/check_fork_registration_probe.py evidence/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fork-probe-${{ matrix.toolchain }}-${{ matrix.mode }}
+          path: evidence/
+          retention-days: 30

@@ -22,15 +22,25 @@ static _Atomic int fail_registration, pause_registration, pause_reader,
 	pause_console;
 static _Atomic int entered, release_pause;
 static _Atomic unsigned registrations;
+static _Atomic unsigned foreign_registrations;
+static _Atomic int omit_registration_observation;
 static logger_t *instance;
 static logger_config_t cfg;
 
 int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
 int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 {
+	/* 只观测本库的真实注册；宿主及检测器的处理函数不属于注入目标。
+	 * 必须在故障和暂停开关之前分流，不能仅修正最终计数。
+	 */
+	if (c != logger_process_invalidate_child) {
+		atomic_fetch_add(&foreign_registrations, 1);
+		return __real_pthread_atfork(a, b, c);
+	}
 	if (strict_child)
 		_exit(90);
-	atomic_fetch_add(&registrations, 1);
+	if (!atomic_load(&omit_registration_observation))
+		atomic_fetch_add(&registrations, 1);
 	if (atomic_load(&fail_registration))
 		return ENOMEM;
 	if (atomic_exchange(&pause_registration, 0)) {
@@ -304,9 +314,36 @@ static void registration_failure(const char *mode)
 	CHECK(atomic_load(&registrations) == 1);
 }
 
+/* 与 Logger 的回调身份明确不同，不能被故障/暂停开关截获。 */
+static void foreign_child(void)
+{
+}
+
+static void check_foreign_registration(void)
+{
+	unsigned before = atomic_load(&foreign_registrations);
+
+	CHECK(atomic_load(&registrations) == 0);
+	atomic_store(&fail_registration, 1);
+	atomic_store(&pause_registration, 1);
+	CHECK(pthread_atfork(NULL, NULL, foreign_child) == 0);
+	CHECK(atomic_load(&foreign_registrations) == before + 1);
+	CHECK(atomic_load(&registrations) == 0);
+	CHECK(atomic_load(&fail_registration) == 1);
+	CHECK(atomic_load(&pause_registration) == 1);
+	CHECK(atomic_load(&entered) == 0);
+	atomic_store(&fail_registration, 0);
+	atomic_store(&pause_registration, 0);
+	printf("ATFORK_FOREIGN_BEFORE_MAIN=%u\n", before);
+}
+
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
+	check_foreign_registration();
+	/* 仅供探针自检的负向对照，不进入生产库或修改正常断言。 */
+	if (getenv("LOGGER_TEST_OMIT_ATFORK_OBSERVATION"))
+		atomic_store(&omit_registration_observation, 1);
 	const char *mode = argv[1];
 	const char *const modes[] = {
 		"global", "explicit", "console-only", "context-only", "emit-held",
@@ -395,6 +432,11 @@ int main(int argc, char **argv)
 		} else if (!strcmp(mode, "after-shutdown"))
 			logger_shutdown();
 	}
+	if (getenv("LOGGER_TEST_DUPLICATE_ATFORK")) {
+		/* 真正再次调用注册入口，不是直接把计数器加一。 */
+		void (*child)(void) = logger_process_invalidate_child;
+		CHECK(pthread_atfork(NULL, NULL, child) == 0);
+	}
 	pid_t p;
 	if (!strcmp(mode, "bypass-handler")) {
 #ifdef SYS_fork
@@ -418,6 +460,8 @@ int main(int argc, char **argv)
 		logger_destroy(instance);
 	}
 	logger_shutdown();
+	fprintf(stderr, "ATFORK_LOGGER_REGISTRATIONS=%u\n",
+		atomic_load(&registrations));
 	CHECK(atomic_load(&registrations) == 1);
 	puts("fork misuse rejected before runtime access; parent unaffected");
 	return 0;
