@@ -1,0 +1,103 @@
+name: sanitizer-evidence
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'xmake.lua'
+      - 'VERSION'
+      - '.github/workflows/sanitizer-evidence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  full-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address-undefined, thread]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: 保存准确源码与平台身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sanitizer-evidence
+          git rev-parse HEAD > sanitizer-evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > sanitizer-evidence/source-tree.txt
+          git archive --format=tar.gz HEAD > sanitizer-evidence/source.tar.gz
+          sha256sum sanitizer-evidence/source.tar.gz > sanitizer-evidence/source.sha256
+          gcc --version > sanitizer-evidence/gcc.txt
+          uname -a > sanitizer-evidence/kernel.txt
+          getconf GNU_LIBC_VERSION > sanitizer-evidence/glibc.txt
+          printf '%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}" > sanitizer-evidence/runner-image.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+      - name: 配置完整静态运行时检查
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake --version > sanitizer-evidence/xmake.txt
+          if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
+            policies="build.sanitizer.address,build.sanitizer.undefined"
+          else
+            policies="build.sanitizer.thread"
+          fi
+          printf '%s\n' "$policies" > sanitizer-evidence/policies.txt
+          xmake f -m debug -o sanitizer-build \
+            --build_shared=n --build_tests=y --build_private_tests=y \
+            --build_regression_tests=y --policies="$policies" \
+            2>&1 | tee sanitizer-evidence/configure.log
+      - name: 运行完整集合并保留原始退出码
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          # 不用重试、过滤或 continue-on-error 把失败转换为成功。
+          # 全量输出进入制品，控制台只展示尾部，避免构建信息淹没失败摘要。
+          xmake test -v -j1 > sanitizer-evidence/xmake-tests.log 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > sanitizer-evidence/test-exit-code.txt
+          tail -n 120 sanitizer-evidence/xmake-tests.log
+          exit "$result"
+      - name: 提取可定位的失败上下文
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('sanitizer-evidence')
+          root.mkdir(exist_ok=True)
+          source = root / 'xmake-tests.log'
+          if source.exists():
+              lines = source.read_text(errors='replace').splitlines()
+              ansi = re.compile(r'\x1b\[[0-9;]*m')
+              pattern = re.compile(r'failed|ERROR:|WARNING: ThreadSanitizer|runtime error:|FATAL:|CHECK.*fail|Assertion|DEADLYSIGNAL')
+              selected = set()
+              for index, line in enumerate(lines):
+                  if pattern.search(ansi.sub('', line)):
+                      selected.update(range(max(0, index - 8), min(len(lines), index + 25)))
+              with (root / 'failure-context.txt').open('w') as output:
+                  for index in sorted(selected):
+                      output.write('{}: {}\n'.format(index + 1, ansi.sub('', lines[index])))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sanitizer-evidence-${{ matrix.sanitizer }}
+          path: sanitizer-evidence/
+          retention-days: 14
+          if-no-files-found: error
