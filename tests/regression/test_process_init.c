@@ -54,12 +54,11 @@ static void pause_registration(void)
 	wait_flag(&release_registration);
 }
 
-int __wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
-			 void (*child)(void))
+int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 {
 	/* Sanitizer 可能在 main 前自行注册，不能把其回调计入 Logger。 */
-	if (child != logger_process_invalidate_child)
-		return __real_pthread_atfork(prepare, parent, child);
+	if (c != logger_process_invalidate_child)
+		return __real_pthread_atfork(a, b, c);
 	if (atomic_load(&strict_child))
 		_exit(92);
 	atomic_fetch_add(&registration_calls, 1);
@@ -72,7 +71,7 @@ int __wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
 	int error = atomic_load(&registration_error);
 	if (error)
 		return error;
-	int rc = __real_pthread_atfork(prepare, parent, child);
+	int rc = __real_pthread_atfork(a, b, c);
 	if (atomic_load(&pause_after))
 		pause_registration();
 	return rc;
@@ -193,7 +192,7 @@ static void in_progress(const char *mode)
 
 	pthread_t waiter;
 	if (concurrent) {
-		CHECK(pthread_create(&waiter, NULL, ordinary_waiter, NULL) == 0);
+		CHECK(!pthread_create(&waiter, NULL, ordinary_waiter, NULL));
 		wait_flag(&waiter_entered);
 		CHECK(!atomic_load(&waiter_done));
 	} else if (cancel) {
