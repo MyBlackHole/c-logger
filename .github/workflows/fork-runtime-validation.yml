@@ -30,31 +30,31 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: '3.1.1'
-      - name: 保存固定工具与源码身份
+      - name: 归档准确源码与树身份
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p evidence/tools
+          mkdir -p evidence
           git rev-parse HEAD > evidence/source-commit.txt
           git rev-parse HEAD^{tree} > evidence/source-tree.txt
-          xmake --version > evidence/xmake.txt
-          gcc --version > evidence/gcc.txt
-          curl --fail --location --retry 3 \
-            https://github.com/xmake-io/xmake/releases/download/v3.1.1/xmake-bundle-v3.1.1.linux.x86_64 \
-            -o evidence/tools/xmake
-          echo 'fe1da8861a5ee5845d4f6c84e499f6f9c6bf5b5a69c9b7b130930ee28355a6d5  evidence/tools/xmake' | sha256sum -c -
-          python3 -m pip download --only-binary=:all: --no-deps \
-            --dest evidence/tools clang-format==18.1.8
-          sha256sum evidence/tools/* > evidence/tools.sha256
-          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+          git archive --format=tar.gz --prefix=source/ HEAD > evidence/source.tar.gz
+          sha256sum evidence/source.tar.gz > evidence/source.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: logger-runtime-fixed-tools
+          name: logger-runtime-source
           path: evidence/
-          retention-days: 7
+          retention-days: 30
+          if-no-files-found: error
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+      - name: 记录实际工具链
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake --version > evidence/xmake.txt
+          gcc --version > evidence/gcc.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
       - name: 拒绝缺失的运行域测试
         run: |
           test -f src/logger_runtime.c
@@ -77,3 +77,4 @@ jobs:
           name: logger-runtime-validation
           path: evidence/
           retention-days: 30
+          if-no-files-found: error
