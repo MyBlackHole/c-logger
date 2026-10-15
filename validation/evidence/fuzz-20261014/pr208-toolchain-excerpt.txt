@@ -1,0 +1,5 @@
+原始 job 日志节选；不是完整日志，也不是原始 ZIP 内新增文件。
+来源：https://github.com/MyBlackHole/c-logger/actions/runs/38568384095/job/115866817217
+
+Ubuntu clang version 18.1.3 (1ubuntu1)
+xmake v3.1.1+20261014, A cross-platform build utility based on Lua

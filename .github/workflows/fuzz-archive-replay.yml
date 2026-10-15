@@ -1,0 +1,86 @@
+name: fuzz-archive-replay
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "validation/evidence/fuzz-20261014/**"
+      - "tests/scripts/test_fuzz_archive_replay.py"
+      - ".github/workflows/fuzz-archive-replay.yml"
+  push:
+    branches: [main]
+    paths:
+      - "validation/evidence/fuzz-20261014/**"
+      - "tests/scripts/test_fuzz_archive_replay.py"
+      - ".github/workflows/fuzz-archive-replay.yml"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+concurrency:
+  group: fuzz-archive-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  restore-and-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [public-fuzzer, format-fuzzer, format-plain, format-address-undefined, format-thread]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: evidence-repo
+          persist-credentials: false
+      - name: 验证恢复和重放工具正反例
+        working-directory: evidence-repo
+        run: python3 tests/scripts/test_fuzz_archive_replay.py -v
+      - name: 从不可变归档清单取得历史源码身份
+        id: original
+        working-directory: evidence-repo
+        env:
+          REPLAY_MODE: ${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+          sha="$(python3 validation/evidence/fuzz-20261014/replay.py --mode "$REPLAY_MODE" --print-source)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: 干净检出原始测试合并源码，不使用 main 替代
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.original.outputs.sha }}
+          path: historical-source
+          persist-credentials: false
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+      - name: 恢复全部原始成员并用重新构建的历史源码重放
+        env:
+          REPLAY_MODE: ${{ matrix.mode }}
+          XMAKE_CONFIGDIR: ${{ runner.temp }}/archive-xmake-${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          # 历史源码仅忽略 build，不改写它的 .gitignore 或隐藏未跟踪文件。
+          # Xmake 本地配置直接放在工作区之外，最终源码洁净断言保持不变。
+          mkdir -p "$XMAKE_CONFIGDIR"
+          echo "XMAKE_CONFIGDIR=$XMAKE_CONFIGDIR"
+          python3 evidence-repo/validation/evidence/fuzz-20261014/replay.py \
+            --mode "$REPLAY_MODE" --source-dir "$PWD/historical-source" \
+            --output-dir "$RUNNER_TEMP/archive-replay-$REPLAY_MODE"
+          git -C evidence-repo diff --exit-code
+          git -C historical-source diff --exit-code
+      - name: 保存本次恢复回执、工具链、命令和逐输入结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-replay-${{ matrix.mode }}
+          path: |
+            ${{ runner.temp }}/archive-replay-${{ matrix.mode }}/receipt.json
+            ${{ runner.temp }}/archive-replay-${{ matrix.mode }}/*.log
+          if-no-files-found: error
+          retention-days: 30
