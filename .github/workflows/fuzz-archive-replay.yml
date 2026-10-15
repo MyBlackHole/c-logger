@@ -62,8 +62,13 @@ jobs:
       - name: 恢复全部原始成员并用重新构建的历史源码重放
         env:
           REPLAY_MODE: ${{ matrix.mode }}
+          XMAKE_CONFIGDIR: ${{ runner.temp }}/archive-xmake-${{ matrix.mode }}
         run: |
           set -euo pipefail
+          # 历史源码仅忽略 build，不改写它的 .gitignore 或隐藏未跟踪文件。
+          # Xmake 本地配置直接放在工作区之外，最终源码洁净断言保持不变。
+          mkdir -p "$XMAKE_CONFIGDIR"
+          echo "XMAKE_CONFIGDIR=$XMAKE_CONFIGDIR"
           python3 evidence-repo/validation/evidence/fuzz-20261014/replay.py \
             --mode "$REPLAY_MODE" --source-dir "$PWD/historical-source" \
             --output-dir "$RUNNER_TEMP/archive-replay-$REPLAY_MODE"
