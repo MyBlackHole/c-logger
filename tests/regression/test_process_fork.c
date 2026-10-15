@@ -23,6 +23,9 @@ static _Atomic int fail_registration, pause_registration, pause_reader,
 	pause_console;
 static _Atomic int entered, release_pause;
 static _Atomic int release_console_at_prepare;
+static pthread_t console_thread;
+static _Atomic int console_completed, console_joined;
+static _Thread_local int pause_console_flush_lock;
 static _Atomic unsigned registrations;
 static _Atomic unsigned foreign_registrations;
 static _Atomic int omit_registration_observation;
@@ -64,7 +67,17 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 	}
 	if (strict_child)
 		_exit(90);
-	return __real_pthread_mutex_lock(p);
+	int rc = __real_pthread_mutex_lock(p);
+	/* console_print 在正文格式化之后还会为 fflush 再次取锁。
+	 * 只暂停这个最后区间，避免 prepare 持锁 join 时等待再次取锁。
+	 */
+	if (!rc && pause_console_flush_lock &&
+	    p == &logger_runtime_current()->format_mu) {
+		pause_console_flush_lock = 0;
+		atomic_store(&entered, 1);
+		wait_flag(&release_pause);
+	}
+	return rc;
 }
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *p)
@@ -136,11 +149,10 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
-	if (atomic_exchange(&pause_console, 0)) {
-		atomic_store(&entered, 1);
-		wait_flag(&release_pause);
-	}
-	return __real_vfprintf(f, fmt, a);
+	int result = __real_vfprintf(f, fmt, a);
+	if (atomic_exchange(&pause_console, 0))
+		pause_console_flush_lock = 1;
+	return result;
 }
 void __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
 				 const char *, int, const char *, const char *,
@@ -286,8 +298,24 @@ static void *console_writer(void *p)
 {
 	(void)p;
 	CHECK(console_print("parent console\n") == 0);
+	CHECK(!pause_console_flush_lock);
+	atomic_store(&console_completed, 1);
 	return NULL;
 }
+/* 先于 Logger 注册，因 prepare 逆序执行而后于 Logger prepare 运行。
+ * 保留进入 prepare 时 Console 正在格式化的真实交错；只有 Logger
+ * 完成格式区间协调后才回收夹具线程。不能让已退出但未 join 的线程
+ * 记录进入子进程，也不能通过保持线程存活触发 TSan 的忽略模式。
+ */
+static void console_join_prepare(void)
+{
+	CHECK(atomic_load(&entered));
+	CHECK(!atomic_load(&release_console_at_prepare));
+	CHECK(!pthread_join(console_thread, NULL));
+	CHECK(atomic_load(&console_completed));
+	atomic_store(&console_joined, 1);
+}
+
 static void *initializer(void *p)
 {
 	(void)p;
@@ -411,12 +439,14 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "console-only") ||
 		   !strcmp(mode, "console-held")) {
 		console_config_t c = CONSOLE_DEFAULT_CONFIG();
+		if (!strcmp(mode, "console-held"))
+			CHECK(!__real_pthread_atfork(console_join_prepare, NULL,
+						    NULL));
 		console_init(&c);
 		if (!strcmp(mode, "console-held")) {
 			atomic_store(&pause_console, 1);
-			CHECK(!pthread_create(&thread, NULL, console_writer,
-					      NULL));
-			has_thread = 1;
+			CHECK(!pthread_create(&console_thread, NULL,
+					      console_writer, NULL));
 			wait_flag(&entered);
 		}
 	} else if (!strcmp(mode, "context-only")) {
@@ -466,6 +496,8 @@ int main(int argc, char **argv)
 	if (!p)
 		child_guard_matrix();
 	atomic_store(&release_pause, 1);
+	if (!strcmp(mode, "console-held"))
+		CHECK(atomic_load(&console_joined));
 	if (has_thread)
 		CHECK(!pthread_join(thread, NULL));
 	wait_child(p);
