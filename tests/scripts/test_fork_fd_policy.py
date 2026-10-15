@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """核对 fd 迁移边界的限定词法规则，不替代并发证明或运行结果。"""
+from __future__ import annotations
+
 from pathlib import Path
 import re
 import csv

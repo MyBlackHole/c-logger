@@ -223,56 +223,60 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 			ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (lock_rc) {
 			memset(workspace->failed, 1, count);
-		logger_note_io_error(l, -lock_rc);
-		logger_note_lifecycle_error(l, -lock_rc);
-		goto account_batch;
-	}
-	if (l->outputs & LOGGER_OUT_STDERR) {
-		memcpy(workspace->copy, workspace->vec,
-		       count * sizeof(*workspace->vec));
-		int rc = logger_stderr_writev_all(workspace->copy, (int)count);
-		if (rc < 0) {
-			/* 部分完成的批次没有逐条确认。
-			 * 因此保守地把整批记录标记为未确认。
-			 */
-			memset(workspace->failed, 1, count);
-			logger_note_io_error(l, -rc);
+			logger_note_io_error(l, -lock_rc);
+			logger_note_lifecycle_error(l, -lock_rc);
+			goto account_batch;
 		}
-	}
-	if (l->outputs & LOGGER_OUT_FILE) {
-		size_t total = 0;
-		int need_sync = 0;
-		for (size_t i = 0; i < count; ++i) {
-			total += workspace->lens[i];
-			if (workspace->batch[i].level >= l->flush_level)
-				need_sync = 1;
-		}
-		memcpy(workspace->copy, workspace->vec,
-		       count * sizeof(*workspace->vec));
-		int rc = logger_file_writev(
-			&l->file_backend, workspace->copy, (int)count, total,
-			&workspace->batch[count - 1].ts, need_sync);
-		if (rc < 0) {
-			memset(workspace->failed, 1, count);
-			logger_note_io_error(l, -rc);
-		}
-	}
-	if (l->outputs & LOGGER_OUT_SYSLOG) {
-		for (size_t i = 0; i < count; ++i) {
-			if (logger_syslog_write(
-				    &l->syslog_backend, workspace->batch[i].level,
-				    workspace_line(workspace, i),
-				    workspace->lens[i]) != 0) {
-				workspace->failed[i] = 1;
-				logger_note_io_error(l, errno ? errno : EIO);
+		if (l->outputs & LOGGER_OUT_STDERR) {
+			memcpy(workspace->copy, workspace->vec,
+			       count * sizeof(*workspace->vec));
+			int rc = logger_stderr_writev_all(workspace->copy,
+							  (int)count);
+			if (rc < 0) {
+				/* 部分完成的批次没有逐条确认。
+				 * 因此保守地把整批记录标记为未确认。
+				 */
+				memset(workspace->failed, 1, count);
+				logger_note_io_error(l, -rc);
 			}
 		}
-	}
-	int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
-	if (unlock_rc) {
-		memset(workspace->failed, 1, count);
-		logger_note_io_error(l, -unlock_rc);
-		logger_note_synchronization_error(l, unlock_rc);
+		if (l->outputs & LOGGER_OUT_FILE) {
+			size_t total = 0;
+			int need_sync = 0;
+			for (size_t i = 0; i < count; ++i) {
+				total += workspace->lens[i];
+				if (workspace->batch[i].level >= l->flush_level)
+					need_sync = 1;
+			}
+			memcpy(workspace->copy, workspace->vec,
+			       count * sizeof(*workspace->vec));
+			int rc = logger_file_writev(
+				&l->file_backend, workspace->copy, (int)count,
+				total, &workspace->batch[count - 1].ts,
+				need_sync);
+			if (rc < 0) {
+				memset(workspace->failed, 1, count);
+				logger_note_io_error(l, -rc);
+			}
+		}
+		if (l->outputs & LOGGER_OUT_SYSLOG) {
+			for (size_t i = 0; i < count; ++i) {
+				if (logger_syslog_write(
+					    &l->syslog_backend,
+					    workspace->batch[i].level,
+					    workspace_line(workspace, i),
+					    workspace->lens[i]) != 0) {
+					workspace->failed[i] = 1;
+					logger_note_io_error(l, errno ? errno :
+									EIO);
+				}
+			}
+		}
+		int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+		if (unlock_rc) {
+			memset(workspace->failed, 1, count);
+			logger_note_io_error(l, -unlock_rc);
+			logger_note_synchronization_error(l, unlock_rc);
 		}
 	}
 
