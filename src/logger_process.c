@@ -60,8 +60,9 @@ static int initialize_process(void)
 		return rc;
 	if (initializing)
 		return -EDEADLK;
-	int ticket = atomic_load_explicit(&process_ticket,
-					  memory_order_acquire);
+	int ticket;
+
+	ticket = atomic_load_explicit(&process_ticket, memory_order_acquire);
 	if (ticket == PROCESS_READY)
 		return -EALREADY;
 	if (ticket == PROCESS_STARTING)
