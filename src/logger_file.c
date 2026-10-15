@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "logger_file.h"
 #include "logger_fault.h"
-#include "logger_cleanup.h"
+#include "logger_fd.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -265,11 +265,12 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
-	int fd __free(close_fd) =
-		openat(f->dir_fd, f->name, flags, f->mode);
-	if (fd < 0)
+	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
+		logger_fd_own(openat(f->dir_fd, f->name, flags, f->mode));
+	if (!logger_fd_valid(&fd))
 		return -errno;
-	rc = check_named_fd(f->dir_fd, f->name, fd, st);
+	rc = check_named_fd(f->dir_fd, f->name,
+			    logger_fd_number(logger_fd_borrow(&fd)), st);
 	if (!rc)
 		rc = f->managed ? regular_single_link(st) :
 				  (S_ISCHR(st->st_mode) ? 0 : -EINVAL);
@@ -279,7 +280,7 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 	/* 所有权转移：词法作用域候选对象 -> 调用者。调用者要么
 	 * 将其装入 logger_file_t，要么在失败时显式关闭。
 	 */
-	*out = take_fd(fd);
+	*out = logger_fd_take(&fd);
 	/* 之前不存在的活动文件可能已被创建。即使它原本存在，也保守地
 	 * 同步绑定目录；这绝不依赖当前工作目录。
 	 */
@@ -469,17 +470,17 @@ static int retention(logger_file_t *f, time_t now)
 	if (!f->rotation.retention_days)
 		return 0;
 	/* 独立的目录描述避免与绑定目录共享 readdir 的偏移。 */
-	int fd __free(close_fd) =
-		openat(f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0)
+	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
+		logger_fd_own(openat(f->dir_fd, ".",
+				     O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+	if (!logger_fd_valid(&fd))
 		return -errno;
-	DIR *d = fdopendir(fd);
+	DIR *d = logger_fd_fdopendir(&fd);
 	if (!d)
 		return -errno;
-	/* fdopendir() 已接管描述符所有权；下方 closedir() 仍显式调用，
+	/* 移交成功后源已失效；下方 closedir() 仍显式调用，
 	 * 因为其失败会影响保留策略的结果。
 	 */
-	(void)take_fd(fd);
 	int rc = 0, changed = 0;
 	uintmax_t seconds = (uintmax_t)f->rotation.retention_days * 86400u;
 	for (;;) {
