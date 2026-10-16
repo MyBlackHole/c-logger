@@ -19,13 +19,13 @@ static size_t page;
 static int hold;
 static int child_seen;
 static volatile unsigned raced;
-#define REQUIRE(expr)                                                       \
-	do {                                                                \
-		if (!(expr)) {                                              \
+#define REQUIRE(expr)                                                      \
+	do {                                                               \
+		if (!(expr)) {                                             \
 			fprintf(stderr, "PROBE_ASSERT line=%d errno=%d\n", \
-				__LINE__, errno);                            \
-			_exit(90);                                          \
-		}                                                           \
+				__LINE__, errno);                          \
+			_exit(90);                                         \
+		}                                                          \
 	} while (0)
 
 static struct pair *create(void *hint)
