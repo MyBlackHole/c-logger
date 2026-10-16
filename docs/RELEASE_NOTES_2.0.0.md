@@ -122,3 +122,9 @@ ASYNC+ENABLE 取消、跨调用 longjmp/pthread_exit 或宿主取消私有工作
 现行发布流程使用 `v2.0.0`、标题 `c-logger 2.0.0 — Production v2`、`prerelease=false`。
 它只接受显式现存标签，锁定提交 SHA 和标签对象 ID，并在发布后重新下载四资产校验。
 本稿没有创建标签、发布资产或部署；发布动作须另行批准，详见[发布工程](RELEASE_ENGINEERING.md)。
+
+## Console 开发接口迁移
+
+Console配置、TTY查询和输出均采用0/-errno并保留errno；五个配置/查询签名
+已修改，不兼容旧开发头文件，符号数不变。参见[Console合同](v2/CONSOLE_API.md)。
+这不等于全部Logger记录/指标接口已统一或正式发布获批。

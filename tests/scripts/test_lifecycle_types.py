@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--cc", required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    prefix = '#include "logger.h"\n'
+    prefix = '#include "logger.h"\n#include "console.h"\n'
     cases = {
         "create-signature": (
             'void f(void) { logger_t *l = logger_create(NULL); (void)l; }',
@@ -47,6 +47,19 @@ def main():
         cases["status-" + symbol] = (
             "void (*f)(logger_t *) = " + symbol + ";",
             "int (*f)(logger_t *) = " + symbol + ";", symbol)
+    for symbol, kind in (("console_init", "const console_config_t *"),
+                         ("console_set_verbosity", "console_verbosity_t"),
+                         ("console_set_color", "console_color_mode_t")):
+        cases["status-" + symbol] = (
+            "void (*f)(" + kind + ") = " + symbol + ";",
+            "int (*f)(" + kind + ") = " + symbol + ";", symbol)
+    for symbol in ("console_stdout_is_tty", "console_stderr_is_tty"):
+        cases["output-" + symbol] = (
+            "void f(void) { (void)" + symbol + "(); }",
+            "void f(void) { int tty; (void)" + symbol + "(&tty); }", symbol)
+        cases["type-" + symbol] = (
+            "int (*f)(void) = " + symbol + ";",
+            "int (*f)(int *) = " + symbol + ";", symbol)
     env = dict(os.environ, LC_ALL="C")
     with tempfile.TemporaryDirectory(prefix="logger-api-types-") as folder:
         path = Path(folder) / "contract.c"

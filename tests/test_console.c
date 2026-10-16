@@ -8,7 +8,8 @@ int main(void)
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	c.color = CONSOLE_COLOR_NEVER;
 	c.verbosity = CONSOLE_NORMAL;
-	console_init(&c);
+	if (console_init(&c))
+		return 1;
 	if (console_print("id=%d\n", 42))
 		return 1; /* stdout 结果通道 */
 	if (console_info("operation completed"))
@@ -19,7 +20,8 @@ int main(void)
 		return 4;
 	if (console_verbose("must be hidden at normal verbosity"))
 		return 5;
-	console_set_verbosity(CONSOLE_DEBUG);
+	if (console_set_verbosity(CONSOLE_DEBUG))
+		return 1;
 	if (console_debug("debug enabled"))
 		return 6;
 	return 0;

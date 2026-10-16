@@ -23,18 +23,33 @@
 #define g_console_lock_error (logger_runtime_current()->console_lock_error)
 #define g_console_mu (logger_runtime_current()->console_mu)
 
-static int finish(logger_scope_t *scope, int rc)
+/* 公开接口统一返回负错误码；作用域仍负责准入、取消和主错误优先。 */
+static int begin(logger_scope_t *scope)
 {
-	return logger_scope_end(scope, rc) < 0 ? -1 : 0;
+	int saved = errno;
+	int rc = logger_scope_begin(scope);
+
+	errno = saved;
+	return rc;
 }
 
-void console_init(const console_config_t *c)
+static int finish(logger_scope_t *scope, int rc)
+{
+	int saved = scope->saved_errno;
+
+	rc = logger_scope_end(scope, rc);
+	errno = saved;
+	return rc;
+}
+
+int console_init(const console_config_t *c)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
-	int rc = 0;
-	if (c) {
+	int rc = begin(&scope);
+	if (rc)
+		return rc;
+	rc = c ? 0 : -EINVAL;
+	if (!rc) {
 		_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),
 			       "Console v1 config layout changed");
 		console_config_t config;
@@ -44,9 +59,8 @@ void console_init(const console_config_t *c)
 		       sizeof(version));
 		rc = logger_uapi_copy_struct(&config, sizeof(config), c, size,
 					     version, CONSOLE_CONFIG_VERSION);
-		if (!rc &&
-		    ((unsigned)config.verbosity > CONSOLE_DEBUG ||
-		     (unsigned)config.color > CONSOLE_COLOR_NEVER))
+		if (!rc && ((unsigned)config.verbosity > CONSOLE_DEBUG ||
+			    (unsigned)config.color > CONSOLE_COLOR_NEVER))
 			rc = -EINVAL;
 		if (!rc)
 			atomic_store_explicit(&g_config,
@@ -55,18 +69,18 @@ void console_init(const console_config_t *c)
 						      (unsigned)config.color,
 					      memory_order_relaxed);
 	}
-	(void)finish(&scope, rc);
+	return finish(&scope, rc);
 }
 
-static void set_config(unsigned value, int color)
+static int set_config(unsigned value, int color)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
-	int rc = value > (unsigned)(color ? CONSOLE_COLOR_NEVER :
-					    CONSOLE_DEBUG) ?
-			 -EINVAL :
-			 0;
+	int rc = begin(&scope);
+	if (rc)
+		return rc;
+	rc = value > (unsigned)(color ? CONSOLE_COLOR_NEVER : CONSOLE_DEBUG) ?
+		     -EINVAL :
+		     0;
 	if (!rc) {
 		unsigned old = atomic_load_explicit(&g_config,
 						    memory_order_relaxed),
@@ -79,35 +93,47 @@ static void set_config(unsigned value, int color)
 			&g_config, &old, next, memory_order_relaxed,
 			memory_order_relaxed));
 	}
-	(void)finish(&scope, rc);
+	return finish(&scope, rc);
 }
 
-void console_set_verbosity(console_verbosity_t value)
+int console_set_verbosity(console_verbosity_t value)
 {
-	set_config((unsigned)value, 0);
+	return set_config((unsigned)value, 0);
 }
-void console_set_color(console_color_mode_t value)
+int console_set_color(console_color_mode_t value)
 {
-	set_config((unsigned)value, 1);
+	return set_config((unsigned)value, 1);
 }
 
-static int tty(int fd)
+static int tty(int fd, int *out)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return 0;
+	int rc = begin(&scope);
+	if (rc)
+		return rc;
+	if (!out)
+		return finish(&scope, -EINVAL);
+
+	/* 只有 ENOTTY 表示成功取得“非终端”答案，EBADF 等仍是查询错误。
+	 * 先清 errno，避免异常实现未设错误时把调用方旧 errno 当作本次错误。
+	 */
+	errno = 0;
 	int yes = isatty(fd);
-	int rc = yes ? 0 : -(errno ? errno : ENOTTY);
-	(void)finish(&scope, rc);
-	return yes;
+	int error = errno;
+	rc = yes || error == ENOTTY ? 0 : -(error ? error : EIO);
+	rc = finish(&scope, rc);
+	/* 取消策略恢复也可能失败；所有收尾成功后才发布输出，失败不改旧值。 */
+	if (!rc)
+		*out = !!yes;
+	return rc;
 }
-int console_stdout_is_tty(void)
+int console_stdout_is_tty(int *out)
 {
-	return tty(STDOUT_FILENO);
+	return tty(STDOUT_FILENO, out);
 }
-int console_stderr_is_tty(void)
+int console_stderr_is_tty(int *out)
 {
-	return tty(STDERR_FILENO);
+	return tty(STDERR_FILENO, out);
 }
 
 static int color_enabled(unsigned config, FILE *out)
@@ -170,8 +196,7 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 				    &saw_epipe);
 		stdio_error(logger_libc_fflush(out) != 0, &rc, &saw_epipe);
 	}
-	int unlock_rc = RELEASE_ERR(pthread_mutex_console,
-				    &console_guard);
+	int unlock_rc = RELEASE_ERR(pthread_mutex_console, &console_guard);
 	if (unlock_rc) {
 		atomic_store_explicit(&g_console_lock_error, -unlock_rc,
 				      memory_order_release);
@@ -184,12 +209,13 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 int console_print(const char *fmt, ...)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
+	int rc = begin(&scope);
+	if (rc)
+		return rc;
 	unsigned config = atomic_load_explicit(&g_config, memory_order_relaxed);
 	va_list ap;
 	va_start(ap, fmt);
-	int rc = write_v(stdout, NULL, NULL, config, fmt, ap);
+	rc = write_v(stdout, NULL, NULL, config, fmt, ap);
 	va_end(ap);
 	return finish(&scope, rc);
 }
@@ -198,11 +224,12 @@ int console_print(const char *fmt, ...)
 	int function(const char *fmt, ...)                                     \
 	{                                                                      \
 		logger_scope_t scope;                                          \
-		if (logger_scope_begin(&scope))                                \
-			return -1;                                             \
+		int rc = begin(&scope);                                        \
+		if (rc)                                                        \
+			return rc;                                             \
 		unsigned config =                                              \
 			atomic_load_explicit(&g_config, memory_order_relaxed); \
-		int rc = !fmt ? -EINVAL : 0;                                   \
+		rc = !fmt ? -EINVAL : 0;                                       \
 		if (!rc && (int)(config >> COLOR_BITS) >= (int)(minimum)) {    \
 			va_list ap;                                            \
 			va_start(ap, fmt);                                     \
@@ -222,10 +249,11 @@ int console_debug_source(const char *file, int line, const char *func,
 			 const char *fmt, ...)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
+	int rc = begin(&scope);
+	if (rc)
+		return rc;
 	unsigned config = atomic_load_explicit(&g_config, memory_order_relaxed);
-	int rc = !fmt ? -EINVAL : 0;
+	rc = !fmt ? -EINVAL : 0;
 	if (!rc && (config >> COLOR_BITS) >= CONSOLE_DEBUG) {
 		const char *base = file ? strrchr(file, '/') : NULL;
 		base = base ? base + 1 : (file ? file : "?");
@@ -255,8 +283,10 @@ int console_debug_source(const char *file, int line, const char *func,
 				rc = -lock_error;
 		}
 		if (!rc) {
-			ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
-			rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
+			ACQUIRE(pthread_mutex_console_checked, console_guard)
+			(&g_console_mu);
+			rc = ACQUIRE_ERR(pthread_mutex_console_checked,
+					 &console_guard);
 			if (!rc) {
 				logger_sigpipe_guard_t sigpipe_guard;
 				rc = logger_sigpipe_begin(&sigpipe_guard);
@@ -272,18 +302,18 @@ int console_debug_source(const char *file, int line, const char *func,
 						&rc, &saw_epipe);
 				}
 				int unlock_rc = RELEASE_ERR(
-					pthread_mutex_console,
-					&console_guard);
+					pthread_mutex_console, &console_guard);
 				if (unlock_rc) {
-					atomic_store_explicit(&g_console_lock_error,
-							      -unlock_rc,
-							      memory_order_release);
+					atomic_store_explicit(
+						&g_console_lock_error,
+						-unlock_rc,
+						memory_order_release);
 					if (!rc)
 						rc = unlock_rc;
 				}
 				if (guarded)
-					rc = logger_sigpipe_end(&sigpipe_guard, rc,
-							 saw_epipe);
+					rc = logger_sigpipe_end(&sigpipe_guard,
+								rc, saw_epipe);
 			}
 		}
 	}

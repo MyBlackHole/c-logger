@@ -100,7 +100,7 @@ STOPPING/BROKEN 准入门。文件/Syslog 的完整一致输出端指标分别�
 LOG_* 返回 ENODEV，不格式化、不输出。业务 SDK 不应隐式改变宿主的默认绑定。
 进程初始化仍由宿主显式调用，实际锁/代次/错误规则见[默认借用合同](docs/v2/DEFAULT_BORROW.md)。
 Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
-关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局信号处理函数、屏蔽字或既有待处理信号。
+关闭管道返回 `-EPIPE` 并保留入口errno（如更早已有格式错误则保留首错），不改变宿主全局信号处理函数、屏蔽字或既有待处理信号。
 
 ## fork 边界
 
@@ -178,3 +178,11 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 Audit/crypto 不是当前生产 API，安装库不导出 `audit_*`，也不安装 `audit.h`。
 旧审计合同、SHA-256历史和SONAME 1由 `release/1.x` 与 `v1.0.0` 定义，不能从当前普通日志库获得。
 当前移除边界与未完成事项见 [AUDIT_REMOVAL.md](docs/v2/AUDIT_REMOVAL.md)。
+
+## Console 统一错误与结果
+
+十二个Console接口均返回0/-errno并保留errno，不再使用void配置和-1/errno输出。
+`console_init(NULL)`返回-EINVAL；恢复默认值应显式传入默认配置。
+`console_stdout_is_tty(&answer)`及stderr对应入口成功写入0/1，ENOTTY表示非终端；
+EBADF等为负错误码，失败（包括收尾错误）保留answer原值。原有标准流、标签、
+缓冲、过滤、SIGPIPE和取消合同继续保持，完整规则见[Console合同](docs/v2/CONSOLE_API.md)。

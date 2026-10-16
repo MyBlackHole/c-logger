@@ -580,3 +580,10 @@ Global 关闭保留当前 POSIX 返回合同，两者不能用同一个旧 errno
 执行 `xmake test -g control-api -j1`；公开、错误注入及静态/共享边界见
 [控制接口合同](docs/v2/CONTROL_API.md)。完成水位、取消和默认代次的既有
 回归均直接迁移，不通过兼容包装保留旧errno断言。
+
+## Console 状态合同验证
+
+`xmake test -g console-api -j1`运行四个公开用例和十个故障场景；静态配置额外
+使用真实生产归档执行同一十项。配置/查询/七类输出的errno保留、实际终端和
+非终端、错误输出槽、取消恢复与主错优先都独立断言。原配置扩展用例现读取
+本次Console返回值，不复用上一条Logger的rc。完整入口见[Console合同](docs/v2/CONSOLE_API.md)。

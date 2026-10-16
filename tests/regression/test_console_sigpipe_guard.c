@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 	console_config_t config = CONSOLE_DEFAULT_CONFIG();
 	config.verbosity = CONSOLE_DEBUG;
 	config.color = CONSOLE_COLOR_NEVER;
-	console_init(&config);
+	CHECK(console_init(&config) == 0);
 	/* 只注入 Console 锁；格式协调锁不属于本用例的释放对象。 */
 	console_mutex = &logger_runtime_current()->console_mu;
 	sigset_t before;
@@ -98,13 +98,14 @@ int main(int argc, char **argv)
 	else
 		stdout = stream;
 	armed = 1;
+	errno = EDOM;
 	int rc = output(source);
 	int error = errno;
 	if (source)
 		stderr = saved;
 	else
 		stdout = saved;
-	CHECK(rc == -1 && error == first_error);
+	CHECK(rc == -first_error && error == EDOM);
 	CHECK(locks == 1 && unlocks == 1);
 	CHECK(!fail_mask && !fail_pending && !fail_unlock);
 	CHECK(ftell(stream) == 0);
@@ -113,7 +114,8 @@ int main(int argc, char **argv)
 		CHECK(sigismember(&before, signum) ==
 		      sigismember(&after, signum));
 	if (poison) {
-		CHECK(output(source) == -1 && errno == EPERM);
+		errno = EDOM;
+		CHECK(output(source) == -EPERM && errno == EDOM);
 		CHECK(locks == 1 && unlocks == 1);
 	} else {
 		CHECK(!output(source));

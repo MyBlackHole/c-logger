@@ -32,9 +32,24 @@ int logger_default_reopen(void);
 ```
 
 四者采用0/-errno并保留errno，删除旧status/instance包装，不保留符号别名。
-默认绑定 `logger_default_set` 也采用该规则。配置布局与其他记录/指标/Console
+默认绑定 `logger_default_set` 也采用该规则。配置布局与其他记录/指标
 接口没有借此全部重写，未迁移项的返回形式见[API](../API.md)。
 详细控制语义与错误优先级见[控制操作合同](../docs/v2/CONTROL_API.md)。
+
+## Console 函数类型与返回值迁移
+
+```c
+int console_init(const console_config_t *);
+int console_set_color(console_color_mode_t);
+int console_set_verbosity(console_verbosity_t);
+int console_stdout_is_tty(int *);
+int console_stderr_is_tty(int *);
+```
+
+配置由void改为int；TTY由无参布尔查询改为状态加输出槽。七个输出函数的C类型
+不变但错误语义变为负errno，十二个入口均保留errno。不增加别名或旧接口，当前
+43个符号数量不变不能证明二进制兼容。函数类型和安装实际调用按本源码重新验收，
+详细见[Console合同](../docs/v2/CONSOLE_API.md)。
 
 ## 单一可执行断言
 

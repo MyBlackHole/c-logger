@@ -87,10 +87,10 @@ Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Lo
 
 - console_print 仍是标准输出、无标签、不自动追加换行；诊断仍到标准错误。
 - 所有 fmt=NULL 返回 EINVAL，包括被级别过滤的消息。
-- 非法配置/枚举不改变已有配置，void 设置接口/初始化 通过 errno 报告 EINVAL。
+- 非法配置/枚举不改变已有配置，设置接口/初始化返回-EINVAL并保留入口errno。
 - stdio 输出失败后即使后续 fflush 也失败，保留第一次错误。
 - Console 自身的 stdout/stderr 写入和 fflush 使用线程局部 SIGPIPE guard：关闭读取端的
-  管道返回 -1/errno=EPIPE，不因该次输出终止宿主。已有首错优先，例如格式化 EILSEQ 后的
+  管道返回 -EPIPE 并保留入口errno，不因该次输出终止宿主。已有首错优先，例如格式化 EILSEQ 后的
   fflush 再遇 EPIPE，仍返回 EILSEQ，同时处理这次写入产生的 SIGPIPE。
 - guard 不改变进程全局信号处置方式，不修改其他线程的信号屏蔽字；返回前恢复调用线程的
   完整原信号屏蔽字。调用前已有的待处理 SIGPIPE 保留；仅在观察到 EPIPE 且进入时没有待处理
@@ -101,7 +101,8 @@ Global 入口及 Audit 的锁准入在该标记下先拒绝，防止对内部 Lo
   数据；宿主在 Console 外直接写入或刷新该 FILE 时自行负责 SIGPIPE 策略。
 - console_debug_源信息消息 3072 字节（含 NUL）、合成字段 4096 字节（含 NUL）；超限返回
   EOVERFLOW，在写出诊断前拒绝，而不静默截断。
-- TTY 自动探测不覆盖供 printf `%m` 使用的 errno；成功操作恢复入口 errno。
+- TTY 自动探测不覆盖供 printf `%m` 使用的 errno；所有正常返回恢复入口 errno。
+  公开TTY查询使用输出槽，仅成功写入0/1，失败保持旧值，详见[v2 Console合同](v2/CONSOLE_API.md)。
 - 配置或输出提交后收到取消，不做回滚。
 
 TLS 上下文 set/get 的自赋值与请求/会话等交换使用临时快照，避免输入仍指向 TLS 时

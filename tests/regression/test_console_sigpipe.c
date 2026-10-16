@@ -12,13 +12,13 @@
  */
 static int report_fd = STDERR_FILENO;
 #undef CHECK
-#define CHECK(expr)                                                       \
-	do {                                                              \
-		if (!(expr)) {                                             \
-			dprintf(report_fd, "%s:%d: %s (errno=%d)\n",       \
-				__FILE__, __LINE__, #expr, errno);          \
-			_exit(1);                                          \
-		}                                                         \
+#define CHECK(expr)                                                            \
+	do {                                                                   \
+		if (!(expr)) {                                                 \
+			dprintf(report_fd, "%s:%d: %s (errno=%d)\n", __FILE__, \
+				__LINE__, #expr, errno);                       \
+			_exit(1);                                              \
+		}                                                              \
 	} while (0)
 
 static volatile sig_atomic_t signal_calls;
@@ -28,19 +28,20 @@ static void sigpipe_handler(int signum)
 	++signal_calls;
 }
 
-static const char *const names[] = {
-	"print", "info", "warn", "error", "verbose", "debug", "source"
-};
-static const char *const labels[] = {
-	"", "INFO: ", "WARN: ", "ERROR: ", "INFO: ", "DEBUG: ",
-	"DEBUG: console_source.c:42 caller() "
-};
+static const char *const names[] = { "print",	"info",	 "warn",  "error",
+				     "verbose", "debug", "source" };
+static const char *const labels[] = { "",
+				      "INFO: ",
+				      "WARN: ",
+				      "ERROR: ",
+				      "INFO: ",
+				      "DEBUG: ",
+				      "DEBUG: console_source.c:42 caller() " };
 
 typedef int (*output_fn)(const char *, ...);
-static const output_fn outputs[] = {
-	console_print, console_info, console_warn, console_error,
-	console_verbose, console_debug
-};
+static const output_fn outputs[] = { console_print,   console_info,
+				     console_warn,    console_error,
+				     console_verbose, console_debug };
 
 static int output(unsigned api)
 {
@@ -50,8 +51,8 @@ static int output(unsigned api)
 	if (api < sizeof(outputs) / sizeof(outputs[0]))
 		return outputs[api]("message %s %d errno=%m", "text", 42);
 	const char *fmt = "message %s %d errno=%m";
-	return console_debug_source("/tmp/console_source.c", 42, "caller",
-				    fmt, "text", 42);
+	return console_debug_source("/tmp/console_source.c", 42, "caller", fmt,
+				    "text", 42);
 }
 
 static void configure(const char *scenario, sigset_t *expected_mask,
@@ -59,7 +60,8 @@ static void configure(const char *scenario, sigset_t *expected_mask,
 {
 	struct sigaction action = { 0 };
 	action.sa_handler = !strcmp(scenario, "handler") ? sigpipe_handler :
-		!strcmp(scenario, "ignored") ? SIG_IGN : SIG_DFL;
+			    !strcmp(scenario, "ignored") ? SIG_IGN :
+							   SIG_DFL;
 	action.sa_flags = SA_RESTART;
 	CHECK(!sigemptyset(&action.sa_mask));
 	CHECK(!sigaddset(&action.sa_mask, SIGUSR2));
@@ -108,7 +110,7 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 	int pipefd[2];
 	CHECK(!pipe(pipefd));
 	int healthy = !strcmp(scenario, "healthy") ||
-		!strcmp(scenario, "host-buffer");
+		      !strcmp(scenario, "host-buffer");
 	int first_error = !strcmp(scenario, "first-error");
 	int host_flush = !strcmp(scenario, "host-flush");
 	if (!healthy)
@@ -119,7 +121,7 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 	CHECK(!close(pipefd[1]));
 	char buffer[512];
 	CHECK(!setvbuf(stream, buffer, buffered ? _IOFBF : _IONBF,
-		      sizeof(buffer)));
+		       sizeof(buffer)));
 
 	sigset_t expected_mask;
 	struct sigaction expected_action;
@@ -127,7 +129,7 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 	console_config_t config = CONSOLE_DEFAULT_CONFIG();
 	config.color = CONSOLE_COLOR_AUTO;
 	config.verbosity = CONSOLE_DEBUG;
-	console_init(&config);
+	CHECK(console_init(&config) == 0);
 	if (!strcmp(scenario, "host-buffer") || host_flush || first_error)
 		CHECK(fputs("host-prefix|", stream) >= 0);
 	errno = EDOM;
@@ -144,8 +146,8 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 	} else {
 		rc = output(api);
 	}
-	CHECK(rc == (healthy ? 0 : -1));
-	CHECK(errno == (healthy ? EDOM : first_error ? EILSEQ : EPIPE));
+	CHECK(rc == (healthy ? 0 : first_error ? -EILSEQ : -EPIPE));
+	CHECK(errno == EDOM);
 	CHECK(!!ferror(stream) == !healthy);
 	check_signal_state(&expected_mask, &expected_action,
 			   !strcmp(scenario, "pending"));
@@ -156,8 +158,9 @@ static void run_case(const char *scenario, unsigned api, int buffered)
 		CHECK(size >= 0);
 		actual[size] = '\0';
 		char expected[1024];
-		int length = snprintf(expected, sizeof(expected),
-				      "%s%smessage text 42 errno=%s%s",
+		int length = snprintf(
+			expected, sizeof(expected),
+			"%s%smessage text 42 errno=%s%s",
 			!strcmp(scenario, "host-buffer") ? "host-prefix|" : "",
 			labels[api], strerror(EDOM), api == 0 ? "" : "\n");
 		CHECK(length >= 0 && (size_t)length < sizeof(expected));
@@ -198,7 +201,7 @@ static void *print_thread(void *expected)
 {
 	pthread_cleanup_push(check_thread_restored, expected);
 	errno = EDOM;
-	CHECK(console_print("callback") == -1 && errno == EPIPE);
+	CHECK(console_print("callback") == -EPIPE && errno == EDOM);
 	pthread_testcancel();
 	pthread_cleanup_pop(1);
 	return NULL;
@@ -272,11 +275,12 @@ int main(int argc, char **argv)
 		check_large_output();
 		return 0;
 	}
-	CHECK(!strcmp(scenario, "closed") ||
-	      !strcmp(scenario, "preblocked") || !strcmp(scenario, "pending") ||
-	      !strcmp(scenario, "handler") || !strcmp(scenario, "ignored") ||
-	      !strcmp(scenario, "healthy") || !strcmp(scenario, "first-error") ||
-	      !strcmp(scenario, "host-buffer") || !strcmp(scenario, "host-flush"));
+	CHECK(!strcmp(scenario, "closed") || !strcmp(scenario, "preblocked") ||
+	      !strcmp(scenario, "pending") || !strcmp(scenario, "handler") ||
+	      !strcmp(scenario, "ignored") || !strcmp(scenario, "healthy") ||
+	      !strcmp(scenario, "first-error") ||
+	      !strcmp(scenario, "host-buffer") ||
+	      !strcmp(scenario, "host-flush"));
 	for (unsigned api = 0; api < sizeof(names) / sizeof(names[0]); ++api) {
 		if (!strcmp(scenario, "first-error") && api == 6)
 			continue;
@@ -297,7 +301,8 @@ int main(int argc, char **argv)
 			int status;
 			CHECK(waitpid(pid, &status, 0) == pid);
 			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-				fprintf(stderr, "%s/%s/buffered=%d: status=%d\n",
+				fprintf(stderr,
+					"%s/%s/buffered=%d: status=%d\n",
 					scenario, names[api], buffered, status);
 				return 1;
 			}
