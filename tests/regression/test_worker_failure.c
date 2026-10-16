@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger_internal.h"
 #include "support.h"
 
@@ -417,9 +420,10 @@ int main(int argc, char **argv)
 	c.include_source = 1;
 	c.queue_capacity = 8;
 	c.async_mode = 1;
-	if (selected == GLOBAL)
-		CHECK(logger_init(&c) == 0);
-	else {
+	if (selected == GLOBAL) {
+		owner_slot = &default_owner;
+		CHECK(fixture_default_create(&c, &default_owner) == 0);
+	} else {
 		owner_slot = &owner;
 		CHECK(logger_create(&c, &owner) == 0);
 		CHECK(owner != NULL && owner == instance);
@@ -446,8 +450,8 @@ int main(int argc, char **argv)
 	 */
 	if (selected == GLOBAL) {
 		errno = 0;
-		CHECK(logger_shutdown_status() == (expected ? -1 : 0));
-		CHECK(errno == expected);
+		CHECK(fixture_default_destroy(&default_owner) == -expected);
+		CHECK(errno == 0 && default_owner == NULL);
 	} else {
 		errno = EDOM;
 		CHECK(logger_destroy(&owner) == -expected);

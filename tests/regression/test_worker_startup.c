@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger_internal.h"
 #include "support.h"
 
@@ -245,9 +248,10 @@ int main(int argc, char **argv)
 	config.async_mode = selected != SYNC;
 	if (selected == GLOBAL_WORKER_FIRST) {
 		errno = 0;
-		CHECK(logger_init(&config) == -1 && errno == EIO);
+		CHECK(fixture_default_create(&config, &default_owner) == -EIO);
+		CHECK(errno == 0 && default_owner == NULL);
 		assert_clean_failure();
-		CHECK(logger_shutdown_status() == 0);
+		CHECK(fixture_default_destroy(&default_owner) == 0);
 	} else {
 		errno = 0;
 		logger_t *l = NULL;

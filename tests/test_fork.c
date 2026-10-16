@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <dirent.h>
 #include <errno.h>
@@ -58,10 +61,10 @@ static int exec_child(void)
 	c.file_path = "fork-child.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
-	CHECK(logger_init(&c) == 0);
+	CHECK(fixture_default_create(&c, &default_owner) == 0);
 	LOG_INFO("child initialized after exec");
 	CHECK(logger_flush_status() == 0);
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	return 0;
 }
 int main(int argc, char **argv)
@@ -77,7 +80,7 @@ int main(int argc, char **argv)
 	c.file_path = "fork-parent.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
-	CHECK(logger_init(&c) == 0);
+	CHECK(fixture_default_create(&c, &default_owner) == 0);
 	LOG_INFO("before fork");
 	char exe[PATH_MAX];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -101,7 +104,7 @@ int main(int argc, char **argv)
 	while (waitpid(p, &status, 0) < 0)
 		CHECK(errno == EINTR);
 	CHECK(logger_flush_status() == 0);
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 	CHECK(contains("fork-parent.log", "before fork"));
 	CHECK(contains("fork-parent.log", "parent continues"));

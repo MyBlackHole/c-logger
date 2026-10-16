@@ -5,6 +5,41 @@
 #include "logger_process.h"
 #include <errno.h>
 #include <sys/mman.h>
+#if defined(__SANITIZE_THREAD__)
+#define LOGGER_RUNTIME_TSAN 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define LOGGER_RUNTIME_TSAN 1
+#endif
+#endif
+#ifdef LOGGER_RUNTIME_TSAN
+#include <sanitizer/tsan_interface.h>
+/* 仅检测器构建保存已被 MADV_DONTFORK 移除的两把协调锁地址。
+ * 内核移除映射不会经过 TSan 的 munmap 拦截器，因此当前线程的持锁表
+ * 仍含 prepare 取得的租约。不能真实 munmap/解锁旧地址：它可能已被复用。
+ */
+static _Thread_local uintptr_t discarded_domain;
+
+static void forget_discarded_leases(void)
+{
+	uintptr_t domain = discarded_domain;
+	if (!domain)
+		return;
+	discarded_domain = 0;
+	/* 按实际取得的逆序撤销旧进程租约；不解引用、重置任何真实锁，
+	 * 不关闭报告或清空全部锁图。仅在有效 fork 子方的新域创建前执行一次。
+	 * 新域的 pthread 初始化及全部锁操作仍由常规拦截器完整检查。
+	 */
+	void *resource =
+		(void *)(domain + offsetof(struct logger_runtime, resource_mu));
+	void *format =
+		(void *)(domain + offsetof(struct logger_runtime, format_mu));
+	__tsan_mutex_pre_unlock(resource, 0);
+	__tsan_mutex_post_unlock(resource, 0);
+	__tsan_mutex_pre_unlock(format, 0);
+	__tsan_mutex_post_unlock(format, 0);
+}
+#endif
 
 _Static_assert(ATOMIC_POINTER_LOCK_FREE == 2,
 	       "fork root requires a lock-free pointer");
@@ -32,6 +67,10 @@ void logger_runtime_publish(struct logger_runtime *runtime)
 void logger_runtime_invalidate_child(void)
 {
 	/* 不解引用旧地址；对应映射已由内核在 fork 时排除。 */
+#ifdef LOGGER_RUNTIME_TSAN
+	if (logger_fork_fd_child_valid())
+		discarded_domain = (uintptr_t)logger_runtime_current();
+#endif
 	atomic_store_explicit(&current, NULL, memory_order_relaxed);
 }
 
@@ -59,6 +98,9 @@ int logger_runtime_discard(struct logger_runtime *runtime)
 
 int logger_runtime_create(struct logger_runtime **out)
 {
+#ifdef LOGGER_RUNTIME_TSAN
+	forget_discarded_leases();
+#endif
 	*out = NULL;
 	if (retained_bootstrap)
 		return -EUCLEAN;

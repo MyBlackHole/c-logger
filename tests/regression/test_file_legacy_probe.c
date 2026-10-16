@@ -1,8 +1,8 @@
+#define _GNU_SOURCE
 /* 仅使用既有公开 API 的黑盒回归断言。
  * 将此相同源码分别针对输入与输出静态库编译并链接。
  * 输入版本上的非零结果展示旧缺陷。
  */
-#define _GNU_SOURCE
 #include "logger.h"
 #include <errno.h>
 #include <dirent.h>
@@ -113,10 +113,13 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (!strcmp(s, "global-repeat")) {
-		REQUIRE(logger_init(&c) == 0);
+		logger_t *owner = NULL;
+		REQUIRE(logger_create(&c, &owner) == 0);
+		REQUIRE(logger_default_set(NULL, owner) == 0);
 		c.file_path = "unwanted.log";
-		REQUIRE(logger_init(&c) == -1 && errno == EALREADY);
-		logger_shutdown();
+		REQUIRE(logger_default_set(NULL, owner) == -ESTALE);
+		REQUIRE(logger_default_set(owner, NULL) == 0);
+		REQUIRE(logger_destroy(&owner) == 0);
 		REQUIRE(access("unwanted.log", F_OK) != 0);
 		return 0;
 	}

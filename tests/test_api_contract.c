@@ -32,12 +32,12 @@ int main(void)
 	if (rc != -EINVAL)
 		return 4;
 
-	/* Global 的未初始化与无效配置同样使用可观察的 POSIX 错误。 */
+	/* 默认读取保留 POSIX 风格；默认绑定使用负错误码。 */
 	errno = 0;
 	if (!rejected(logger_flush_status(), ENODEV))
 		return 5;
 	errno = 0;
-	if (!rejected(logger_init(NULL), EINVAL))
+	if (logger_default_set(NULL, NULL) != 0 || errno != 0)
 		return 6;
 
 	/* NULL 销毁不会消费资源，成功不清除调用方已有 errno。 */

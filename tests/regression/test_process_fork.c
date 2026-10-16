@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "support.h"
 #include "logger_internal.h"
 #include "logger_runtime.h"
@@ -188,7 +191,8 @@ static void child_guard_matrix(void)
 {
 	strict_child = 1;
 	(void)alarm(5);
-	CHILD_POSIX(logger_init(&cfg), 10);
+	if (logger_default_set(NULL, NULL) != -ECHILD)
+		_exit(10);
 	errno = 0;
 	if (logger_create(&cfg, &(logger_t *){ NULL }) != -ECHILD)
 		_exit(11);
@@ -196,7 +200,8 @@ static void child_guard_matrix(void)
 	CHILD_POSIX(logger_flush_status(), 15);
 	CHILD_POSIX(logger_reopen(), 16);
 	CHILD_VOID(logger_set_level(LOGGER_DEBUG), 17);
-	CHILD_VOID(logger_shutdown(), 18);
+	if (logger_default_set(NULL, NULL) != -ECHILD)
+		_exit(18);
 	logger_metrics_t m = { .enqueued = 777 };
 	logger_io_metrics_t io = { .emitted_records = 777 };
 	CHILD_VOID(logger_get_global_metrics(&m), 19);
@@ -265,7 +270,8 @@ static void child_guard_matrix(void)
 	if (console_stderr_is_tty() != 0 || errno != ECHILD)
 		_exit(52);
 
-	CHILD_POSIX(logger_init(&cfg), 66);
+	if (logger_default_set(NULL, NULL) != -ECHILD)
+		_exit(66);
 	_exit(0);
 }
 
@@ -284,9 +290,10 @@ static void early_child(void)
 	int previous = strict_child;
 	strict_child = 1;
 	/* 在库处理函数之前注册：必须由不可变 PID 所有权，
-	 * 而非处理函数顺序，阻止 logger_init 接触继承的 once。
+	 * 而非处理函数顺序，阻止默认绑定接触继承的运行域。
 	 */
-	CHILD_POSIX(logger_init(&cfg), 70);
+	if (logger_default_set(NULL, NULL) != -ECHILD)
+		_exit(70);
 	/* 库后续 child handler 允许 close 已登记引用；拒绝的 API 本身仍禁止 I/O。 */
 	strict_child = previous;
 }
@@ -322,7 +329,7 @@ static void *initializer(void *p)
 {
 	(void)p;
 	CHECK(logger_process_init() == 0);
-	CHECK(logger_init(&cfg) == 0);
+	CHECK(fixture_default_create(&cfg, &default_owner) == 0);
 	return NULL;
 }
 static void *lock_holder(void *p)
@@ -341,7 +348,7 @@ static void registration_failure(const char *mode)
 	CHECK(logger_process_init() == -ENOMEM);
 	errno = 0;
 	if (!strcmp(mode, "register-global"))
-		CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
+		CHECK(logger_default_set(NULL, NULL) == -ENOMEM);
 	else if (!strcmp(mode, "register-explicit"))
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	else if (!strcmp(mode, "register-console"))
@@ -355,7 +362,7 @@ static void registration_failure(const char *mode)
 	/* 注册失败不会自动清除，不允许静默地无保护重试。 */
 	atomic_store(&fail_registration, 0);
 	CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
-	CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
+	CHECK(logger_default_set(NULL, NULL) == -ENOMEM);
 	CHECK(atomic_load(&registrations) == 1);
 }
 
@@ -475,7 +482,7 @@ int main(int argc, char **argv)
 			wait_flag(&entered);
 		}
 	} else {
-		CHECK(!logger_init(&cfg));
+		CHECK(!fixture_default_create(&cfg, &default_owner));
 		if (!strcmp(mode, "reader-held")) {
 			atomic_store(&pause_reader, 1);
 			CHECK(!pthread_create(&thread, NULL, global_writer,
@@ -483,7 +490,7 @@ int main(int argc, char **argv)
 			has_thread = 1;
 			wait_flag(&entered);
 		} else if (!strcmp(mode, "after-shutdown"))
-			logger_shutdown();
+			fixture_default_destroy(&default_owner);
 	}
 	if (!strcmp(mode, "console-held"))
 		atomic_store(&release_console_at_prepare, 1);
@@ -516,7 +523,7 @@ int main(int argc, char **argv)
 		CHECK(!logger_flush_instance_status(instance));
 		logger_destroy(&instance);
 	}
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	fprintf(stderr, "ATFORK_LOGGER_REGISTRATIONS=%u\n",
 		atomic_load(&registrations));
 	CHECK(atomic_load(&registrations) == 1);

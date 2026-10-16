@@ -1,3 +1,6 @@
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <errno.h>
 #include <sys/wait.h>
@@ -11,7 +14,7 @@ int main(void)
 	l.outputs = LOGGER_OUT_FILE;
 	l.file_path = "./guard.log";
 	l.rotation.mode = LOGGER_ROTATE_NONE;
-	if (logger_init(&l))
+	if (fixture_default_create(&l, &default_owner))
 		return 1;
 	/* 运行时存活时 fork：内部 atfork/PID 守卫提供安全保障。 */
 	pid_t p = fork();
@@ -21,13 +24,13 @@ int main(void)
 		LOG_INFO("must safely disappear");
 		if (logger_flush_status() != -1 || errno != ECHILD)
 			_exit(10);
-		if (logger_shutdown_status() != -1 || errno != ECHILD)
+		if (logger_default_set(NULL, NULL) != -ECHILD)
 			_exit(11);
 		_exit(0);
 	}
 	int st = 0;
 	if (waitpid(p, &st, 0) < 0)
 		return 4;
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	return WIFEXITED(st) && WEXITSTATUS(st) == 0 ? 0 : 5;
 }

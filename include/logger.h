@@ -403,24 +403,18 @@ LOGGER_API int logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
  * 返回 0 或 -1+errno。未选择 Syslog 时返回 ENOTSUP；出错时输出不变。
  * 不执行连接、重试、刷新，也不重置粘滞 I/O 错误。 */
 LOGGER_API int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *);
-/* 可选的应用全局门面。并发的数据/控制调用固定一个代次，绝不会
- * 静默操作更新的实例。启动期间返回 EAGAIN；关闭期间、关闭之后或
- * 固定的代次已失效时返回 ESHUTDOWN；没有初始实例时返回 ENODEV
- * （仅 LOG_* 保留旧版启动阶段的 stderr 回退）。
- * 同一线程内嵌套的全局调用以 EDEADLK 失败。不保证信号安全。
- * 全局调用将取消延迟到所有库锁释放及代次保护解除之后；取消不会
- * 回滚输出或已完成的初始化/关闭，也不会施加 I/O 超时。
- * 显式实例操作使用上述内部取消/重入作用域。
+/* 默认槽只借用普通实例，不创建、刷新或销毁实例。
+ * logger_default_set(NULL, next) 绑定；(old, next) 原子替换；(old, NULL) 解绑。
+ * 0/-errno，保留 errno。expected 与当前绑定不符或排队期间代次变化：-ESTALE。
+ * 更换期间新便利调用返回 EAGAIN；解绑成功时旧的默认借用已经全部退出。
+ * 没有默认实例时便利入口 ENODEV，不隐式输出 stderr。
+ * 宿主必须保护 expected/replacement 的寿命并串行化其绑定与显式销毁；
+ * 被借用期间 logger_destroy 拒绝 EBUSY，不消费拥有者。读者不取得所有权。
+ * 解锁证明失败使默认槽失败关闭，相关实例可能永久保持借用，不能强行释放。
+ * 取消恢复可能发生在绑定变更后；清理须按 expected 解绑后再销毁，不能仅依据
+ * 函数是否正常返回来判断有无绑定。该接口不是取消点或信号安全接口。
  */
-LOGGER_API int logger_init(const logger_config_t *);
-/* 将停止接纳、排空、等待线程结束、关闭和释放所有权串行化。
- * 对同一代次重复关闭会成功；延迟的关闭绝不会销毁更新的代次
- * （ESHUTDOWN）。I/O 失败时仍会释放旧实例；错误仅向控制者返回
- * 一次，不返回可重试的指针。与 void 包装函数不同，
- * 此接口允许检查最终同步/关闭结果。
- */
-LOGGER_API int logger_shutdown_status(void);
-LOGGER_API void logger_shutdown(void);
+LOGGER_API int logger_default_set(logger_t *expected, logger_t *replacement);
 /* 全局门面提供相同保证 */
 LOGGER_API int logger_flush_status(void);
 LOGGER_API void logger_flush(void); /* 兼容包装函数；不返回错误 */

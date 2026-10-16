@@ -1,47 +1,46 @@
 #include "logger.h"
-#include <errno.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <unistd.h>
-static logger_config_t lc;
-static _Atomic int lok, lalready;
-static void *li(void *x)
+#include "regression/support.h"
+
+static logger_t *owner;
+static _Atomic int won, rejected;
+static pthread_barrier_t barrier;
+static void *bind_once(void *unused)
 {
-	(void)x;
-	if (logger_init(&lc) == 0)
-		atomic_fetch_add(&lok, 1);
-	else if (errno == EALREADY)
-		atomic_fetch_add(&lalready, 1);
-	return 0;
+	(void)unused;
+	int rc = pthread_barrier_wait(&barrier);
+	CHECK(rc == 0 || rc == PTHREAD_BARRIER_SERIAL_THREAD);
+	rc = logger_default_set(NULL, owner);
+	if (!rc)
+		atomic_fetch_add(&won, 1);
+	else {
+		CHECK(rc == -ESTALE || rc == -EAGAIN);
+		atomic_fetch_add(&rejected, 1);
+	}
+	return NULL;
 }
 int main(void)
 {
-	if (logger_process_init() != 0)
-		return 1;
-	unlink("./reinit.log");
-	lc = LOGGER_DEFAULT_CONFIG();
-	lc.outputs = LOGGER_OUT_FILE;
-	lc.file_path = "./reinit.log";
-	lc.rotation.mode = LOGGER_ROTATE_NONE;
-	if (logger_init(&lc))
-		return 1;
-	errno = 0;
-	if (logger_init(&lc) == 0 || errno != EALREADY)
-		return 2;
-	logger_shutdown();
-	if (logger_init(&lc))
-		return 3;
-	logger_shutdown();
-	pthread_t lt[8];
-	for (int i = 0; i < 8; i++)
-		if (pthread_create(&lt[i], 0, li, 0))
-			return 5;
-	for (int i = 0; i < 8; i++)
-		if (pthread_join(lt[i], 0))
-			return 6;
-	if (atomic_load(&lok) != 1 || atomic_load(&lalready) != 7)
-		return 4;
-	logger_shutdown();
-
+	CHECK(logger_process_init() == 0);
+	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+	cfg.outputs = LOGGER_OUT_FILE;
+	cfg.file_path = "reinit.log";
+	cfg.rotation.mode = LOGGER_ROTATE_NONE;
+	CHECK(logger_create(&cfg, &owner) == 0);
+	CHECK(logger_default_set(NULL, owner) == 0);
+	CHECK(logger_default_set(NULL, owner) == -ESTALE);
+	CHECK(logger_default_set(owner, owner) == 0);
+	CHECK(logger_default_set(owner, NULL) == 0);
+	CHECK(logger_default_set(NULL, owner) == 0);
+	CHECK(logger_default_set(owner, NULL) == 0);
+	CHECK(pthread_barrier_init(&barrier, NULL, 8) == 0);
+	pthread_t threads[8];
+	for (int i = 0; i < 8; ++i)
+		CHECK(pthread_create(&threads[i], NULL, bind_once, NULL) == 0);
+	for (int i = 0; i < 8; ++i)
+		CHECK(pthread_join(threads[i], NULL) == 0);
+	CHECK(atomic_load(&won) == 1 && atomic_load(&rejected) == 7);
+	CHECK(pthread_barrier_destroy(&barrier) == 0);
+	CHECK(logger_default_set(owner, NULL) == 0);
+	CHECK(logger_destroy(&owner) == 0 && !owner);
 	return 0;
 }

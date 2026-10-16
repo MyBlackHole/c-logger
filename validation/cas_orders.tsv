@@ -6,14 +6,6 @@ src/logger.c	strong	&l->state	LOGGER_STATE_RUNNING	acq_rel	acquire	1	只允许�
 src/logger.c	strong	&l->lifecycle_error	join_rc	release	relaxed	1	发布 join 失败诊断；失败时的期望值不再使用。
 src/logger.c	strong	&l->first_error	error	release	relaxed	1	发布首个 I/O 错误；失败时的期望值不再使用。
 src/logger.c	strong	&l->synchronization_error	error	release	relaxed	1	发布首个同步证明错误；失败时的期望值不再使用。
-src/logger_global.c	strong	&g_lock_error	error	release	relaxed	1	在 G_BROKEN 前发布首个全局锁错误；失败时的期望值不再使用。
-src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN)	acq_rel	acquire	1	发布 G_BROKEN 且不覆盖新一代 ticket；每次重试以 acquire 观察。
-src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase)	release	relaxed	1	只回滚持有的 ticket；失败时的期望值不再使用。
-src/logger_global.c	strong	&g_ticket	ticket	acq_rel	acquire	1	发布新一代 STARTING；使用无歧义的 acq_rel 成功序并保留 acquire 失败序。
-src/logger_global.c	strong	&g_ticket	with_phase(ticket,G_RUNNING)	acq_rel	acquire	1	在写锁保护下发布 RUNNING；保留 acquire 失败序且不依赖 release/acquire 歧义。
-src/logger_global.c	strong	&g_ticket	stopping	acq_rel	acquire	1	以 STOPPING 关闭准入；使用无歧义的 acq_rel 成功序并保留 acquire 失败序。
-src/logger_global.c	strong	&g_ticket	current	release	relaxed	1	仅在取得写锁失败且 ticket 未变时恢复准入；失败值不再使用。
-src/logger_global.c	strong	&g_ticket	with_phase(current,G_STOPPED)	acq_rel	acquire	1	仅在最终释放回执确认后发布 STOPPED；无歧义地保留 acquire 失败序。
 src/logger_process.c	strong	&owner_pid	current	release	relaxed	1	在 atfork 注册前发布 PID；失败观察只比较 PID 标量。
 src/logger_process.c	weak	&live_objects	n+1	acq_rel	relaxed	1	有界对象计数递增；成功 RMW 保持计数顺序，失败只重试标量。
 src/logger_process.c	weak	&live_objects	n-1	acq_rel	acquire	1	有界对象计数递减并检查下溢；以 acquire 观察重试结果。
@@ -21,3 +13,8 @@ src/logger_queue.c	weak	&q->spill_used[word]	desired	acq_rel	relaxed	1	在 relea
 src/logger_queue.c	weak	&q->enqueue_pos	pos+1	relaxed	relaxed	1	只预留唯一队列位置；正文由独立 slot.seq release/acquire 发布。
 src/logger_worker.c	strong	&l->lifecycle_error	wait_rc	release	relaxed	1	发布 worker 等待失败；失败时的期望值不再使用。
 src/logger_process.c	strong	&process_ticket	PROCESS_STARTING	acq_rel	acquire	1	显式取得唯一初始化者；成功注册前不发布 READY，错误票据允许显式重试。
+src/logger_global.c	strong	&g_lock_error	error	release	relaxed	1	先发布默认绑定锁错误再关闭票据，不取得实例所有权。
+src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN)	acq_rel	acquire	1	失败关闭保留并发控制方的最新代次，禁止后继默认借用。
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase)	release	relaxed	1	只回滚当前控制方未成功取得写锁的更新，不撤销并发毒化。
+src/logger_global.c	strong	&g_ticket	updating	acq_rel	acquire	1	等待读者前先关闭本代准入，失败时检查并发错误。
+src/logger_global.c	strong	&g_ticket	next	acq_rel	acquire	1	完整新绑定和借用标记就绪后发布下一代，不能覆盖读者的延迟失败。

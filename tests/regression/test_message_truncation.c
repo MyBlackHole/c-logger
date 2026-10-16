@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include "support.h"
 #include <fcntl.h>
@@ -50,14 +53,16 @@ int main(int argc, char **argv)
 	logger_t *log = NULL;
 	int saved_stderr = -1;
 	if (!strcmp(mode, "bootstrap")) {
-		int fd = open("message.log", O_WRONLY | O_CREAT | O_TRUNC, 0600);
-		CHECK(fd >= 0);
-		saved_stderr = dup(STDERR_FILENO);
-		CHECK(saved_stderr >= 0);
-		CHECK(dup2(fd, STDERR_FILENO) == STDERR_FILENO);
-		CHECK(close(fd) == 0);
+		/* 无默认实例不再提供启动回退：必须在读取变参前拒绝。 */
+		int touched = 7;
+		errno = 0;
+		LOG_INFO("%8192s%n", "", &touched);
+		CHECK(errno == ENODEV && touched == 7);
+		CHECK(access("message.log", F_OK) != 0);
+		CHECK(chdir("/") == 0 && rmdir(dir) == 0);
+		return 0;
 	} else if (!strcmp(mode, "global")) {
-		CHECK(logger_init(&c) == 0);
+		CHECK(fixture_default_create(&c, &default_owner) == 0);
 	} else {
 		CHECK(logger_create(&c, &log) == 0);
 		CHECK(log != NULL);
@@ -156,7 +161,7 @@ int main(int argc, char **argv)
 		CHECK(io.async_completed + io.sync_completed == expected);
 	}
 	if (!strcmp(mode, "global"))
-		CHECK(logger_shutdown_status() == 0);
+		CHECK(fixture_default_destroy(&default_owner) == 0);
 	else if (strcmp(mode, "bootstrap"))
 		CHECK(logger_destroy(&log) == 0);
 	if (saved_stderr >= 0) {

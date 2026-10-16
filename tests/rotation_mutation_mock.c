@@ -8,16 +8,29 @@
 #include <string.h>
 
 static char active[256];
+static int token;
+static logger_t *bound;
 
 int logger_process_init(void)
 {
 	return 0;
 }
 
-int logger_init(const logger_config_t *config)
+int logger_create(const logger_config_t *config, logger_t **out)
 {
 	int n = snprintf(active, sizeof(active), "%s", config->file_path);
-	return n < 0 || (size_t)n >= sizeof(active) ? -1 : 0;
+	if (n < 0 || (size_t)n >= sizeof(active))
+		return -EOVERFLOW;
+	*out = (logger_t *)&token;
+	return 0;
+}
+
+int logger_default_set(logger_t *expected, logger_t *replacement)
+{
+	if (bound != expected)
+		return -ESTALE;
+	bound = replacement;
+	return 0;
 }
 
 void logger_global_write(logger_level_t level, const char *module,
@@ -32,14 +45,16 @@ void logger_global_write(logger_level_t level, const char *module,
 	(void)format;
 }
 
-int logger_shutdown_status(void)
+int logger_destroy(logger_t **owner)
 {
+	if (bound)
+		return -EBUSY;
+	*owner = NULL;
 	const char *mode = getenv("LOGGER_ROTATION_MUTATION");
 	if (!mode || !strcmp(mode, "no-output"))
 		return 0;
 	if (!strcmp(mode, "shutdown-error")) {
-		errno = EIO;
-		return -1;
+		return -EIO;
 	}
 	char archive[300];
 	int n = snprintf(archive, sizeof(archive), "%.*s.fixtureZ.log",

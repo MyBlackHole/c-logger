@@ -1,4 +1,7 @@
 #define LOG_MODULE "rotation"
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <dirent.h>
 #include <errno.h>
@@ -120,15 +123,15 @@ int main(void)
 	c.rotation.max_file_size = 1024;
 	c.rotation.retention_days = 1;
 	int rc = 0;
-	if (logger_init(&c)) {
-		perror("logger_init");
+	if (fixture_default_create(&c, &default_owner)) {
+		fputs("DEFAULT_BIND_FAILED\n", stderr);
 		rc = 1;
 		goto out;
 	}
 	for (int i = 0; i < RECORDS; i++)
 		LOG_INFO("record=%d " PAYLOAD, i);
-	if (logger_shutdown_status()) {
-		perror("logger_shutdown_status");
+	if (fixture_default_destroy(&default_owner)) {
+		fputs("DEFAULT_UNBIND_OR_DESTROY_FAILED\n", stderr);
 		rc = 2;
 		goto out;
 	}

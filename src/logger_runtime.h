@@ -29,7 +29,6 @@ struct logger_runtime {
 	_Atomic unsigned live_objects;
 
 	struct logger *global_logger;
-	struct logger *global_retired;
 	_Atomic uint64_t global_ticket;
 	_Atomic int global_lock_error;
 	_Atomic unsigned console_config;

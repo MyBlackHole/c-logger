@@ -66,6 +66,23 @@ jobs:
             --build_shared=n --build_tests=y --build_private_tests=y \
             --build_regression_tests=y --policies="$policies" \
             2>&1 | tee sanitizer-evidence/configure.log
+      - name: 验证 TSan fork 映射模型及真实错误反例
+        if: matrix.sanitizer == 'thread'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake -j2 fork_tsan_model
+          mapfile -t programs < <(find sanitizer-build -type f -name fork_tsan_model)
+          test "${#programs[@]}" -eq 1
+          python3 scripts/check_tsan_fork_model.py --binary "${programs[0]}" --output tsan-fork-model
+      - name: 保留 TSan fork 模型正反例
+        if: always() && matrix.sanitizer == 'thread'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsan-fork-model
+          path: tsan-fork-model/
+          if-no-files-found: error
+
       - name: 运行完整集合并保留原始退出码
         shell: bash
         run: |

@@ -961,17 +961,10 @@ if has_config("build_regression_tests") then
              "pthread_create", "write", "close", "vsnprintf", "vfprintf",
              "logger_vlog_internal"}},
         {"global_lifecycle_regression", "tests/regression/test_global_lifecycle.c",
-            {"pthread_mutex_lock", "pthread_mutex_unlock",
-             "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
-             "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
-             "logger_create", "logger_destroy", "logger_file_write",
-             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "logger_runtime_free",
-             "logger_lockdep_assert_held"}},
+            {"pthread_rwlock_rdlock", "pthread_rwlock_wrlock", "logger_file_write"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
-            {"logger_create", "logger_destroy", "logger_file_write",
-             "logger_file_reopen", "logger_queue_push", "logger_format_line",
-             "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock",
-             "logger_stderr_writev_all"}},
+            {"logger_file_write", "logger_file_reopen", "logger_queue_push", "logger_format_line",
+             "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock"}},
 
         -- Link-time interception parity, group C: explicit instance/Console scope.
         {"console_sigpipe_guard_regression", "tests/regression/test_console_sigpipe_guard.c",
@@ -1001,7 +994,7 @@ if has_config("build_regression_tests") then
         {"file_platform_regression", "tests/regression/test_file_platform.c",
             {"syscall"}},
         {"file_global_regression", "tests/regression/test_file_global.c",
-            {"logger_destroy", "pthread_mutex_lock"}},
+            {"logger_destroy"}},
         {"file_legacy_probe", "tests/regression/test_file_legacy_probe.c",
             {"clock_gettime"}},
     }
@@ -1403,68 +1396,20 @@ if has_config("build_regression_tests") then
     target_end()
 
     target("global_lifecycle_regression")
-        -- 与 regression_support 源码采用同一 LOCKDEP=1 ABI/编译契约。
-        -- 仅回归库提供此断言，真实生产库中它是空内联。
         add_defines("LOGGER_ENABLE_LOCKDEP=1")
-        add_tests("global_r7_publish_cas_poison",
-                  {runargs = "publish-cas-poison", timeout = 20})
-        for _, op in ipairs({
-            "write", "flush", "flush-void", "reopen",
-            "level", "dropped", "metrics", "io", "diagnostics", "file-metrics"
-        }) do
+        for _, op in ipairs({"write", "flush", "flush-void", "reopen", "level",
+                             "dropped", "metrics", "io", "diagnostics", "file-metrics"}) do
             add_tests("global_generation_" .. op,
                       {runargs = {"generation", op}, timeout = 20})
         end
-        for _, scenario in ipairs({
-            "contract", "bootstrap-generation", "shutdown-generation",
-            "start-gate", "stop-gate", "closed-readers", "stop-during-start",
-            "double-stop", "shutdown-error", "shutdown-fsync",
-            "bootstrap-stop", "child"
-        }) do
-            add_tests("global_" .. scenario,
-                      {runargs = scenario, timeout = 20})
-        end
-        for _, scenario in ipairs({
-            "bootstrap", "create", "write", "reopen", "destroy"
-        }) do
-            add_tests("global_reentry_" .. scenario,
-                      {runargs = {"reentry", scenario}, timeout = 20})
-        end
-        for _, scenario in ipairs({
-            "read", "control", "publish", "create", "stop"
-        }) do
-            add_tests("global_error_" .. scenario,
-                      {runargs = {"acquire-error", scenario}, timeout = 20})
-        end
-        for _, scenario in ipairs({
-            "reader", "writer", "control", "join", "cond-destroy"
-        }) do
-            add_tests("global_proof_" .. scenario,
-                      {runargs = {"release-proof", scenario}, timeout = 20})
-        end
-        for _, scenario in ipairs({"writer", "acquire-fail"}) do
-            add_tests("global_proof_handoff_" .. scenario,
-                      {runargs = {"proof-handoff", scenario}, timeout = 20})
-        end
-    target_end()
-
-    -- R7 对象阶段每项独立进程，禁止在锁所有权不确定后重复清理。
-    target("global_lifecycle_regression")
-        for _, scenario in ipairs({
-            "normal", "candidate-writer-failure", "candidate-retain",
-            "shutdown-writer-failure", "shutdown-unlock-failure",
-            "shutdown-retain", "shutdown-io-receipt"
-        }) do
-            add_tests("global_r7_" .. scenario,
-                      {runargs = {"r7-stage", scenario}, timeout = 25})
-        end
+        add_tests("global_closed_gate", {runargs = "closed-gate", timeout = 20})
+        add_tests("global_contract", {runargs = "contract", timeout = 20})
     target_end()
 
     target("global_cancel_regression")
         for _, scenario in ipairs({
             "write", "queue", "flush", "flush-void", "reopen", "reader",
-            "create", "create-fail", "shutdown", "bootstrap",
-            "control-wait", "restore-policy"
+            "bind", "unbind", "control-wait", "restore-policy"
         }) do
             add_tests("global_cancel_" .. scenario,
                       {runargs = scenario, timeout = 20})
@@ -1746,4 +1691,98 @@ if has_config("build_tests") then
             return code == 0, errors
         end)
     target_end()
+end
+
+-- 默认绑定合同：公开用例连接真实静态/共享库；链接包装只使用真实静态归档。
+if has_config("build_tests") then
+    target("default_binding_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_default_binding.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "sync", "async", "io", "fork", "stress"}) do
+            add_tests(mode, {runargs = mode, group = "default-binding", timeout = 25})
+        end
+    target_end()
+    if not has_config("build_shared") then
+        target("default_binding_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_default_binding.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_mutex_lock", "pthread_mutex_unlock",
+                                      "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
+                                      "pthread_rwlock_unlock", "pthread_setcancelstate",
+                                      "logger_vlog_internal", "logger_runtime_free"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"held-reader", "stale-reader", "stale-control", "aba", "cancel",
+                                    "lifetime-unlock", "control-unlock", "control-error", "writer-error",
+                                    "read-error", "reentry", "restore-error", "stopped", "overflow"}) do
+                add_tests(mode, {runargs = mode, group = "default-binding", timeout = 25})
+            end
+        target_end()
+    end
+end
+
+if has_config("build_regression_tests") then
+    target("default_binding_whitebox")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_default_binding.c")
+        add_deps("logger_regression_support")
+        add_includedirs("src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, symbol in ipairs({"pthread_mutex_lock", "pthread_mutex_unlock",
+                                  "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
+                                  "pthread_rwlock_unlock", "pthread_setcancelstate",
+                                  "logger_vlog_internal", "logger_runtime_free"}) do
+            add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+        end
+        for _, mode in ipairs({"held-reader", "stale-reader", "stale-control", "aba", "cancel",
+                                "lifetime-unlock", "control-unlock", "control-error", "writer-error",
+                                "read-error", "reentry", "restore-error", "stopped", "overflow"}) do
+            add_tests(mode, {runargs = mode, group = "default-binding", timeout = 25})
+        end
+    target_end()
+end
+
+-- 专项检测器模型反例不能并入“返回零即通过”的普通测试循环。
+-- 由 check_tsan_fork_model.py 同时检查正例、故意错误、原始诊断和退出码。
+if not has_config("build_shared") then
+    target("fork_tsan_model")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_fork_tsan_model.c")
+        add_deps("logger")
+        add_includedirs("src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+    target_end()
+end
+
+if has_config("build_regression_tests") then
+    local libraries = {{"default_publish_whitebox", "logger_regression_support", true}}
+    if not has_config("build_shared") then
+        table.insert(libraries, {"default_publish_production", "logger", false})
+    end
+    for _, spec in ipairs(libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_default_publish.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            add_ldflags("-Wl,--wrap=pthread_rwlock_unlock", "-Wl,--wrap=pthread_rwlock_wrlock", {force = true})
+            add_tests("writer-fail-poison", {runargs = "writer-fail-poison", group = "default-binding", timeout = 15})
+            if spec[3] then
+                add_defines("LOGGER_ENABLE_LOCKDEP=1")
+                add_ldflags("-Wl,--wrap=logger_lockdep_assert_held", {force = true})
+                add_tests("publish-poison", {runargs = "publish-poison", group = "default-binding", timeout = 15})
+            end
+        target_end()
+    end
 end

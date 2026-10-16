@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger_internal.h"
 #include "support.h"
 #include <fcntl.h>
@@ -111,7 +114,7 @@ static void *shutdown_thread(void *unused)
 {
 	(void)unused;
 	caller = 2;
-	stop_rc = logger_shutdown_status();
+	stop_rc = fixture_default_destroy(&default_owner);
 	stop_error = errno;
 	atomic_store(&stop_done, 1);
 	return NULL;
@@ -133,7 +136,7 @@ static void release_failure(int global, int cancel)
 	use_global = global;
 	logger_config_t c = config(1);
 	if (global)
-		CHECK(logger_init(&c) == 0);
+		CHECK(fixture_default_create(&c, &default_owner) == 0);
 	else
 		CHECK(logger_create(&c, &owner) == 0);
 	CHECK(subject);
@@ -171,8 +174,8 @@ static void release_failure(int global, int cancel)
 	CHECK(atomic_load(&sync_calls) == before);
 	if (global) {
 		CHECK(!pthread_join(stopper, NULL));
-		CHECK(stop_rc == -1 && stop_error == EAGAIN);
-		CHECK(logger_init(&c) == -1 && errno == EAGAIN);
+		CHECK(stop_rc == -EAGAIN && default_owner == NULL);
+		CHECK(fixture_default_create(&c, &default_owner) == -EBUSY);
 	} else {
 		CHECK(logger_destroy(&owner) == -EAGAIN);
 	}

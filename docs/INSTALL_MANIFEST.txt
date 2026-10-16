@@ -64,3 +64,8 @@ docs/v2/FORK_FD_SNAPSHOT.md
 docs/v2/FORK_RUNTIME.md
 docs/v2/LIFECYCLE_API.md
 docs/v2/PROCESS_ADMISSION.md
+
+docs/v2/DEFAULT_BORROW.md
+
+docs/v2/DEFAULT_MIGRATION.md
+docs/v2/TSAN_FORK_MODEL.md

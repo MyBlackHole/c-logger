@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "logger.h"
 #include "global_support.h"
+#include "default_fixture.h"
+static logger_t *owner;
 
 /* 真实 DSO 变体不能检查私有实现计数器。它改为检查可观察的
  * 描述符清理与关闭状态；静态白盒测试继续断言原私有计数器。
@@ -25,7 +27,7 @@ static void expect_clean(void)
 {
 #ifdef LOGGER_PUBLIC_ABI_TEST
 	CHECK(open_fds() == initial_fds);
-	CHECK(logger_flush_status() == -1 && errno == ESHUTDOWN);
+	CHECK(logger_flush_status() == -1 && errno == ENODEV);
 #else
 	CHECK(!logger_process_object_count());
 #endif
@@ -42,9 +44,10 @@ static void *initializer(void *unused)
 	(void)unused;
 	int rc = pthread_barrier_wait(&init_barrier);
 	CHECK(rc == 0 || rc == PTHREAD_BARRIER_SERIAL_THREAD);
-	if (!logger_init(&cfg))
+	int result = logger_default_set(NULL, owner);
+	if (!result)
 		atomic_fetch_add(&succeeded, 1);
-	else if (errno == EALREADY)
+	else if (result == -ESTALE || result == -EAGAIN)
 		atomic_fetch_add(&already, 1);
 	else
 		CHECK(!"unexpected init error");
@@ -94,6 +97,7 @@ static void init_race(void)
 		pthread_t ts[8];
 		atomic_store(&succeeded, 0);
 		atomic_store(&already, 0);
+		CHECK(logger_create(&cfg, &owner) == 0);
 		CHECK(!pthread_barrier_init(&init_barrier, NULL, 8));
 		for (int i = 0; i < 8; ++i)
 			CHECK(!pthread_create(&ts[i], NULL, initializer, NULL));
@@ -103,7 +107,7 @@ static void init_race(void)
 		      atomic_load(&already) == 7);
 		CHECK(!pthread_barrier_destroy(&init_barrier));
 		LOG_INFO("winner-round=%d", round);
-		CHECK(!stop_status());
+		CHECK(!fixture_default_destroy(&owner));
 		expect_clean();
 	}
 	CHECK(file_lines("old.log") == 10);
@@ -111,7 +115,7 @@ static void init_race(void)
 static void lifetimes(int async)
 {
 	cfg = config_for("old.log", async);
-	CHECK(!logger_init(&cfg));
+	CHECK(!fixture_default_create(&cfg, &owner));
 	pthread_t threads[8];
 	CHECK(!pthread_barrier_init(&run_barrier, NULL, 9));
 	for (size_t i = 0; i < 4; ++i)
@@ -126,9 +130,9 @@ static void lifetimes(int async)
 		wait_flag(&ready[i]);
 	for (int round = 0; round < 40; ++round) {
 		LOG_INFO("owner-before-stop=%d", round);
-		CHECK(!stop_status());
+		CHECK(!fixture_default_destroy(&owner));
 		expect_clean();
-		CHECK(!logger_init(&cfg));
+		CHECK(!fixture_default_create(&cfg, &owner));
 		LOG_INFO("owner-after-start=%d", round);
 	}
 	atomic_store(&running, 0);
@@ -136,7 +140,7 @@ static void lifetimes(int async)
 		CHECK(!pthread_join(threads[i], NULL));
 	CHECK(atomic_load(&calls) >= 8);
 	CHECK(!pthread_barrier_destroy(&run_barrier));
-	CHECK(!logger_flush_status() && !stop_status());
+	CHECK(!logger_flush_status() && !fixture_default_destroy(&owner));
 	expect_clean();
 }
 int main(int argc, char **argv)

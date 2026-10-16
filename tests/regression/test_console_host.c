@@ -27,8 +27,8 @@ static ssize_t host_write(void *user, const char *text, size_t size)
 				      -1 &&
 			      errno == EDEADLK);
 			errno = 0;
-			CHECK(logger_shutdown_status() == -1 &&
-			      errno == EDEADLK);
+			CHECK(logger_default_set(NULL, NULL) == -EDEADLK &&
+			      errno == 0);
 		} else {
 			atomic_store(&entered, 1);
 			wait_flag(&release_io);

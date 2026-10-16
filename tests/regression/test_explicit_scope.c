@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include "global_support.h"
 #include "console.h"
@@ -136,14 +139,14 @@ static void nested_call(void)
 	else if (!strcmp(nested, "console-tty"))
 		CHECK(!console_stdout_is_tty());
 	else if (!strcmp(nested, "global"))
-		CHECK(logger_shutdown_status() == -1);
+		CHECK(logger_default_set(NULL, NULL) == -EDEADLK);
 	else if (!strcmp(nested, "global-write"))
 		LOG_INFO("nested global");
 	else
 		CHECK(!"unknown nested API");
 	CHECK(errno ==
 	      ((!strcmp(nested, "create") || !strcmp(nested, "destroy") ||
-		!strcmp(nested, "destroy-void")) ?
+		!strcmp(nested, "destroy-void") || !strcmp(nested, "global")) ?
 		       0 :
 		       EDEADLK));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
@@ -471,13 +474,13 @@ static void reentry_case(const char *origin)
 	if (!strcmp(origin, "global-worker")) {
 		unlink("global-scope.log");
 		logger_config_t gc = config_for("global-scope.log", 1);
-		CHECK(!logger_init(&gc));
+		CHECK(!fixture_default_create(&gc, &default_owner));
 		atomic_store(&hold_worker, 1);
 		atomic_store(&release_worker, 1);
 		LOG_INFO("global-worker-outer");
 		CHECK(!logger_flush_status());
 		LOG_INFO("global-still-usable");
-		CHECK(!logger_shutdown_status());
+		CHECK(!fixture_default_destroy(&default_owner));
 		CHECK(file_contains("global-scope.log", "global-still-usable"));
 	} else if (!strcmp(origin, "worker")) {
 		atomic_store(&hold_worker, 1);

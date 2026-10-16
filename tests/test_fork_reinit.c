@@ -68,10 +68,13 @@ static void child_run(int async, int global, int index, int conflict)
 			    13);
 	}
 	if (global) {
-		child_check(logger_init(&cfg) == 0, 14);
+		logger_t *owner = NULL;
+		child_check(logger_create(&cfg, &owner) == 0, 14);
+		child_check(logger_default_set(NULL, owner) == 0, 14);
 		LOG_INFO("CHILD_ONLY=%d", index);
 		child_check(logger_flush_status() == 0, 15);
-		child_check(logger_shutdown_status() == 0, 16);
+		child_check(logger_default_set(owner, NULL) == 0, 16);
+		child_check(logger_destroy(&owner) == 0, 16);
 	} else {
 		logger_t *child = NULL;
 		(void)logger_create(&cfg, &child);
@@ -103,12 +106,9 @@ static void normal(const char *mode)
 	console_set_verbosity(CONSOLE_QUIET);
 	logger_config_t cfg = config("parent.log", async);
 	logger_t *parent = NULL;
+	CHECK(logger_create(&cfg, &parent) == 0 && parent != NULL);
 	if (global)
-		CHECK(logger_init(&cfg) == 0);
-	else {
-		CHECK(logger_create(&cfg, &parent) == 0);
-		CHECK(parent != NULL);
-	}
+		CHECK(logger_default_set(NULL, parent) == 0);
 	if (global)
 		LOG_INFO("PARENT_BEFORE");
 	else
@@ -136,7 +136,8 @@ static void normal(const char *mode)
 		      "PARENT_SECRET_CONTEXT"));
 	if (global) {
 		LOG_INFO("PARENT_AFTER");
-		CHECK(logger_shutdown_status() == 0);
+		CHECK(logger_default_set(parent, NULL) == 0);
+		CHECK(logger_destroy(&parent) == 0);
 	} else if (parent) {
 		LOGGER_INFO(parent, "parent", "PARENT_AFTER");
 		CHECK(logger_destroy(&parent) == 0);

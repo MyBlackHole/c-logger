@@ -35,16 +35,6 @@ typedef struct {
 	_Atomic int done;
 } call_result_t;
 
-static inline int stop_status(void)
-{
-#ifdef LOGGER_GLOBAL_BASELINE
-	logger_shutdown();
-	return 0;
-#else
-	return logger_shutdown_status();
-#endif
-}
-
 static inline logger_config_t config_for(const char *path, int async)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
