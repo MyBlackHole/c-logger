@@ -1,0 +1,91 @@
+name: tsan-mapping-lifetime
+on:
+  pull_request:
+    paths:
+      - 'validation/tsan-mapping/**'
+      - '.github/workflows/tsan-mapping-lifetime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'validation/tsan-mapping/**'
+      - '.github/workflows/tsan-mapping-lifetime.yml'
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: llvm/llvm-project
+          ref: 3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff
+          path: upstream
+          persist-credentials: false
+          sparse-checkout: |
+            compiler-rt
+            cmake
+            llvm/cmake
+      - name: 安装构建工具并记录身份
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-18 llvm-18-dev ninja-build
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > evidence/source-tree.txt
+          git -C upstream rev-parse HEAD > evidence/upstream-commit.txt
+          clang-18 --version > evidence/clang.txt
+          uname -a > evidence/kernel.txt
+      - name: 构建原版与候选运行库并执行相同探针
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S upstream/compiler-rt -B runtime-build -G Ninja \
+            -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DLLVM_CONFIG_PATH=/usr/bin/llvm-config-18 \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+            -DCMAKE_C_COMPILER_TARGET=x86_64-linux-gnu \
+            -DCMAKE_CXX_COMPILER_TARGET=x86_64-linux-gnu \
+            -DCOMPILER_RT_BUILD_BUILTINS=OFF \
+            -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+            -DCOMPILER_RT_SANITIZERS_TO_BUILD=tsan \
+            -DCOMPILER_RT_BUILD_XRAY=OFF \
+            -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+            -DCOMPILER_RT_BUILD_PROFILE=OFF \
+            -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+            -DCOMPILER_RT_INCLUDE_TESTS=OFF 2>&1 | tee evidence/configure.log
+          clang-18 -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=thread \
+            -c validation/tsan-mapping/probe.c -o evidence/probe.o
+          for variant in original candidate; do
+            if test "$variant" = candidate; then
+              python3 validation/tsan-mapping/apply_candidate.py upstream
+              git -C upstream diff --binary > evidence/runtime.patch
+            fi
+            cmake --build runtime-build -j2 2>&1 | tee "evidence/build-$variant.log"
+            mkdir -p "evidence/$variant/runtime"
+            cp runtime-build/lib/linux/libclang_rt.tsan-x86_64.so "evidence/$variant/runtime/"
+            cp runtime-build/lib/linux/libclang_rt.tsan-x86_64.a "evidence/$variant/runtime/"
+            cp upstream/compiler-rt/LICENSE.TXT "evidence/$variant/runtime/"
+            clang-18 evidence/probe.o -pthread \
+              "$(pwd)/evidence/$variant/runtime/libclang_rt.tsan-x86_64.so" \
+              -Wl,-rpath,"$(pwd)/evidence/$variant/runtime" \
+              -o "evidence/$variant/probe"
+            ldd "evidence/$variant/probe" > "evidence/$variant/ldd.txt"
+            sha256sum "evidence/$variant/runtime/"* > "evidence/$variant/SHA256SUMS"
+            python3 validation/tsan-mapping/run.py \
+              --binary "evidence/$variant/probe" --variant "$variant" \
+              --output "evidence/$variant/results"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tsan-mapping-lifetime-evidence
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
