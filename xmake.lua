@@ -862,6 +862,29 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+    -- 工作线程失败专项也进入完整静态集合，避免只运行外部脚本才发现接口漂移。
+    -- GNU --wrap 只用于真实生产静态归档，不冒称 DSO 内部拦截。
+    if not has_config("build_shared") then
+        target("worker_failure_production_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_worker_failure.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_create", "pthread_join", "pthread_mutex_lock",
+                                     "pthread_mutex_unlock", "pthread_cond_wait", "pthread_cond_broadcast",
+                                     "strrchr", "logger_file_writev", "logger_runtime_free"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({"wait-first", "error-first", "wait-gap", "multiple", "spurious",
+                                       "later-slot", "spill", "normal-gap", "normal-drain", "backend-error",
+                                       "empty-target", "global", "cancel"}) do
+                add_tests(scenario, {runargs = scenario, group = "worker-failure", timeout = 20})
+            end
+        target_end()
+    end
+
     -- 新生命周期交接：真实生产归档与同源白盒支持库分开验收。
     local owner_libraries = {{"lifecycle_owner_regression", "logger_regression_support"}}
     if not has_config("build_shared") then
