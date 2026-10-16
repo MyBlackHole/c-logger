@@ -12,7 +12,14 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CHECK(x) do { if (!(x)) { 	fprintf(stderr, "CHECK failed: %s (%s:%d) errno=%d\n", #x, __FILE__, __LINE__, errno); 	exit(2); } } while (0)
+#define CHECK(x)                                                               \
+	do {                                                                   \
+		if (!(x)) {                                                    \
+			fprintf(stderr, "CHECK failed: %s (%s:%d) errno=%d\n", \
+				#x, __FILE__, __LINE__, errno);                \
+			exit(2);                                               \
+		}                                                              \
+	} while (0)
 
 typedef struct {
 	char dir[256];
@@ -27,10 +34,8 @@ typedef struct {
 
 static void sleep_ms(unsigned ms)
 {
-	struct timespec ts = {
-		.tv_sec = (time_t)(ms / 1000u),
-		.tv_nsec = (long)(ms % 1000u) * 1000000L
-	};
+	struct timespec ts = { .tv_sec = (time_t)(ms / 1000u),
+			       .tv_nsec = (long)(ms % 1000u) * 1000000L };
 	while (nanosleep(&ts, &ts) != 0)
 		CHECK(errno == EINTR);
 }
@@ -63,8 +68,8 @@ static void start_daemon(fixture_t *f)
 	pid_t child = fork();
 	CHECK(child >= 0);
 	if (!child) {
-		execlp("rsyslogd", "rsyslogd", "-n", "-f", f->config_path,
-		       "-i", f->pid_path, (char *)NULL);
+		execlp("rsyslogd", "rsyslogd", "-n", "-f", f->config_path, "-i",
+		       f->pid_path, (char *)NULL);
 		_exit(127);
 	}
 	f->daemon_pid = child;
@@ -73,7 +78,8 @@ static void start_daemon(fixture_t *f)
 		pid_t rc = waitpid(child, &status, WNOHANG);
 		CHECK(rc >= 0);
 		if (rc == child) {
-			fprintf(stderr, "rsyslogd exited early status=%d\n", status);
+			fprintf(stderr, "rsyslogd exited early status=%d\n",
+				status);
 			exit(2);
 		}
 		if (socket_ready(f->socket_path))
@@ -141,8 +147,8 @@ static logger_config_t syslog_config(const fixture_t *f,
 
 static int write_one(logger_t *log, const char *text)
 {
-	return logger_log_sync_status(log, LOGGER_INFO, "integration",
-				      __FILE__, __LINE__, __func__, "%s", text);
+	return logger_log_sync_status(log, LOGGER_INFO, "integration", __FILE__,
+				      __LINE__, __func__, "%s", text);
 }
 
 static logger_syslog_metrics_t metrics(logger_t *log)
@@ -166,9 +172,10 @@ static void scenario_required_missing(fixture_t *f)
 	stop_daemon(f);
 	(void)unlink(f->socket_path);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
-	errno = 0;
+	errno = EDOM;
 	logger_t *log = NULL;
 	int create_rc = logger_create(&c, &log);
+	CHECK(errno == EDOM);
 	CHECK(log == NULL);
 	CHECK(create_rc == -ENOENT || create_rc == -ECONNREFUSED);
 }
@@ -189,7 +196,9 @@ static void scenario_required_delivery(fixture_t *f)
 	CHECK(m.sent_records == 1);
 	CHECK(m.failed_records == 0);
 	CHECK(logger_flush_instance_status(log) == 0);
+	errno = EDOM;
 	CHECK(logger_destroy(&log) == 0);
+	CHECK(log == NULL && errno == EDOM);
 	stop_daemon(f);
 }
 
@@ -234,10 +243,10 @@ static void scenario_restart_reconnect(fixture_t *f)
 
 	errno = 0;
 	CHECK(logger_flush_instance_status(log) == -1);
-	CHECK(errno != 0);
-	errno = 0;
-	CHECK(logger_destroy(&log) < 0);
-	CHECK(errno != 0);
+	CHECK(errno == d.first_error);
+	errno = EDOM;
+	CHECK(logger_destroy(&log) == -d.first_error);
+	CHECK(log == NULL && errno == EDOM);
 	stop_daemon(f);
 }
 
@@ -270,9 +279,11 @@ static void scenario_deferred_reconnect(fixture_t *f)
 	CHECK(m.connect_attempts == attempts + 1u);
 	CHECK(m.last_error == 0);
 
-	errno = 0;
-	CHECK(logger_destroy(&log) < 0);
-	CHECK(errno != 0);
+	logger_diagnostics_t d = diagnostics(log);
+	CHECK(d.first_error > 0);
+	errno = EDOM;
+	CHECK(logger_destroy(&log) == -d.first_error);
+	CHECK(log == NULL && errno == EDOM);
 	stop_daemon(f);
 }
 
@@ -312,9 +323,10 @@ static void scenario_real_backpressure(fixture_t *f)
 	errno = 0;
 	CHECK(logger_flush_instance_status(log) == -1);
 	CHECK(errno == EAGAIN || errno == ENOBUFS || errno == ENOMEM);
-	errno = 0;
-	CHECK(logger_destroy(&log) < 0);
-	CHECK(errno == EAGAIN || errno == ENOBUFS || errno == ENOMEM);
+	CHECK(errno == d.first_error);
+	errno = EDOM;
+	CHECK(logger_destroy(&log) == -d.first_error);
+	CHECK(log == NULL && errno == EDOM);
 	stop_daemon(f);
 }
 
@@ -325,10 +337,14 @@ int main(void)
 	CHECK(mkdtemp(temp) != NULL);
 	CHECK(snprintf(f.dir, sizeof(f.dir), "%s", temp) > 0);
 	CHECK(snprintf(f.socket_dir, sizeof(f.socket_dir), "%s/dev", temp) > 0);
-	CHECK(snprintf(f.socket_path, sizeof(f.socket_path), "%s/log", f.socket_dir) > 0);
-	CHECK(snprintf(f.output_path, sizeof(f.output_path), "%s/received.log", temp) > 0);
-	CHECK(snprintf(f.config_path, sizeof(f.config_path), "%s/rsyslog.conf", temp) > 0);
-	CHECK(snprintf(f.pid_path, sizeof(f.pid_path), "%s/rsyslog.pid", temp) > 0);
+	CHECK(snprintf(f.socket_path, sizeof(f.socket_path), "%s/log",
+		       f.socket_dir) > 0);
+	CHECK(snprintf(f.output_path, sizeof(f.output_path), "%s/received.log",
+		       temp) > 0);
+	CHECK(snprintf(f.config_path, sizeof(f.config_path), "%s/rsyslog.conf",
+		       temp) > 0);
+	CHECK(snprintf(f.pid_path, sizeof(f.pid_path), "%s/rsyslog.pid", temp) >
+	      0);
 	CHECK(snprintf(f.work_path, sizeof(f.work_path), "%s/work", temp) > 0);
 	CHECK(mkdir(f.work_path, 0700) == 0);
 	write_config(&f);
