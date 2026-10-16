@@ -332,6 +332,7 @@ static void scenario_real_backpressure(fixture_t *f)
 
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	fixture_t f = { .daemon_pid = -1 };
 	char temp[] = "/tmp/c-logger-rsyslog-XXXXXX";
 	CHECK(mkdtemp(temp) != NULL);

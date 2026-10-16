@@ -27,6 +27,8 @@ static void *ctl(void *x)
 }
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	unlink("./stress.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;

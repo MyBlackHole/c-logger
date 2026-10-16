@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "logger.h"
 #include "logger_queue.h"
 #include "support.h"
 #include <pthread.h>
@@ -81,6 +82,7 @@ static void check_reservation_gap(void)
 
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	check_reservation_gap();
 	CHECK(logger_queue_init(&queue, 2) == 0);
 	CHECK(pthread_barrier_init(&start_barrier, NULL, 3) == 0);

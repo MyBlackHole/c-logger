@@ -208,6 +208,7 @@ static void full_queue(const char *mode)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	char dir[] = "/tmp/logger-io-account-XXXXXX";
 	enter_temp(dir);

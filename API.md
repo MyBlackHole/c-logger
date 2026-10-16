@@ -13,6 +13,12 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 并发为-EAGAIN，注册重入为-EDEADLK。候选初始化失败不发布域，能够完整回滚时
 允许显式重试；同步/资源不变量破坏保持可观察的失败状态，不假装可重试。
 
+父方首次使用也必须显式初始化。普通 Logger、Global、Console 与上下文入口不再
+按需建域、不等待初始化者：空闲报 ENODEV、初始化中报 EAGAIN、失败后报告保存的
+初始化错误，只有显式调用才能重试。进程准入先于配置、拥有者槽与实例字段访问。
+各函数保留当前的返回形式，未一并转换其 errno 风格；纯配置/脱敏辅助函数不需初始化。
+详见[显式进程准入](docs/v2/PROCESS_ADMISSION.md)。
+
 子方普通日志入口不隐式完成重建；必须先调用该接口，再创建新实例。旧实例指针
 在子方无效，禁止普通析构；新实例创建失败不清空已建立的进程域。资源隔离、
 平台前提和测试入口见 [运行域合同](docs/v2/FORK_RUNTIME.md)。
@@ -32,13 +38,13 @@ int logger_destroy(logger_t **owner);
 取消恢复之前清空 `*owner`，再执行停止、排空、join、同步、关闭和释放。
 后续错误不恢复旧指针：普通 I/O 错误仍消费所有权；释放证明失败保守保留内部
 分配。NULL 槽不是最终 free 证明，也不能授权使用其他别名重试。
-`owner == NULL` 返回 -EINVAL，有效空槽成功。完整状态表和取消边界见
+在进程已经就绪的前提下，`owner == NULL` 返回 -EINVAL，有效空槽成功。完整状态表和取消边界见
 [创建与消费式销毁合同](docs/v2/LIFECYCLE_API.md)。
 
 旧创建签名、void 销毁和 `logger_destroy_status` 已移除，不保留适配层。
 当前尚未迁移的其他接口分别保持其合同：实例与全局的刷新/重开/状态查询
 通常为 0/-1+errno，`logger_log_sync_status` 为 0/-errno，void 日志不提供
-逐条接受回执。默认实例便利层、纯显式进程准入和其他返回形式的统一仍待后续，
+逐条接受回执。默认实例借用层和其他返回形式的统一仍待后续，
 不能因为本次生命周期接口已迁移就宣称整个 API 已完成。
 
 `logger_log`、`logger_log_source`、`LOGGER_LOG/INFO/...` 仍借用指定实例。
@@ -81,7 +87,7 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 
 ## 全局与 Console
 
-全局 `logger_init/LOG_*/logger_shutdown` 保留便利用法；业务 `.so` 不应偷偷调用。
+全局 `logger_init/LOG_*/logger_shutdown` 在显式进程初始化之后保留便利用法；业务 `.so` 不应偷偷调用。
 全局生命周期的阶段性设计演进见 `docs/GLOBAL_LIFECYCLE.md`；当前 2.0 约束以
 [所有权规范](docs/v2/OWNERSHIP.md)、[内存模型](docs/v2/MEMORY_MODEL.md)和
 [取消与重入作用域](docs/EXPLICIT_CONSOLE_SCOPE.md)为准。显式实例仍由宿主独占销毁。

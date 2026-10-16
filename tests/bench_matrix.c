@@ -41,6 +41,8 @@ static int number(const char *s, uint64_t *out)
 }
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	uint64_t nt, nr, sz;
 	if (argc != 4 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &sz) || nt < 1 || nt > 256 || nr < 1 || sz < 1 ||

@@ -3,6 +3,8 @@
 #include <unistd.h>
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	unlink("./perm.log");
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
 	l.outputs = LOGGER_OUT_FILE;

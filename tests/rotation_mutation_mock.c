@@ -9,6 +9,11 @@
 
 static char active[256];
 
+int logger_process_init(void)
+{
+	return 0;
+}
+
 int logger_init(const logger_config_t *config)
 {
 	int n = snprintf(active, sizeof(active), "%s", config->file_path);

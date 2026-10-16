@@ -3,6 +3,8 @@
 #include <stdio.h>
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	logger_config_t net_cfg = LOGGER_DEFAULT_CONFIG();
 	net_cfg.outputs = LOGGER_OUT_FILE;
 	net_cfg.file_path = "./network.log";

@@ -25,6 +25,9 @@ int main(void)
 	    errno != ENOSPC)
 		return 7;
 
+	/* 上面的纯辅助函数不需建域；真正创建实例前由宿主显式初始化。 */
+	if (logger_process_init())
+		return 13;
 	unlink("./redact.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;

@@ -3,6 +3,8 @@
 #include <logger_version.h>
 int main()
 {
+	if (logger_process_init() != 0)
+		return 1;
 	auto cfg = LOGGER_DEFAULT_CONFIG();
 	const auto console = CONSOLE_DEFAULT_CONFIG();
 	const auto source = LOGGER_SOURCE();

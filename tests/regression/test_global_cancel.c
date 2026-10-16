@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "global_support.h"
 #include <stdarg.h>
 
@@ -192,6 +193,7 @@ static void restore_policy(void)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	scenario = argv[1];
 	fixture_reset();

@@ -38,6 +38,7 @@ static void *flusher(void *p)
 }
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	char dir[] = "/tmp/logger-flush-pending-XXXXXX";
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();

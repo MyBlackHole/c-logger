@@ -551,7 +551,7 @@ if has_config("build_tests") then
         add_files("tests/test_process_init.c")
         add_deps("logger")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        for _, mode in ipairs({"cold", "prefork", "implicit"}) do
+        for _, mode in ipairs({"cold", "prefork", "uninitialized"}) do
             add_tests(mode, {runargs = mode, group = "process-init", timeout = 20})
         end
     target_end()
@@ -805,10 +805,11 @@ if has_config("build_regression_tests") then
             add_deps(spec[2])
             add_includedirs("src")
             add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-            for _, symbol in ipairs({"pthread_atfork", "pthread_setcancelstate", "sched_yield"}) do
+            for _, symbol in ipairs({"pthread_atfork", "pthread_setcancelstate", "sched_yield", "mmap",
+                                     "pthread_mutex_lock", "pthread_rwlock_rdlock", "pthread_rwlock_wrlock"}) do
                 add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
             end
-            for _, mode in ipairs({"register-error", "repeat-errors", "reentrant",
+            for _, mode in ipairs({"cold-rejected", "register-error", "repeat-errors", "reentrant",
                                    "concurrent", "retry-concurrent", "fork-window",
                                    "fork-installed", "earlier-handler", "cancel-init",
                                    "disable-error", "restore-error", "fork-failed-state"}) do

@@ -34,6 +34,7 @@ static void check_mask(logger_detail_t detail, int include_pid, int include_tid,
 
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	check_mask(LOGGER_DETAIL_MINIMAL, 1, 1, 1, 0);
 	check_mask(LOGGER_DETAIL_NORMAL, 1, 1, 1, LOGGER_CAPTURE_MODULE);
 	check_mask(LOGGER_DETAIL_VERBOSE, 1, 1, 1,

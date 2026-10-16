@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "global_support.h"
 #include "console.h"
 #include <dirent.h>
@@ -618,6 +619,7 @@ static void contract_case(void)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc >= 3);
 	scenario = argv[2];
 	cleanup_fixtures();

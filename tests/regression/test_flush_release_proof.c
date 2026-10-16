@@ -214,6 +214,7 @@ static void ordinary_error(int wait_error)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	char directory[] = "/tmp/logger-flush-proof-XXXXXX";
 	enter_temp(directory);

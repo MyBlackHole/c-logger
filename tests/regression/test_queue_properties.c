@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "logger.h"
 #include "logger_queue.h"
 #include "support.h"
 #include <stdint.h>
@@ -134,6 +135,7 @@ static void run_model(uint32_t seed)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	char *end = NULL;
 	unsigned long value = strtoul(argv[1], &end, 10);

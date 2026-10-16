@@ -76,6 +76,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	unlink("dispose.log");
 	unlink("next.log");

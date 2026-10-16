@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "logger.h"
 #include "regression/support.h"
+#include "process_rejection.h"
 #include <sys/wait.h>
 
 static void wait_ok(pid_t pid)
@@ -91,9 +92,12 @@ static void prefork(void)
 	leave_temp(path);
 }
 
-static void implicit(void)
+static void uninitialized(void)
 {
-	/* 分阶段迁移期间，现有创建入口也只能走同一套引导状态机。 */
+	/* 多轮普通调用不能变成隐式初始化；显式调用仍是首次成功。 */
+	for (unsigned i = 0; i < 3; ++i)
+		check_process_rejection(ENODEV);
+	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.async_mode = 0;
 	logger_t *l = NULL;
@@ -110,8 +114,8 @@ int main(int argc, char **argv)
 		cold();
 	else if (!strcmp(argv[1], "prefork"))
 		prefork();
-	else if (!strcmp(argv[1], "implicit"))
-		implicit();
+	else if (!strcmp(argv[1], "uninitialized"))
+		uninitialized();
 	else
 		CHECK(0);
 	printf("PROCESS_INIT_PASS=%s\n", argv[1]);

@@ -11,6 +11,8 @@ static int rejected(int rc, int error)
 
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	errno = ERANGE;
 	if (logger_create(NULL, &(logger_t *){ NULL }) != -EINVAL ||
 	    errno != ERANGE)

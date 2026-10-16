@@ -24,6 +24,7 @@ static void *producer(void *p)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 1 || argc == 2);
 	int wait_error = argc == 2 && !strcmp(argv[1], "wait-error");
 	if (argc == 2)

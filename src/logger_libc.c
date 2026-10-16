@@ -15,7 +15,7 @@ int logger_libc_busy(void)
 
 static int begin(void)
 {
-	int error = logger_process_ensure();
+	int error = logger_process_require();
 	if (error)
 		return -error;
 	if (entered)

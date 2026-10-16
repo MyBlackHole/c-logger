@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
-#include <sched.h>
 #include <stdatomic.h>
 #include <unistd.h>
 
@@ -144,34 +143,24 @@ int logger_process_init(void)
 	return rc;
 }
 
-int logger_process_ensure(void)
+int logger_process_require(void)
 {
-	/* 现有入口在本增量仍按需进入同一个状态机，不保留 pthread_once 路径。
-	 * 后续公开接口迁移会使初始化成为显式前提；这里不是子方恢复入口。
+	/* 普通调用只观察已发布的进程域，不注册、不重试，也不等待初始化者。
+	 * READY 是 release/acquire 发布边界；成功后在当前进程中不再撤销。
+	 * 子方必须先验证 atfork 快照并显式重建，不能等待已消失的线程。
 	 */
-	for (;;) {
-		if (logger_process_is_child())
-			return -ECHILD;
-		if (initializing)
-			return -EDEADLK;
-		int ticket = atomic_load_explicit(&process_ticket,
-						  memory_order_acquire);
-		if (ticket == PROCESS_READY)
-			return 0;
-		/* 普通操作不能静默重试注册失败；只允许显式初始化重试。 */
-		if (ticket > 0)
-			return -ticket;
-		if (ticket == PROCESS_STARTING) {
-			/* 仅冷启动等待；正常日志的 READY 快路径不执行此调用。 */
-			(void)sched_yield();
-			continue;
-		}
-		int rc = logger_process_init();
-		if (rc == -EALREADY)
-			return 0;
-		if (rc != -EAGAIN)
-			return rc;
-	}
+	if (logger_process_is_child())
+		return -ECHILD;
+	if (initializing)
+		return -EDEADLK;
+	int ticket =
+		atomic_load_explicit(&process_ticket, memory_order_acquire);
+
+	if (ticket == PROCESS_READY)
+		return 0;
+	if (ticket == PROCESS_STARTING)
+		return -EAGAIN;
+	return ticket > 0 ? -ticket : -ENODEV;
 }
 
 int logger_process_object_acquire(void)

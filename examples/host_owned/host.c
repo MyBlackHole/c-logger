@@ -1,3 +1,4 @@
+#include "logger.h"
 #include "logger_adapter.h"
 #include "plugin_api.h"
 #include <errno.h>
@@ -5,6 +6,8 @@
 
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	if (argc != 3) {
 		fprintf(stderr,
 			"usage: %s /absolute/path/libexample_sdk.so log-file\n",

@@ -90,6 +90,7 @@ static int persistence_check(const char *dir)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	if (argc != 5)
 		return 2;
 

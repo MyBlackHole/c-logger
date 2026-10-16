@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "global_support.h"
 
 /* 真实 DSO 变体不能检查私有实现计数器。它改为检查可观察的
@@ -140,6 +141,7 @@ static void lifetimes(int async)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	fixture_reset();
 #ifdef LOGGER_PUBLIC_ABI_TEST

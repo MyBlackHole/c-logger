@@ -133,6 +133,7 @@ static enum proof_failure select_failure(const char *name)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	failure = select_failure(argv[1]);
 	CHECK((int)failure >= 0);

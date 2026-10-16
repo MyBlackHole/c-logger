@@ -40,6 +40,7 @@ static void *init_thread(void *p)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.outputs = LOGGER_OUT_FILE;

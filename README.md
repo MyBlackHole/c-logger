@@ -115,7 +115,7 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 推荐模型：
 
 ```text
-宿主：logger_create → SDK 实例借用 → 停止 SDK 调用方并等待其退出
+宿主：logger_process_init → logger_create → SDK 实例借用 → 停止 SDK 调用方并等待其退出
       → 销毁 SDK 实例 → 刷新 → logger_destroy(&owner) → dlclose
 ```
 
@@ -125,6 +125,17 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 `examples/host_owned/` 是第三方 SDK/宿主集成模板。SDK 本身不链接 Logger，宿主适配器
 把日志回调转交给自己持有的实例。
 
+## 显式进程初始化
+
+宿主先调用一次 `logger_process_init()`，成功后再创建实例、配置 Console、设置
+上下文或使用默认实例。普通操作不会偷偷建域，也不等待另一个初始化线程：未初始化
+报告 `ENODEV`，初始化进行中报告 `EAGAIN`，失败后保留错误直到宿主显式重试。
+`logger_process_init()` 成功返回 0，重复返回 `-EALREADY`，并保留调用方 `errno`。
+
+初始化成功不等于创建了默认实例。旧 Global 门面的其他行为与错误风格仍单独保留；
+纯配置和脱敏辅助函数不要求建域。完整状态/取消/多副本合同见
+[显式进程准入](docs/v2/PROCESS_ADMISSION.md)。
+
 ## 实例所有权接口
 
 `logger_create(&cfg, &owner)` 仅向空槽发布成功实例；`logger_destroy(&owner)` 在
@@ -133,7 +144,7 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 
 ## fork 边界
 
-#218 的当前本地候选已实现**有效 fork 快照下的子方显式运行域重建**：父进程
+#218 的当前开发实现支持**有效 fork 快照下的子方显式运行域重建**：父进程
 继续原实例；子进程先 `logger_process_init()`，再用自己的配置创建实例。
 实例、队列、工作区及 Global/Console 的锁位于独立 `MADV_DONTFORK` 映射；
 继承 fd 由既有快照关闭，不重复输出父队列，不获取旧实例锁或 join 父方线程。

@@ -64,6 +64,9 @@ static inline console_config_t console_defaults_cpp(void)
  * 而不会静默截断其有界的来源/消息缓冲区。fmt 为 NULL 时始终报
  * EINVAL，即使该诊断信息本来会被过滤。
  */
+/* Console 同样要求宿主先调用 logger.h 中的 logger_process_init()。
+ * console_init 只配置已就绪运行域，不承担进程引导或隐式重试。
+ */
 LOGGER_API void console_init(const console_config_t *);
 LOGGER_API void console_set_verbosity(console_verbosity_t);
 LOGGER_API void console_set_color(console_color_mode_t);

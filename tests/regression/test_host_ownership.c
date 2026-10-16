@@ -93,6 +93,7 @@ static void *run_jobs(void *ptr)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 3);
 	unlink("a.log");
 	unlink("b.log");

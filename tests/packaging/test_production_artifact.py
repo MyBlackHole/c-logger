@@ -58,7 +58,7 @@ class ProductionArtifactForkTests(unittest.TestCase):
         # Both the parent directory and artifact name include "fork". The
         # actual guard names and pthread_atfork import remain allowed too.
         source = ('extern void pthread_atfork(void);\n'
-                  'void logger_process_ensure(void) { pthread_atfork(); }\n'
+                  'void logger_process_init(void) { pthread_atfork(); }\n'
                   'void logger_process_invalidate_child(void) {}\n'
                   'int logger_process_is_child(void) { return 0; }\n')
         for kind in ('static', 'shared'):

@@ -87,6 +87,8 @@ static void cleanup_fixture(void)
 }
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	REQUIRE(argc == 2);
 	REQUIRE(mkdtemp(fixture) != NULL);
 	REQUIRE(atexit(cleanup_fixture) == 0 && chdir(fixture) == 0);

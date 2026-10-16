@@ -105,6 +105,8 @@ static int cleanup_directory(const char *directory)
 
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	char directory[] = "rotation-test.XXXXXX";
 	if (!mkdtemp(directory))
 		return 1;

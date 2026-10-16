@@ -643,6 +643,7 @@ static void cleanup(const char *path)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	if (argc > 1 && !strcmp(argv[1], "--probe"))
 		return child_probe(argc, argv);
 	CHECK(argc == 2);

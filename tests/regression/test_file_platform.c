@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "support.h"
 #include "logger_file.h"
 #include <stdarg.h>
@@ -32,6 +33,7 @@ long __wrap_syscall(long number, ...)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	int fd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	CHECK(fd >= 0);

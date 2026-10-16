@@ -18,6 +18,7 @@ size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
 }
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	char dir[] = "/tmp/lg-sys-fb-XXXXXX", path[108];
 	CHECK(mkdtemp(dir));
 	snprintf(path, sizeof(path), "%s/sink", dir);
