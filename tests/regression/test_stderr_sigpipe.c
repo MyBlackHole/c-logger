@@ -75,8 +75,9 @@ int main(int argc, char **argv)
 	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = async_mode;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 
 	if (async_mode) {
 		LOGGER_INFO(l, "sigpipe", "broken stderr");
@@ -95,7 +96,7 @@ int main(int argc, char **argv)
 	CHECK(io.first_error == EPIPE);
 
 	errno = 0;
-	CHECK(logger_destroy_status(l) == -1 && errno == EPIPE);
+	CHECK(logger_destroy(&l) == -EPIPE);
 	check_sigpipe_state(preblocked, 0);
 	return 0;
 }

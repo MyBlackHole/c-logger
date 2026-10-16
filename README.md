@@ -8,7 +8,7 @@
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
-当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 48 个当前公开 C ABI 符号**。
+当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47 个当前公开 C ABI 符号**。
 
 > **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
 > 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、
@@ -116,7 +116,7 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 
 ```text
 宿主：logger_create → SDK 实例借用 → 停止 SDK 调用方并等待其退出
-      → 销毁 SDK 实例 → 刷新 → logger_destroy_status → dlclose
+      → 销毁 SDK 实例 → 刷新 → logger_destroy(&owner) → dlclose
 ```
 
 业务 `.so` 不应在构造函数/析构函数中自动初始化或关闭全局 Logger，也不应接管宿主
@@ -124,6 +124,12 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 
 `examples/host_owned/` 是第三方 SDK/宿主集成模板。SDK 本身不链接 Logger，宿主适配器
 把日志回调转交给自己持有的实例。
+
+## 实例所有权接口
+
+`logger_create(&cfg, &owner)` 仅向空槽发布成功实例；`logger_destroy(&owner)` 在
+拆除开始前消费拥有者，均返回 0/-errno 并保留 errno。旧签名与 status 销毁
+已移除，详见[生命周期接口](docs/v2/LIFECYCLE_API.md)。其他 API 迁移仍独立进行。
 
 ## fork 边界
 

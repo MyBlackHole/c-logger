@@ -50,7 +50,8 @@ int main(void)
 	cfg.async_mode = 0;
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&cfg);
+	logger_t *l = NULL;
+	(void)logger_create(&cfg, &l);
 	logger_message_t *m = calloc(1, sizeof(*m));
 	char *out = malloc(LOGGER_LINE_MAX);
 	char *expected = malloc(LOGGER_LINE_MAX);
@@ -88,7 +89,7 @@ int main(void)
 	m->ts.tv_nsec = 1000000000L;
 	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) == -EINVAL);
 	CHECK(!length && !out[0]);
-	CHECK(!logger_destroy_status(l));
+	CHECK(!logger_destroy(&l));
 	free(expected);
 	free(out);
 	free(m);

@@ -11,17 +11,21 @@ int main(void)
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 64;
 	c.file_path = "installed-a.log";
-	logger_t *a = logger_create(&c);
-	if (!a) {
+	logger_t *a = NULL;
+	int create_rc = logger_create(&c, &a);
+	if (create_rc) {
+		errno = -create_rc;
 		perror("logger_create(a)");
 		return 1;
 	}
 	c.file_path = "installed-b.log";
 	c.async_mode = 0;
-	logger_t *b = logger_create(&c);
-	if (!b) {
+	logger_t *b = NULL;
+	create_rc = logger_create(&c, &b);
+	if (create_rc) {
+		errno = -create_rc;
 		perror("logger_create(b)");
-		logger_destroy(a);
+		logger_destroy(&a);
 		return 2;
 	}
 	for (unsigned i = 0; i < 16; ++i) {
@@ -44,9 +48,13 @@ int main(void)
 	    file_metrics.failed_write_operations || !file_metrics.bytes_written ||
 	    !file_metrics.data_sync_attempts || file_metrics.last_error)
 		rc = -1;
-	if (logger_destroy_status(b))
+	int close_b = logger_destroy(&b);
+	int close_a = logger_destroy(&a);
+	if (close_b || close_a) {
+		errno = close_b ? -close_b : -close_a;
 		rc = -1;
-	if (logger_destroy_status(a))
+	}
+	if (a || b)
 		rc = -1;
 	if (rc) {
 		perror("logger drain");

@@ -1,5 +1,7 @@
 # 宿主拥有 Logger，业务库只借用
 
+> 当前创建/销毁以[新生命周期合同](v2/LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+
 ## 职责
 
 | 组件 | 管理的资源 | 不应该做的事 |
@@ -27,8 +29,11 @@ logger_config_t c = LOGGER_DEFAULT_CONFIG();
 c.outputs = LOGGER_OUT_FILE;
 c.file_path = "./app.log";
 c.async_mode = 0; /* 也可以由宿主明确选择 1 */
-logger_t *log = logger_create(&c);
-/* 检查 log；以下为示例 SDK 的真实类型，生产 SDK 使用自己的配置项。 */
+logger_t *log = NULL;
+int rc = logger_create(&c, &log);
+if (rc)
+        return rc;
+/* 以下为示例 SDK 的真实类型，生产 SDK 使用自己的配置项。 */
 example_sdk_options_t opts = {"backup", example_to_logger, log};
 /* SDK 只使用 opts.log(opts.log_user, &record)，不创建/销毁 log。 */
 ```

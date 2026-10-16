@@ -1,5 +1,7 @@
 # c-logger 2.0.0 生产稳定版发布说明
 
+> 当前创建/销毁以[新生命周期合同](v2/LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+
 > #218 当前候选已加入有效快照下的显式子方运行域重建；旧阶段的无条件
 > ECHILD描述不再是该路径现状。详见[当前实现与未验收边界](v2/FORK_RUNTIME.md)。
 > 完整新API、平台与发布验收仍未完成，下文历史阶段身份不作新运行依据。
@@ -21,25 +23,26 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
 
 ## #218 开发增量状态
 
-新增 `logger_process_init()` 只实现进程引导注册、并发发布及显式错误重试；
-它尚不提供继承资源隔离或 fork 子进程重初始化。完整新 API 和该功能仍待实现，
-本说明不能据此作为正式发布通过证明。见 [进程引导合同](v2/PROCESS_BOOTSTRAP.md)。
+`logger_process_init()` 已支持有效 fork 快照下重建子进程运行域。实例创建与
+销毁现使用拥有者槽和负错误码；其余接口迁移与正式发布仍未完成。
+见 [运行域合同](v2/FORK_RUNTIME.md)和[新生命周期合同](v2/LIFECYCLE_API.md)。
 
 ## ABI 破坏与迁移
 
-- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和 48 个当前公开 C 符号。
+- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和 47 个当前公开 C 符号。
   不可替换 SONAME 1 库；必须使用同版头文件重新构建并验收消费方，不承诺 v1 源码兼容。
 - 删除 Audit/crypto 产品、`audit.h` 和 `audit_*` 导出。普通日志不提供审计事务、
   哈希链、不可变存储或可信锚点。旧审计用户继续使用 `release/1.x`，或迁移独立组件。
-- 删除 `logger_fork_reinit()`、旧兼容头和构建开关。继承运行时的原始 fork 子进程
-  由 PID/atfork 防护拒绝，应 exec 后初始化；不扩大 fork 后可调用范围。
+- 删除 `logger_fork_reinit()`、旧兼容头和构建开关；子方按新的进程域合同
+  显式初始化，不恢复继承实例。未取得可靠快照的派生路径仍拒绝使用。
 - 配置使用当前默认初始化器及 `struct_size/version` 合同；未知版本、过短结构、
   非零未知尾部明确拒绝。实例的创建、使用、销毁须使用同一实际 Logger 实现。
 - 文件目标实行单所有者：同一目录/基础名的独立实例返回 EBUSY，应共享实例。
   内部轮转要求 `RENAME_NOREPLACE`，不以覆盖归档降级；目录必须可信。
 
 具体公开合同见 [API](../API.md)、[配置规则](UAPI.md)和[宿主持有集成](HOST_OWNED.md)。
-版本身份已存在于准备基线；新增初始化符号使本阶段导出增为48个，不能倒写为历史基线数量。[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
+旧引导阶段曾有48个导出；本次移除旧销毁状态入口后为47个，且创建和销毁的
+函数类型已经变化，不承诺开发快照之间兼容。[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
 按现有可执行快照整理，最终稳定 ABI/API 的发布确认须与最终源码验收一并记录，
 不能仅凭旧开发文案断言实现未完成，也不能仅凭本稿断言合同已经冻结。
 
@@ -63,8 +66,9 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
 跨静态库副本使用或销毁后重试。普通 I/O 失败仍会处置实例；释放证明失败时可能保留内部
 容器，不能据此重用旧指针。详见 [API](../API.md) 的入口拒绝与所有权例外。
 
-`logger_flush_instance_status()`、`logger_destroy_status()`、`logger_shutdown_status()`
-采用 0 或 -1 + errno；`logger_log_sync_status()` 采用 0 或 -errno。刷新等待既定完成水位并
+`logger_create()` 和 `logger_destroy(&owner)` 采用 0/-errno 并保留调用方 errno。
+`logger_flush_instance_status()`、`logger_shutdown_status()` 仍采用 0/-1+errno；
+`logger_log_sync_status()` 采用 0/-errno。刷新等待既定完成水位并
 同步文件，不给阻塞 I/O 提供硬超时，也不证明本地 Syslog daemon 已持久化。
 部分写入后仍可能报错，应用重试可能重复；未确认尾部没有自动修复或 exactly-once 承诺。
 

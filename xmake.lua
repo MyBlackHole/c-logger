@@ -499,6 +499,21 @@ if has_config("build_tests") then
         end)
     target_end()
 
+    target("lifecycle_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("logger")
+        add_tests("reject_old_interfaces", {group = "lifecycle-owner", timeout = 30})
+        on_test(function (target, opt)
+            local cc = target:dep("logger"):tool("cc")
+            assert(cc, "C compiler is required")
+            local script = path.join(os.projectdir(), "tests/scripts/test_lifecycle_types.py")
+            local code, errors = os.execv("python3", {script, "--cc", cc},
+                                         {try = true, timeout = 30000})
+            return code == 0, errors
+        end)
+    target_end()
+
     -- Production-linked core tests.
     local logger_tests = {
         {"test_logger", "tests/test_logger.c", 60},
@@ -847,6 +862,53 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+    -- 工作线程失败专项也进入完整静态集合，避免只运行外部脚本才发现接口漂移。
+    -- GNU --wrap 只用于真实生产静态归档，不冒称 DSO 内部拦截。
+    if not has_config("build_shared") then
+        target("worker_failure_production_regression")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_worker_failure.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_create", "pthread_join", "pthread_mutex_lock",
+                                     "pthread_mutex_unlock", "pthread_cond_wait", "pthread_cond_broadcast",
+                                     "strrchr", "logger_file_writev", "logger_runtime_free"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({"wait-first", "error-first", "wait-gap", "multiple", "spurious",
+                                       "later-slot", "spill", "normal-gap", "normal-drain", "backend-error",
+                                       "empty-target", "global", "cancel"}) do
+                add_tests(scenario, {runargs = scenario, group = "worker-failure", timeout = 20})
+            end
+        target_end()
+    end
+
+    -- 新生命周期交接：真实生产归档与同源白盒支持库分开验收。
+    local owner_libraries = {{"lifecycle_owner_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(owner_libraries, {"lifecycle_owner_production", "logger"})
+    end
+    for _, spec in ipairs(owner_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_lifecycle_owner.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_create", "pthread_join", "pthread_setcancelstate",
+                                     "logger_runtime_free", "munmap"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"normal", "io-error", "entry-error", "join-error",
+                                   "unmap-error", "cancel-create", "cancel-destroy", "reentry"}) do
+                add_tests(mode, {runargs = mode, group = "lifecycle-owner", timeout = 20})
+            end
+        target_end()
+    end
+
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
         {"queue_model_properties", "tests/regression/test_queue_properties.c"},
@@ -901,11 +963,11 @@ if has_config("build_regression_tests") then
             {"pthread_mutex_lock", "pthread_mutex_unlock",
              "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
              "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
-             "logger_create", "logger_destroy_status", "logger_file_write",
+             "logger_create", "logger_destroy", "logger_file_write",
              "logger_file_reopen", "logger_stderr_writev_all", "fsync", "logger_runtime_free",
              "logger_lockdep_assert_held"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
-            {"logger_create", "logger_destroy_status", "logger_file_write",
+            {"logger_create", "logger_destroy", "logger_file_write",
              "logger_file_reopen", "logger_queue_push", "logger_format_line",
              "pthread_cond_wait", "pthread_mutex_lock", "pthread_rwlock_rdlock",
              "logger_stderr_writev_all"}},
@@ -938,7 +1000,7 @@ if has_config("build_regression_tests") then
         {"file_platform_regression", "tests/regression/test_file_platform.c",
             {"syscall"}},
         {"file_global_regression", "tests/regression/test_file_global.c",
-            {"logger_destroy_status", "pthread_mutex_lock"}},
+            {"logger_destroy", "pthread_mutex_lock"}},
         {"file_legacy_probe", "tests/regression/test_file_legacy_probe.c",
             {"clock_gettime"}},
     }

@@ -8,6 +8,7 @@
  * 全局生命周期保护、取消与后续锁调用仍是真实的。
  */
 static _Atomic(logger_t *) subject;
+static logger_t *owner; /* 唯一拥有者；subject 仅供并发观察。 */
 static _Atomic int pause_flush, at_progress, resume_flush;
 static _Atomic int fail_emit_unlock, emit_poisoned, poisoned_reacquires;
 static _Atomic int at_global_writer, stop_done, cancel_cleanup_ran;
@@ -15,18 +16,18 @@ static _Atomic int fail_sync, sync_calls, fail_progress_lock;
 static _Thread_local int caller; /* 1：刷新；2：全局关闭 */
 static int use_global, stop_rc, stop_error;
 
-logger_t *__real_logger_create(const logger_config_t *);
+int __real_logger_create(const logger_config_t *, logger_t **);
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __real_pthread_mutex_unlock(pthread_mutex_t *);
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
 int __real_fsync(int);
 
-logger_t *__wrap_logger_create(const logger_config_t *config)
+int __wrap_logger_create(const logger_config_t *config, logger_t **out)
 {
-	logger_t *created = __real_logger_create(config);
-	if (created)
-		subject = created;
-	return created;
+	int rc = __real_logger_create(config, out);
+	if (!rc)
+		subject = *out;
+	return rc;
 }
 
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
@@ -134,7 +135,7 @@ static void release_failure(int global, int cancel)
 	if (global)
 		CHECK(logger_init(&c) == 0);
 	else
-		CHECK(logger_create(&c) != NULL);
+		CHECK(logger_create(&c, &owner) == 0);
 	CHECK(subject);
 
 	atomic_store(&pause_flush, 1);
@@ -173,7 +174,7 @@ static void release_failure(int global, int cancel)
 		CHECK(stop_rc == -1 && stop_error == EAGAIN);
 		CHECK(logger_init(&c) == -1 && errno == EAGAIN);
 	} else {
-		CHECK(logger_destroy_status(subject) == -1 && errno == EAGAIN);
+		CHECK(logger_destroy(&owner) == -EAGAIN);
 	}
 	CHECK(logger_process_object_count() == 1);
 	int lease = open("out.log.logger.lock", O_RDWR | O_CLOEXEC);
@@ -190,7 +191,7 @@ static void release_failure(int global, int cancel)
 static void ordinary_error(int wait_error)
 {
 	logger_config_t c = config(wait_error);
-	CHECK(logger_create(&c) != NULL);
+	CHECK(logger_create(&c, &owner) == 0);
 	int expected;
 	if (wait_error) {
 		atomic_store(&fail_progress_lock, 1);
@@ -205,8 +206,8 @@ static void ordinary_error(int wait_error)
 	CHECK(logger_flush_instance_status(subject) == -1 && errno == expected);
 	CHECK(!atomic_load(&subject->synchronization_error));
 	CHECK(atomic_load(&sync_calls) > before);
-	CHECK(wait_error ? logger_destroy_status(subject) == 0 :
-			   logger_destroy_status(subject) == -1 && errno == EIO);
+	CHECK(wait_error ? logger_destroy(&owner) == 0 :
+			   logger_destroy(&owner) == -EIO);
 	subject = NULL;
 	CHECK(logger_process_object_count() == 0);
 }

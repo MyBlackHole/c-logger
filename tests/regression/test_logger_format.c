@@ -140,7 +140,9 @@ static logger_t *ordinary_logger(const char *path)
 	c.detail = LOGGER_DETAIL_NORMAL;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.file_path = path;
-	return logger_create(&c);
+	logger_t *created = NULL;
+	(void)logger_create(&c, &created);
+	return created;
 }
 
 static void clean_dir(const char *path)
@@ -205,7 +207,7 @@ static void check_truncation(const char *path)
 	CHECK(!strict_record(l, "after-truncation"));
 	check_record(path, &before, NULL, "after-truncation");
 	CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
-	CHECK(!logger_destroy_status(l));
+	CHECK(!logger_destroy(&l));
 	free(oversized);
 }
 
@@ -350,7 +352,7 @@ int main(int argc, char **argv)
 	CHECK(!strict_record(l, "after-fallback"));
 	check_record(log_path, &before, NULL, "after-fallback");
 	CHECK(localtime_calls == old_localtime + 1);
-	CHECK(!logger_destroy_status(l));
+	CHECK(!logger_destroy(&l));
 	clean_dir(dir);
 	printf("logger format: %s PASS (fault_hits=%u)\n", scenario, observed_hits);
 	return 0;

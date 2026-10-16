@@ -72,7 +72,8 @@ int main(int argc, char **argv)
 	c.detail = LOGGER_DETAIL_DEBUG;
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	size_t page_size = (size_t)sysconf(_SC_PAGESIZE);
 	char *page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
@@ -92,7 +93,7 @@ int main(int argc, char **argv)
 	CHECK(munmap(page, page_size) == 0); /* 不再有可访问的来源存储 */
 	atomic_store(&proceed, 1);
 	CHECK(logger_flush_instance_status(l) == 0);
-	logger_destroy(l);
+	logger_destroy(&l);
 	CHECK(file_contains("source.log", "[ephemeral-module]"));
 	CHECK(file_contains(
 		"source.log",

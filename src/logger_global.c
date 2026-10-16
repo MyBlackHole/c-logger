@@ -108,7 +108,7 @@ static int retire_candidate(logger_t *candidate)
 				   &g_control_mu);
 	g_retired = candidate;
 	logger_destroy_receipt_reset();
-	int rc = logger_destroy_status(candidate) ? -(errno ? errno : EIO) : 0;
+	int rc = logger_destroy(&candidate);
 	if (logger_destroy_receipt_read())
 		g_retired = NULL;
 	else
@@ -274,9 +274,9 @@ int logger_init(const logger_config_t *cfg)
 						     memory_order_acquire))
 		return finish(&scope, -(global_lock_error() ?
 					global_lock_error() : EIO));
-	logger_t *candidate = logger_create(cfg);
-	if (!candidate) {
-		rc = -(errno ? errno : EIO);
+	logger_t *candidate = NULL;
+	rc = logger_create(cfg, &candidate);
+	if (rc) {
 		/* 初始引导构造失败时保留引导日志输出，但仍消费本次票据，
 		 * 防止初始化前的延迟调用穿越到后续新实例。
 		 */
@@ -391,7 +391,7 @@ int logger_shutdown_status(void)
 	 * 最终 free 与工作线程拆除未完成。
 	 */
 	logger_destroy_receipt_reset();
-	rc = logger_destroy_status(old) ? -(errno ? errno : EIO) : 0;
+	rc = logger_destroy(&old);
 	if (!logger_destroy_receipt_read())
 		global_lock_poison(rc < 0 ? -rc : EUCLEAN);
 	else {

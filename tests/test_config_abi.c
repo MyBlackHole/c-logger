@@ -6,12 +6,13 @@
 static int rejects_invalid(logger_config_t *c)
 {
 	errno = 0;
-	logger_t *l = logger_create(c);
+	logger_t *l = NULL;
+	int rc = logger_create(c, &l);
 	if (l) {
-		logger_destroy(l);
+		logger_destroy(&l);
 		return 0;
 	}
-	return errno == EINVAL;
+	return rc == -EINVAL;
 }
 
 int main(void)
@@ -26,12 +27,12 @@ int main(void)
 		return 1;
 	l.version = 999;
 	errno = 0;
-	if (logger_create(&l) != NULL || errno != EPROTONOSUPPORT)
+	if (logger_create(&l, &(logger_t *){ NULL }) != -EPROTONOSUPPORT)
 		return 2;
 	l = LOGGER_DEFAULT_CONFIG();
 	l.struct_size = 8;
 	errno = 0;
-	if (logger_create(&l) != NULL || errno != EINVAL)
+	if (logger_create(&l, &(logger_t *){ NULL }) != -EINVAL)
 		return 3;
 
 	l = LOGGER_DEFAULT_CONFIG();
@@ -72,19 +73,20 @@ int main(void)
 	future.config.struct_size = sizeof(future);
 	future.config.outputs = LOGGER_OUT_STDERR;
 	future.config.async_mode = 0;
-	logger_t *instance = logger_create(&future.config);
+	logger_t *instance = NULL;
+	(void)logger_create(&future.config, &instance);
 	if (!instance)
 		return 10;
-	if (logger_destroy_status(instance))
+	if (logger_destroy(&instance))
 		return 11;
 	future.tail = UINT64_C(1);
 	errno = 0;
-	instance = logger_create(&future.config);
+	int rc = logger_create(&future.config, &instance);
 	if (instance) {
-		logger_destroy(instance);
+		logger_destroy(&instance);
 		return 12;
 	}
-	if (errno != E2BIG)
+	if (rc != -E2BIG)
 		return 13;
 
 	console_config_t con = CONSOLE_DEFAULT_CONFIG();
@@ -110,7 +112,7 @@ int main(void)
 	future_console.tail = UINT64_C(1);
 	errno = 0;
 	console_init(&future_console.config);
-	if (errno != E2BIG)
+	if (rc != -E2BIG)
 		return 18;
 
 	return 0;

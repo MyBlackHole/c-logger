@@ -63,7 +63,8 @@ static void child_run(int async, int global, int index, int conflict)
 	logger_config_t cfg = config("child.log", async);
 	if (conflict) {
 		logger_config_t taken = config("parent.log", async);
-		child_check(logger_create(&taken) == NULL && errno == EBUSY,
+		child_check(logger_create(&taken, &(logger_t *){ NULL }) ==
+				    -EBUSY,
 			    13);
 	}
 	if (global) {
@@ -72,18 +73,20 @@ static void child_run(int async, int global, int index, int conflict)
 		child_check(logger_flush_status() == 0, 15);
 		child_check(logger_shutdown_status() == 0, 16);
 	} else {
-		logger_t *child = logger_create(&cfg);
+		logger_t *child = NULL;
+		(void)logger_create(&cfg, &child);
 		child_check(child != NULL, 17);
 		LOGGER_INFO(child, "child", "CHILD_ONLY=%d", index);
 		child_check(logger_flush_instance_status(child) == 0, 18);
-		child_check(logger_destroy_status(child) == 0, 19);
+		child_check(logger_destroy(&child) == 0, 19);
 	}
 	/* 第一个实例结束后创建另一个，不重置进程域。 */
 	logger_config_t second_cfg = config("second.log", 0);
-	logger_t *second = logger_create(&second_cfg);
+	logger_t *second = NULL;
+	(void)logger_create(&second_cfg, &second);
 	child_check(second != NULL, 20);
 	LOGGER_INFO(second, "second", "SECOND_ONLY=%d", index);
-	child_check(logger_destroy_status(second) == 0, 21);
+	child_check(logger_destroy(&second) == 0, 21);
 	child_check(console_print("CONSOLE_CHILD=%d\n", index) == 0, 22);
 	_exit(0);
 }
@@ -103,15 +106,15 @@ static void normal(const char *mode)
 	if (global)
 		CHECK(logger_init(&cfg) == 0);
 	else {
-		parent = logger_create(&cfg);
-		CHECK(parent);
+		CHECK(logger_create(&cfg, &parent) == 0);
+		CHECK(parent != NULL);
 	}
 	if (global)
 		LOG_INFO("PARENT_BEFORE");
 	else
 		LOGGER_INFO(parent, "parent", "PARENT_BEFORE");
 	if (shut) {
-		CHECK(logger_destroy_status(parent) == 0);
+		CHECK(logger_destroy(&parent) == 0);
 		parent = NULL;
 	}
 	for (int i = 0; i < count; ++i) {
@@ -136,7 +139,7 @@ static void normal(const char *mode)
 		CHECK(logger_shutdown_status() == 0);
 	} else if (parent) {
 		LOGGER_INFO(parent, "parent", "PARENT_AFTER");
-		CHECK(logger_destroy_status(parent) == 0);
+		CHECK(logger_destroy(&parent) == 0);
 	}
 	CHECK(lines_matching("parent.log", "PARENT_BEFORE") == 1);
 	CHECK(lines_matching("parent.log", "PARENT_AFTER") == !shut);
@@ -154,7 +157,8 @@ static int nested_child(unsigned depth)
 	child_check(snprintf(path, sizeof(path), "depth-%u.log", depth) > 0,
 		    31);
 	logger_config_t cfg = config(path, 1);
-	logger_t *l = logger_create(&cfg);
+	logger_t *l = NULL;
+	(void)logger_create(&cfg, &l);
 	child_check(l != NULL, 32);
 	LOGGER_INFO(l, "nested", "DEPTH=%u", depth);
 	if (depth < 4) {
@@ -164,7 +168,7 @@ static int nested_child(unsigned depth)
 			_exit(nested_child(depth + 1));
 		wait_ok(pid);
 	}
-	child_check(logger_destroy_status(l) == 0, 34);
+	child_check(logger_destroy(&l) == 0, 34);
 	return 0;
 }
 

@@ -360,7 +360,7 @@ static void *create_thread(void *unused)
 	cfg.file_path = "out.log";
 	cfg.queue_capacity = 8;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
-	created = logger_create(&cfg);
+	(void)logger_create(&cfg, &created);
 	return NULL;
 }
 
@@ -415,7 +415,7 @@ static void window(int closing)
 	} else {
 		CHECK(created);
 		LOGGER_INFO(created, "fork", "PARENT_AFTER_CANDIDATE");
-		CHECK(!logger_destroy_status(created));
+		CHECK(!logger_destroy(&created));
 		CHECK(file_contains("out.log", "PARENT_AFTER_CANDIDATE"));
 	}
 	CHECK(mapped_bytes == baseline_bytes);
@@ -443,7 +443,7 @@ static void file_lock_case(void)
 	CHECK(flock(check, LOCK_EX | LOCK_NB) == -1);
 	CHECK(errno == EWOULDBLOCK || errno == EAGAIN);
 	LOGGER_INFO(created, "fork", "PARENT_LOCK_STILL_OWNED");
-	CHECK(!logger_destroy_status(created));
+	CHECK(!logger_destroy(&created));
 	CHECK(file_contains("out.log", "PARENT_LOCK_STILL_OWNED"));
 	/* 子方仍然存活：父方关闭后可取得锁，证明子方没有残留共享引用。 */
 	CHECK(!flock(check, LOCK_EX | LOCK_NB));
@@ -468,7 +468,8 @@ static void syslog_case(void)
 	cfg.outputs = LOGGER_OUT_SYSLOG;
 	cfg.syslog.path = "devlog.sock";
 	cfg.queue_capacity = 8;
-	logger_t *l = logger_create(&cfg);
+	logger_t *l = NULL;
+	(void)logger_create(&cfg, &l);
 	CHECK(l && descriptor_count == 1);
 	fork_probe();
 	LOGGER_INFO(l, "fork", "PARENT_SYSLOG_CONTINUES");
@@ -478,7 +479,7 @@ static void syslog_case(void)
 	CHECK(n > 0);
 	packet[n] = 0;
 	CHECK(strstr(packet, "PARENT_SYSLOG_CONTINUES"));
-	CHECK(!logger_destroy_status(l));
+	CHECK(!logger_destroy(&l));
 	CHECK(!__real_close(server));
 	CHECK(!unlink("devlog.sock"));
 	CHECK(mapped_bytes == baseline_bytes);
@@ -544,7 +545,7 @@ int main(int argc, char **argv)
 		CHECK(created);
 		fork_probe();
 		CHECK(handler_hits == 2);
-		CHECK(!logger_destroy_status(created));
+		CHECK(!logger_destroy(&created));
 	} else if (!strcmp(mode, "descriptors"))
 		descriptor_case(0);
 	else if (!strcmp(mode, "nested"))

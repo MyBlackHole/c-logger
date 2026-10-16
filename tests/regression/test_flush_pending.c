@@ -45,8 +45,9 @@ int main(void)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	logger_log(l, LOGGER_INFO, "flush", __FILE__, __LINE__, __func__,
 		   "pending-format");
 	/* 避免将基线测试与其独立的唤醒丢失缺陷混为一谈。 */
@@ -70,7 +71,7 @@ int main(void)
 	CHECK(file_size("out.log") == 0);
 	atomic_store(&release_format, 1);
 	CHECK(pthread_join(t, NULL) == 0);
-	logger_destroy(l);
+	logger_destroy(&l);
 	CHECK(!premature);
 	CHECK(size_after_flush > 0);
 	CHECK(file_contains("out.log", "pending-format"));

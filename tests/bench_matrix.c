@@ -65,7 +65,8 @@ int main(int argc, char **argv)
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 65536;
 	c.flush_level = LOGGER_OFF;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	(void)logger_create(&c, &l);
 	if (!l) {
 		perror("logger_create");
 		free(msg);
@@ -140,7 +141,7 @@ int main(int argc, char **argv)
 	       logger_queue_force_wake_signals(&l->q),
 	       logger_queue_storage_bytes(&l->q),
 	       valid ? "true" : "false");
-	logger_destroy(l);
+	logger_destroy(&l);
 	free(threads);
 	free(msg);
 	return valid ? 0 : 5;

@@ -1,5 +1,7 @@
 # c-logger 2.0 所有权与生命周期设计
 
+> 当前创建/销毁以[新生命周期合同](LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+
 状态：**#102 设计基线，已按当前不含 Audit 的 ABI 2 对象图更新**。
 
 当前设计入口见 [README.md](README.md)。Audit/密码学模块已退役，不属于本文的对象或验证范围；迁移边界见 [AUDIT_REMOVAL.md](AUDIT_REMOVAL.md)。
@@ -227,7 +229,7 @@ Logger 销毁
 - SDK/插件若只是 BORROWED，宿主必须先停止并 join 它们；
 - 如果未来 SDK 成为真正独立所有者，应显式升级为 get/put 契约，而不是继续写“借用”。
 
-**正常销毁的前置静默期由宿主提供，而非 `logger_destroy_status()` 自行发现**：
+**正常销毁的前置静默期由宿主提供，而非 `logger_destroy(&owner)` 自行发现**：
 宿主先阻止 SDK/插件新调用，等待所有持有原始 `logger_t *` 的外部借用者退出；
 随后才能调用销毁。实例变为 STOPPING 只禁止后续合法准入，不能证明
 已经取得原始指针的并发调用者消失。工作线程的 `pthread_join()`

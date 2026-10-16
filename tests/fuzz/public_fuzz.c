@@ -143,13 +143,14 @@ static void config_property(const uint8_t *data, size_t size)
 	}
 
 	errno = 0;
-	logger_t *instance = logger_create(&future.config);
+	logger_t *instance = NULL;
+	int create_rc = logger_create(&future.config, &instance);
 	if (expected_error) {
 		REQUIRE(instance == NULL);
-		REQUIRE(errno == expected_error);
+		REQUIRE(create_rc == -expected_error);
 	} else {
-		REQUIRE(instance != NULL);
-		REQUIRE(logger_destroy_status(instance) == 0);
+		REQUIRE(instance != NULL && create_rc == 0);
+		REQUIRE(logger_destroy(&instance) == 0);
 	}
 }
 

@@ -13,7 +13,8 @@ static logger_t *make_logger(logger_detail_t detail, int include_pid,
 	c.include_pid = include_pid;
 	c.include_tid = include_tid;
 	c.include_source = include_source;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	return l;
 }
@@ -28,7 +29,7 @@ static void check_mask(logger_detail_t detail, int include_pid, int include_tid,
 		CHECK(l->pid == getpid());
 	else
 		CHECK(l->pid == 0);
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 }
 
 int main(void)

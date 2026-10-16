@@ -80,7 +80,7 @@ int main(int argc, char **argv)
 	unlink("dispose.log");
 	unlink("next.log");
 	if (!strcmp(argv[1], "null")) {
-		CHECK(logger_destroy_status(NULL) == 0);
+		CHECK(logger_destroy(&(logger_t *){ NULL }) == 0);
 		return 0;
 	}
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
@@ -94,7 +94,8 @@ int main(int argc, char **argv)
 		c.file_path = "/dev/full";
 		c.async_mode = 0;
 	}
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	subject = l;
 	if (!strcmp(argv[1], "join-error"))
@@ -120,9 +121,10 @@ int main(int argc, char **argv)
 		expected = EBUSY;
 	for (int i = 0; i < (io_error ? 1 : 1000); ++i)
 		LOGGER_INFO(l, "test", "record=%d", i);
-	int rc = logger_destroy_status(l);
-	l = NULL; /* 销毁在每种返回情况下都消耗公开所有权 */
-	CHECK(expected ? rc == -1 && errno == expected : rc == 0);
+	errno = EDOM;
+	int rc = logger_destroy(&l);
+	CHECK(l == NULL); /* 消费发生在接口内部，不由调用者补写 NULL。 */
+	CHECK(rc == -expected && errno == EDOM);
 	if (lifecycle_error) {
 		/* 失败注入在对象已合法静止后直接返回 EBUSY；测试不依赖
 		 * 对仍有使用者的 pthread 对象执行 destroy 的未定义行为。
@@ -142,8 +144,8 @@ int main(int argc, char **argv)
 	subject = NULL;
 	c.file_path = "next.log";
 	c.async_mode = 0;
-	l = logger_create(&c);
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 	return 0;
 }

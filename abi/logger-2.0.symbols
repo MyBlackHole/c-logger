@@ -16,7 +16,6 @@ logger_context_get
 logger_context_set
 logger_create
 logger_destroy
-logger_destroy_status
 logger_dropped
 logger_flush
 logger_flush_instance

@@ -31,8 +31,9 @@ int main(void)
 	c.syslog.path = path;
 	c.queue_capacity = 2;
 	c.overflow[LOGGER_INFO] = LOGGER_OVERFLOW_SYNC;
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	int rc = 0;
 	unsigned tries = 0;
 	do {
@@ -60,7 +61,7 @@ int main(void)
 	logger_io_metrics_t all;
 	logger_get_io_metrics(l, &all);
 	CHECK(all.async_completed == 3);
-	CHECK(logger_destroy_status(l) == -1 && errno == EAGAIN);
+	CHECK(logger_destroy(&l) == -EAGAIN);
 	CHECK(!close(fd));
 	CHECK(!unlink(path));
 	CHECK(!rmdir(dir));

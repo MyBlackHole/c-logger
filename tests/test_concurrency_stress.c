@@ -33,7 +33,7 @@ int main(void)
 	c.file_path = "./stress.log";
 	c.queue_capacity = 16384;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	g = logger_create(&c);
+	(void)logger_create(&c, &g);
 	if (!g)
 		return 1;
 	pthread_t p[12], c1, c2;
@@ -48,6 +48,6 @@ int main(void)
 		pthread_join(p[i], 0);
 	pthread_join(c1, 0);
 	pthread_join(c2, 0);
-	logger_destroy(g);
+	logger_destroy(&g);
 	return 0;
 }

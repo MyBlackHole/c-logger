@@ -35,8 +35,9 @@ int main(int argc, char **argv)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	if (wait_error) {
 		wait_flag(&in_gap);
 		atomic_store(&fail_wait, 1);
@@ -59,7 +60,7 @@ int main(int argc, char **argv)
 		CHECK(atomic_load_explicit(&l->state, memory_order_acquire) ==
 		      LOGGER_STATE_STOPPING);
 		errno = 0;
-		CHECK(logger_destroy_status(l) == -1 && errno == EIO);
+		CHECK(logger_destroy(&l) == -EIO);
 		CHECK(logger_process_object_count() == 0);
 		leave_temp(dir);
 		puts("worker wait failure is reported after successful join/free");
@@ -99,7 +100,7 @@ int main(int argc, char **argv)
 		nap_ms();
 	}
 	/* 在关闭发送补救通知之前记录结果。 */
-	logger_destroy(l);
+	logger_destroy(&l);
 	CHECK(file_contains("out.log", "last-before-idle"));
 	CHECK(output_without_rescue);
 	leave_temp(dir);

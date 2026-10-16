@@ -32,7 +32,8 @@ static int rotation_check(const char *path)
 	c.rotation.max_file_size = 1;
 	c.rotation.retention_days = 0;
 
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
 				     __FILE__, __LINE__, __func__, "first") == 0);
@@ -42,7 +43,7 @@ static int rotation_check(const char *path)
 	CHECK(logger_get_file_metrics(log, &m) == 0);
 	CHECK(m.rotation_attempts >= 1 && m.rotation_successes >= 1);
 	CHECK(m.rotation_failures == 0);
-	CHECK(logger_destroy_status(log) == 0);
+	CHECK(logger_destroy(&log) == 0);
 	return 0;
 }
 
@@ -60,7 +61,8 @@ static int persistence_check(const char *dir)
 	c.file_path = path;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL, "before-reopen");
 	CHECK(logger_flush_instance_status(log) == 0);
@@ -71,7 +73,7 @@ static int persistence_check(const char *dir)
 	CHECK(logger_get_file_metrics(log, &m) == 0);
 	CHECK(m.data_sync_attempts >= 2 && m.data_sync_failures == 0);
 	CHECK(m.reopen_successes == 1 && m.reopen_failures == 0);
-	CHECK(logger_destroy_status(log) == 0);
+	CHECK(logger_destroy(&log) == 0);
 
 	FILE *file = fopen(path, "r");
 	CHECK(file != NULL);

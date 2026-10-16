@@ -18,8 +18,9 @@ int main(void)
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.queue_capacity = 8;
-	logger_t *l = logger_create(&cfg);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&cfg, &l) == 0);
+	CHECK(l != NULL);
 	int owned[4];
 	unsigned count = 0;
 	DIR *scan = opendir("/proc/self/fd");
@@ -70,7 +71,7 @@ int main(void)
 	CHECK(flock(lock, LOCK_EX | LOCK_NB) == -1);
 	CHECK(errno == EWOULDBLOCK || errno == EAGAIN);
 	LOGGER_INFO(l, "fork", "PUBLIC_PARENT_CONTINUES");
-	CHECK(!logger_destroy_status(l));
+	CHECK(!logger_destroy(&l));
 	CHECK(file_contains("out.log", "PUBLIC_PARENT_CONTINUES"));
 	/* 子方尚在等待，父方释放后锁已可用。 */
 	CHECK(!flock(lock, LOCK_EX | LOCK_NB));

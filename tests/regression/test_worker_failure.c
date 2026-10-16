@@ -6,9 +6,19 @@
  * 合成的 cond_wait EIO 保持有效的非健壮互斥锁处于持有状态。
  */
 enum scenario {
-	WAIT_FIRST, ERROR_FIRST, WAIT_GAP, MULTIPLE, SPURIOUS, LATER_SLOT,
-	SPILL, NORMAL_GAP, NORMAL_DRAIN, BACKEND_ERROR, EMPTY_TARGET,
-	GLOBAL, CANCEL
+	WAIT_FIRST,
+	ERROR_FIRST,
+	WAIT_GAP,
+	MULTIPLE,
+	SPURIOUS,
+	LATER_SLOT,
+	SPILL,
+	NORMAL_GAP,
+	NORMAL_DRAIN,
+	BACKEND_ERROR,
+	EMPTY_TARGET,
+	GLOBAL,
+	CANCEL
 };
 
 struct answer {
@@ -19,7 +29,9 @@ struct answer {
 };
 
 static enum scenario selected;
+/* instance 仅供工作线程和包装器借用，独占拥有者槽必须另行保存。 */
 static logger_t *instance;
+static logger_t **owner_slot;
 static void *(*worker_fn)(void *);
 static void *worker_arg;
 static pthread_t worker_id;
@@ -44,7 +56,7 @@ static size_t joined_completed;
 static uint64_t joined_emitted;
 
 int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			 void *(*)(void *), void *);
+			  void *(*)(void *), void *);
 int __real_pthread_join(pthread_t, void **);
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __real_pthread_mutex_unlock(pthread_mutex_t *);
@@ -91,7 +103,7 @@ static void *worker_entry(void *unused)
 }
 
 int __wrap_pthread_create(pthread_t *id, const pthread_attr_t *attr,
-			 void *(*fn)(void *), void *arg)
+			  void *(*fn)(void *), void *arg)
 {
 	instance = arg;
 	worker_fn = fn;
@@ -172,7 +184,8 @@ char *__wrap_strrchr(const char *s, int c)
 }
 
 int __wrap_logger_file_writev(logger_file_t *f, struct iovec *vec, int count,
-			     size_t length, const struct timespec *ts, int sync)
+			      size_t length, const struct timespec *ts,
+			      int sync)
 {
 	if (selected == BACKEND_ERROR)
 		return -ENOSPC;
@@ -182,6 +195,8 @@ int __wrap_logger_file_writev(logger_file_t *f, struct iovec *vec, int count,
 int __wrap_pthread_join(pthread_t id, void **result)
 {
 	CHECK(pthread_equal(id, worker_id));
+	if (owner_slot)
+		CHECK(*owner_slot == NULL);
 	if (selected == NORMAL_DRAIN) {
 		CHECK(!atomic_load(&instance->running));
 		CHECK(atomic_load(&instance->q.enqueue_pos) == 5);
@@ -200,6 +215,8 @@ int __wrap_pthread_join(pthread_t id, void **result)
 int __wrap_logger_runtime_free(void *ptr)
 {
 	if (instance && ptr == instance) {
+		if (owner_slot)
+			CHECK(*owner_slot == NULL);
 		CHECK(joined == 1);
 		++released;
 		instance = NULL;
@@ -241,7 +258,7 @@ static void *flush(void *arg)
 	pthread_cleanup_push(finish_waiter, a);
 	errno = 0;
 	a->rc = selected == GLOBAL ? logger_flush_status() :
-		logger_flush_instance_status(instance);
+				     logger_flush_instance_status(instance);
 	a->error = errno;
 	pthread_testcancel();
 	pthread_cleanup_pop(1);
@@ -262,20 +279,23 @@ static void test_failure_or_gap(void)
 {
 	unsigned count = selected == MULTIPLE || selected == GLOBAL ? 4 : 1;
 	unsigned producers = selected == EMPTY_TARGET ? 0 :
-		selected == LATER_SLOT ? 2 : 1;
+			     selected == LATER_SLOT   ? 2 :
+							1;
 	pthread_t producer[2];
 	pthread_t flushers[4];
 	struct answer answers[4] = { 0 };
 
 	if (producers) {
-		CHECK(!__real_pthread_create(&producer[0], NULL, produce, NULL));
+		CHECK(!__real_pthread_create(&producer[0], NULL, produce,
+					     NULL));
 		wait_flag(&head_reserved);
 		CHECK(atomic_load(&instance->q.enqueue_pos) == 1);
 		CHECK(atomic_load(&instance->q.slots[0].seq) == 0);
 		CHECK(atomic_load(&instance->enqueued) == 0);
 	}
 	if (producers == 2) {
-		CHECK(!__real_pthread_create(&producer[1], NULL, produce, &count));
+		CHECK(!__real_pthread_create(&producer[1], NULL, produce,
+					     &count));
 		await_later_slot();
 		CHECK(atomic_load(&instance->q.enqueue_pos) == 2);
 	}
@@ -283,11 +303,13 @@ static void test_failure_or_gap(void)
 		CHECK(logger_queue_spill_in_use(&instance->q) == 1);
 
 	for (unsigned i = 0; i < count; ++i) {
-		CHECK(!__real_pthread_create(&flushers[i], NULL, flush, &answers[i]));
+		CHECK(!__real_pthread_create(&flushers[i], NULL, flush,
+					     &answers[i]));
 		if (defer_waiter())
 			wait_flag(&before_lock); /* 已读取准入和水位。 */
 		else
-			await_count(&answers[i].calls, selected == SPURIOUS ? 2 : 1);
+			await_count(&answers[i].calls,
+				    selected == SPURIOUS ? 2 : 1);
 		CHECK(!atomic_load(&answers[i].done));
 	}
 	if (selected == CANCEL)
@@ -319,8 +341,9 @@ static void test_failure_or_gap(void)
 		if (selected == CANCEL) {
 			CHECK(result == PTHREAD_CANCELED);
 		} else {
-			int error = !healthy_worker() ? EIO :
-				selected == BACKEND_ERROR ? ENOSPC : 0;
+			int error = !healthy_worker()	      ? EIO :
+				    selected == BACKEND_ERROR ? ENOSPC :
+								0;
 
 			CHECK(result == NULL);
 			CHECK(answers[i].rc == (error ? -1 : 0));
@@ -353,8 +376,10 @@ static void test_failure_or_gap(void)
 		CHECK(d.state == LOGGER_STATE_RUNNING && d.worker_running);
 		CHECK(d.async_completed == producers && d.queue_depth == 0);
 		CHECK(atomic_load(&instance->lifecycle_error) == 0);
-		CHECK(d.emitted_records == (selected == BACKEND_ERROR ? 0u : 1u));
-		CHECK(d.failed_records == (selected == BACKEND_ERROR ? 1u : 0u));
+		CHECK(d.emitted_records ==
+		      (selected == BACKEND_ERROR ? 0u : 1u));
+		CHECK(d.failed_records ==
+		      (selected == BACKEND_ERROR ? 1u : 0u));
 		CHECK(!atomic_load(&error_broadcasts));
 	}
 }
@@ -362,9 +387,10 @@ static void test_failure_or_gap(void)
 static enum scenario scenario_from_name(const char *name)
 {
 	static const char *const names[] = {
-		"wait-first", "error-first", "wait-gap", "multiple", "spurious",
-		"later-slot", "spill", "normal-gap", "normal-drain", "backend-error",
-		"empty-target", "global", "cancel"
+		"wait-first",	"error-first",	 "wait-gap",	 "multiple",
+		"spurious",	"later-slot",	 "spill",	 "normal-gap",
+		"normal-drain", "backend-error", "empty-target", "global",
+		"cancel"
 	};
 
 	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
@@ -380,6 +406,7 @@ int main(int argc, char **argv)
 	selected = scenario_from_name(argv[1]);
 	char dir[] = "/tmp/logger-worker-failure-XXXXXX";
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+	logger_t *owner = NULL;
 
 	enter_temp(dir);
 	c.outputs = LOGGER_OUT_FILE;
@@ -392,16 +419,16 @@ int main(int argc, char **argv)
 	if (selected == GLOBAL)
 		CHECK(logger_init(&c) == 0);
 	else {
-		logger_t *l = logger_create(&c);
-
-		CHECK(l != NULL && l == instance);
+		owner_slot = &owner;
+		CHECK(logger_create(&c, &owner) == 0);
+		CHECK(owner != NULL && owner == instance);
 	}
 	wait_flag(&worker_waiting);
 
 	if (selected == NORMAL_DRAIN) {
 		for (unsigned i = 0; i < 5; ++i)
-			logger_log(instance, LOGGER_INFO, "drain", NULL, 0, NULL,
-				   "record %u", i);
+			logger_log(instance, LOGGER_INFO, "drain", NULL, 0,
+				   NULL, "record %u", i);
 		CHECK(atomic_load(&instance->enqueued) == 5);
 		CHECK(atomic_load(&instance->async_completed) == 0);
 	} else {
@@ -409,14 +436,23 @@ int main(int argc, char **argv)
 	}
 
 	/* 外部借用线程已全部回收。只有此时所有者才能销毁。 */
-	int expected = !healthy_worker() ? EIO :
-		selected == BACKEND_ERROR ? ENOSPC : 0;
+	int expected = !healthy_worker()	 ? EIO :
+		       selected == BACKEND_ERROR ? ENOSPC :
+						   0;
 
-	errno = 0;
-	int rc = selected == GLOBAL ? logger_shutdown_status() :
-		logger_destroy_status(instance);
-
-	CHECK(rc == (expected ? -1 : 0) && errno == expected);
+	/* 销毁先消费公开槽，join/free 探针仍借用活实例观察真正释放。
+	 * Global 关闭尚为 POSIX 错误风格，显式销毁为负错误码并保留 errno。
+	 */
+	if (selected == GLOBAL) {
+		errno = 0;
+		CHECK(logger_shutdown_status() == (expected ? -1 : 0));
+		CHECK(errno == expected);
+	} else {
+		errno = EDOM;
+		CHECK(logger_destroy(&owner) == -expected);
+		CHECK(errno == EDOM);
+	}
+	CHECK(owner == NULL);
 	CHECK(instance == NULL && joined == 1 && released == 1);
 	CHECK(logger_process_object_count() == 0);
 	if (selected == NORMAL_DRAIN)

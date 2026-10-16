@@ -99,15 +99,15 @@ int main(int argc, char **argv)
 	if (!strcmp(s, "symlink")) {
 		put("sentinel", "unchanged");
 		REQUIRE(symlink("sentinel", "out.log") == 0);
-		logger_t *l = logger_create(&c);
-		REQUIRE(!l && errno == ELOOP);
+		logger_t *l = NULL;
+		REQUIRE(logger_create(&c, &l) == -ELOOP && !l);
 		return 0;
 	}
 	if (!strcmp(s, "hardlink")) {
 		put("sentinel", "unchanged");
 		REQUIRE(link("sentinel", "out.log") == 0);
-		logger_t *l = logger_create(&c);
-		REQUIRE(!l && errno == EMLINK);
+		logger_t *l = NULL;
+		REQUIRE(logger_create(&c, &l) == -EMLINK && !l);
 		return 0;
 	}
 	if (!strcmp(s, "global-repeat")) {
@@ -124,13 +124,14 @@ int main(int argc, char **argv)
 		c.rotation.retention_days = 0;
 		put("out.20231114T221320.000000Z.log", "sentinel");
 	}
-	logger_t *l = logger_create(&c);
-	REQUIRE(l);
+	logger_t *l = NULL;
+	REQUIRE(logger_create(&c, &l) == 0);
+	REQUIRE(l != NULL);
 	REQUIRE(logger_log_sync_status(l, LOGGER_INFO, "probe", __FILE__,
 				       __LINE__, __func__, "first") == 0);
 	if (!strcmp(s, "owner")) {
-		logger_t *other = logger_create(&c);
-		REQUIRE(!other && errno == EBUSY);
+		logger_t *other = NULL;
+		REQUIRE(logger_create(&c, &other) == -EBUSY && !other);
 	} else if (!strcmp(s, "reopen")) {
 		REQUIRE(rename("out.log", "old.log") == 0 &&
 			mkdir("out.log", 0700) == 0);
@@ -150,6 +151,6 @@ int main(int argc, char **argv)
 		REQUIRE(has("out.20231114T221320.000000Z.log", "sentinel"));
 	} else
 		REQUIRE(0);
-	logger_destroy(l);
+	logger_destroy(&l);
 	return 0;
 }

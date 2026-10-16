@@ -84,7 +84,7 @@ static void scenario(const char *mode)
 		CHECK(!setenv("LOGGER_SYSLOG_PATH", "./redirect.socket", 1));
 		intercept_connect = 1;
 		c.outputs = LOGGER_OUT_SYSLOG;
-		CHECK(logger_create(&c) == NULL && errno == ENOENT);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -ENOENT);
 		CHECK(!strcmp(connected_path, TEST_EXPECT_HOOKS ?
 						      "./redirect.socket" :
 						      "/dev/log"));
@@ -93,8 +93,9 @@ static void scenario(const char *mode)
 			c.rotation.mode = LOGGER_ROTATE_SIZE;
 			c.rotation.max_file_size = 1;
 		}
-		logger_t *logger = logger_create(&c);
-		CHECK(logger);
+		logger_t *logger = NULL;
+		CHECK(logger_create(&c, &logger) == 0);
+		CHECK(logger != NULL);
 		if (!strcmp(mode, "file_rename"))
 			CHECK(!emit(logger, "baseline"));
 		CHECK(!setenv("LOGGER_FAULT_POINT", mode, 1));
@@ -102,13 +103,14 @@ static void scenario(const char *mode)
 		CHECK(rc == (TEST_EXPECT_HOOKS ? -EIO : 0));
 		clear_test_environment();
 		CHECK(!emit(logger, "after-fault"));
-		CHECK(logger_destroy_status(logger) ==
-		      (TEST_EXPECT_HOOKS ? -1 : 0));
+		CHECK(logger_destroy(&logger) ==
+		      (TEST_EXPECT_HOOKS ? -EIO : 0));
 		CHECK(file_contains("out.log", "after-fault"));
 	} else if (!strcmp(mode, "short-write")) {
 		CHECK(!setenv("LOGGER_FAULT_SHORT_WRITE", "3", 1));
-		logger_t *logger = logger_create(&c);
-		CHECK(logger);
+		logger_t *logger = NULL;
+		CHECK(logger_create(&c, &logger) == 0);
+		CHECK(logger != NULL);
 		CHECK(!emit(logger, "short write complete"));
 		logger_file_metrics_t metrics;
 		CHECK(!logger_get_file_metrics(logger, &metrics));
@@ -119,14 +121,15 @@ static void scenario(const char *mode)
 		 */
 		CHECK(TEST_EXPECT_HOOKS ? metrics.write_syscalls > 1 :
 					 metrics.write_syscalls == 1);
-		CHECK(!logger_destroy_status(logger));
+		CHECK(!logger_destroy(&logger));
 		CHECK(file_contains("out.log", "short write complete"));
 	} else {
 		CHECK(file_crash(mode));
 		c.rotation.mode = LOGGER_ROTATE_SIZE;
 		c.rotation.max_file_size = 1;
-		logger_t *logger = logger_create(&c);
-		CHECK(logger);
+		logger_t *logger = NULL;
+		CHECK(logger_create(&c, &logger) == 0);
+		CHECK(logger != NULL);
 		CHECK(!emit(logger, "baseline"));
 		/* 两个变体都执行真实文件轮转。测试支持必须在命名钩子处终止；
 		 * 生产库必须完成切换和写入。
@@ -136,7 +139,7 @@ static void scenario(const char *mode)
 		logger_file_metrics_t metrics;
 		CHECK(!logger_get_file_metrics(logger, &metrics));
 		CHECK(metrics.rotation_successes == 1);
-		CHECK(!logger_destroy_status(logger));
+		CHECK(!logger_destroy(&logger));
 		CHECK(file_contains("out.log", "after-rotation"));
 	}
 }

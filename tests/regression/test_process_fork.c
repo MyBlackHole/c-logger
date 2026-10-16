@@ -190,7 +190,7 @@ static void child_guard_matrix(void)
 	(void)alarm(5);
 	CHILD_POSIX(logger_init(&cfg), 10);
 	errno = 0;
-	if (logger_create(&cfg) != NULL || errno != ECHILD)
+	if (logger_create(&cfg, &(logger_t *){ NULL }) != -ECHILD)
 		_exit(11);
 	CHILD_VOID(LOG_INFO("INHERITED_FORBIDDEN"), 14);
 	CHILD_POSIX(logger_flush_status(), 15);
@@ -232,8 +232,10 @@ static void child_guard_matrix(void)
 	errno = 0;
 	if (logger_dropped(l) != 0 || errno != ECHILD)
 		_exit(36);
-	CHILD_POSIX(logger_destroy_status(l), 37);
-	CHILD_VOID(logger_destroy(l), 37);
+	logger_t *old = l;
+	errno = EDOM;
+	if (logger_destroy(&l) != -ECHILD || l != old || errno != EDOM)
+		_exit(37);
 	CHILD_VOID(
 		logger_context_set(&(logger_context_t){ .request_id = "new" }),
 		38);
@@ -339,7 +341,7 @@ static void registration_failure(const char *mode)
 	if (!strcmp(mode, "register-global"))
 		CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
 	else if (!strcmp(mode, "register-explicit"))
-		CHECK(logger_create(&cfg) == NULL && errno == ENOMEM);
+		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	else if (!strcmp(mode, "register-console"))
 		CHECK(console_print("forbidden") == -1 && errno == ENOMEM);
 	else if (!strcmp(mode, "register-context")) {
@@ -350,7 +352,7 @@ static void registration_failure(const char *mode)
 	CHECK(access("out.log", F_OK) != 0);
 	/* 注册失败不会自动清除，不允许静默地无保护重试。 */
 	atomic_store(&fail_registration, 0);
-	CHECK(logger_create(&cfg) == NULL && errno == ENOMEM);
+	CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
 	CHECK(atomic_load(&registrations) == 1);
 }
@@ -414,13 +416,14 @@ int main(int argc, char **argv)
 		pid_t p = fork();
 		CHECK(p >= 0);
 		if (!p) {
-			logger_t *l = logger_create(&cfg);
+			logger_t *l = NULL;
+			(void)logger_create(&cfg, &l);
 			if (!l)
 				_exit(10);
 			LOGGER_INFO(l, "child", "PREFORK_CHILD");
 			if (logger_flush_instance_status(l))
 				_exit(11);
-			logger_destroy(l);
+			logger_destroy(&l);
 			_exit(0);
 		}
 		wait_child(p);
@@ -455,8 +458,8 @@ int main(int argc, char **argv)
 			.request_id = "inherited-secret-id" });
 	} else if (!strcmp(mode, "explicit") || !strcmp(mode, "emit-held") ||
 		   !strcmp(mode, "progress-held")) {
-		instance = logger_create(&cfg);
-		CHECK(instance);
+		CHECK(logger_create(&cfg, &instance) == 0);
+		CHECK(instance != NULL);
 		if (strcmp(mode, "explicit")) {
 			pthread_mutex_t *mu = !strcmp(mode, "emit-held") ?
 						      &instance->emit_mu :
@@ -505,7 +508,7 @@ int main(int argc, char **argv)
 	if (instance) {
 		LOGGER_INFO(instance, "parent", "PARENT_CONTINUES");
 		CHECK(!logger_flush_instance_status(instance));
-		logger_destroy(instance);
+		logger_destroy(&instance);
 	}
 	logger_shutdown();
 	fprintf(stderr, "ATFORK_LOGGER_REGISTRATIONS=%u\n",

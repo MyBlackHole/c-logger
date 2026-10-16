@@ -165,7 +165,7 @@ static void test_healthy(logger_t *l)
 	CHECK(d.enqueued == (selected == SYNC ? 0u : 1u));
 	CHECK(d.async_completed == d.enqueued);
 	CHECK(d.worker_running == (selected != SYNC));
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 	CHECK(logger_process_object_count() == 0);
 	CHECK(create_calls == (selected == SYNC ? 0u : 1u));
 	CHECK(joined == create_calls && join_calls == create_calls);
@@ -194,7 +194,7 @@ static void test_late_failure(logger_t *l)
 	CHECK(!d.worker_running && d.enqueued == 0 && d.emitted_records == 0);
 	CHECK(file_size("out.log") == 0);
 	errno = 0;
-	CHECK(logger_destroy_status(l) == -1 && errno == EIO);
+	CHECK(logger_destroy(&l) == -EIO);
 	assert_clean_failure();
 }
 
@@ -249,8 +249,9 @@ int main(int argc, char **argv)
 		CHECK(logger_shutdown_status() == 0);
 	} else {
 		errno = 0;
-		logger_t *l = logger_create(&config);
-		int error = errno;
+		logger_t *l = NULL;
+		int create_rc = logger_create(&config, &l);
+		int error = -create_rc;
 
 		if (selected == NORMAL || selected == SYNC)
 			test_healthy(l);

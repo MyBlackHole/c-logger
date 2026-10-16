@@ -107,10 +107,11 @@ static void ready_works(void)
 	CHECK(logger_process_object_count() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.async_mode = 0;
-	logger_t *l = logger_create(&cfg);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&cfg, &l) == 0);
+	CHECK(l != NULL);
 	LOGGER_INFO(l, "init", "READY_AFTER_TRANSITION");
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 	CHECK(logger_process_object_count() == 0);
 }
 
@@ -121,7 +122,7 @@ static void failed_registration(void)
 	CHECK(logger_process_init() == -ENOMEM && errno == EDOM);
 	CHECK(logger_process_ensure() == -ENOMEM);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
-	CHECK(logger_create(&cfg) == NULL && errno == ENOMEM);
+	CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	CHECK(atomic_load(&registration_calls) == 1);
 	CHECK(logger_process_object_count() == 0);
 }

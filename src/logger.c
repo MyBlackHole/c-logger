@@ -589,9 +589,29 @@ static logger_t *create_entry(const logger_config_t *input)
 	return finish_create(&scope, l, error);
 }
 
-logger_t *logger_create(const logger_config_t *input)
+int logger_create(const logger_config_t *input, logger_t **out)
 {
-	return create_entry(input);
+	int saved = errno;
+	int rc = 0;
+
+	/* out 是调用者独占的拥有者槽。禁止覆盖已有所有者，避免静默泄漏。
+	 * 子方准入先于任何运行态访问；失败不发布候选对象。
+	 */
+	if (reject_access()) {
+		rc = -errno;
+	} else if (!out) {
+		rc = -EINVAL;
+	} else if (*out) {
+		rc = -EBUSY;
+	} else {
+		logger_t *candidate = create_entry(input);
+		if (candidate)
+			*out = candidate;
+		else
+			rc = -(errno ? errno : EIO);
+	}
+	errno = saved;
+	return rc;
 }
 
 static int dispose_body(logger_t *l, int *released)
@@ -764,20 +784,45 @@ int logger_destroy_receipt_read(void)
 	return destroy_receipt;
 }
 
-int logger_destroy_status(logger_t *l)
+int logger_destroy(logger_t **owner)
 {
-	logger_destroy_receipt_reset();
-	int rc = logger_dispose_internal_tracked(l, &destroy_receipt);
-	if (rc) {
-		errno = -rc;
-		return -1;
-	}
-	return 0;
-}
+	int saved = errno;
+	int rc;
+	logger_scope_t scope;
 
-void logger_destroy(logger_t *l)
-{
-	(void)logger_destroy_status(l);
+	logger_destroy_receipt_reset();
+	/* 拒绝发生在读取拥有者槽和消费其内容之前。普通调用者必须提供
+	 * 存活、独占且可写的槽；其他别名不是独立拥有者。
+	 */
+	if (reject_access()) {
+		rc = -errno;
+		goto out;
+	}
+	if (!owner) {
+		rc = -EINVAL;
+		goto out;
+	}
+	if (!*owner) {
+		destroy_receipt = 1;
+		rc = 0;
+		goto out;
+	}
+	rc = logger_scope_begin(&scope);
+	if (rc)
+		goto out;
+
+	/* 准入成功后消费公开所有权，先清槽再做不可回滚的拆除。
+	 * I/O 或生命周期证明失败均不允许调用者重试该指针；证明失败时
+	 * 旧分配继续由进程域保守保留。清槽早于取消恢复，取消清理不会
+	 * 再次释放同一个对象。最终释放回执供内部 Global 单独判定。
+	 */
+	logger_t *instance = *owner;
+	*owner = NULL;
+	rc = dispose_body(instance, &destroy_receipt);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 void logger_log(logger_t *l, logger_level_t level, const char *module,

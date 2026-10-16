@@ -83,11 +83,11 @@ static void nested_call(void)
 	else if (!strcmp(nested, "reopen"))
 		CHECK(logger_reopen_instance(log_instance) == -1);
 	else if (!strcmp(nested, "destroy"))
-		CHECK(logger_destroy_status(log_instance) == -1);
+		CHECK(logger_destroy(&log_instance) == -EDEADLK);
 	else if (!strcmp(nested, "destroy-void"))
-		logger_destroy(log_instance);
+		CHECK(logger_destroy(NULL) == -EDEADLK);
 	else if (!strcmp(nested, "create"))
-		CHECK(logger_create(&cfg) == NULL);
+		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -EDEADLK);
 	else if (!strcmp(nested, "level"))
 		logger_set_instance_level(log_instance, LOGGER_OFF);
 	else if (!strcmp(nested, "state"))
@@ -140,7 +140,11 @@ static void nested_call(void)
 		LOG_INFO("nested global");
 	else
 		CHECK(!"unknown nested API");
-	CHECK(errno == EDEADLK);
+	CHECK(errno ==
+	      ((!strcmp(nested, "create") || !strcmp(nested, "destroy") ||
+		!strcmp(nested, "destroy-void")) ?
+		       0 :
+		       EDEADLK));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
 static void probe(enum point p)
@@ -285,10 +289,11 @@ static void application_cleanup(void *unused)
 	if (cleanup_new) {
 		CHECK(logger_process_object_count() == 0);
 		logger_config_t cfg = local_cfg(0);
-		logger_t *again = logger_create(&cfg);
-		CHECK(again);
+		logger_t *again = NULL;
+		CHECK(logger_create(&cfg, &again) == 0);
+		CHECK(again != NULL);
 		LOGGER_INFO(again, "cleanup", "owner-reacquired");
-		CHECK(!logger_destroy_status(again));
+		CHECK(!logger_destroy(&again));
 	} else if (use_console) {
 		CHECK(!console_print("cleanup-can-output\n"));
 	} else {
@@ -324,16 +329,17 @@ static void *caller(void *unused)
 	else if (!strcmp(scenario, "create") ||
 		 !strcmp(scenario, "create-fail")) {
 		logger_config_t cfg = local_cfg(1);
-		logger_t *l = logger_create(&cfg);
+		logger_t *l = NULL;
+		(void)logger_create(&cfg, &l);
 		/* 待定的延迟取消请求必须在指针交接前处理。 */
 		if (l) {
-			logger_destroy(l);
+			logger_destroy(&l);
 			CHECK(!"constructor returned despite pending cancellation");
 		}
 	} else if (!strcmp(scenario, "destroy")) {
 		logger_t *owned = log_instance;
 		log_instance = NULL;
-		CHECK(!logger_destroy_status(owned));
+		CHECK(!logger_destroy(&owned));
 	} else if (!strcmp(scenario, "flush"))
 		CHECK(!logger_flush_instance_status(log_instance));
 	else if (!strcmp(scenario, "flush-void"))
@@ -383,8 +389,8 @@ static void cancel_case(void)
 			    !strcmp(scenario, "fallback");
 		if (!use_console) {
 			logger_config_t cfg = local_cfg(async);
-			log_instance = logger_create(&cfg);
-			CHECK(log_instance);
+			CHECK(logger_create(&cfg, &log_instance) == 0);
+			CHECK(log_instance != NULL);
 		}
 	}
 	if (use_console)
@@ -449,7 +455,7 @@ static void cancel_case(void)
 	}
 	if (log_instance) {
 		CHECK(!logger_flush_instance_status(log_instance));
-		CHECK(!logger_destroy_status(log_instance));
+		CHECK(!logger_destroy(&log_instance));
 		log_instance = NULL;
 	}
 	CHECK(logger_process_object_count() == 0);
@@ -458,8 +464,8 @@ static void cancel_case(void)
 static void reentry_case(const char *origin)
 {
 	logger_config_t cfg = local_cfg(!strcmp(origin, "worker"));
-	log_instance = logger_create(&cfg);
-	CHECK(log_instance);
+	CHECK(logger_create(&cfg, &log_instance) == 0);
+	CHECK(log_instance != NULL);
 	reentry_mode = 1;
 	if (!strcmp(origin, "global-worker")) {
 		unlink("global-scope.log");
@@ -483,14 +489,15 @@ static void reentry_case(const char *origin)
 			logger_config_t other = config_for("create.log", 1);
 			unlink("create.log");
 			atomic_store(&point, P_CREATE);
-			logger_t *l = logger_create(&other);
-			CHECK(l);
-			CHECK(!logger_destroy_status(l));
+			logger_t *l = NULL;
+			CHECK(logger_create(&other, &l) == 0);
+			CHECK(l != NULL);
+			CHECK(!logger_destroy(&l));
 		} else if (!strcmp(origin, "destroy")) {
 			atomic_store(&point, P_CLOSE);
-			CHECK(!logger_destroy_status(log_instance));
-			log_instance = logger_create(&cfg);
-			CHECK(log_instance);
+			CHECK(!logger_destroy(&log_instance));
+			CHECK(logger_create(&cfg, &log_instance) == 0);
+			CHECK(log_instance != NULL);
 		} else if (!strcmp(origin, "reopen")) {
 			atomic_store(&point, P_REOPEN);
 			CHECK(!logger_reopen_instance(log_instance));
@@ -507,7 +514,7 @@ static void reentry_case(const char *origin)
 	}
 	CHECK(atomic_load(&entered));
 	LOGGER_INFO(log_instance, "test", "still-usable");
-	CHECK(!logger_destroy_status(log_instance));
+	CHECK(!logger_destroy(&log_instance));
 	log_instance = NULL;
 	CHECK(file_contains("scope.log", "still-usable"));
 	CHECK(!logger_process_object_count());
@@ -515,8 +522,8 @@ static void reentry_case(const char *origin)
 static void contract_case(void)
 {
 	logger_config_t cfg = local_cfg(0);
-	log_instance = logger_create(&cfg);
-	CHECK(log_instance);
+	CHECK(logger_create(&cfg, &log_instance) == 0);
+	CHECK(log_instance != NULL);
 	if (!strcmp(scenario, "restore-policy")) {
 		int old, observed, type;
 		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
@@ -543,11 +550,12 @@ static void contract_case(void)
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
 					     NULL));
 		errno = 0;
-		logger_t *l = logger_create(&other);
+		logger_t *l = NULL;
+		int create_rc = logger_create(&other, &l);
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL));
 		if (l)
-			logger_destroy(l);
-		CHECK(l == NULL && errno == ENOTSUP);
+			logger_destroy(&l);
+		CHECK(l == NULL && create_rc == -ENOTSUP);
 		CHECK(access("nested.log", F_OK) != 0);
 	} else if (!strcmp(scenario, "setup-failure")) {
 		actor = 1;
@@ -605,7 +613,7 @@ static void contract_case(void)
 		CHECK(file_contains("scope.log", "level-unchanged"));
 	} else
 		CHECK(!"unknown contract scenario");
-	CHECK(!logger_destroy_status(log_instance));
+	CHECK(!logger_destroy(&log_instance));
 	log_instance = NULL;
 }
 int main(int argc, char **argv)

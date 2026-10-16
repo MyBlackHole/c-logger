@@ -225,8 +225,8 @@ int main(int argc, char **argv)
 		c.rotation.mode = LOGGER_ROTATE_SIZE;
 		c.rotation.max_file_size = 1;
 	}
-	instance = logger_create(&c);
-	CHECK(instance);
+	CHECK(logger_create(&c, &instance) == 0);
+	CHECK(instance != NULL);
 	output_fd = instance->file_backend.fd;
 	if (!strcmp(argv[1], "spill-policy")) {
 		spill_policy();
@@ -381,7 +381,7 @@ int main(int argc, char **argv)
 	       (unsigned long long)io.failed_records,
 	       (unsigned long long)dropped(&metrics), io.first_error,
 	       diagnostics.observation_flags);
-	logger_destroy(instance);
+	logger_destroy(&instance);
 	leave_temp(dir);
 	return 0;
 }

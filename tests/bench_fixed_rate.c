@@ -318,10 +318,11 @@ int main(int argc, char **argv)
 	config.rotation.mode = LOGGER_ROTATE_NONE;
 	config.flush_level = LOGGER_OFF;
 	config.overflow[LOGGER_INFO] = LOGGER_OVERFLOW_DROP;
-	logger_t *logger = logger_create(&config);
-	if (!logger) {
+	logger_t *logger = NULL;
+	int create_rc = logger_create(&config, &logger);
+	if (create_rc) {
 		fprintf(stderr, "{\"error\":\"logger_create\",\"errno\":%d}\n",
-			errno);
+			-create_rc);
 		fclose(raw);
 		return 3;
 	}
@@ -335,8 +336,8 @@ int main(int argc, char **argv)
 			       (unsigned)seconds, payload, file_backend, raw);
 	/* 销毁 /dev/null 时的 fsync EINVAL 不属于输出失败，单独记录状态。
 	 * 文件后端则必须成功关闭。 */
-	int close_rc = logger_destroy_status(logger);
-	int close_errno = close_rc ? errno : 0;
+	int close_rc = logger_destroy(&logger);
+	int close_errno = -close_rc;
 	printf("{\"close_rc\":%d,\"close_errno\":%d}\n", close_rc, close_errno);
 	int raw_close_rc = fclose(raw);
 	return rc || raw_close_rc ||

@@ -10,10 +10,11 @@ int main(void)
 	l.async_mode = 0;
 	l.rotation.mode = LOGGER_ROTATE_NONE;
 	l.file_mode = 0640;
-	logger_t *x = logger_create(&l);
+	logger_t *x = NULL;
+	(void)logger_create(&l, &x);
 	if (!x)
 		return 1;
-	logger_destroy(x);
+	logger_destroy(&x);
 	struct stat st;
 	if (stat("./perm.log", &st))
 		return 2;

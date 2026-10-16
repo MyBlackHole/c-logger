@@ -26,8 +26,9 @@ int main(int argc, char **argv)
 	cfg.async_mode = 1; /* 宿主显式选择后台日志。 */
 	cfg.queue_capacity = 1024;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
-	logger = logger_create(&cfg);
-	if (!logger) {
+	int create_rc = logger_create(&cfg, &logger);
+	if (create_rc) {
+		errno = -create_rc;
 		perror("logger_create");
 		goto cleanup;
 	}
@@ -65,8 +66,10 @@ cleanup:
 		result = 1;
 	}
 	/* Logger 库与宿主回调代码保持加载，直到销毁之后。 */
-	if (logger_destroy_status(logger)) {
-		perror("logger_destroy_status");
+	int destroy_rc = logger_destroy(&logger);
+	if (destroy_rc) {
+		errno = -destroy_rc;
+		perror("logger_destroy");
 		result = 1;
 	}
 	logger = NULL; /* 即使普通拆除 I/O 出错也已释放 */

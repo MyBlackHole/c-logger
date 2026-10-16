@@ -78,9 +78,11 @@ int main(int argc, char **argv)
 
 	size_t allocated;
 	void *base = boundary(bytes, n, &allocated);
-	logger_t *l = logger_create(
-		(const logger_config_t *)((char *)base + allocated / 2 - n));
-	CHECK(!l && errno == expected);
+	logger_t *l = NULL;
+	int create_rc = logger_create(
+		(const logger_config_t *)((char *)base + allocated / 2 - n),
+		&l);
+	CHECK(!l && create_rc == -expected);
 	CHECK(connects == (expected == ENOENT ? 1 : 0));
 	CHECK(!munmap(base, allocated));
 	printf("uapi config read passed: %s current=%zu\n",

@@ -62,3 +62,4 @@ docs/RELEASE_NOTES_2.0.0.md
 docs/v2/PROCESS_BOOTSTRAP.md
 docs/v2/FORK_FD_SNAPSHOT.md
 docs/v2/FORK_RUNTIME.md
+docs/v2/LIFECYCLE_API.md

@@ -58,7 +58,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "global")) {
 		CHECK(logger_init(&c) == 0);
 	} else {
-		log = logger_create(&c);
+		CHECK(logger_create(&c, &log) == 0);
 		CHECK(log != NULL);
 	}
 
@@ -157,7 +157,7 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "global"))
 		CHECK(logger_shutdown_status() == 0);
 	else if (strcmp(mode, "bootstrap"))
-		CHECK(logger_destroy_status(log) == 0);
+		CHECK(logger_destroy(&log) == 0);
 	if (saved_stderr >= 0) {
 		CHECK(dup2(saved_stderr, STDERR_FILENO) == STDERR_FILENO);
 		CHECK(close(saved_stderr) == 0);

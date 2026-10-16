@@ -12,15 +12,19 @@ int main(void)
 	storage_cfg.file_path = "./storage.log";
 	storage_cfg.ident = "storage";
 
-	logger_t *network = logger_create(&net_cfg);
-	if (!network) {
+	logger_t *network = NULL;
+	int rc = logger_create(&net_cfg, &network);
+	if (rc) {
+		errno = -rc;
 		perror("logger_create network");
 		return 1;
 	}
-	logger_t *storage = logger_create(&storage_cfg);
-	if (!storage) {
+	logger_t *storage = NULL;
+	rc = logger_create(&storage_cfg, &storage);
+	if (rc) {
+		errno = -rc;
 		perror("logger_create storage");
-		logger_destroy(network);
+		logger_destroy(&network);
 		return 1;
 	}
 
@@ -30,7 +34,12 @@ int main(void)
 	LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
 
 	/* 销毁前停止并回收使用这些指针的每个线程。 */
-	logger_destroy(storage);
-	logger_destroy(network);
+	int storage_rc = logger_destroy(&storage);
+	int network_rc = logger_destroy(&network);
+	if (storage_rc || network_rc) {
+		errno = storage_rc ? -storage_rc : -network_rc;
+		perror("logger_destroy");
+		return 1;
+	}
 	return 0;
 }

@@ -159,21 +159,22 @@ static void emit(logger_t *l, const char *text)
 }
 static void finish(logger_t *l)
 {
-	logger_destroy(l);
+	logger_destroy(&l);
 	CHECK(logger_process_object_count() == 0);
 }
 static int child_probe(int argc, char **argv)
 {
 	CHECK(argc == 5);
 	logger_config_t c = config(argv[2], LOGGER_ROTATE_NONE);
-	logger_t *l = logger_create(&c);
-	int error = errno, busy = !strcmp(argv[3], "busy");
+	logger_t *l = NULL;
+	int create_rc = logger_create(&c, &l);
+	int error = -create_rc, busy = !strcmp(argv[3], "busy");
 	CHECK(busy ? !l && error == EBUSY : l != NULL);
 	if (l)
 		emit(l, "child");
 	if (!strcmp(argv[4], "crash"))
 		_exit(0);
-	logger_destroy(l);
+	logger_destroy(&l);
 	return 0;
 }
 static void probe(const char *path, const char *expect, const char *exit_mode)
@@ -198,12 +199,13 @@ static void probe(const char *path, const char *expect, const char *exit_mode)
 static void *race_create(void *p)
 {
 	logger_config_t *c = p;
-	logger_t *l = logger_create(c);
+	logger_t *l = NULL;
+	int create_rc = logger_create(c, &l);
 	if (l) {
 		CHECK(atomic_fetch_add(&wins, 1) == 0);
 		winner = l;
 	} else {
-		CHECK(errno == EBUSY);
+		CHECK(create_rc == -EBUSY);
 		atomic_fetch_add(&failures, 1);
 	}
 	return NULL;
@@ -225,13 +227,15 @@ static void owner(const char *scenario)
 	}
 	if (!strcmp(scenario, "owner-exit")) {
 		probe("out.log", "free", "crash");
-		logger_t *l = logger_create(&c);
-		CHECK(l);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		finish(l);
 		return;
 	}
-	logger_t *a = logger_create(&c);
-	CHECK(a);
+	logger_t *a = NULL;
+	CHECK(logger_create(&c, &a) == 0);
+	CHECK(a != NULL);
 	emit(a, "owner");
 	if (!strcmp(scenario, "owner-process")) {
 		probe("out.log", "busy", "close");
@@ -245,13 +249,14 @@ static void owner(const char *scenario)
 			CHECK(fd >= 0);
 			CHECK(close(fd) == 0);
 		}
-		logger_t *b = logger_create(&c);
-		CHECK(!b && errno == EBUSY);
+		logger_t *b = NULL;
+		CHECK(logger_create(&c, &b) == -EBUSY && !b);
 	}
 	emit(a, "still-owner");
 	finish(a);
-	logger_t *b = logger_create(&c);
-	CHECK(b);
+	logger_t *b = NULL;
+	CHECK(logger_create(&c, &b) == 0);
+	CHECK(b != NULL);
 	finish(b);
 	probe("out.log", "free", "close");
 }
@@ -313,8 +318,8 @@ static void invalid_path(const char *scenario)
 		CHECK(0);
 	unsigned count = fds();
 	for (int i = 0; i < 20; ++i) {
-		logger_t *l = logger_create(&c);
-		CHECK(!l && errno == expected);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == -expected && !l);
 		CHECK(fds() == count);
 	}
 	CHECK(logger_process_object_count() == 0);
@@ -327,8 +332,9 @@ static void invalid_path(const char *scenario)
 static void reopen_case(const char *scenario)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_EXTERNAL);
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "first");
 	old_fd = l->file_backend.fd;
 	CHECK(rename("out.log", "old.log") == 0);
@@ -405,8 +411,9 @@ static void collision(const char *scenario)
 	const char *target = "out.20231114T221320.000000Z.log";
 	put(target, "do-not-overwrite");
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "first");
 	if (!strcmp(scenario, "collision-limit"))
 		rename_error = EEXIST;
@@ -453,8 +460,9 @@ static void rotation_failure(const char *scenario)
 {
 	fixed_time = 1;
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "first");
 	old_fd = l->file_backend.fd;
 	if (!strcmp(scenario, "rotation-new-open"))
@@ -505,8 +513,9 @@ static void cwd_case(int rename_parent)
 {
 	CHECK(mkdir("a", 0700) == 0 && mkdir("b", 0700) == 0);
 	logger_config_t c = config("a/out.log", LOGGER_ROTATE_SIZE);
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "old");
 	if (rename_parent)
 		CHECK(rename("a", "moved") == 0);
@@ -523,8 +532,9 @@ static void cwd_case(int rename_parent)
 static void stale_active(void)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "old");
 	CHECK(rename("out.log", "old.log") == 0);
 	put("out.log", "new-owner-data");
@@ -548,8 +558,9 @@ static void retention_case(int error)
 	      0);
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
 	c.rotation.retention_days = 1;
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	emit(l, "first");
 	unlink_error = error;
 	int rc = logger_log_sync_status(l, LOGGER_INFO, "m", __FILE__, __LINE__,
@@ -569,18 +580,19 @@ static void metrics_contract(void)
 	logger_config_t none = LOGGER_DEFAULT_CONFIG();
 	none.outputs = LOGGER_OUT_STDERR;
 	none.async_mode = 0;
-	logger_t *l = logger_create(&none);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&none, &l) == 0);
+	CHECK(l != NULL);
 	logger_file_metrics_t metrics;
 	memset(&metrics, 0x5a, sizeof(metrics));
 	errno = 0;
 	CHECK(logger_get_file_metrics(l, &metrics) == -1 && errno == ENOTSUP);
 	CHECK(((unsigned char *)&metrics)[0] == 0x5a);
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 
 	logger_config_t file = config("out.log", LOGGER_ROTATE_NONE);
-	l = logger_create(&file);
-	CHECK(l);
+	CHECK(logger_create(&file, &l) == 0);
+	CHECK(l != NULL);
 	memset(&metrics, 0xa5, sizeof(metrics));
 	CHECK(logger_get_file_metrics(l, &metrics) == 0);
 	CHECK(!metrics.write_operations && !metrics.failed_write_operations &&
@@ -668,25 +680,31 @@ int main(int argc, char **argv)
 	else if (!strcmp(s, "eintr")) {
 		flock_eintr = 1;
 		logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
-		logger_t *l = logger_create(&c);
-		CHECK(l);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		sync_error = 4;
 		emit(l, "retry");
 		finish(l);
 	} else if (!strcmp(s, "device-shared")) {
 		logger_config_t c = config("/dev/null", LOGGER_ROTATE_NONE);
-		logger_t *a = logger_create(&c), *b = logger_create(&c);
+		logger_t *a = NULL;
+		(void)logger_create(&c, &a);
+		logger_t *b = NULL;
+		(void)logger_create(&c, &b);
 		CHECK(a && b);
-		logger_destroy(a);
-		logger_destroy(b);
+		logger_destroy(&a);
+		logger_destroy(&b);
 	} else if (!strcmp(s, "init-cleanup")) {
 		logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
 		for (int i = 0; i < 100; ++i) {
 			data_open_error = EMFILE;
-			CHECK(!logger_create(&c) && errno == EMFILE);
+			CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
+			      -EMFILE);
 			data_open_error = 0;
-			logger_t *l = logger_create(&c);
-			CHECK(l);
+			logger_t *l = NULL;
+			CHECK(logger_create(&c, &l) == 0);
+			CHECK(l != NULL);
 			finish(l);
 		}
 	} else

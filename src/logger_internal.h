@@ -94,7 +94,7 @@ struct logger {
  * 拆除一旦开始，旧指针都不能被调用者当作可重试对象。
  */
 int logger_dispose_internal(logger_t *);
-/* 供控制方调用正常 logger_destroy_status() 入口（含链接时包装函数）
+/* 供控制方调用正常 logger_destroy() 入口（含链接时包装函数）
  * 使用的当前线程最终释放回执。调用前重置；只有完成最终存活对象计数释放
  * 和 free 后才设置回执。
  */
