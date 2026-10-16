@@ -6,7 +6,7 @@
  */
 static int rejected(int rc, int error)
 {
-	return rc == -1 && errno == error;
+	return rc == -error && errno == 0;
 }
 
 int main(void)
@@ -19,10 +19,10 @@ int main(void)
 		return 1;
 
 	errno = 0;
-	if (!rejected(logger_flush_instance_status(NULL), EINVAL))
+	if (!rejected(logger_flush(NULL), EINVAL))
 		return 2;
 	errno = 0;
-	if (!rejected(logger_reopen_instance(NULL), EINVAL))
+	if (!rejected(logger_reopen(NULL), EINVAL))
 		return 3;
 
 	/* 此兼容状态入口不能被误改为 POSIX 风格 -1 + errno。 */
@@ -32,9 +32,9 @@ int main(void)
 	if (rc != -EINVAL)
 		return 4;
 
-	/* 默认读取保留 POSIX 风格；默认绑定使用负错误码。 */
+	/* 默认刷新与绑定均使用负错误码，并保留调用方 errno。 */
 	errno = 0;
-	if (!rejected(logger_flush_status(), ENODEV))
+	if (!rejected(logger_default_flush(), ENODEV))
 		return 5;
 	errno = 0;
 	if (logger_default_set(NULL, NULL) != 0 || errno != 0)
@@ -52,7 +52,7 @@ int main(void)
 	(void)logger_create(&cfg, &instance);
 	if (!instance)
 		return 8;
-	if (logger_flush_instance_status(instance))
+	if (logger_flush(instance))
 		return 9;
 	errno = EDOM;
 	if (logger_destroy(&instance) || instance != NULL || errno != EDOM)

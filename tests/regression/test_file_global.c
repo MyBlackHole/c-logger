@@ -49,13 +49,13 @@ int main(int argc, char **argv)
 	wait_flag(&entered);
 	logger_t *next = NULL;
 	CHECK(logger_create(&cfg, &next) == -EBUSY && !next);
-	CHECK(logger_flush_status() == -1 && errno == ENODEV);
+	CHECK(logger_default_flush() == -ENODEV);
 	atomic_store(&released, 1);
 	CHECK(pthread_join(t, NULL) == 0 && destroy_result == 0 && !owner);
 	CHECK(logger_create(&cfg, &next) == 0);
 	CHECK(logger_default_set(NULL, next) == 0);
 	LOG_INFO("new");
-	CHECK(logger_flush_status() == 0);
+	CHECK(logger_default_flush() == 0);
 	CHECK(logger_default_set(next, NULL) == 0);
 	CHECK(logger_destroy(&next) == 0);
 	CHECK(file_contains("global.log", "old") &&

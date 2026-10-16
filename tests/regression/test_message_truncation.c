@@ -24,9 +24,9 @@ static void emit(logger_t *log, const char *mode, const char *text)
 static void flush(logger_t *log, const char *mode)
 {
 	if (!strcmp(mode, "global"))
-		CHECK(logger_flush_status() == 0);
+		CHECK(logger_default_flush() == 0);
 	else if (strcmp(mode, "bootstrap"))
-		CHECK(logger_flush_instance_status(log) == 0);
+		CHECK(logger_flush(log) == 0);
 }
 
 int main(int argc, char **argv)

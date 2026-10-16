@@ -18,9 +18,7 @@ logger_create
 logger_destroy
 logger_dropped
 logger_flush
-logger_flush_instance
-logger_flush_instance_status
-logger_flush_status
+logger_default_flush
 logger_get_global_diagnostics
 logger_get_global_file_metrics
 logger_get_global_io_metrics
@@ -39,8 +37,8 @@ logger_log_sync_status
 logger_mask_secret
 logger_process_init
 logger_redact
+logger_default_reopen
 logger_reopen
-logger_reopen_instance
 logger_set_instance_level
 logger_set_level
 logger_default_set

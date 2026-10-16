@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 Xmake 当前 C 编译器核对新接口正例与三种旧接口误用。"""
+"""用 Xmake 当前 C 编译器核对新接口正例与已移除接口误用。"""
 import argparse
 import os
 from pathlib import Path
@@ -33,6 +33,20 @@ def main():
         cases["removed-" + symbol] = (
             "void f(void) { (void)" + call + "; }",
             "void f(void) { (void)logger_default_set(NULL, NULL); }", symbol)
+    for symbol, call in (("logger_flush_status", "logger_flush_status()"),
+                         ("logger_flush_instance", "logger_flush_instance(NULL)"),
+                         ("logger_flush_instance_status", "logger_flush_instance_status(NULL)"),
+                         ("logger_reopen_instance", "logger_reopen_instance(NULL)")):
+        cases["removed-" + symbol] = (
+            "void f(void) { (void)" + call + "; }",
+            "void f(void) { (void)logger_flush(NULL); }", symbol)
+    for symbol in ("logger_flush", "logger_reopen"):
+        cases["explicit-" + symbol] = (
+            "void f(void) { (void)" + symbol + "(); }",
+            "void f(void) { (void)" + symbol + "(NULL); }", symbol)
+        cases["status-" + symbol] = (
+            "void (*f)(logger_t *) = " + symbol + ";",
+            "int (*f)(logger_t *) = " + symbol + ";", symbol)
     env = dict(os.environ, LC_ALL="C")
     with tempfile.TemporaryDirectory(prefix="logger-api-types-") as folder:
         path = Path(folder) / "contract.c"

@@ -22,7 +22,7 @@ int main(void)
 		return 3;
 	if (p == 0) {
 		LOG_INFO("must safely disappear");
-		if (logger_flush_status() != -1 || errno != ECHILD)
+		if (logger_default_flush() != -ECHILD)
 			_exit(10);
 		if (logger_default_set(NULL, NULL) != -ECHILD)
 			_exit(11);

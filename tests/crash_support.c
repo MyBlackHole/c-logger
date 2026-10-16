@@ -154,7 +154,7 @@ void crash_fixture_write(const char *point)
 	CHECK(logger != NULL);
 	for (unsigned i = 0; i < BASELINE_RECORDS; ++i)
 		emit(logger, i);
-	CHECK(logger_flush_instance_status(logger) == 0);
+	CHECK(logger_flush(logger) == 0);
 	verify_records(point, 0, 1);
 	/* 强制终止前不进行优雅关闭：控制方只在基线成功写入并刷新确认后
 	 * 才收到切断标记。
@@ -305,7 +305,7 @@ void crash_fixture_recover(const char *point)
 		errno = 0;
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EBUSY);
 		emit(logger, BASELINE_RECORDS + 1u + i);
-		CHECK(logger_flush_instance_status(logger) == 0);
+		CHECK(logger_flush(logger) == 0);
 		CHECK(logger_destroy(&logger) == 0);
 		crash_fixture_verify(point, i + 1u);
 	}

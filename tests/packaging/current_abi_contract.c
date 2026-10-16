@@ -162,7 +162,6 @@ ABI_FIELD(logger_syslog_metrics_t, connected, 88);
 ABI_FIELD(logger_syslog_metrics_t, last_error, 92);
 ABI_FIELD(logger_syslog_metrics_t, last_close_error, 96);
 
-
 ABI_TYPE(console_config_t, 16, 4);
 ABI_ASSERT(CONSOLE_CONFIG_SIZE == 16);
 ABI_FIELD(console_config_t, struct_size, 0);
@@ -215,7 +214,6 @@ ABI_ASSERT(LOGGER_SYSLOG_FACILITY_LOCAL6 == 176);
 ABI_ASSERT(LOGGER_SYSLOG_FACILITY_LOCAL7 == 184);
 ABI_ASSERT(LOGGER_CONFIG_VERSION == 1);
 
-
 ABI_ASSERT(CONSOLE_COLOR_AUTO == 0);
 ABI_ASSERT(CONSOLE_COLOR_ALWAYS == 1);
 ABI_ASSERT(CONSOLE_COLOR_NEVER == 2);
@@ -225,7 +223,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* 精确公开函数类型契约：45 个当前生产导出。 */
+/* 精确公开函数类型契约：43 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -247,10 +245,8 @@ ABI_FN(logger_process_init, int, void);
 ABI_FN(logger_create, int, const logger_config_t *, logger_t **);
 ABI_FN(logger_destroy, int, logger_t **);
 ABI_FN(logger_dropped, uint64_t, const logger_t *);
-ABI_FN(logger_flush, void, void);
-ABI_FN(logger_flush_instance, void, logger_t *);
-ABI_FN(logger_flush_instance_status, int, logger_t *);
-ABI_FN(logger_flush_status, int, void);
+ABI_FN(logger_flush, int, logger_t *);
+ABI_FN(logger_default_flush, int, void);
 ABI_FN(logger_get_global_diagnostics, void, logger_diagnostics_t *);
 ABI_FN(logger_get_global_file_metrics, int, logger_file_metrics_t *);
 ABI_FN(logger_get_global_io_metrics, void, logger_io_metrics_t *);
@@ -273,8 +269,8 @@ ABI_FN(logger_log_sync_status, int, logger_t *, logger_level_t, const char *,
        const char *, int, const char *, const char *, ...);
 ABI_FN(logger_mask_secret, int, const char *, char *, size_t, size_t, size_t);
 ABI_FN(logger_redact, const char *, void);
-ABI_FN(logger_reopen, int, void);
-ABI_FN(logger_reopen_instance, int, logger_t *);
+ABI_FN(logger_default_reopen, int, void);
+ABI_FN(logger_reopen, int, logger_t *);
 ABI_FN(logger_set_instance_level, void, logger_t *, logger_level_t);
 ABI_FN(logger_set_level, void, logger_level_t);
 
@@ -304,7 +300,6 @@ static int defaults_match(void)
 	    l.syslog.startup != LOGGER_SYSLOG_START_REQUIRED)
 		return 3;
 
-
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
 	if (c.struct_size != 16 || c.version != 1 ||
 	    c.verbosity != CONSOLE_NORMAL || c.color != CONSOLE_COLOR_AUTO)
@@ -326,6 +321,11 @@ int main(void)
 		return 16;
 	if (logger_destroy(&cold_owner) != -ENODEV || errno != EDOM)
 		return 17;
+	if (logger_flush(NULL) != -ENODEV || errno != EDOM ||
+	    logger_reopen(NULL) != -ENODEV || errno != EDOM ||
+	    logger_default_flush() != -ENODEV || errno != EDOM ||
+	    logger_default_reopen() != -ENODEV || errno != EDOM)
+		return 21;
 	int (*initialize)(void) = logger_process_init;
 	errno = EDOM;
 	if (initialize() != 0 || errno != EDOM)
@@ -344,6 +344,15 @@ int main(void)
 	int (*set_default)(logger_t *, logger_t *) = logger_default_set;
 	if (set_default(NULL, owner) || errno != EDOM)
 		return 18;
+	/* 安装后的 C/C++ 使用全部四个新控制签名；stderr 无文件可重开。 */
+	int (*flush)(logger_t *) = logger_flush;
+	int (*reopen)(logger_t *) = logger_reopen;
+	int (*default_flush)(void) = logger_default_flush;
+	int (*default_reopen)(void) = logger_default_reopen;
+	if (flush(owner) || errno != EDOM || default_flush() || errno != EDOM ||
+	    reopen(owner) != -EINVAL || errno != EDOM ||
+	    default_reopen() != -EINVAL || errno != EDOM)
+		return 22;
 	if (destroy(&owner) != -EBUSY || !owner || errno != EDOM)
 		return 19;
 	if (set_default(owner, NULL) || errno != EDOM)

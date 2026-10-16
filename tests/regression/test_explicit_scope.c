@@ -81,11 +81,11 @@ static void nested_call(void)
 					     __FILE__, __LINE__, __func__,
 					     "nested") == -EDEADLK);
 	else if (!strcmp(nested, "flush"))
-		CHECK(logger_flush_instance_status(log_instance) == -1);
+		CHECK(logger_flush(log_instance) == -EDEADLK);
 	else if (!strcmp(nested, "flush-void"))
-		logger_flush_instance(log_instance);
+		logger_flush(log_instance);
 	else if (!strcmp(nested, "reopen"))
-		CHECK(logger_reopen_instance(log_instance) == -1);
+		CHECK(logger_reopen(log_instance) == -EDEADLK);
 	else if (!strcmp(nested, "destroy"))
 		CHECK(logger_destroy(&log_instance) == -EDEADLK);
 	else if (!strcmp(nested, "destroy-void"))
@@ -146,7 +146,9 @@ static void nested_call(void)
 		CHECK(!"unknown nested API");
 	CHECK(errno ==
 	      ((!strcmp(nested, "create") || !strcmp(nested, "destroy") ||
-		!strcmp(nested, "destroy-void") || !strcmp(nested, "global")) ?
+		!strcmp(nested, "destroy-void") || !strcmp(nested, "global") ||
+		!strcmp(nested, "flush") || !strcmp(nested, "flush-void") ||
+		!strcmp(nested, "reopen")) ?
 		       0 :
 		       EDEADLK));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
@@ -302,7 +304,7 @@ static void application_cleanup(void *unused)
 		CHECK(!console_print("cleanup-can-output\n"));
 	} else {
 		LOGGER_INFO(log_instance, "cleanup", "cleanup-can-log");
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 	}
 	atomic_store(&cleanup_seen, 1);
 }
@@ -345,11 +347,11 @@ static void *caller(void *unused)
 		log_instance = NULL;
 		CHECK(!logger_destroy(&owned));
 	} else if (!strcmp(scenario, "flush"))
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 	else if (!strcmp(scenario, "flush-void"))
-		logger_flush_instance(log_instance);
+		logger_flush(log_instance);
 	else if (!strcmp(scenario, "reopen"))
-		CHECK(!logger_reopen_instance(log_instance));
+		CHECK(!logger_reopen(log_instance));
 	else if (!strcmp(scenario, "syslog-metrics")) {
 		logger_syslog_metrics_t metrics;
 		CHECK(!logger_get_syslog_metrics(log_instance, &metrics));
@@ -458,7 +460,7 @@ static void cancel_case(void)
 		CHECK(atomic_load(&file_metrics_locks) == 1);
 	}
 	if (log_instance) {
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 		CHECK(!logger_destroy(&log_instance));
 		log_instance = NULL;
 	}
@@ -478,7 +480,7 @@ static void reentry_case(const char *origin)
 		atomic_store(&hold_worker, 1);
 		atomic_store(&release_worker, 1);
 		LOG_INFO("global-worker-outer");
-		CHECK(!logger_flush_status());
+		CHECK(!logger_default_flush());
 		LOG_INFO("global-still-usable");
 		CHECK(!fixture_default_destroy(&default_owner));
 		CHECK(file_contains("global-scope.log", "global-still-usable"));
@@ -486,7 +488,7 @@ static void reentry_case(const char *origin)
 		atomic_store(&hold_worker, 1);
 		atomic_store(&release_worker, 1);
 		LOGGER_INFO(log_instance, "test", "outer");
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 	} else {
 		actor = 1;
 		if (!strcmp(origin, "create")) {
@@ -504,7 +506,7 @@ static void reentry_case(const char *origin)
 			CHECK(log_instance != NULL);
 		} else if (!strcmp(origin, "reopen")) {
 			atomic_store(&point, P_REOPEN);
-			CHECK(!logger_reopen_instance(log_instance));
+			CHECK(!logger_reopen(log_instance));
 		} else if (!strcmp(origin, "console")) {
 			atomic_store(&point, P_STDIO);
 			CHECK(!console_print("outer\n"));
@@ -534,7 +536,7 @@ static void contract_case(void)
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
 					     &type));
 		LOGGER_INFO(log_instance, "test", "disabled");
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 		CHECK(!console_print("disabled\n"));
 		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					      &observed));
@@ -544,7 +546,7 @@ static void contract_case(void)
 		CHECK(observed == PTHREAD_CANCEL_ASYNCHRONOUS);
 		CHECK(!pthread_setcanceltype(type, NULL));
 		CHECK(!pthread_setcancelstate(old, NULL));
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					      &observed));
 		CHECK(observed == PTHREAD_CANCEL_ENABLE);
@@ -565,9 +567,8 @@ static void contract_case(void)
 		actor = 1;
 		atomic_store(&cancel_setup_fail, 1);
 		errno = 0;
-		CHECK(logger_flush_instance_status(log_instance) == -1 &&
-		      errno == EINVAL);
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(logger_flush(log_instance) == -EINVAL);
+		CHECK(!logger_flush(log_instance));
 		atomic_store(&cancel_setup_fail, 1);
 		errno = 0;
 		CHECK(console_print("no-output") == -1 && errno == EINVAL);
@@ -613,7 +614,7 @@ static void contract_case(void)
 		logger_set_instance_level(log_instance, (logger_level_t)-1);
 		CHECK(errno == EINVAL);
 		LOGGER_INFO(log_instance, "test", "level-unchanged");
-		CHECK(!logger_flush_instance_status(log_instance));
+		CHECK(!logger_flush(log_instance));
 		CHECK(file_contains("scope.log", "level-unchanged"));
 	} else
 		CHECK(!"unknown contract scenario");

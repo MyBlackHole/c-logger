@@ -56,7 +56,7 @@ int main(void)
 	CHECK(!logger_get_syslog_metrics(l, &io));
 	CHECK(io.failed_records == 2);
 	atomic_store(&hold_worker, 0);
-	CHECK(logger_flush_instance_status(l) == -1 && errno == EAGAIN);
+	CHECK(logger_flush(l) == -EAGAIN);
 	CHECK(!logger_get_syslog_metrics(l, &io));
 	CHECK(io.failed_records == 5 && io.backpressure_records == 5);
 	logger_io_metrics_t all;

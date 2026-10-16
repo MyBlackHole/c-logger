@@ -187,6 +187,14 @@ void __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 		if (errno != ECHILD) \
 			_exit(code); \
 	} while (0)
+/* 新状态接口的入口拒绝不得污染调用方 errno。 */
+#define CHILD_STATUS(call, code)                        \
+	do {                                            \
+		errno = EDOM;                           \
+		if ((call) != -ECHILD || errno != EDOM) \
+			_exit(code);                    \
+	} while (0)
+
 static void child_guard_matrix(void)
 {
 	strict_child = 1;
@@ -197,8 +205,8 @@ static void child_guard_matrix(void)
 	if (logger_create(&cfg, &(logger_t *){ NULL }) != -ECHILD)
 		_exit(11);
 	CHILD_VOID(LOG_INFO("INHERITED_FORBIDDEN"), 14);
-	CHILD_POSIX(logger_flush_status(), 15);
-	CHILD_POSIX(logger_reopen(), 16);
+	CHILD_STATUS(logger_default_flush(), 15);
+	CHILD_STATUS(logger_default_reopen(), 16);
 	CHILD_VOID(logger_set_level(LOGGER_DEBUG), 17);
 	if (logger_default_set(NULL, NULL) != -ECHILD)
 		_exit(18);
@@ -223,9 +231,12 @@ static void child_guard_matrix(void)
 	if (logger_log_sync_status(l, LOGGER_INFO, "fork", NULL, 0, NULL,
 				   "forbidden") != -ECHILD)
 		_exit(25);
-	CHILD_POSIX(logger_flush_instance_status(l), 26);
-	CHILD_VOID(logger_flush_instance(l), 27);
-	CHILD_POSIX(logger_reopen_instance(l), 28);
+	CHILD_STATUS(logger_flush(l), 26);
+	errno = EDOM;
+	(void)logger_flush(l);
+	if (errno != EDOM)
+		_exit(27);
+	CHILD_STATUS(logger_reopen(l), 28);
 	CHILD_VOID(logger_set_instance_level(l, LOGGER_ERROR), 31);
 	CHILD_VOID(logger_get_metrics(l, &m), 32);
 	CHILD_VOID(logger_get_io_metrics(l, &io), 33);
@@ -432,7 +443,7 @@ int main(int argc, char **argv)
 			if (!l)
 				_exit(10);
 			LOGGER_INFO(l, "child", "PREFORK_CHILD");
-			if (logger_flush_instance_status(l))
+			if (logger_flush(l))
 				_exit(11);
 			logger_destroy(&l);
 			_exit(0);
@@ -520,7 +531,7 @@ int main(int argc, char **argv)
 	wait_child(p);
 	if (instance) {
 		LOGGER_INFO(instance, "parent", "PARENT_CONTINUES");
-		CHECK(!logger_flush_instance_status(instance));
+		CHECK(!logger_flush(instance));
 		logger_destroy(&instance);
 	}
 	fixture_default_destroy(&default_owner);

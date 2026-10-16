@@ -101,10 +101,10 @@ static void *flush_thread(void *unused)
 	caller = 1;
 	int rc, error;
 	pthread_cleanup_push(cancelled_flush_cleanup, NULL);
-	rc = use_global ? logger_flush_status() :
-			  logger_flush_instance_status(subject);
+	errno = EDOM;
+	rc = use_global ? logger_default_flush() : logger_flush(subject);
 	error = errno;
-	CHECK(rc == -1 && error == EAGAIN);
+	CHECK(rc == -EAGAIN && error == EDOM);
 	pthread_testcancel();
 	pthread_cleanup_pop(0);
 	return NULL;
@@ -206,7 +206,7 @@ static void ordinary_error(int wait_error)
 		expected = EIO;
 	}
 	int before = atomic_load(&sync_calls);
-	CHECK(logger_flush_instance_status(subject) == -1 && errno == expected);
+	CHECK(logger_flush(subject) == -expected);
 	CHECK(!atomic_load(&subject->synchronization_error));
 	CHECK(atomic_load(&sync_calls) > before);
 	CHECK(wait_error ? logger_destroy(&owner) == 0 :

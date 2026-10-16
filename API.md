@@ -6,7 +6,7 @@
 
 
 本文描述 2.0 稳定发布准备中的普通 Logger/Console 接入；当前 ABI 为 SONAME 2 / `LOGGER_2.0`，
-当前45个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
+当前43个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
 [当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)按已有可执行快照整理，待最终固定源码验收；本文不表示已经发布。
 Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅适用于 `release/1.x`。
 `logger_fork_reinit()` 与对应构建选项、兼容头文件已移除。
@@ -47,14 +47,15 @@ int logger_destroy(logger_t **owner);
 [创建与消费式销毁合同](docs/v2/LIFECYCLE_API.md)。
 
 旧创建签名、void 销毁和 `logger_destroy_status` 已移除，不保留适配层。
-当前尚未迁移的其他接口分别保持其合同：实例与全局的刷新/重开/状态查询
-通常为 0/-1+errno，`logger_log_sync_status` 为 0/-errno，void 日志不提供
-逐条接受回执。默认实例已经使用借用合同；其他返回形式的统一仍待后续，
-不能因为本次生命周期接口已迁移就宣称整个 API 已完成。
+刷新与重开已迁移，实例入口为 `logger_flush(owner)`、`logger_reopen(owner)`；
+默认入口为 `logger_default_flush()`、`logger_default_reopen()`。四者均为 **0/-errno**，
+所有正常返回保留调用方 errno。已移除旧 status/instance 包装，不能再调用无参
+`logger_flush()` 或 `logger_reopen()`。记录、指标和 Console 的其余返回形式仍待迁移，
+不宣称全部 API 已统一。详见[控制操作合同](docs/v2/CONTROL_API.md)。
 
-`logger_log`、`logger_log_source`、`LOGGER_LOG/INFO/...` 仍借用指定实例。
-`logger_flush_instance_status` 等待既定完成水位并同步文件，不代表 Syslog
-远端持久化，也不给阻塞 I/O 提供时限。指标仍是并发近似快照。
+刷新继续等待进入时捕获的预留完成水位，并同步文件；不代表 Syslog 远端持久化，
+不给阻塞 I/O 提供时限。重开可能在切换文件后报错；错误返回不保证无副作用。
+指标仍为并发近似快照，不是逐记录接受回执。
 
 ## 诊断与可观测性
 

@@ -911,12 +911,15 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 	return logger_scope_end(&scope, rc);
 }
 
-int logger_reopen_instance(logger_t *l)
+int logger_reopen(logger_t *l)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
-	int rc = !l || !(l->outputs & LOGGER_OUT_FILE) ? -EINVAL : 0;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto out;
+	rc = !l || !(l->outputs & LOGGER_OUT_FILE) ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
@@ -940,7 +943,10 @@ int logger_reopen_instance(logger_t *l)
 			}
 		}
 	}
-	return logger_scope_end(&scope, rc) ? -1 : 0;
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 void logger_note_io_error(logger_t *l, int error)
 {
@@ -1048,12 +1054,15 @@ int logger_sync_outputs_locked(logger_t *l)
 	return error ? -error : 0;
 }
 
-int logger_flush_instance_status(logger_t *l)
+int logger_flush(logger_t *l)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
-	int rc = !l ? -EINVAL : 0;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto out;
+	rc = !l ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
@@ -1088,13 +1097,10 @@ int logger_flush_instance_status(logger_t *l)
 		if (!rc)
 			rc = sync_rc;
 	}
-	return logger_scope_end(&scope, rc) ? -1 : 0;
-}
-
-void logger_flush_instance(logger_t *l)
-{
-	if (l)
-		(void)logger_flush_instance_status(l);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 void logger_set_instance_level(logger_t *l, logger_level_t v)

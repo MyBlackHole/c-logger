@@ -35,7 +35,7 @@ static void *flush_thread(void *p)
 {
 	int *result = p;
 	flushing = 1;
-	*result = logger_flush_instance_status(instance);
+	*result = logger_flush(instance);
 	flushing = 0;
 	atomic_fetch_add(&flushed, 1);
 	return NULL;
@@ -81,7 +81,7 @@ int main(void)
 	CHECK(file_contains("out.log", "before-watermark"));
 	CHECK(!file_contains("out.log", "after-watermark"));
 	atomic_store(&second_release, 1);
-	CHECK(logger_flush_instance_status(instance) == 0);
+	CHECK(logger_flush(instance) == 0);
 	logger_get_io_metrics(instance, &io);
 	CHECK(io.async_completed == 2 && io.emitted_records == 2 &&
 	      io.first_error == 0);

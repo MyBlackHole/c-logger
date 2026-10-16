@@ -59,8 +59,10 @@ cleanup:
 	if (logger) {
 		LOGGER_INFO(logger, "host",
 			    "SDK instances stopped; logger still usable");
-		if (logger_flush_instance_status(logger)) {
-			perror("logger_flush_instance_status");
+		int flush_rc = logger_flush(logger);
+		if (flush_rc) {
+			errno = -flush_rc;
+			perror("logger_flush");
 			result = 1;
 		}
 	}

@@ -363,8 +363,8 @@ static void reopen_case(const char *scenario)
 		       !strcmp(scenario, "reopen-symlink")   ? ELOOP :
 		       close_error_fd >= 0		     ? EIO :
 							       0;
-	int rc = logger_reopen_instance(l);
-	CHECK(expected ? rc == -1 && errno == expected : rc == 0);
+	int rc = logger_reopen(l);
+	CHECK(rc == -expected);
 	logger_file_metrics_t file_metrics;
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.reopen_attempts == 1);
@@ -386,7 +386,7 @@ static void reopen_case(const char *scenario)
 			CHECK(file_size("other.log") == 9);
 			CHECK(unlink("out.log") == 0);
 		}
-		CHECK(logger_reopen_instance(l) == 0);
+		CHECK(logger_reopen(l) == 0);
 		CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 		CHECK(file_metrics.reopen_attempts == 2);
 		CHECK(file_metrics.reopen_successes == 1);
@@ -398,10 +398,9 @@ static void reopen_case(const char *scenario)
 	LOGGER_INFO(l, "test", "new-file");
 	CHECK(file_contains("out.log", "new-file"));
 	if (expected)
-		CHECK(logger_flush_instance_status(l) == -1 &&
-		      errno == expected);
+		CHECK(logger_flush(l) == -expected);
 	else
-		CHECK(logger_flush_instance_status(l) == 0);
+		CHECK(logger_flush(l) == 0);
 	finish(l);
 }
 static void collision(const char *scenario)
@@ -493,7 +492,7 @@ static void rotation_failure(const char *scenario)
 	CHECK(file_size(archive) == size);
 	data_open_error = 0;
 	sync_error = 0;
-	CHECK(logger_reopen_instance(l) == 0 && !l->file_backend.detached);
+	CHECK(logger_reopen(l) == 0 && !l->file_backend.detached);
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.reopen_attempts == 1);
 	CHECK(file_metrics.reopen_successes == 1);
@@ -506,7 +505,7 @@ static void rotation_failure(const char *scenario)
 	LOGGER_INFO(l, "test", "new-active");
 	CHECK(file_contains("out.log", "new-active") &&
 	      file_size(archive) == size);
-	CHECK(logger_flush_instance_status(l) == -1 && errno == expected);
+	CHECK(logger_flush(l) == -expected);
 	finish(l);
 }
 static void cwd_case(int rename_parent)
@@ -522,7 +521,7 @@ static void cwd_case(int rename_parent)
 	CHECK(chdir("b") == 0);
 	fixed_time = 1;
 	emit(l, "after-chdir");
-	CHECK(logger_reopen_instance(l) == 0);
+	CHECK(logger_reopen(l) == 0);
 	finish(l);
 	CHECK(access("a/out.log", F_OK) != 0 && access("out.log", F_OK) != 0);
 	CHECK(chdir("..") == 0);

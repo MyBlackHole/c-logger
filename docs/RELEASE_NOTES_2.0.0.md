@@ -67,7 +67,8 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
 容器，不能据此重用旧指针。详见 [API](../API.md) 的入口拒绝与所有权例外。
 
 `logger_create()` 和 `logger_destroy(&owner)` 采用 0/-errno 并保留调用方 errno。
-`logger_flush_instance_status()`、`logger_shutdown_status()` 仍采用 0/-1+errno；
+`logger_flush(owner)`、`logger_reopen(owner)` 及默认槽的对应接口也采用 0/-errno，
+保留 errno；旧刷新 status/instance 包装与拥有型 Global 关闭接口不再提供。
 `logger_log_sync_status()` 采用 0/-errno。刷新等待既定完成水位并
 同步文件，不给阻塞 I/O 提供硬超时，也不证明本地 Syslog daemon 已持久化。
 部分写入后仍可能报错，应用重试可能重复；未确认尾部没有自动修复或 exactly-once 承诺。

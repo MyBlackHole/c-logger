@@ -37,7 +37,7 @@ static void cold(void)
 	CHECK(logger_create(&bcfg, &b) == 0);
 	CHECK(b != NULL);
 	LOGGER_INFO(a, "init", "BEFORE_FORK");
-	CHECK(logger_flush_instance_status(a) == 0);
+	CHECK(logger_flush(a) == 0);
 
 	pid_t pid = fork();
 	CHECK(pid >= 0);

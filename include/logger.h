@@ -276,7 +276,7 @@ typedef struct {
  *   线程、打开日志或初始化全局门面。
  * - 在实例存续期间，日志记录、级别设置、指标查询和刷新可以并发调用。
  * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
- * 错误约定：create/destroy 使用 0/-errno 并保留 errno；其他入口除非另有说明，
+ * 错误约定：create/destroy、刷新/重开使用 0/-errno 并保留 errno；其他入口除非另有说明，
  * 返回 int 的公开操作成功时返回 0，失败时返回 -1 并设置 errno。
  */
 /* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
@@ -366,7 +366,7 @@ LOGGER_API void logger_log(logger_t *, logger_level_t, const char *,
 	;
 /* 高级同步状态路径。内部返回 0 或负值 errno；
  * 为兼容性保留；新应用代码通常应使用
- * logger_log()/LOG_* 和 logger_flush_instance()。 */
+ * logger_log()/LOG_* 和 logger_flush()。 */
 LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
 				      const char *, int, const char *,
 				      const char *, ...)
@@ -377,17 +377,19 @@ LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
 /* 返回状态的 flush 等待进入时捕获的队列预留水位，包括已经出队但
  * 尚未输出的批次，然后对文件后端执行 fsync。并发调用也可能被纳入；
  * 因队列满而丢弃的记录不属于已接受记录。flush 之前成功的同步日志
- * 调用也在保障范围内。返回 0，或 -1 + errno。此前的输出/同步失败
+ * 调用也在保障范围内。返回 0/-errno，所有正常返回保留调用方 errno。此前的输出/同步失败
  * 仍保留在错误状态中，不会自动清除。
  * 执行器生命周期失败也会以该错误终止正在进行的等待；不会确认或
  * 重放未完成的预留。停止接纳后进入的调用者会收到 ESHUTDOWN。
  * 失败并不证明已静止：销毁实例前须停止并等待所有借用者结束。
  * 这不是远端 syslog 持久化确认，也不提供 I/O 超时。
  * 调用者必须始终保护显式实例的生命周期。 */
-LOGGER_API int logger_flush_instance_status(logger_t *);
-/* 兼容包装函数：执行相同等待，丢弃状态；NULL 时不执行操作。 */
-LOGGER_API void logger_flush_instance(logger_t *);
-LOGGER_API int logger_reopen_instance(logger_t *);
+LOGGER_API int logger_flush(logger_t *);
+/* 重新打开当前实例的文件后端。0/-errno，所有正常返回保留 errno。
+ * 就绪后 NULL 或未选择文件输出返回 -EINVAL；不改变实例所有权。
+ * 返回错误可能发生于文件切换之后，不保证没有 I/O 副作用或可安全重试。
+ */
+LOGGER_API int logger_reopen(logger_t *);
 LOGGER_API void logger_set_instance_level(logger_t *, logger_level_t);
 LOGGER_API uint64_t logger_dropped(const logger_t *);
 LOGGER_API void logger_get_metrics(const logger_t *, logger_metrics_t *);
@@ -415,10 +417,12 @@ LOGGER_API int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *);
  * 函数是否正常返回来判断有无绑定。该接口不是取消点或信号安全接口。
  */
 LOGGER_API int logger_default_set(logger_t *expected, logger_t *replacement);
-/* 全局门面提供相同保证 */
-LOGGER_API int logger_flush_status(void);
-LOGGER_API void logger_flush(void); /* 兼容包装函数；不返回错误 */
-LOGGER_API int logger_reopen(void);
+/* 默认槽借用一个代次执行同样的刷新/重开，均为 0/-errno 并保留 errno。
+ * 空槽 -ENODEV，关闭准入 -EAGAIN，延迟调用代次失效 -ESHUTDOWN。
+ * 返回前释放借用；失败不解绑、不销毁。错误不表示操作没有发生。
+ */
+LOGGER_API int logger_default_flush(void);
+LOGGER_API int logger_default_reopen(void);
 /* fork进程边界：父方继续使用原实例；有效prepare快照的子方先显式
  * logger_process_init，再按子方配置创建新实例。所有继承实例指针在子方
  * 失效，不能记录/刷新/普通销毁；不承诺诊断重初始化后的悬垂指针。

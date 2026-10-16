@@ -43,11 +43,14 @@ int logger_scope_end(logger_scope_t *scope, int rc)
 	 * 此函数之后不得再解引用 logger：取消恢复后，调用者的取消清理
 	 * 可以立即释放其拥有的实例。
 	 */
-	int error = rc < 0 ? -rc : scope->saved_errno;
 	in_runtime = 0;
-	errno = error;
-	(void)pthread_setcancelstate(scope->old_cancel, NULL);
-	errno = error;
+	errno = rc < 0 ? -rc : scope->saved_errno;
+	int restore = pthread_setcancelstate(scope->old_cancel, NULL);
+
+	/* 主操作错误优先；已完成输出不会因取消策略恢复失败而回滚。 */
+	if (!rc && restore)
+		rc = -restore;
+	errno = rc < 0 ? -rc : scope->saved_errno;
 	return rc;
 }
 

@@ -140,12 +140,12 @@ int main(int argc, char **argv)
 	} else if (!strcmp(s, "reopen")) {
 		REQUIRE(rename("out.log", "old.log") == 0 &&
 			mkdir("out.log", 0700) == 0);
-		REQUIRE(logger_reopen_instance(l) == -1);
+		REQUIRE(logger_reopen(l) == -EISDIR);
 		LOGGER_INFO(l, "probe", "after-failed-reopen");
 		REQUIRE(has("old.log", "after-failed-reopen"));
 	} else if (!strcmp(s, "cwd")) {
 		REQUIRE(mkdir("newdir", 0700) == 0 && chdir("newdir") == 0);
-		REQUIRE(logger_reopen_instance(l) == 0);
+		REQUIRE(logger_reopen(l) == 0);
 		LOGGER_INFO(l, "probe", "same-target");
 		REQUIRE(access("out.log", F_OK) != 0 &&
 			has("../out.log", "same-target"));

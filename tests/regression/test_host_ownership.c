@@ -206,7 +206,7 @@ int main(int argc, char **argv)
 		p.handle = NULL;
 		atomic_store(&allow_format, 1);
 		LOGGER_INFO(l, "host", "owner-can-still-log");
-		CHECK(logger_flush_instance_status(l) == 0);
+		CHECK(logger_flush(l) == 0);
 		logger_io_metrics_t io;
 		logger_get_io_metrics(l, &io);
 		CHECK(io.emitted_records == expected + 1 &&
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
 			CHECK(log_contains("shared.log", "sdk=%n%s%% task=1"));
 		if (global) {
 			LOG_INFO("global-after");
-			CHECK(logger_flush_status() == 0);
+			CHECK(logger_default_flush() == 0);
 			fixture_default_destroy(&default_owner);
 			CHECK(count_lines("global.log") == 2);
 			CHECK(!log_contains("global.log", "sdk="));

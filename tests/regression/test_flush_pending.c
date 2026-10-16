@@ -31,7 +31,7 @@ int __wrap_fsync(int fd)
 static void *flusher(void *p)
 {
 	in_flush = 1;
-	logger_flush_instance(p); /* 也覆盖未改变的旧有 API */
+	CHECK(logger_flush(p) == 0); /* 新接口仍须等待出队后尚未输出的记录。 */
 	size_after_flush = file_size("out.log");
 	in_flush = 0;
 	return NULL;

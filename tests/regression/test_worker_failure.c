@@ -260,8 +260,8 @@ static void *flush(void *arg)
 	waiter = a;
 	pthread_cleanup_push(finish_waiter, a);
 	errno = 0;
-	a->rc = selected == GLOBAL ? logger_flush_status() :
-				     logger_flush_instance_status(instance);
+	a->rc = selected == GLOBAL ? logger_default_flush() :
+				     logger_flush(instance);
 	a->error = errno;
 	pthread_testcancel();
 	pthread_cleanup_pop(1);
@@ -349,8 +349,8 @@ static void test_failure_or_gap(void)
 								0;
 
 			CHECK(result == NULL);
-			CHECK(answers[i].rc == (error ? -1 : 0));
-			CHECK(answers[i].error == error);
+			CHECK(answers[i].rc == -error);
+			CHECK(answers[i].error == 0);
 		}
 		if (defer_waiter())
 			CHECK(atomic_load(&answers[i].calls) == 0);
@@ -373,8 +373,8 @@ static void test_failure_or_gap(void)
 		if (selected == SPILL)
 			CHECK(logger_queue_spill_in_use(&instance->q) == 1);
 		errno = 0;
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == ESHUTDOWN); /* 新调用遵循准入，而不是等待。 */
+		CHECK(logger_flush(instance) ==
+		      -ESHUTDOWN); /* 新调用遵循准入，而不是等待。 */
 	} else {
 		CHECK(d.state == LOGGER_STATE_RUNNING && d.worker_running);
 		CHECK(d.async_completed == producers && d.queue_depth == 0);

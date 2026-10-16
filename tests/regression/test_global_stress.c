@@ -27,7 +27,7 @@ static void expect_clean(void)
 {
 #ifdef LOGGER_PUBLIC_ABI_TEST
 	CHECK(open_fds() == initial_fds);
-	CHECK(logger_flush_status() == -1 && errno == ENODEV);
+	CHECK(logger_default_flush() == -ENODEV);
 #else
 	CHECK(!logger_process_object_count());
 #endif
@@ -77,14 +77,12 @@ static void *controller(void *ptr)
 		logger_get_global_io_metrics(&io);
 		(void)logger_global_dropped();
 		logger_set_level(LOGGER_INFO);
-		int rc = logger_flush_status();
-		CHECK(rc == 0 ||
-		      (rc == -1 && (errno == ESHUTDOWN || errno == EAGAIN ||
-				    errno == ENODEV)));
-		rc = logger_reopen();
-		CHECK(rc == 0 ||
-		      (rc == -1 && (errno == ESHUTDOWN || errno == EAGAIN ||
-				    errno == ENODEV)));
+		int rc = logger_default_flush();
+		CHECK(rc == 0 || rc == -ESHUTDOWN || rc == -EAGAIN ||
+		      rc == -ENODEV);
+		rc = logger_default_reopen();
+		CHECK(rc == 0 || rc == -ESHUTDOWN || rc == -EAGAIN ||
+		      rc == -ENODEV);
 		atomic_fetch_add(&calls, 1);
 		atomic_store(&ready[id], 1);
 	}
@@ -140,7 +138,7 @@ static void lifetimes(int async)
 		CHECK(!pthread_join(threads[i], NULL));
 	CHECK(atomic_load(&calls) >= 8);
 	CHECK(!pthread_barrier_destroy(&run_barrier));
-	CHECK(!logger_flush_status() && !fixture_default_destroy(&owner));
+	CHECK(!logger_default_flush() && !fixture_default_destroy(&owner));
 	expect_clean();
 }
 int main(int argc, char **argv)

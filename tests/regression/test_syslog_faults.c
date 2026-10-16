@@ -217,7 +217,7 @@ static void run(const char *mode, int fd)
 		logger_syslog_metrics_t m = metrics(l);
 		CHECK(m.reconnect_successes == 1 && m.connected &&
 		      !m.last_error);
-		CHECK(logger_flush_instance_status(l) == -1 && errno == ENOENT);
+		CHECK(logger_flush(l) == -ENOENT);
 		CHECK(logger_destroy(&l) == -ENOENT);
 		return;
 	}
@@ -332,7 +332,7 @@ static void run(const char *mode, int fd)
 	} else
 		CHECK(!"unknown mode");
 	if (error) {
-		CHECK(logger_flush_instance_status(l) == -1 && errno == error);
+		CHECK(logger_flush(l) == -error);
 		CHECK(logger_destroy(&l) == -error);
 	} else
 		CHECK(!logger_destroy(&l));

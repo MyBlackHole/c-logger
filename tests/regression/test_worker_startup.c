@@ -158,7 +158,7 @@ static void test_healthy(logger_t *l)
 	CHECK(l != NULL);
 	CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
 	logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "healthy-output");
-	CHECK(logger_flush_instance_status(l) == 0);
+	CHECK(logger_flush(l) == 0);
 
 	logger_diagnostics_t d;
 

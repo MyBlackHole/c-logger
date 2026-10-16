@@ -64,11 +64,13 @@ static int persistence_check(const char *dir)
 	logger_t *log = NULL;
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
-	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL, "before-reopen");
-	CHECK(logger_flush_instance_status(log) == 0);
-	CHECK(logger_reopen_instance(log) == 0);
-	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL, "after-reopen");
-	CHECK(logger_flush_instance_status(log) == 0);
+	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL,
+		   "before-reopen");
+	CHECK(logger_flush(log) == 0);
+	CHECK(logger_reopen(log) == 0);
+	logger_log(log, LOGGER_INFO, "min-kernel", NULL, 0, NULL,
+		   "after-reopen");
+	CHECK(logger_flush(log) == 0);
 	logger_file_metrics_t m;
 	CHECK(logger_get_file_metrics(log, &m) == 0);
 	CHECK(m.data_sync_attempts >= 2 && m.data_sync_failures == 0);
