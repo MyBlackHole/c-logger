@@ -6,6 +6,8 @@
 
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	if (argc < 2 || argc > 3 ||
 	    (argc == 3 && strcmp(argv[2], "--deferred"))) {
 		fprintf(stderr, "usage: %s SYSLOG_PATH [--deferred]\n",

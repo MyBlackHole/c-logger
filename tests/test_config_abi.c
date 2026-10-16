@@ -17,6 +17,8 @@ static int rejects_invalid(logger_config_t *c)
 
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	_Static_assert(LOGGER_CONFIG_SIZE == sizeof(logger_config_t),
 		       "Logger v1 config size changed");
 	_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),

@@ -294,7 +294,7 @@ static void child_probe(void)
 	/* 子方未初始化的普通入口仍拒绝；新初始化事务由独立用例验证，
 	 * 这里继续严格禁止 child 回调内发生分配、同步或格式化。
 	 */
-	if (logger_process_ensure() != -ECHILD)
+	if (logger_process_require() != -ECHILD)
 		_exit(35);
 }
 

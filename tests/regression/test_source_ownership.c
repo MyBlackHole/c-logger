@@ -14,6 +14,7 @@ size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	unlink("source.log");
 	const char *mode = argv[1];

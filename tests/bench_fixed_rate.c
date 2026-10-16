@@ -277,6 +277,8 @@ static int number(const char *s, uint64_t *n)
 
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	uint64_t threads, rate, seconds, warmup, size;
 	if (argc != 8 || number(argv[1], &threads) || number(argv[2], &rate) ||
 	    number(argv[3], &seconds) || number(argv[4], &warmup) ||

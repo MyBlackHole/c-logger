@@ -8,6 +8,8 @@
 #include <unistd.h>
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	const char *p = "./test-dev-log";
 	unlink(p);
 	int fd = socket(AF_UNIX, SOCK_DGRAM, 0);

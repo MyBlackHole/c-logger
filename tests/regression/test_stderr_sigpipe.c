@@ -33,6 +33,7 @@ static void check_sigpipe_state(int blocked, int was_pending)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	int async_mode = !strcmp(argv[1], "async");
 	int bootstrap = !strncmp(argv[1], "bootstrap", 9);

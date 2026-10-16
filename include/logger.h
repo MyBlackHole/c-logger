@@ -292,11 +292,15 @@ typedef struct {
  *
  * create 在交出指针前设有延迟取消检查点：待处理的取消请求会销毁
  * 尚未返回的候选实例。取消处于 ENABLED 且类型为 ASYNCHRONOUS 时，
- * 在分配实例/后端资源之前以 ENOTSUP 失败（可能已注册进程保护）；
+ * 在分配实例/后端资源之前以 ENOTSUP 失败（进程域须已显式初始化）；
  * 应在指针所有权转移期间禁用取消。调用者拥有所有成功返回的指针，
  * 并且必须为之后的取消安排清理。
  */
 /* 显式初始化当前进程的运行域，不创建日志实例。
+ * 所有使用进程域的 Logger、Global、Console 与上下文操作都以前置成功为条件。
+ * 普通调用不隐式初始化、不等待、不重试：未初始化 ENODEV，进行中 EAGAIN，
+ * 失败后保留上次初始化错误；各入口仍使用各自的返回/errno 形式。
+ * 纯默认配置与脱敏辅助函数不依赖进程域。
  * 初次调用或有有效 atfork 快照的子方重建成功返回0；重复为-EALREADY，
  * 并发为-EAGAIN，注册重入为-EDEADLK；失败返回负错误码并保留errno。
  * 子方必须在fork返回后的普通上下文、新业务线程创建前显式调用；
@@ -310,7 +314,7 @@ LOGGER_API int logger_process_init(void);
 /* 创建一个当前进程拥有的实例。返回 0/-errno，始终保留调用方 errno。
  * out 必须指向独占的、已初始化为 NULL 的可写拥有者槽；非空返回 -EBUSY，
  * 失败保持槽为 NULL，成功才发布完整实例。不得与 cfg 存储重叠。
- * 本阶段进程域仍按现有规则首次按需初始化，fork 子方必须显式 process_init。
+ * 调用前必须显式 process_init；进程准入失败先于读取配置或拥有者槽。
  */
 LOGGER_API int logger_create(const logger_config_t *, logger_t **out);
 LOGGER_API void logger_context_set(const logger_context_t *);

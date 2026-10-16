@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "logger.h"
 #include "logger_queue.h"
 #include "support.h"
 #include <stdint.h>
@@ -158,6 +159,7 @@ static void check_wrap(void)
 }
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	check_compact_storage();
 	check_wrap();
 	CHECK(logger_queue_init(&queue, 64) == 0);

@@ -21,6 +21,7 @@ int main(int argc, char **argv)
 	for (int n = 0; n < 20; ++n) {
 		void *handle = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
 		CHECK(handle != NULL);
+		int (*initialize_fn)(void);
 		int (*create_fn)(const logger_config_t *, logger_t **);
 		void (*log_fn)(logger_t *, logger_level_t, const char *,
 			       const char *, int, const char *, const char *,
@@ -34,6 +35,8 @@ int main(int argc, char **argv)
 		CHECK(p != NULL);                               \
 		memcpy(&function, &p, sizeof(p));               \
 	} while (0)
+		GET(initialize_fn, "logger_process_init");
+		CHECK(initialize_fn() == 0);
 		GET(create_fn, "logger_create");
 		GET(log_fn, "logger_log");
 		GET(destroy_fn, "logger_destroy");

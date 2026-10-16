@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "console.h"
 #include "support.h"
 #include "logger_runtime.h"
@@ -69,6 +70,7 @@ static int output(int source)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 4);
 	CHECK(!strcmp(argv[1], "print") || !strcmp(argv[1], "source"));
 	CHECK(!strcmp(argv[2], "mask") || !strcmp(argv[2], "pending"));

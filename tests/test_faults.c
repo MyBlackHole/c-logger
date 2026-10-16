@@ -23,6 +23,8 @@ static int strict_logger(void)
 }
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	if (argc != 2)
 		return 99;
 	if (!strcmp(argv[1], "logger"))

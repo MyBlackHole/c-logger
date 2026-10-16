@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "logger_file.h"
 #include "support.h"
 #include <dirent.h>
@@ -185,6 +186,7 @@ static void two_writes(logger_file_t *f, int second_error)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	if (!strcmp(argv[1], "healthy"))
 		selected = FAULT_NONE;

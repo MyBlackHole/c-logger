@@ -314,6 +314,7 @@ static int test_force_wake_lock_failure(void)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	if (!strcmp(argv[1], "normal"))
 		return test_normal_lock_path();

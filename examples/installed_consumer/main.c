@@ -6,6 +6,8 @@
 
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;
 	c.rotation.mode = LOGGER_ROTATE_NONE;

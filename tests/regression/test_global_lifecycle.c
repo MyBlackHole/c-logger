@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "global_support.h"
 #include "logger_lockdep.h"
 #include <stdarg.h>
@@ -942,6 +943,7 @@ static void child_status(void)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc >= 2);
 	fixture_reset();
 	if (!strcmp(argv[1], "generation")) {

@@ -44,6 +44,7 @@ int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
 
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(!setenv("TZ", "UTC0", 1));
 	tzset();
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();

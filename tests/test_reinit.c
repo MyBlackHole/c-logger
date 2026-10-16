@@ -16,6 +16,8 @@ static void *li(void *x)
 }
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	unlink("./reinit.log");
 	lc = LOGGER_DEFAULT_CONFIG();
 	lc.outputs = LOGGER_OUT_FILE;

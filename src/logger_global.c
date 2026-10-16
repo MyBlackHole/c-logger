@@ -174,17 +174,19 @@ static int begin(global_scope_t *scope)
 		errno = EDEADLK;
 		return -1;
 	}
+	int rc = logger_process_require();
+	if (rc) {
+		errno = -rc;
+		return -1;
+	}
 	*scope = (global_scope_t){ .saved_errno = errno };
-	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
-					&scope->old_cancel);
+	rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &scope->old_cancel);
 	if (rc) {
 		errno = rc;
 		return -1;
 	}
 	g_in_global = 1;
-	rc = logger_process_ensure();
-	if (!rc)
-		rc = -global_lock_error();
+	rc = -global_lock_error();
 	return rc ? finish(scope, rc) : 0;
 }
 

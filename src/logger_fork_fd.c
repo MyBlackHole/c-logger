@@ -47,7 +47,7 @@ void logger_fork_resource_poison(int error)
 
 int logger_fork_resource_enter(void)
 {
-	int rc = logger_process_ensure();
+	int rc = logger_process_require();
 	if (rc)
 		return -rc;
 	if (in_gate)

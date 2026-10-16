@@ -321,6 +321,7 @@ static void console_join_prepare(void)
 static void *initializer(void *p)
 {
 	(void)p;
+	CHECK(logger_process_init() == 0);
 	CHECK(logger_init(&cfg) == 0);
 	return NULL;
 }
@@ -337,6 +338,7 @@ static void *lock_holder(void *p)
 static void registration_failure(const char *mode)
 {
 	atomic_store(&fail_registration, 1);
+	CHECK(logger_process_init() == -ENOMEM);
 	errno = 0;
 	if (!strcmp(mode, "register-global"))
 		CHECK(logger_init(&cfg) == -1 && errno == ENOMEM);
@@ -416,6 +418,8 @@ int main(int argc, char **argv)
 		pid_t p = fork();
 		CHECK(p >= 0);
 		if (!p) {
+			if (logger_process_init())
+				_exit(9);
 			logger_t *l = NULL;
 			(void)logger_create(&cfg, &l);
 			if (!l)
@@ -433,6 +437,11 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(mode, "earlier-handler"))
 		CHECK(!__real_pthread_atfork(NULL, NULL, early_child));
+	/* Console 的宿主 prepare 必须先注册，保留原锁协调交错。 */
+	if (!strcmp(mode, "console-held"))
+		CHECK(!__real_pthread_atfork(console_join_prepare, NULL, NULL));
+	if (strcmp(mode, "registration-window"))
+		CHECK(logger_process_init() == 0);
 	pthread_t thread;
 	int has_thread = 0;
 	if (!strcmp(mode, "registration-window")) {
@@ -443,9 +452,6 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "console-only") ||
 		   !strcmp(mode, "console-held")) {
 		console_config_t c = CONSOLE_DEFAULT_CONFIG();
-		if (!strcmp(mode, "console-held"))
-			CHECK(!__real_pthread_atfork(console_join_prepare, NULL,
-						     NULL));
 		console_init(&c);
 		if (!strcmp(mode, "console-held")) {
 			atomic_store(&pause_console, 1);

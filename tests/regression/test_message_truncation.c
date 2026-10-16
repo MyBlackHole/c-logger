@@ -28,6 +28,7 @@ static void flush(logger_t *log, const char *mode)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	const char *mode = argv[1];
 	CHECK(!strcmp(mode, "explicit-sync") || !strcmp(mode, "explicit-async") ||

@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger.h"
 #include "console.h"
 #include "support.h"
 #include <locale.h>
@@ -262,10 +263,12 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	const char *scenario = argv[1];
 	if (!strcmp(scenario, "thread-local") || !strcmp(scenario, "cancel")) {
+		CHECK(logger_process_init() == 0);
 		check_thread_local(!strcmp(scenario, "cancel"));
 		return 0;
 	}
 	if (!strcmp(scenario, "large-output")) {
+		CHECK(logger_process_init() == 0);
 		check_large_output();
 		return 0;
 	}
@@ -286,8 +289,11 @@ int main(int argc, char **argv)
 				continue;
 			pid_t pid = fork();
 			CHECK(pid >= 0);
-			if (!pid)
+			if (!pid) {
+				/* 此组用例在首次使用库前派生，保持原来的隔离边界。 */
+				CHECK(logger_process_init() == 0);
 				run_case(scenario, api, buffered);
+			}
 			int status;
 			CHECK(waitpid(pid, &status, 0) == pid);
 			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {

@@ -230,6 +230,7 @@ static void test_early_failure(logger_t *l, int error)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	selected = scenario_from_name(argv[1]);
 	char dir[] = "/tmp/logger-startup-XXXXXX";

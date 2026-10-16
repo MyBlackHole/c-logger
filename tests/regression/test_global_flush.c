@@ -3,6 +3,7 @@
 #include "support.h"
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	char dir[] = "/tmp/logger-global-flush-XXXXXX";
 	enter_temp(dir);
 	CHECK(logger_flush_instance_status(NULL) == -1 && errno == EINVAL);

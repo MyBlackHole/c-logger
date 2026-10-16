@@ -24,6 +24,8 @@ static double sec(void)
 }
 int main(int argc, char **argv)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	int n = argc > 1 ? atoi(argv[1]) : 8;
 	long each = argc > 2 ? atol(argv[2]) : 100000;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();

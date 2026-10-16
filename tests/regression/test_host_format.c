@@ -3,6 +3,7 @@
 #include "logger_internal.h"
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "format-bound.log";

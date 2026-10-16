@@ -2,6 +2,9 @@
 #include "support.h"
 #include "logger.h"
 #include "logger_process.h"
+#include "logger_runtime.h"
+#include "../process_rejection.h"
+#include <sys/mman.h>
 #include <sched.h>
 #include <sys/wait.h>
 
@@ -12,7 +15,6 @@ static _Atomic int pause_before;
 static _Atomic int pause_after;
 static _Atomic int entered;
 static _Atomic int release_registration;
-static _Atomic int waiter_entered;
 static _Atomic int waiter_done;
 static _Atomic int inject_reentry;
 static _Atomic int disable_error;
@@ -20,7 +22,7 @@ static _Atomic int restore_error;
 static _Atomic int strict_child;
 static int init_result;
 static int early_handler_done;
-static _Thread_local int observing_wait;
+static _Atomic int forbid_resources;
 
 int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
 int __real_pthread_setcancelstate(int, int *);
@@ -28,7 +30,7 @@ int __real_sched_yield(void);
 
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
-	if (atomic_load(&strict_child))
+	if (atomic_load(&strict_child) || atomic_load(&forbid_resources))
 		_exit(90);
 	if (state == PTHREAD_CANCEL_DISABLE &&
 	    atomic_exchange(&disable_error, 0))
@@ -42,10 +44,8 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 
 int __wrap_sched_yield(void)
 {
-	if (atomic_load(&strict_child))
+	if (atomic_load(&strict_child) || atomic_load(&forbid_resources))
 		_exit(91);
-	if (observing_wait)
-		atomic_store(&waiter_entered, 1);
 	return __real_sched_yield();
 }
 
@@ -60,12 +60,13 @@ int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 	/* Sanitizer 可能在 main 前自行注册，不能把其回调计入 Logger。 */
 	if (c != logger_process_invalidate_child)
 		return __real_pthread_atfork(a, b, c);
-	if (atomic_load(&strict_child))
+	if (atomic_load(&strict_child) || atomic_load(&forbid_resources))
 		_exit(92);
 	atomic_fetch_add(&registration_calls, 1);
 	if (atomic_exchange(&inject_reentry, 0)) {
 		CHECK(logger_process_init() == -EDEADLK);
-		CHECK(logger_process_ensure() == -EDEADLK);
+		CHECK(logger_process_require() == -EDEADLK);
+		check_process_rejection(EDEADLK);
 	}
 	if (atomic_load(&pause_before))
 		pause_registration();
@@ -92,9 +93,11 @@ static void *initializer(void *unused)
 static void *ordinary_waiter(void *unused)
 {
 	(void)unused;
-	observing_wait = 1;
-	CHECK(logger_process_ensure() == 0);
-	observing_wait = 0;
+	atomic_store(&forbid_resources, 1);
+	CHECK(logger_process_require() == -EAGAIN);
+	check_process_rejection(EAGAIN);
+	atomic_store(&forbid_resources, 0);
+	CHECK(!atomic_load(&release_registration));
 	atomic_store(&waiter_done, 1);
 	return NULL;
 }
@@ -103,7 +106,7 @@ static void ready_works(void)
 {
 	errno = ERANGE;
 	CHECK(logger_process_init() == -EALREADY && errno == ERANGE);
-	CHECK(logger_process_ensure() == 0);
+	CHECK(logger_process_require() == 0);
 	CHECK(logger_process_object_count() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.async_mode = 0;
@@ -120,7 +123,8 @@ static void failed_registration(void)
 	atomic_store(&registration_error, ENOMEM);
 	errno = EDOM;
 	CHECK(logger_process_init() == -ENOMEM && errno == EDOM);
-	CHECK(logger_process_ensure() == -ENOMEM);
+	CHECK(logger_process_require() == -ENOMEM);
+	check_process_rejection(ENOMEM);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	CHECK(atomic_load(&registration_calls) == 1);
@@ -134,7 +138,7 @@ static void retry_errors(int twice)
 		atomic_store(&registration_error, EAGAIN);
 		errno = EDOM;
 		CHECK(logger_process_init() == -EAGAIN && errno == EDOM);
-		CHECK(logger_process_ensure() == -EAGAIN);
+		CHECK(logger_process_require() == -EAGAIN);
 	}
 	atomic_store(&registration_error, 0);
 	CHECK(logger_process_init() == 0);
@@ -159,7 +163,7 @@ static void child_reject(void)
 	errno = EDOM;
 	if (logger_process_init() != -ECHILD || errno != EDOM)
 		_exit(30);
-	if (logger_process_ensure() != -ECHILD)
+	if (logger_process_require() != -ECHILD)
 		_exit(31);
 }
 
@@ -179,7 +183,7 @@ static void fork_reject(void)
 		 * 普通入口在显式初始化之前仍须保持拒绝。
 		 */
 		if (early_handler_done) {
-			if (logger_process_ensure() != -ECHILD)
+			if (logger_process_require() != -ECHILD)
 				_exit(32);
 		} else {
 			child_reject();
@@ -210,8 +214,9 @@ static void in_progress(const char *mode)
 	pthread_t waiter;
 	if (concurrent) {
 		CHECK(!pthread_create(&waiter, NULL, ordinary_waiter, NULL));
-		wait_flag(&waiter_entered);
-		CHECK(!atomic_load(&waiter_done));
+		/* 注册者仍暂停时，普通调用必须完成拒绝，不能等 READY。 */
+		wait_flag(&waiter_done);
+		CHECK(!atomic_load(&release_registration));
 	} else if (cancel) {
 		CHECK(pthread_cancel(init_thread) == 0);
 	} else {
@@ -232,11 +237,59 @@ static void in_progress(const char *mode)
 	CHECK(atomic_load(&registration_calls) == (retry ? 2 : 1));
 }
 
+void *__real_mmap(void *, size_t, int, int, int, off_t);
+void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd,
+		  off_t offset)
+{
+	CHECK(!atomic_load(&forbid_resources));
+	return __real_mmap(addr, len, prot, flags, fd, offset);
+}
+
+int __real_pthread_mutex_lock(pthread_mutex_t *);
+int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
+{
+	CHECK(!atomic_load(&forbid_resources));
+	return __real_pthread_mutex_lock(mutex);
+}
+
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
+int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
+{
+	CHECK(!atomic_load(&forbid_resources));
+	return __real_pthread_rwlock_rdlock(lock);
+}
+
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
+int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *lock)
+{
+	CHECK(!atomic_load(&forbid_resources));
+	return __real_pthread_rwlock_wrlock(lock);
+}
+
+static void cold_rejected(void)
+{
+	CHECK(logger_runtime_current() == NULL);
+	atomic_store(&forbid_resources, 1);
+	for (unsigned i = 0; i < 3; ++i) {
+		CHECK(logger_process_require() == -ENODEV);
+		check_process_rejection(ENODEV);
+	}
+	CHECK(logger_runtime_current() == NULL);
+	CHECK(logger_process_object_count() == 0);
+	CHECK(atomic_load(&registration_calls) == 0);
+	atomic_store(&forbid_resources, 0);
+	CHECK(logger_process_init() == 0);
+	CHECK(atomic_load(&registration_calls) == 1);
+	ready_works();
+}
+
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	const char *mode = argv[1];
-	if (!strcmp(mode, "register-error")) {
+	if (!strcmp(mode, "cold-rejected")) {
+		cold_rejected();
+	} else if (!strcmp(mode, "register-error")) {
 		retry_errors(0);
 	} else if (!strcmp(mode, "repeat-errors")) {
 		retry_errors(1);

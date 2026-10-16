@@ -35,6 +35,11 @@ static int reject_access(void)
 		errno = EDEADLK;
 		return 1;
 	}
+	int rc = logger_process_require();
+	if (rc) {
+		errno = -rc;
+		return 1;
+	}
 	return 0;
 }
 

@@ -320,6 +320,14 @@ int main(void)
 	if (rc)
 		return rc;
 	/* 真实安装库的 C/C++11 调用，不仅检查头文件中存在声明。 */
+	logger_config_t cold_config = LOGGER_DEFAULT_CONFIG();
+	logger_t *cold_owner = NULL;
+	errno = EDOM;
+	if (logger_create(&cold_config, &cold_owner) != -ENODEV ||
+	    cold_owner != NULL || errno != EDOM)
+		return 16;
+	if (logger_destroy(&cold_owner) != -ENODEV || errno != EDOM)
+		return 17;
 	int (*initialize)(void) = logger_process_init;
 	errno = EDOM;
 	if (initialize() != 0 || errno != EDOM)

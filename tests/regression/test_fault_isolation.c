@@ -166,6 +166,7 @@ static void cleanup_fixture(const char *directory, int original)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2 || (argc == 3 && !strcmp(argv[1], "--child")));
 	if (argc == 3) {
 		scenario(argv[2]);

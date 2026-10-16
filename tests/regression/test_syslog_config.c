@@ -35,6 +35,7 @@ int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t size)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_SYSLOG;

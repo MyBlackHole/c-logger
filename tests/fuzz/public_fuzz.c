@@ -154,6 +154,14 @@ static void config_property(const uint8_t *data, size_t size)
 	}
 }
 
+int LLVMFuzzerInitialize(int *argc, char ***argv)
+{
+	(void)argc;
+	(void)argv;
+	REQUIRE(logger_process_init() == 0);
+	return 0;
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
 	/* 模糊输入只选择受界配置与长度，永不转为悬空外部指针、
@@ -181,6 +189,7 @@ static uint32_t next_random(uint32_t *state)
 int main(int argc, char **argv)
 {
 	REQUIRE(argc == 2);
+	REQUIRE(LLVMFuzzerInitialize(&argc, &argv) == 0);
 	char *end = NULL;
 	unsigned long seed = strtoul(argv[1], &end, 10);
 	REQUIRE(end && end != argv[1] && *end == '\0');

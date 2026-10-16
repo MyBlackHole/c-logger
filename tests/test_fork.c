@@ -66,6 +66,7 @@ static int exec_child(void)
 }
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	if (argc == 2 && !strcmp(argv[1], "--child"))
 		return exec_child();
 	CHECK(argc == 1);

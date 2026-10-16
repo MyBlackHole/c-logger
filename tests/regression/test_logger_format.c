@@ -213,6 +213,7 @@ static void check_truncation(const char *path)
 
 int main(int argc, char **argv)
 {
+	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	const char *scenario = argv[1];
 	char dir[] = "/tmp/c-logger-format-XXXXXX";

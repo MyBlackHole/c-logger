@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "logger.h"
 #include "logger_cleanup.h"
 #include "support.h"
 
@@ -205,6 +206,7 @@ static void class_and_guard_scope(void)
 
 int main(void)
 {
+	CHECK(logger_process_init() == 0);
 	unsigned before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	auto_free_scope();
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==

@@ -309,6 +309,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
 	(void)argc;
 	(void)argv;
+	REQUIRE(logger_process_init() == 0);
 	REQUIRE(!setenv("TZ", "UTC0", 1));
 	REQUIRE(setlocale(LC_TIME, "C"));
 	tzset();

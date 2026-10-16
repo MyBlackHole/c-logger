@@ -22,17 +22,18 @@ int logger_scope_begin(logger_scope_t *scope)
 		errno = EDEADLK;
 		return -EDEADLK;
 	}
+	int rc = logger_process_require();
+	if (rc) {
+		errno = -rc;
+		return rc;
+	}
 	scope->saved_errno = errno;
-	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
-					&scope->old_cancel);
+	rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &scope->old_cancel);
 	if (rc) {
 		errno = rc;
 		return -rc;
 	}
 	in_runtime = 1;
-	rc = logger_process_ensure();
-	if (rc)
-		return logger_scope_end(scope, rc);
 	return 0;
 }
 

@@ -15,6 +15,8 @@ static int contains(const char *p, const char *s)
 }
 int main(void)
 {
+	if (logger_process_init() != 0)
+		return 1;
 	unlink("./mi-a.log");
 	unlink("./mi-b.log");
 	logger_config_t a = LOGGER_DEFAULT_CONFIG();
