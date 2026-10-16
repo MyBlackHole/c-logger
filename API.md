@@ -1,7 +1,12 @@
 # 当前 API 与集成边界
 
+> 默认便利入口现仅借用宿主实例：使用 `logger_default_set(expected, replacement)`。
+> 不再提供配置式 Global 初始化、库内销毁或空槽 stderr 回退。
+> [默认借用合同](docs/v2/DEFAULT_BORROW.md)与[旧测试映射](docs/v2/DEFAULT_MIGRATION.md)区分当前能力和历史场景。
+
+
 本文描述 2.0 稳定发布准备中的普通 Logger/Console 接入；当前 ABI 为 SONAME 2 / `LOGGER_2.0`，
-当前47个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
+当前45个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
 [当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)按已有可执行快照整理，待最终固定源码验收；本文不表示已经发布。
 Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅适用于 `release/1.x`。
 `logger_fork_reinit()` 与对应构建选项、兼容头文件已移除。
@@ -44,7 +49,7 @@ int logger_destroy(logger_t **owner);
 旧创建签名、void 销毁和 `logger_destroy_status` 已移除，不保留适配层。
 当前尚未迁移的其他接口分别保持其合同：实例与全局的刷新/重开/状态查询
 通常为 0/-1+errno，`logger_log_sync_status` 为 0/-errno，void 日志不提供
-逐条接受回执。默认实例借用层和其他返回形式的统一仍待后续，
+逐条接受回执。默认实例已经使用借用合同；其他返回形式的统一仍待后续，
 不能因为本次生命周期接口已迁移就宣称整个 API 已完成。
 
 `logger_log`、`logger_log_source`、`LOGGER_LOG/INFO/...` 仍借用指定实例。
@@ -58,7 +63,7 @@ int logger_destroy(logger_t **owner);
 粘滞首个错误。它不执行刷新、不执行重连、不进行文件/网络 I/O，也不清理错误状态。
 
 `logger_get_global_diagnostics()` 使用现有全局代次/生命周期固定机制；不会越过
-STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别由
+STOPPING/BROKEN 准入门。文件/Syslog 的完整一致输出端指标分别由
 `logger_get_file_metrics()` / `logger_get_syslog_metrics()` 提供，因为后端
 计数器由 `emit_mu` 保护。文件快照不执行 write/fsync/rotation/reopen，只读取
 累计事实；全局门面可用 `logger_get_global_file_metrics()` 通过当前代次固定机制
@@ -69,7 +74,7 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 ## 普通日志字符串寿命
 
 调用者的 fmt/source/context 输入必须在对应调用期间有效，不得并发修改。
-用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（包括全局启动回退输出）最多保留4095字节正文，
+用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（仅在已绑定默认实例时提供全局输出）最多保留4095字节正文，
 超限时正文尾部明确替换为 ` [truncated]`；未超限正文保持原字节。边界按字节处理，
 不承诺保留UTF-8码点。接口使用NUL终止的C字符串文本，内嵌NUL不是二进制消息接口。同步普通输出若因过长元数据耗尽整行缓冲，也在LF前放置同一标记。
 需要完整正文确认时使用 `logger_log_sync_status()`，超限返回
@@ -87,10 +92,12 @@ STARTING/STOPPING 准入门。文件/Syslog 的完整一致输出端指标分别
 
 ## 全局与 Console
 
-全局 `logger_init/LOG_*/logger_shutdown` 在显式进程初始化之后保留便利用法；业务 `.so` 不应偷偷调用。
-全局生命周期的阶段性设计演进见 `docs/GLOBAL_LIFECYCLE.md`；当前 2.0 约束以
-[所有权规范](docs/v2/OWNERSHIP.md)、[内存模型](docs/v2/MEMORY_MODEL.md)和
-[取消与重入作用域](docs/EXPLICIT_CONSOLE_SCOPE.md)为准。显式实例仍由宿主独占销毁。
+宿主创建普通实例，然后 `logger_default_set(NULL, owner)` 将其绑定到便利入口。
+使用完毕先 `logger_default_set(owner, NULL)` 等待默认借用退出，再由宿主调用
+`logger_destroy(&owner)`。更换默认实例用 `logger_default_set(old, next)`；解绑只
+归还借用，不隐含 flush/join。绑定时销毁返回 -EBUSY 并保留拥有者槽。空默认槽的
+LOG_* 返回 ENODEV，不格式化、不输出。业务 SDK 不应隐式改变宿主的默认绑定。
+进程初始化仍由宿主显式调用，实际锁/代次/错误规则见[默认借用合同](docs/v2/DEFAULT_BORROW.md)。
 Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
 关闭管道返回 `-1`/`errno=EPIPE`（如更早已有格式错误则保留首错），不改变宿主全局信号处理函数、屏蔽字或既有待处理信号。
 
@@ -149,13 +156,13 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 详见 [SYSLOG_BACKEND.md](docs/SYSLOG_BACKEND.md)。本次修订并未增加远端持久化投递能力，
 子方通过可靠快照显式重建的当前候选边界见上文；绕过处理函数的原始系统调用不支持。
 
-## 全局门面代次与取消（本轮更新）
+## 默认便利入口的代次与取消
 
-默认 Logger 仍仅用于宿主便利层。所有全局数据/控制入口统一准入和代次
-复核，旧调用不会操作新实例。`logger_shutdown_status()` 返回最终处置错误；原
-`logger_shutdown()` 保留兼容。拒绝状态、启动回退、取消延迟和重入边界的阶段性演进见
-[全局生命周期设计记录](docs/GLOBAL_LIFECYCLE.md)，该记录不替代上述当前 2.0 规范。
-显式实例/Console 的当前作用域规则见下一节。
+每次真正绑定、替换或解绑产生新代次。数据入口只在一个调用内借用，不返回无保护
+实例指针。控制请求也固定进入时的代次，同一指针解绑再绑定不能让旧请求误提交。
+控制锁和生命周期锁全部确认释放后才撤销旧实例的借用标记，然后恢复取消策略。
+解锁证明失败时保守保留，不以槽指针变化代替最终借用归还。取消恢复失败可能发生在
+绑定已提交之后；负返回不普遍表示没有副作用。旧拥有型 Global 记录仅供历史追溯。
 
 ## 显式实例/Console 的取消与重入加固
 

@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "logger.h"
 #include "global_support.h"
+#include "default_fixture.h"
+static logger_t *owner;
 #include <stdarg.h>
 
 /* 取消探针仅用测试原子变量暂停，绝不用自身可能因取消而被遗留的测试互斥锁。
@@ -8,24 +10,19 @@
  */
 enum point {
 	P_NONE,
-	P_CREATE,
 	P_WRITE,
 	P_REOPEN,
-	P_DISPOSE,
-	P_BOOTSTRAP,
 	P_QUEUE,
 	P_READER,
 	P_CONTROL
 };
-static _Atomic int at_point, release_point, seen_disabled, stage, create_fails;
+static _Atomic int at_point, release_point, seen_disabled, stage;
 static _Atomic int hold_format, format_entered, release_format, flush_waiting;
 static _Atomic int cleanup_seen, operation_returned;
 static _Thread_local int delay_reader, delay_controller, watch_cond;
 static int cleanup_phase_error;
 static const char *scenario;
 
-int __real_logger_create(const logger_config_t *, logger_t **);
-int __real_logger_destroy(logger_t **);
 int __real_logger_file_write(logger_file_t *, const char *, size_t,
 			     const struct timespec *, int);
 int __real_logger_file_reopen(logger_file_t *);
@@ -51,19 +48,6 @@ static void rendezvous(enum point p)
 	inspect_mask();
 	atomic_store(&at_point, 1);
 	wait_flag(&release_point);
-}
-int __wrap_logger_create(const logger_config_t *cfg, logger_t **out)
-{
-	rendezvous(P_CREATE);
-	if (atomic_exchange(&create_fails, 0)) {
-		return -ENOSPC;
-	}
-	return __real_logger_create(cfg, out);
-}
-int __wrap_logger_destroy(logger_t **owner)
-{
-	rendezvous(P_DISPOSE);
-	return __real_logger_destroy(owner);
 }
 int __wrap_logger_file_write(logger_file_t *f, const char *text, size_t n,
 			     const struct timespec *ts, int sync)
@@ -115,12 +99,6 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 	}
 	return __real_pthread_rwlock_rdlock(rw);
 }
-int __real_logger_stderr_writev_all(struct iovec *, int);
-int __wrap_logger_stderr_writev_all(struct iovec *vec, int count)
-{
-	rendezvous(P_BOOTSTRAP);
-	return __real_logger_stderr_writev_all(vec, count);
-}
 static void cleanup(void *unused)
 {
 	(void)unused;
@@ -141,16 +119,12 @@ static void *caller(void *unused)
 {
 	(void)unused;
 	pthread_cleanup_push(cleanup, NULL);
-	if (!strcmp(scenario, "create") || !strcmp(scenario, "create-fail")) {
-		logger_config_t cfg = config_for("old.log", 0);
-		int rc = logger_init(&cfg);
-		CHECK(rc == (!strcmp(scenario, "create-fail") ? -1 : 0));
-	} else if (!strcmp(scenario, "shutdown")) {
-		CHECK(stop_status() == 0);
-	} else if (!strcmp(scenario, "control-wait")) {
+	if (!strcmp(scenario, "bind") || !strcmp(scenario, "control-wait")) {
 		delay_controller = 1;
-		logger_config_t cfg = config_for("side.log", 0);
-		CHECK(logger_init(&cfg) == 0);
+		CHECK(logger_default_set(NULL, owner) == 0);
+	} else if (!strcmp(scenario, "unbind")) {
+		delay_controller = 1;
+		CHECK(logger_default_set(owner, NULL) == 0);
 	} else if (!strcmp(scenario, "reopen")) {
 		CHECK(logger_reopen() == 0);
 	} else if (!strcmp(scenario, "flush") ||
@@ -176,20 +150,20 @@ static void restore_policy(void)
 	logger_config_t cfg = config_for("old.log", 0);
 	int old;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
-	CHECK(!logger_init(&cfg));
+	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("caller-disabled");
 	CHECK(!logger_flush_status());
-	CHECK(!stop_status());
+	CHECK(!fixture_default_destroy(&owner));
 	int previous;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous));
 	CHECK(previous == PTHREAD_CANCEL_DISABLE);
 	CHECK(!pthread_setcancelstate(old, NULL));
-	CHECK(!logger_init(&cfg));
+	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("caller-enabled");
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous));
 	CHECK(previous == PTHREAD_CANCEL_ENABLE);
 	CHECK(!pthread_setcancelstate(previous, NULL));
-	CHECK(!stop_status());
+	CHECK(!fixture_default_destroy(&owner));
 }
 int main(int argc, char **argv)
 {
@@ -201,35 +175,23 @@ int main(int argc, char **argv)
 		restore_policy();
 		return 0;
 	}
-	int no_initial = !strcmp(scenario, "create") ||
-			 !strcmp(scenario, "create-fail") ||
-			 !strcmp(scenario, "bootstrap") ||
+	int no_initial = !strcmp(scenario, "bind") ||
 			 !strcmp(scenario, "control-wait");
 	int async = !strcmp(scenario, "queue") || !strcmp(scenario, "flush") ||
 		    !strcmp(scenario, "flush-void");
 	logger_config_t cfg = config_for("old.log", async);
+	CHECK(logger_create(&cfg, &owner) == 0);
 	if (!no_initial)
-		CHECK(!logger_init(&cfg));
-	cleanup_phase_error = !strcmp(scenario, "shutdown") ? ESHUTDOWN :
-			      (!strcmp(scenario, "bootstrap") ||
-			       !strcmp(scenario, "create-fail")) ?
-							      ENODEV :
-							      0;
-	if (!strcmp(scenario, "create") || !strcmp(scenario, "create-fail")) {
-		atomic_store(&stage, P_CREATE);
-		atomic_store(&create_fails, !strcmp(scenario, "create-fail"));
-	} else if (!strcmp(scenario, "shutdown"))
-		atomic_store(&stage, P_DISPOSE);
+		CHECK(logger_default_set(NULL, owner) == 0);
+	cleanup_phase_error = !strcmp(scenario, "unbind") ? ENODEV : 0;
+	if (no_initial || !strcmp(scenario, "unbind"))
+		atomic_store(&stage, P_CONTROL);
 	else if (!strcmp(scenario, "reopen"))
 		atomic_store(&stage, P_REOPEN);
-	else if (!strcmp(scenario, "bootstrap"))
-		atomic_store(&stage, P_BOOTSTRAP);
 	else if (!strcmp(scenario, "queue"))
 		atomic_store(&stage, P_QUEUE);
 	else if (!strcmp(scenario, "reader"))
 		atomic_store(&stage, P_READER);
-	else if (!strcmp(scenario, "control-wait"))
-		atomic_store(&stage, P_CONTROL);
 	else if (!strcmp(scenario, "flush") ||
 		 !strcmp(scenario, "flush-void")) {
 		atomic_store(&hold_format, 1);
@@ -258,22 +220,22 @@ int main(int argc, char **argv)
 	if (!cleanup_phase_error) {
 		LOG_INFO("main-after-cancel");
 		CHECK(!logger_flush_status());
-		CHECK(!stop_status());
-		const char *path = !strcmp(scenario, "control-wait") ?
-					   "side.log" :
-					   "old.log";
+		CHECK(!fixture_default_destroy(&owner));
+		const char *path = "old.log";
 		CHECK(file_contains(path, "cancel-cleanup-can-log"));
 		CHECK(file_contains(path, "main-after-cancel"));
 		if (!strcmp(scenario, "write") || !strcmp(scenario, "queue"))
 			CHECK(file_contains(path,
 					    "cancelled-operation-record"));
-	} else
-		CHECK(!stop_status());
+	} else {
+		CHECK(logger_default_set(NULL, NULL) == 0);
+		CHECK(logger_destroy(&owner) == 0);
+	}
 	CHECK(!logger_process_object_count());
 	/* 没有遗留的全局控制锁、读锁或实例锁；另一代次可以工作。 */
-	CHECK(!logger_init(&cfg));
+	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("next-generation-after-cancel");
-	CHECK(!logger_flush_status() && !stop_status());
+	CHECK(!logger_flush_status() && !fixture_default_destroy(&owner));
 	puts("global cancellation deferral and post-cancel reuse passed");
 	return 0;
 }

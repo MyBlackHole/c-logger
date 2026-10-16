@@ -1,3 +1,6 @@
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -22,14 +25,14 @@ int main(void)
 	c.file_path = "./lifecycle.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 4096;
-	if (logger_init(&c))
+	if (fixture_default_create(&c, &default_owner))
 		return 1;
 	pthread_t t[8];
 	for (int i = 0; i < 8; i++)
 		if (pthread_create(&t[i], 0, producer, 0))
 			return 2;
 	usleep(20000);
-	logger_shutdown(); /* 有意与生产者竞争 */
+	fixture_default_destroy(&default_owner); /* 有意与生产者竞争 */
 	atomic_store(&go, 0);
 	for (int i = 0; i < 8; i++)
 		pthread_join(t[i], 0);

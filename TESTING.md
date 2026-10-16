@@ -355,23 +355,23 @@ Logger/Console/context场景；原21项的4个Audit入口专属场景退役。�
 本节是验证入口、已知证据和未验证边界的索引；不自动扩大正式 2.0.0
 发布硬门槛，不恢复已经移除的 Audit/VM 断电测试，也不虚构未指定的生产 QPS/P99 阈值。
 
-## Global R7 候选/退役对象的生产库验证（#199）
+## 默认实例借用的生产归档验证
 
-对象阶段不等同于锁类别。当前生产态的完整证明和限制见
-[Global R7 阶段证明](docs/v2/GLOBAL_R7_PROOF.md)。
+默认槽不再拥有或析构实例。原 R7 的全局内部构造/销毁机制已经退出当前 API，
+不通过兼容包装复活它。对应的新责任、保留断言和历史项目见
+[默认借用测试迁移](docs/v2/DEFAULT_MIGRATION.md)。
 
-专项入口使用真实生产静态归档，正常模式与 Sanitizer 可共享测试源：
+```sh
+bash tests/regression/run_default_borrow.sh core-build
+bash tests/regression/run_default_borrow.sh sanitizer-build address,undefined
+bash tests/regression/run_default_borrow.sh sanitizer-build thread
+```
 
-    bash tests/regression/run_global_r7.sh core-build
-    bash tests/regression/run_global_r7.sh sanitizer-build address,undefined
-    bash tests/regression/run_global_r7.sh sanitizer-build thread
-
-每个注入场景为独立进程，覆盖候选发布失败后实际 free、销毁没有回执的
-retained 对象、STOPPING 回滚、写锁解锁失败、最终释放后的非致命错误与
-旧读者的完成衔接。驱动捕获实际 logger_t 地址并拦截 free 校验，
-不从 pthread destroy 返回值或 live_objects 归零推导最终 free。
-记录源码完整 SHA、归档/驱动 hash、编译器、各场景退出结果。
-没有实际工作流通过前，这一入口只表示待执行的验收计划。
+专项以真实生产静态库验证14个借用故障/并发场景、十类入口的代次隔离、空绑定
+合同及关门后不再增加读者。新 `default_publish_whitebox/publish-poison` 精确触发
+最终 CAS 前的真实读者解锁错误；它使用 LOCKDEP=1 断言钩子，不冒称生产归档的
+精确暂停。写锁失败与毒化交接则在真实生产归档和支持归档分别执行。
+实例生命周期、工作线程、fd/映射回收和取消仍由各自既有专项执行。
 
 ## #104 对象设计验收入口
 
@@ -380,29 +380,24 @@ retained 对象、STOPPING 回滚、写锁解锁失败、最终释放后的非�
 [资源与阶段不变量](docs/v2/INVARIANTS.md)列出不得由局部优化破坏的条件。
 
 现有验证在不同目标中分别承担不同责任：工作线程启动和失败、Global
-发布/代次/取消、真实 R7 生产库最终释放、队列唤醒与完成谓词、后端故障、
+发布/代次/取消、默认借用归还与宿主实例最终释放、队列唤醒与完成谓词、后端故障、
 公开 ABI 和安装消费方均使用各自的实际可执行回归。只有源码状态机论证
 不能证明运行时正确；只有 CI 绿色也不能证明所有未注入的并发交错。
 
-#199 对 G_STARTING→G_RUNNING CAS 失败的精确窗口另注册
-global_r7_publish_cas_poison：在 LOCKDEP=1 的回归支持库中对
-真实 logger_lockdep_assert_held 与 pthread 解锁入口实施同步交错。
-它依赖同源的测试专用断言，不属于普通生产归档的精准注入。
-已有真实生产库常规/故障测试与该白盒用例需要各自运行、分别报告来源；
-不得因脚本命中相邻状态就声称所有可能调度交错都已证明。
-#104 当前规范是架构**设计审查基线**，#108 仍需独立确认当前公开接口、
-布局、默认配置和版本身份是否适合最终冻结；正式发布依赖标签授权。
+旧 #199 的拥有型 Global 阶段记录保留在 Git 历史；当前代码不再有库内
+G_STARTING 构造/退役销毁。不能把旧阶段完成声明移用于新借用层。当前精确发布
+失败用例及真实归还条件见上节和 DEFAULT_MIGRATION；正式发布仍独立授权。
 
 ## #108 公开错误模型生产测试
 
 在 build_tests=y 的真实生产链接核心测试中，api_contract_test
 使用同一头文件与实际生产库验证公开错误约定：
 
-- 创建 NULL 配置须返回 NULL/EINVAL。
+- 进程已就绪时，创建 NULL 配置返回 -EINVAL 并保持空输出槽。
 - 显式 flush/reopen 的 NULL 实例须返回 -1/EINVAL。
 - 历史同步状态记录入口必须保持 -EINVAL，而非通用 -1+errno。
-- 未初始化 Global flush 为 -1/ENODEV；无效 Global 创建为 -1/EINVAL。
-- NULL destroy 成功并保留调用方原 errno。
+- 未初始化或未绑定时 Global flush 返回 -1/ENODEV，不创建实例。
+- 有效空拥有者槽销毁成功并保留 errno；NULL 槽地址返回 -EINVAL。
 - 正常同步实例创建、flush、destroy 可以完成。
 
 配置版本与未来尾部检查由 config_abi_test 独立覆盖；C11/C++11 ABI 布局、

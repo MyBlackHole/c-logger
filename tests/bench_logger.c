@@ -1,4 +1,7 @@
 #define LOG_MODULE "bench"
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -37,8 +40,8 @@ int main(int argc, char **argv)
 	c.rotation.max_file_size = 1024ull * 1024ull * 1024ull;
 	c.rotation.retention_days = 1;
 	c.flush_level = LOGGER_FATAL;
-	if (logger_init(&c)) {
-		perror("logger_init");
+	if (fixture_default_create(&c, &default_owner)) {
+		fputs("DEFAULT_BIND_FAILED\n", stderr);
 		return 1;
 	}
 	pthread_t *ts = calloc((size_t)n, sizeof(*ts));
@@ -55,7 +58,7 @@ int main(int argc, char **argv)
 	logger_get_global_metrics(&m);
 	unsigned long long dropped =
 		(unsigned long long)logger_global_dropped();
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	printf("threads=%d attempted=%ld producer_seconds=%.6f attempted_logs_per_sec=%.0f dropped=%llu hwm=%llu enqueued=%llu batches=%llu records=%llu sync_fb=%llu\n",
 	       n, each * n, b - a, (each * n) / (b - a), dropped,
 	       (unsigned long long)m.queue_high_watermark,

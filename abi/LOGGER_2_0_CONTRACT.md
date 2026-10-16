@@ -1,11 +1,16 @@
 # LOGGER_2.0 当前开发 ABI 合同
 
+> **第十三阶段候选，尚未完成全仓库迁移及验收。** 默认入口改为借用普通实例，
+> 新接口 `logger_default_set(expected, replacement)` 取代配置式初始化和库内销毁。
+> 当前生产导出为45个。下面尚未迁移的旧 Global 说明不是新合同；以[候选借用合同](../docs/v2/DEFAULT_BORROW.md)为准。
+
+
 本版尚未正式发布。生命周期迁移不兼容旧开发签名，没有适配层或旧 status
 导出；必须使用同一源码的头文件和库重新构建调用方。版本身份不代表发布审批。
 
 ## 权威与接口变化
 
-Linux x86_64/ELF64 的生产导出由 `abi/logger-2.0.symbols` 精确列出，当前47个；
+Linux x86_64/ELF64 的生产导出由 `abi/logger-2.0.symbols` 精确列出，当前45个；
 SONAME 为 `liblogger.so.2`，符号版本为 `LOGGER_2.0`。移除
 `logger_destroy_status`，`logger_create` 和 `logger_destroy` 的类型变为：
 
@@ -25,7 +30,7 @@ int logger_destroy(logger_t **);
 ## 单一可执行断言
 
 `tests/packaging/current_abi_contract.c` 精确检查全部类型大小、对齐、字段偏移、
-枚举/配置数值、默认值和当前47个函数类型；`.cpp`包含同一份源，独立检查
+枚举/配置数值、默认值和当前45个函数类型；`.cpp`包含同一份源，独立检查
 C++11布局与真实调用。实际安装消费者调用新创建与销毁函数，不只是编译声明。
 本文不再复制整段测试源码和手工维护的源码哈希，避免修改函数后文档留下旧快照。
 原先完整快照可从Git历史复查，不作为本次新运行证据。

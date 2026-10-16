@@ -1,5 +1,10 @@
 <a id="c-logger--20-开发主线--production-v1-已发布"></a>
 
+> 默认便利入口现仅借用宿主实例：使用 `logger_default_set(expected, replacement)`。
+> 不再提供配置式 Global 初始化、库内销毁或空槽 stderr 回退。
+> [默认借用合同](docs/v2/DEFAULT_BORROW.md)与[旧测试映射](docs/v2/DEFAULT_MIGRATION.md)区分当前能力和历史场景。
+
+
 # C Logger — 2.0 稳定发布准备
 
 > `main` 正在准备 2.0.0 生产稳定版；当前合同已整理，最终固定源码与发布包尚待验收。\
@@ -8,7 +13,7 @@
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
-当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 47 个当前公开 C ABI 符号**。
+当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 45 个当前公开 C ABI 符号**。
 
 > **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
 > 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、

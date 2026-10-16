@@ -1,4 +1,7 @@
 #define LOG_MODULE "storage"
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <stdio.h>
 #include <string.h>
@@ -20,10 +23,10 @@ int main(void)
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.flush_level = LOGGER_ERROR;
 	c.detail = LOGGER_DETAIL_DEBUG;
-	if (logger_init(&c))
+	if (fixture_default_create(&c, &default_owner))
 		return 1;
 	emit_one();
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	FILE *f = fopen("./format.log", "r");
 	if (!f)
 		return 2;

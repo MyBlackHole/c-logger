@@ -33,7 +33,6 @@ logger_get_state
 logger_get_syslog_metrics
 logger_global_dropped
 logger_global_write
-logger_init
 logger_log
 logger_log_source
 logger_log_sync_status
@@ -44,5 +43,4 @@ logger_reopen
 logger_reopen_instance
 logger_set_instance_level
 logger_set_level
-logger_shutdown
-logger_shutdown_status
+logger_default_set

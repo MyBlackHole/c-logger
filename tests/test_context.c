@@ -1,4 +1,7 @@
 #define LOG_MODULE "rpc"
+#include <errno.h>
+#include "regression/default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include <stdio.h>
 #include <string.h>
@@ -18,7 +21,7 @@ int main(void)
 	c.async_mode = 0;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.detail = LOGGER_DETAIL_DEBUG;
-	if (logger_init(&c))
+	if (fixture_default_create(&c, &default_owner))
 		return 1;
 	logger_context_t ctx = { .request_id = "req-42",
 				 .session_id = "sess-7",
@@ -26,7 +29,7 @@ int main(void)
 	logger_context_set(&ctx);
 	emit();
 	logger_context_clear();
-	logger_shutdown();
+	fixture_default_destroy(&default_owner);
 	FILE *f = fopen("./context.log", "r");
 	if (!f)
 		return 2;

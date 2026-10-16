@@ -1,4 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "logger.h"
 #include "support.h"
 int main(void)
@@ -12,7 +15,7 @@ int main(void)
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	CHECK(logger_init(&c) == 0);
+	CHECK(fixture_default_create(&c, &default_owner) == 0);
 	LOG_INFO("global-before-flush");
 	CHECK(logger_flush_status() == 0);
 	CHECK(file_contains("out.log", "global-before-flush"));
@@ -20,8 +23,8 @@ int main(void)
 	logger_get_global_io_metrics(&io);
 	CHECK(io.async_completed == 1 && io.emitted_records == 1 &&
 	      io.failed_records == 0);
-	logger_shutdown();
-	CHECK(logger_flush_status() == -1 && errno == ESHUTDOWN);
+	CHECK(fixture_default_destroy(&default_owner) == 0);
+	CHECK(logger_flush_status() == -1 && errno == ENODEV);
 	logger_get_global_io_metrics(&io);
 	CHECK(io.async_completed == 0 && io.emitted_records == 0 &&
 	      io.first_error == 0);

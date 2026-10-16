@@ -50,17 +50,16 @@ class CasOrderTests(unittest.TestCase):
 
     def test_each_global_lifecycle_regression_is_rejected(self):
         calls = {
-            "start": "&g_ticket, &old, ticket,",
-            "publish": "&g_ticket, &ticket, with_phase(ticket, G_RUNNING),",
-            "stop": "&g_ticket, &current, stopping,",
-            "stopped": "&g_ticket, &stopping, with_phase(current, G_STOPPED),",
+            "close-admission": "&g_ticket, &current, updating,",
+            "publish-binding": "&g_ticket, &updating, next,",
+            "poison-binding": "&g_ticket, &ticket, with_phase(ticket, G_BROKEN),",
         }
         for name, args in calls.items():
             for layout in ("原始", "单行", "逐词换行"):
                 with self.subTest(transition=name, layout=layout):
                     root = self.fixture()
                     path = root / "src/logger_global.c"
-                    # 四个参数锚点独立列出；只放宽 token 之间的空白，
+                    # 三个当前绑定转换的参数锚点独立列出；只放宽 token 之间的空白，
                     # 不依赖被测扫描器，也不放宽唯一匹配断言。
                     tokens = re.findall(r"\w+|[^\w\s]", args +
                                         " memory_order_acq_rel, memory_order_acquire")
@@ -166,7 +165,7 @@ class CasOrderTests(unittest.TestCase):
             stream.write('\n/* atomic_compare_exchange_strong(&a, &e, 1); */\n'
                          '// atomic_compare_exchange_strong(&a, &e, 1);\n'
                          'const char *s = "atomic_compare_exchange_strong(&a, &e, 1)";\n')
-        self.replace(root, "&g_ticket, &old, ticket,", "&g_ticket, /* review */ &old,\n ticket,")
+        self.replace(root, "&g_ticket, &current, updating,", "&g_ticket, /* review */ &current,\n updating,")
         self.run_gate(root, 0)
 
     def test_nested_call_arguments(self):

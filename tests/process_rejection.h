@@ -24,8 +24,7 @@ static void check_process_rejection(int error)
 	/* 准入先于读取配置、拥有者槽和实例字段。 */
 	CHECK(logger_create(NULL, NULL) == -error && errno == EDOM);
 	CHECK(logger_destroy(NULL) == -error && errno == EDOM);
-	CHECK(logger_init(&cfg) == -1 && errno == error);
-	CHECK(logger_shutdown_status() == -1 && errno == error);
+	CHECK(logger_default_set(NULL, NULL) == -error && errno == EDOM);
 	CHECK(logger_flush_status() == -1 && errno == error);
 	CHECK(logger_reopen() == -1 && errno == error);
 	LOGGER_INFO(NULL, "init", "forbidden%n", &formatted);

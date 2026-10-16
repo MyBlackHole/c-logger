@@ -27,6 +27,12 @@ def main():
             'void f(logger_t *l) { (void)logger_destroy(&l); }',
             "logger_destroy_status"),
     }
+    for symbol, call in (("logger_init", "logger_init(NULL)"),
+                         ("logger_shutdown", "logger_shutdown()"),
+                         ("logger_shutdown_status", "logger_shutdown_status()")):
+        cases["removed-" + symbol] = (
+            "void f(void) { (void)" + call + "; }",
+            "void f(void) { (void)logger_default_set(NULL, NULL); }", symbol)
     env = dict(os.environ, LC_ALL="C")
     with tempfile.TemporaryDirectory(prefix="logger-api-types-") as folder:
         path = Path(folder) / "contract.c"

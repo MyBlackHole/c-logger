@@ -427,6 +427,7 @@ static logger_t *create_logger(const logger_config_t *input)
 	l->syslog_backend.fd = -1;
 	atomic_init(&l->level, cfg.level);
 	atomic_init(&l->state, LOGGER_STATE_CREATED);
+	atomic_init(&l->default_borrowed, 0);
 	atomic_init(&l->running, 0);
 	atomic_init(&l->enqueued, 0);
 	atomic_init(&l->sync_fallbacks, 0);
@@ -822,6 +823,11 @@ int logger_destroy(logger_t **owner)
 	 * 再次释放同一个对象。最终释放回执供内部 Global 单独判定。
 	 */
 	logger_t *instance = *owner;
+	if (atomic_load_explicit(&instance->default_borrowed,
+				 memory_order_acquire)) {
+		rc = logger_scope_end(&scope, -EBUSY);
+		goto out;
+	}
 	*owner = NULL;
 	rc = dispose_body(instance, &destroy_receipt);
 	rc = logger_scope_end(&scope, rc);

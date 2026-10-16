@@ -225,7 +225,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* 精确公开函数类型契约：47 个当前生产导出。 */
+/* 精确公开函数类型契约：45 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -264,7 +264,7 @@ ABI_FN(logger_get_syslog_metrics, int, logger_t *, logger_syslog_metrics_t *);
 ABI_FN(logger_global_dropped, uint64_t, void);
 ABI_FN(logger_global_write, void, logger_level_t, const char *, const char *, int,
        const char *, const char *, ...);
-ABI_FN(logger_init, int, const logger_config_t *);
+ABI_FN(logger_default_set, int, logger_t *, logger_t *);
 ABI_FN(logger_log, void, logger_t *, logger_level_t, const char *, const char *, int,
        const char *, const char *, ...);
 ABI_FN(logger_log_source, void, logger_t *, logger_level_t, logger_source_t,
@@ -277,8 +277,6 @@ ABI_FN(logger_reopen, int, void);
 ABI_FN(logger_reopen_instance, int, logger_t *);
 ABI_FN(logger_set_instance_level, void, logger_t *, logger_level_t);
 ABI_FN(logger_set_level, void, logger_level_t);
-ABI_FN(logger_shutdown, void, void);
-ABI_FN(logger_shutdown_status, int, void);
 
 static int defaults_match(void)
 {
@@ -343,6 +341,13 @@ int main(void)
 		return 12;
 	if (create(&cfg, &owner) != -EBUSY || !owner || errno != EDOM)
 		return 13;
+	int (*set_default)(logger_t *, logger_t *) = logger_default_set;
+	if (set_default(NULL, owner) || errno != EDOM)
+		return 18;
+	if (destroy(&owner) != -EBUSY || !owner || errno != EDOM)
+		return 19;
+	if (set_default(owner, NULL) || errno != EDOM)
+		return 20;
 	if (destroy(&owner) || owner != NULL || errno != EDOM)
 		return 14;
 	if (destroy(&owner) || owner != NULL || errno != EDOM)

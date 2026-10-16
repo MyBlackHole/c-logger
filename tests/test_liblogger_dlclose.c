@@ -41,6 +41,9 @@ int main(int argc, char **argv)
 		GET(log_fn, "logger_log");
 		GET(destroy_fn, "logger_destroy");
 		CHECK(dlsym(handle, "logger_destroy_status") == NULL);
+		CHECK(dlsym(handle, "logger_init") == NULL);
+		CHECK(dlsym(handle, "logger_shutdown") == NULL);
+		CHECK(dlsym(handle, "logger_shutdown_status") == NULL);
 #undef GET
 		logger_config_t c = LOGGER_DEFAULT_CONFIG();
 		c.outputs = LOGGER_OUT_FILE;

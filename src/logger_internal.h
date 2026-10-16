@@ -41,6 +41,8 @@ struct logger {
 	/* 原子控制/状态字段，可在不持有 emit_mu 时读取。 */
 	_Atomic logger_level_t level;
 	_Atomic logger_state_t state;
+	/* 默认槽的管理性借用标记，不是引用计数或在途调用计数。 */
+	_Atomic int default_borrowed;
 
 	/* 构造并发布成功后保持不变。 */
 	logger_detail_t detail;

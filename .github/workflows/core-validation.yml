@@ -79,11 +79,11 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/regression/run_ctor_resource_failure.sh core-build | tee core-build/ctor-resource.log
-      - name: 运行 Global R7 候选/退役对象的生产静态库回归
+      - name: 运行默认借用生命周期的生产静态库回归
         shell: bash
         run: |
           set -euo pipefail
-          bash tests/regression/run_global_r7.sh core-build | tee core-build/global-r7.log
+          bash tests/regression/run_default_borrow.sh core-build | tee core-build/default-borrow.log
       - name: 保留精确源码快照与回归证据
         if: always()
         shell: bash
@@ -94,7 +94,7 @@ jobs:
           cp core-build/logger-format.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/worker-startup.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/worker-failure.log logger-format-evidence/ 2>/dev/null || true
-          cp core-build/global-r7.log logger-format-evidence/ 2>/dev/null || true
+          cp core-build/default-borrow.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/close-eintr.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/ctor-resource.log logger-format-evidence/ 2>/dev/null || true
           cp core-build/file-acquisition.log logger-format-evidence/ 2>/dev/null || true
@@ -142,6 +142,23 @@ jobs:
             --build_private_tests=y \
             --build_regression_tests=y \
             --policies="$policies"
+      - name: 验证 TSan fork 映射模型及真实错误反例
+        if: matrix.sanitizer == 'thread'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake -j2 fork_tsan_model
+          mapfile -t programs < <(find sanitizer-build -type f -name fork_tsan_model)
+          test "${#programs[@]}" -eq 1
+          python3 scripts/check_tsan_fork_model.py --binary "${programs[0]}" --output tsan-fork-model
+      - name: 保留 TSan fork 模型正反例
+        if: always() && matrix.sanitizer == 'thread'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsan-fork-model
+          path: tsan-fork-model/
+          if-no-files-found: error
+
       - name: 运行启用运行时检查的静态库测试集
         run: xmake test -j1
       - name: 运行生产 Logger 格式化的 ASan 与 UBSan 回归测试
@@ -209,7 +226,7 @@ jobs:
           xmake -j2 logger
           bash tests/regression/run_file_acquisition.sh sanitizer-build "$sanitizer"
 
-      - name: 运行 Global R7 正常/故障路径的生产库运行时检查
+      - name: 运行默认借用正常/故障路径的生产库运行时检查
         shell: bash
         run: |
           set -euo pipefail
@@ -219,7 +236,7 @@ jobs:
             sanitizer="thread"
           fi
           xmake -j2 logger
-          bash tests/regression/run_global_r7.sh sanitizer-build "$sanitizer"
+          bash tests/regression/run_default_borrow.sh sanitizer-build "$sanitizer"
 
       - name: 保留 ASan 运行库验收证据
         if: always() && matrix.sanitizer == 'address-undefined'

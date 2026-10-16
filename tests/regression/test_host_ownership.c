@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include "default_fixture.h"
+static logger_t *default_owner;
 #include "host_support.h"
 #include "logger_internal.h"
 #include "logger_adapter.h"
@@ -171,7 +174,7 @@ int main(int argc, char **argv)
 			c.file_path = "global.log";
 			c.rotation.mode = LOGGER_ROTATE_NONE;
 			c.async_mode = 0;
-			CHECK(logger_init(&c) == 0);
+			CHECK(fixture_default_create(&c, &default_owner) == 0);
 			LOG_INFO("global-before");
 		}
 		logger_t *l = make_logger("shared.log", async);
@@ -218,7 +221,7 @@ int main(int argc, char **argv)
 		if (global) {
 			LOG_INFO("global-after");
 			CHECK(logger_flush_status() == 0);
-			logger_shutdown();
+			fixture_default_destroy(&default_owner);
 			CHECK(count_lines("global.log") == 2);
 			CHECK(!log_contains("global.log", "sdk="));
 		}

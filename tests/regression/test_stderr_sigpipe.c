@@ -3,6 +3,7 @@
 #include "support.h"
 
 #include <pthread.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
@@ -56,22 +57,23 @@ int main(int argc, char **argv)
 	if (pending)
 		CHECK(raise(SIGPIPE) == 0);
 	if (bootstrap) {
+		int touched = 7;
 		errno = EDOM;
 		logger_global_write(LOGGER_INFO, "sigpipe", __FILE__, __LINE__,
-				    __func__, "bootstrap %s %d", "message", 42);
-		CHECK(errno == (healthy ? EDOM : EPIPE));
+				    __func__, "unbound%n", &touched);
+		CHECK(errno == ENODEV && touched == 7);
 		check_sigpipe_state(preblocked, pending);
 		if (healthy) {
-			char text[128];
-			const char expected[] = "INFO  [sigpipe] bootstrap message 42\n";
-			ssize_t n = read(pipefd[0], text, sizeof(text));
-			CHECK(n == (ssize_t)(sizeof(expected) - 1));
-			CHECK(!memcmp(text, expected, sizeof(expected) - 1));
+			CHECK(fcntl(pipefd[0], F_SETFL, O_NONBLOCK) == 0);
+			char byte;
+			CHECK(read(pipefd[0], &byte, 1) == -1 &&
+			      errno == EAGAIN);
 			CHECK(close(pipefd[0]) == 0);
 		}
-		CHECK(logger_shutdown_status() == 0);
+		CHECK(logger_default_set(NULL, NULL) == 0);
 		return 0;
 	}
+
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = async_mode;
