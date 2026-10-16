@@ -1,0 +1,104 @@
+name: control-api-import
+
+# 一次性传输已在本地验证的固定补丁；正式验收前删除本工作流及两个载荷文件。
+# 不运行补丁中的程序，不推送 main，不修改分支保护或检测器规则。
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - '.github/workflows/control-api-import.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  import-fixed-tree:
+    if: >-
+      github.repository == 'MyBlackHole/c-logger' &&
+      github.event.pull_request.head.repo.full_name == 'MyBlackHole/c-logger' &&
+      github.event.pull_request.head.ref == 'feature/control-status-api-218'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 校验固定基线、补丁与最终源码树
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import os
+          from pathlib import Path
+          import subprocess
+          import tempfile
+
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+
+          base = 'e596e08d2322a4398e033ea209e78cf214166603'
+          wanted = 'dfd97d6cbb6700c4a3df87b01df3b69230a14778'
+          temporary = [
+              '.github/import-control-api.a',
+              '.github/import-control-api.b',
+              '.github/workflows/control-api-import.yml',
+          ]
+          assert git('rev-parse', 'HEAD') == os.environ['EXPECTED_HEAD']
+          assert git('rev-parse', 'HEAD^') == base
+          assert git('rev-parse', base + '^{tree}') == 'e7a1f80fbf1ca1bc23242f912ad3611651a2fcf0'
+          assert git('diff', '--name-only', base, 'HEAD').splitlines() == temporary
+          assert not git('status', '--porcelain')
+          encoded = ''.join(Path(p).read_text().strip() for p in temporary[:2])
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert len(patch) == 62044
+          assert hashlib.sha256(patch).hexdigest() == 'cef99a139b7eae05f793ca847c09a6bd05709870931595411137981bbc3a22a2'
+          with tempfile.NamedTemporaryFile() as f:
+              f.write(patch)
+              f.flush()
+              subprocess.run(['git', 'apply', '--index', '--unidiff-zero',
+                              '--whitespace=error', f.name], check=True)
+          # 只从临时索引移除传输文件来核对最终树；不执行被传输的源码。
+          subprocess.run(['git', 'update-index', '--force-remove', '--', *temporary], check=True)
+          assert git('write-tree') == wanted
+          assert not git('diff', '--cached', '--name-only', base, '--', '.github')
+          subprocess.run(['git', 'add', '--', *temporary], check=True)
+          subprocess.run(['git', 'config', 'user.name', 'c-logger integration'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'commit', '-m',
+              'feat: 迁移刷新与重开到统一负错误码接口\n\n关联 #218。按固定补丁导入已验证的源码树；移除四个旧接口，保留完成水位、默认借用、取消和锁协议，补齐恢复错误传播及48个控制接口场景。\n\n本提交暂含一次性传输文件，正式验证提交会将其全部删除；导入成功不等于远端功能验收。'], check=True)
+          print('CANDIDATE_TREE=' + wanted)
+          print('IMPORTED_COMMIT=' + git('rev-parse', 'HEAD'))
+          PY
+      - name: 只快进本次功能分支
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          import subprocess
+
+          branch = 'refs/heads/feature/control-status-api-218'
+          env = os.environ.copy()
+          token = env.pop('GH_TOKEN')
+          auth = base64.b64encode(('x-access-token:' + token).encode()).decode()
+          env['GIT_CONFIG_COUNT'] = '1'
+          env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
+          env['GIT_CONFIG_VALUE_0'] = 'AUTHORIZATION: basic ' + auth
+          remote = subprocess.check_output(['git', 'ls-remote', 'origin', branch], env=env, text=True)
+          assert remote.split()[0] == os.environ['EXPECTED_HEAD']
+          # 默认非强制推送；若并发推进分支，Git 拒绝，而不是覆盖他人提交。
+          subprocess.run(['git', 'push', 'origin', 'HEAD:' + branch], env=env, check=True)
+          PY
