@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_runtime.h"
 #include "logger_internal.h"
 #include "logger_cleanup.h"
 #include "logger_sigpipe.h"
@@ -32,22 +33,34 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	if (!capacity)
 		capacity = 1;
 
-	logger_worker_workspace_t *workspace __free(free) =
-		calloc(1, sizeof(*workspace));
-	logger_message_t *batch __free(free) =
-		calloc(capacity, sizeof(*batch));
-	struct iovec *vec __free(free) = calloc(capacity, sizeof(*vec));
-	struct iovec *copy __free(free) = calloc(capacity, sizeof(*copy));
-	char *lines __free(free) = malloc(capacity * LOGGER_LINE_MAX);
-	size_t *lens __free(free) = calloc(capacity, sizeof(*lens));
-	unsigned char *failed __free(free) =
-		calloc(capacity, sizeof(*failed));
-
-	if (!workspace || !batch || !vec || !copy || !lines || !lens ||
-	    !failed) {
-		errno = ENOMEM;
+	logger_worker_workspace_t *workspace __free(runtime_free) =
+		logger_runtime_calloc(1, sizeof(*workspace));
+	if (!workspace)
 		return NULL;
-	}
+	logger_message_t *batch __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*batch));
+	if (!batch)
+		return NULL;
+	struct iovec *vec __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*vec));
+	if (!vec)
+		return NULL;
+	struct iovec *copy __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*copy));
+	if (!copy)
+		return NULL;
+	char *lines __free(runtime_free) =
+		logger_runtime_malloc(capacity * LOGGER_LINE_MAX);
+	if (!lines)
+		return NULL;
+	size_t *lens __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*lens));
+	if (!lens)
+		return NULL;
+	unsigned char *failed __free(runtime_free) =
+		logger_runtime_calloc(capacity, sizeof(*failed));
+	if (!failed)
+		return NULL;
 
 	workspace->capacity = capacity;
 	/* 所有权转移：词法作用域内的分配所有者 -> 工作区对象。
@@ -67,13 +80,13 @@ void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
 {
 	if (!workspace)
 		return;
-	free(workspace->failed);
-	free(workspace->lens);
-	free(workspace->lines);
-	free(workspace->copy);
-	free(workspace->vec);
-	free(workspace->batch);
-	free(workspace);
+	logger_runtime_free(workspace->failed);
+	logger_runtime_free(workspace->lens);
+	logger_runtime_free(workspace->lines);
+	logger_runtime_free(workspace->copy);
+	logger_runtime_free(workspace->vec);
+	logger_runtime_free(workspace->batch);
+	logger_runtime_free(workspace);
 }
 
 
@@ -125,6 +138,15 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 			return rc;
 	} else {
 		n = logger_format_line(l, m, line, sizeof(line));
+		if (!n) {
+			int error = errno ? errno : EILSEQ;
+			logger_note_io_error(l, error);
+			atomic_fetch_add_explicit(&l->failed_records, 1,
+						  memory_order_relaxed);
+			atomic_fetch_add_explicit(&l->sync_completed, 1,
+						  memory_order_release);
+			return -error;
+		}
 	}
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
 					     memory_order_acquire);
@@ -185,69 +207,85 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		       size_t count)
 {
 	memset(workspace->failed, 0, count);
+	int format_error = 0;
 	for (size_t i = 0; i < count; ++i) {
 		char *line = workspace_line(workspace, i);
 		workspace->lens[i] =
 			logger_format_line(l, &workspace->batch[i], line,
 					   LOGGER_LINE_MAX);
+		if (!workspace->lens[i] && !format_error)
+			format_error = errno ? errno : EILSEQ;
 		workspace->vec[i].iov_base = line;
 		workspace->vec[i].iov_len = workspace->lens[i];
 	}
-
-	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
-	int lock_rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
-	if (lock_rc) {
+	if (format_error) {
+		/* 批量输出尚未开始；拒绝整批，不能把零长度计成成功记录。 */
 		memset(workspace->failed, 1, count);
-		logger_note_io_error(l, -lock_rc);
-		logger_note_lifecycle_error(l, -lock_rc);
+		logger_note_io_error(l, format_error);
 		goto account_batch;
 	}
-	if (l->outputs & LOGGER_OUT_STDERR) {
-		memcpy(workspace->copy, workspace->vec,
-		       count * sizeof(*workspace->vec));
-		int rc = logger_stderr_writev_all(workspace->copy, (int)count);
-		if (rc < 0) {
-			/* 部分完成的批次没有逐条确认。
-			 * 因此保守地把整批记录标记为未确认。
-			 */
+
+	{
+		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
+		int lock_rc =
+			ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
+		if (lock_rc) {
 			memset(workspace->failed, 1, count);
-			logger_note_io_error(l, -rc);
+			logger_note_io_error(l, -lock_rc);
+			logger_note_lifecycle_error(l, -lock_rc);
+			goto account_batch;
 		}
-	}
-	if (l->outputs & LOGGER_OUT_FILE) {
-		size_t total = 0;
-		int need_sync = 0;
-		for (size_t i = 0; i < count; ++i) {
-			total += workspace->lens[i];
-			if (workspace->batch[i].level >= l->flush_level)
-				need_sync = 1;
-		}
-		memcpy(workspace->copy, workspace->vec,
-		       count * sizeof(*workspace->vec));
-		int rc = logger_file_writev(
-			&l->file_backend, workspace->copy, (int)count, total,
-			&workspace->batch[count - 1].ts, need_sync);
-		if (rc < 0) {
-			memset(workspace->failed, 1, count);
-			logger_note_io_error(l, -rc);
-		}
-	}
-	if (l->outputs & LOGGER_OUT_SYSLOG) {
-		for (size_t i = 0; i < count; ++i) {
-			if (logger_syslog_write(
-				    &l->syslog_backend, workspace->batch[i].level,
-				    workspace_line(workspace, i),
-				    workspace->lens[i]) != 0) {
-				workspace->failed[i] = 1;
-				logger_note_io_error(l, errno ? errno : EIO);
+		if (l->outputs & LOGGER_OUT_STDERR) {
+			memcpy(workspace->copy, workspace->vec,
+			       count * sizeof(*workspace->vec));
+			int rc = logger_stderr_writev_all(workspace->copy,
+							  (int)count);
+			if (rc < 0) {
+				/* 部分完成的批次没有逐条确认。
+				 * 因此保守地把整批记录标记为未确认。
+				 */
+				memset(workspace->failed, 1, count);
+				logger_note_io_error(l, -rc);
 			}
 		}
-	}
-	int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
-	if (unlock_rc) {
-		memset(workspace->failed, 1, count);
-		logger_note_io_error(l, -unlock_rc);
-		logger_note_synchronization_error(l, unlock_rc);
+		if (l->outputs & LOGGER_OUT_FILE) {
+			size_t total = 0;
+			int need_sync = 0;
+			for (size_t i = 0; i < count; ++i) {
+				total += workspace->lens[i];
+				if (workspace->batch[i].level >= l->flush_level)
+					need_sync = 1;
+			}
+			memcpy(workspace->copy, workspace->vec,
+			       count * sizeof(*workspace->vec));
+			int rc = logger_file_writev(
+				&l->file_backend, workspace->copy, (int)count,
+				total, &workspace->batch[count - 1].ts,
+				need_sync);
+			if (rc < 0) {
+				memset(workspace->failed, 1, count);
+				logger_note_io_error(l, -rc);
+			}
+		}
+		if (l->outputs & LOGGER_OUT_SYSLOG) {
+			for (size_t i = 0; i < count; ++i) {
+				if (logger_syslog_write(
+					    &l->syslog_backend,
+					    workspace->batch[i].level,
+					    workspace_line(workspace, i),
+					    workspace->lens[i]) != 0) {
+					workspace->failed[i] = 1;
+					logger_note_io_error(l, errno ? errno :
+									EIO);
+				}
+			}
+		}
+		int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+		if (unlock_rc) {
+			memset(workspace->failed, 1, count);
+			logger_note_io_error(l, -unlock_rc);
+			logger_note_synchronization_error(l, unlock_rc);
+		}
 	}
 
 account_batch:
@@ -321,7 +359,7 @@ void *logger_worker_main(void *p)
 			/* waiting 必须在持有 wait_mu 时发布，并且发布后重新检查
 			 * 队列和 running。这样生产者如果在任一窗口发布记录：
 			 * - 没看到 waiting：本次复查会看到记录；
-			 * - 看到了 waiting：会在同一互斥锁下发送信号通知。
+			 * - 看到了 waiting：本次复查也会看到记录，或在配对锁下通知。
 			 */
 			while (logger_queue_empty(&l->q) &&
 			       atomic_load_explicit(&l->running,

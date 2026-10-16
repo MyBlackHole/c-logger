@@ -37,7 +37,7 @@ int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 int __real_pthread_join(pthread_t thread, void **result);
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
 int __real_pthread_cond_destroy(pthread_cond_t *cv);
-void __real_free(void *ptr);
+int __real_logger_runtime_free(void *ptr);
 
 static void *worker_entry(void *unused)
 {
@@ -116,7 +116,7 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 	return __real_pthread_cond_destroy(cv);
 }
 
-void __wrap_free(void *ptr)
+int __wrap_logger_runtime_free(void *ptr)
 {
 	if (candidate && ptr == candidate) {
 		if (selected != CREATE_ERROR)
@@ -124,7 +124,7 @@ void __wrap_free(void *ptr)
 		++freed;
 		candidate = NULL;
 	}
-	__real_free(ptr);
+	return __real_logger_runtime_free(ptr);
 }
 
 static enum scenario scenario_from_name(const char *name)

@@ -1,5 +1,6 @@
 #include "logger_scope.h"
 #include "logger_process.h"
+#include "logger_fork_fd.h"
 #include <errno.h>
 #include <pthread.h>
 
@@ -7,7 +8,7 @@ static _Thread_local int in_runtime;
 
 int logger_scope_busy(void)
 {
-	return in_runtime;
+	return in_runtime || logger_fork_fd_preparing();
 }
 
 int logger_scope_begin(logger_scope_t *scope)
@@ -17,7 +18,7 @@ int logger_scope_begin(logger_scope_t *scope)
 		errno = ECHILD;
 		return -ECHILD;
 	}
-	if (in_runtime) {
+	if (logger_scope_busy()) {
 		errno = EDEADLK;
 		return -EDEADLK;
 	}
@@ -54,6 +55,11 @@ void logger_scope_worker_enter(void)
 	in_runtime = 1;
 }
 void logger_scope_worker_leave(void)
+{
+	in_runtime = 0;
+}
+
+void logger_scope_reset_child(void)
 {
 	in_runtime = 0;
 }

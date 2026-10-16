@@ -55,7 +55,8 @@ class ResourceAcquisitions(unittest.TestCase):
     def test_current_production_acquisitions_reviewed(self):
         count, errors = GATE.check(ROOT)
         self.assertEqual([], errors)
-        self.assertEqual(22, count)
+        # 物理获取现为19处；十个逻辑分配另由 runtime_alloc 清单固定。
+        self.assertEqual(19, count)
 
     def test_real_resource_call_matches_inventory(self):
         root = self.fixture()

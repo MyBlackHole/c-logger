@@ -6,12 +6,14 @@
 
 | 锁 | 生命周期 | 保护对象/职责 | 允许的前置锁 | 是否允许继续拿锁 | guard 策略 |
 |---|---|---|---|---|---|
-| 全局 `g_control_mu` | 进程静态资源 | 全局初始化/关闭控制器 | 无 | `g_lifetime_lock`，随后实例锁 | 保持显式 |
-| 全局 `g_lifetime_lock` | 进程静态资源 | `g_logger` 发布/销毁与读侧生命周期固定保护（pin） | `g_control_mu`（写者/控制器）或无（读者） | 实例锁 | 保持显式 |
+| 全局 `g_control_mu` | 进程运行域 | 全局初始化/关闭控制器 | 无 | `g_lifetime_lock`，随后实例锁 | 保持显式 |
+| 全局 `g_lifetime_lock` | 进程运行域 | `g_logger` 发布/销毁与读侧生命周期固定保护（pin） | `g_control_mu`（写者/控制器）或无（读者） | 实例锁 | 保持显式 |
 | `logger_t.emit_mu` | Logger 实例 | 文件/syslog 后端可变状态、写入/同步/重新打开 | 全局生命周期固定保护（pin）；普通显式 API 可直接获取 | 不允许 `progress_mu/q.wait_mu` | 简单路径可 guard |
 | `logger_t.progress_mu` | Logger 实例 | `completed_pos/progress_cv` 完成谓词 | 全局生命周期固定保护（pin）；普通显式 API 可直接获取 | 不允许 `emit_mu/q.wait_mu` | 可 guard |
 | `logger_queue_t.wait_mu` | 队列实例 | consumer_waiting 握手 + 条件变量睡眠/唤醒；生产者仅在 waiting 慢速路径获取 | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
-| Console `g_console_mu` | 进程静态资源 | Console FILE 输出与 flush | 无 | 无 | 带错误检查的 guard |
+| Console `g_console_mu` | 进程运行域 | Console FILE 输出与 flush | 无 | 格式协调锁 | 带错误检查的 guard |
+| `format_mu` | 进程运行域 | 本库 libc 敏感调用与 fork 边界 | Global 控制/生命周期、实例输出、Console 或无 | 资源协调锁 | 显式检查解锁结果 |
+| `resource_mu` | 进程运行域 | 映射/fd 取得、登记与消费 | Global 控制/生命周期、实例输出、格式协调或无 | 无 | 租约跨临时 DIR，显式处理 |
 
 <a id="不属于-pthread-lock-的同步机制"></a>
 
@@ -62,8 +64,10 @@ g_lifetime_lock -> g_control_mu
 
 ### Console 独立
 
-`g_console_mu` 不参与 Logger 层级。持锁时不要调用会重入 Console/Logger 的
-宿主回调。
+`g_console_mu` 不进入 Logger 实例/Global 层级，但允许进入进程格式协调锁。
+资源协调锁不允许反向取得格式锁。完整八类锁图和真实正反验证见
+[v2 锁契约](v2/LOCKING.md)与[锁跟踪](v2/LOCKDEP.md)。持锁时不要调用会重入
+Console/Logger 的宿主回调。
 
 <a id="condition-variable-规则"></a>
 

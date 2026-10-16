@@ -1,0 +1,30 @@
+name: Qualify repaired ASan runtime
+description: 使用已包含 fork 协调修复的 Clang 18，先验收运行库再运行项目测试。
+runs:
+  using: composite
+  steps:
+    - name: 安装固定系列的匹配编译器和运行库
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v clang-18 >/dev/null || ! command -v clang++-18 >/dev/null || ! dpkg-query -W libclang-rt-18-dev >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev
+        fi
+        mkdir -p asan-runtime-evidence
+        cc=$(command -v clang-18)
+        cxx=$(command -v clang++-18)
+        "$cc" --version > asan-runtime-evidence/compiler.txt
+        "$cxx" --version > asan-runtime-evidence/linker.txt
+        dpkg-query -W clang-18 libclang-rt-18-dev > asan-runtime-evidence/packages.txt
+        git rev-parse HEAD > asan-runtime-evidence/source-commit.txt
+        git rev-parse HEAD^{tree} > asan-runtime-evidence/source-tree.txt
+        printf 'CC=%s\nCXX=%s\n' "$cc" "$cxx" >> "$GITHUB_ENV"
+        # 与项目随后构建使用同一套编译、链接和检测器，不做跨实现混合链接。
+        xmake f -y -P tools/diagnostics/asan-runtime -m debug -o "$GITHUB_WORKSPACE/asan-toolchain-build" \
+          --toolchain=clang --cc="$cc" --cxx="$cxx" --ld="$cxx" --sh="$cxx" \
+          2>&1 | tee asan-runtime-evidence/configure.log
+        python3 tests/scripts/test_asan_runtime.py -v \
+          2>&1 | tee asan-runtime-evidence/verifier-tests.log
+        xmake test -P tools/diagnostics/asan-runtime -v -j1 \
+          2>&1 | tee asan-runtime-evidence/qualification.log

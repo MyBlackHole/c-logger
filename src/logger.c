@@ -1,10 +1,13 @@
 #define _GNU_SOURCE
+#include "logger_libc.h"
+#include "logger_runtime.h"
 #include "logger.h"
 #include "logger_internal.h"
 #include "logger_queue.h"
 #include "logger_file.h"
 #include "logger_cleanup.h"
 #include "logger_uapi.h"
+#include "logger_fork_fd.h"
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -59,7 +62,9 @@ static void copy_ctx(char *d, size_t n, const char *s)
 		d[0] = 0;
 		return;
 	}
-	snprintf(d, n, "%s", s);
+	size_t length = strnlen(s, n - 1u);
+	memcpy(d, s, length);
+	d[length] = 0;
 }
 void logger_context_set(const logger_context_t *c)
 {
@@ -175,7 +180,7 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	prepare_record_metadata(l, &m, mod, f, line, fn);
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
 		return;
-	int formatted = vsnprintf(m.text, sizeof(m.text), fmt, ap);
+	int formatted = logger_libc_vsnprintf(m.text, sizeof(m.text), fmt, ap);
 	if (formatted < 0)
 		return;
 	size_t stored = (size_t)formatted < sizeof(m.text) ?
@@ -381,8 +386,8 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 		return release_rc;
 	}
 
-	free(l);
-	return cleanup_rc;
+	int free_rc = logger_runtime_free(l);
+	return cleanup_rc ? cleanup_rc : free_rc;
 }
 
 static logger_t *create_logger(const logger_config_t *input)
@@ -403,7 +408,7 @@ static logger_t *create_logger(const logger_config_t *input)
 		errno = -rc;
 		return NULL;
 	}
-	logger_t *l = calloc(1, sizeof(*l));
+	logger_t *l = logger_runtime_calloc(1, sizeof(*l));
 	if (!l) {
 		int primary = errno ? errno : ENOMEM;
 		/* 没有可保留的容器。存活对象计数回滚失败仍会使进程守卫保持保守；
@@ -444,8 +449,7 @@ static logger_t *create_logger(const logger_config_t *input)
 	l->include_source = cfg.include_source;
 	l->capture_mask = capture_mask_from_config(&cfg);
 	l->pid = (l->capture_mask & LOGGER_CAPTURE_PID) ? getpid() : 0;
-	snprintf(l->ident, sizeof(l->ident), "%s",
-		 cfg.ident ? cfg.ident : "app");
+	copy_ctx(l->ident, sizeof(l->ident), cfg.ident ? cfg.ident : "app");
 
 	rc = pthread_mutex_init(&l->emit_mu, NULL);
 	if (rc != 0)
@@ -696,7 +700,7 @@ static int dispose_body(logger_t *l, int *released)
 	if (l->syslog_backend.fd >= 0) {
 		int fd = l->syslog_backend.fd;
 		l->syslog_backend.fd = -1;
-		if (close(fd) < 0 && !rc)
+		if (logger_fork_close(fd) < 0 && !rc)
 			rc = -errno;
 	}
 
@@ -710,13 +714,18 @@ static int dispose_body(logger_t *l, int *released)
 	if (release_rc)
 		return release_rc;
 
-	/* 此回执在 free 前写入：free 本身不会失败。
-	 * 它不是根据 errno 或进程级 live_objects 存活对象计数推断的。
+	/* 映射释放可能失败；只有真实归还成功才发布最终释放回执。
+	 * 失败映射仍在进程域登记中，不因对象计数归零就假称已释放。
 	 */
+	int free_rc = logger_runtime_free(l);
+	if (free_rc)
+		return rc ? rc : free_rc;
 	if (released)
 		*released = 1;
-	free(l);
-	return rc;
+	int domain_error =
+		atomic_load_explicit(&logger_runtime_current()->resource_error,
+				     memory_order_acquire);
+	return rc ? rc : -domain_error;
 }
 
 static int logger_dispose_internal_tracked(logger_t *l, int *released)
@@ -832,10 +841,11 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 		else {
 			va_list ap;
 			va_start(ap, fmt);
-			int n = vsnprintf(msg.text, sizeof(msg.text), fmt, ap);
+			int n = logger_libc_vsnprintf(
+				msg.text, sizeof(msg.text), fmt, ap);
 			va_end(ap);
 			if (n < 0)
-				rc = -EILSEQ;
+				rc = -(errno ? errno : EILSEQ);
 			else if ((size_t)n >= sizeof(msg.text))
 				rc = -EOVERFLOW;
 			else
@@ -1246,4 +1256,13 @@ int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 		}
 	}
 	return logger_scope_end(&scope, rc) ? -1 : 0;
+}
+
+void logger_context_reset_child(void)
+{
+	g_ctx = (logger_context_t){ 0 };
+	g_request_id[0] = 0;
+	g_session_id[0] = 0;
+	g_trace_id[0] = 0;
+	logger_destroy_receipt_reset();
 }

@@ -1,5 +1,7 @@
 #include "logger.h"
 #include "logger_process.h"
+#include "logger_fork_fd.h"
+#include "logger_runtime.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -21,12 +23,16 @@ enum process_phase {
 static _Atomic int process_ticket;
 static _Thread_local int initializing;
 /* 这不是实例引用计数，也不是全部在途操作/继承资源的清单。 */
-static _Atomic unsigned live_objects;
+/* 实例计数属于新进程域；不清零继承的旧对象计数。 */
+#define live_objects (logger_runtime_current()->live_objects)
+static _Atomic int handlers_registered;
 
 void logger_process_invalidate_child(void)
 {
-	/* 本阶段尚未建立资源快照，绝不清 PID 或复用继承的锁/队列。 */
+	/* 先关闭普通准入，再消费描述符快照；尚不重建继承的锁/队列。 */
 	atomic_store_explicit(&forked_child, 1, memory_order_relaxed);
+	logger_fork_fd_child();
+	logger_runtime_invalidate_child();
 }
 
 int logger_process_is_child(void)
@@ -55,7 +61,12 @@ static int claim_process(void)
 
 static int initialize_process(void)
 {
-	int rc = claim_process();
+	int child = logger_process_is_child();
+	if (child &&
+	    (!atomic_load_explicit(&forked_child, memory_order_relaxed) ||
+	     !logger_fork_fd_child_valid()))
+		return -ECHILD;
+	int rc = child ? 0 : claim_process();
 	if (rc)
 		return rc;
 	if (initializing)
@@ -63,7 +74,7 @@ static int initialize_process(void)
 	int ticket;
 
 	ticket = atomic_load_explicit(&process_ticket, memory_order_acquire);
-	if (ticket == PROCESS_READY)
+	if (!child && ticket == PROCESS_READY)
 		return -EALREADY;
 	if (ticket == PROCESS_STARTING)
 		return -EAGAIN;
@@ -81,8 +92,35 @@ static int initialize_process(void)
 		rc = ticket == PROCESS_READY ? -EALREADY : -EAGAIN;
 	} else {
 		initializing = 1;
-		int error = pthread_atfork(NULL, NULL,
-					   logger_process_invalidate_child);
+		struct logger_runtime *runtime = NULL;
+		int result = child ? logger_fork_fd_child_reinit() : 0;
+		if (!result)
+			result = logger_runtime_create(&runtime);
+		int error = result < 0 ? -result : 0;
+		if (!error && !atomic_load_explicit(&handlers_registered,
+						    memory_order_acquire)) {
+			error = pthread_atfork(logger_fork_fd_prepare,
+					       logger_fork_fd_parent,
+					       logger_process_invalidate_child);
+			if (!error)
+				atomic_store_explicit(&handlers_registered, 1,
+						      memory_order_release);
+		}
+		if (error) {
+			(void)logger_runtime_discard(runtime);
+		} else {
+			if (child) {
+				logger_scope_reset_child();
+				logger_global_reset_child();
+				logger_context_reset_child();
+				logger_format_reset_child();
+			}
+			logger_runtime_publish(runtime);
+			atomic_store_explicit(&owner_pid, (int)getpid(),
+					      memory_order_release);
+			atomic_store_explicit(&forked_child, 0,
+					      memory_order_release);
+		}
 		/* 只有注册成功才发布 READY；显式调用可以重试正数错误票据。
 		 * 注册成功后再也不进入此分支，不会重复安装处理函数。
 		 */
@@ -163,5 +201,14 @@ int logger_process_object_release(void)
 
 unsigned logger_process_object_count(void)
 {
+	/* 纯观测不能等待注册者；构造尚未发布时没有可借用的进程域。 */
+	if (logger_process_is_child() || !logger_process_ready())
+		return 0;
 	return atomic_load_explicit(&live_objects, memory_order_acquire);
+}
+
+int logger_process_ready(void)
+{
+	return atomic_load_explicit(&process_ticket, memory_order_acquire) ==
+	       PROCESS_READY;
 }

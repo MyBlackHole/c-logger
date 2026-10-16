@@ -160,6 +160,9 @@ local logger_sources = {
     "src/logger.c",
     "src/logger_global.c",
     "src/logger_process.c",
+    "src/logger_runtime.c",
+    "src/logger_libc.c",
+    "src/logger_fork_fd.c",
     "src/logger_scope.c",
     "src/logger_lockdep.c",
     "src/logger_redact.c",
@@ -283,6 +286,19 @@ target("logger")
     end)
 target_end()
 
+-- 运行时检测器不支持的派生模式明确返回 77，保留跳过原因，不记成用例通过。
+local function run_fork_runtime_test(target, opt)
+    local code, errors = os.execv(path.absolute(target:targetfile()),
+                                  table.wrap(opt.runargs or target:get("runargs")),
+                                  {try = true, timeout = opt.run_timeout or 40000,
+                                   envs = opt.runenvs})
+    if code == 77 then
+        print("FORK_RUNTIME_SKIP=%s/%s", target:name(), opt.name)
+        return true
+    end
+    return code == 0, errors
+end
+
 -- Non-default auxiliary tools/examples.
 target("bench_logger")
     set_kind("binary")
@@ -399,12 +415,14 @@ if has_config("build_tests") then
         target(spec[1])
             set_kind("phony")
             set_default(false)
-            add_tests(spec[3], {group = "cas-order", timeout = 30})
+            -- 全树多布局变异包含多个完整扫描；与日志性能预算无关。
+            local limit = spec[1] == "cas_order_mutation_test" and 90 or 30
+            add_tests(spec[3], {group = "cas-order", timeout = limit})
             on_test(function (target, opt)
                 local script = path.join(os.projectdir(), spec[2])
                 local code, errors = os.execv("python3", {script}, {
                     try = true,
-                    timeout = opt.run_timeout or 30000
+                    timeout = opt.run_timeout or (limit * 1000)
                 })
                 return code == 0, errors
             end)
@@ -491,6 +509,7 @@ if has_config("build_tests") then
         {"permissions_test", "tests/test_permissions.c", 60},
         {"fork_test", "tests/test_fork.c", 60},
         {"fork_guard_test", "tests/test_fork_guard.c", 5},
+        {"fork_resources_test", "tests/test_fork_resources.c", 20},
         {"lifecycle_test", "tests/test_lifecycle.c", 10},
         {"concurrency_stress_test", "tests/test_concurrency_stress.c", 20},
         {"api_contract_test", "tests/test_api_contract.c", 60},
@@ -519,6 +538,19 @@ if has_config("build_tests") then
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
         for _, mode in ipairs({"cold", "prefork", "implicit"}) do
             add_tests(mode, {runargs = mode, group = "process-init", timeout = 20})
+        end
+    target_end()
+
+    -- #218：父子实际输出，不以旧拒绝用例代替重新初始化功能。
+    target("fork_reinit_public_test")
+        on_test(run_fork_runtime_test)
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_fork_reinit.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"sync", "async", "global", "shutdown-first", "repeated", "nested"}) do
+            add_tests(mode, {runargs = mode, group = "fork-runtime", timeout = 40})
         end
     target_end()
 
@@ -770,6 +802,51 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
+    local runtime_libraries = {{"fork_runtime_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(runtime_libraries, {"fork_runtime_production_regression", "logger"})
+    end
+    for _, spec in ipairs(runtime_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_fork_runtime.c")
+            on_test(run_fork_runtime_test)
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"mmap", "munmap", "madvise", "pthread_mutex_init",
+                                     "pthread_rwlock_init", "pthread_mutex_lock", "pthread_mutex_unlock", "localtime_r"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"mapped", "map-error", "advice-error", "mutex-1",
+                                   "mutex-2", "mutex-3", "mutex-4", "rwlock-error",
+                                   "bitmap-unmap-error", "allocation-errors", "unmap-retain",
+                                   "earlier-handler", "raw-bypass", "emit-held", "format-held", "directory-held",
+                                   "final-unlock", "mapped-sync", "emit-held-sync", "format-held-sync", "directory-held-sync"}) do
+                add_tests(mode, {runargs = mode, group = "fork-runtime", timeout = 30})
+            end
+        target_end()
+    end
+
+    -- 同一实现的真实锁身份、错误传播与阻塞前锁序检查。
+    target("libc_coordination_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_libc_coordination.c")
+        add_deps("logger_regression_support")
+        add_includedirs("src")
+        add_defines("LOGGER_ENABLE_LOCKDEP=1")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, symbol in ipairs({"pthread_mutex_lock", "pthread_mutex_unlock", "vsnprintf", "logger_format_line"}) do
+            add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+        end
+        for _, scenario in ipairs({"errno-format", "post-lock-poison", "lock", "unlock", "dual", "checked-lock", "checked-unlock",
+                                    "output-sync", "output-async", "order-ok", "order-reversed", "order-recursive"}) do
+            add_tests(scenario, {runargs = scenario, group = "libc-coordination", timeout = 15})
+        end
+    target_end()
+
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
         {"queue_model_properties", "tests/regression/test_queue_properties.c"},
@@ -785,15 +862,15 @@ if has_config("build_regression_tests") then
         {"source_ownership_regression", "tests/regression/test_source_ownership.c",
             {"logger_format_line"}},
         {"destroy_status_regression", "tests/regression/test_destroy_status.c",
-            {"close", "free", "pthread_join", "pthread_cond_destroy",
+            {"close", "logger_runtime_free", "pthread_join", "pthread_cond_destroy",
              "pthread_mutex_destroy"}},
         {"constructor_rollback_regression",
             "tests/regression/test_constructor_rollback.c",
-            {"calloc", "free", "pthread_create", "pthread_cond_init", "pthread_cond_destroy",
+            {"logger_runtime_calloc", "logger_runtime_free", "pthread_create", "pthread_cond_init", "pthread_cond_destroy",
              "pthread_mutex_destroy", "logger_process_object_release"}},
         {"ctor_resource_failure_regression",
             "tests/regression/test_ctor_resource_failure.c",
-            {"calloc", "malloc", "free", "pthread_mutex_init", "pthread_cond_init",
+            {"logger_runtime_calloc", "logger_runtime_malloc", "logger_runtime_free", "pthread_mutex_init", "pthread_cond_init",
              "pthread_create"}},
         {"host_format_regression", "tests/regression/test_host_format.c"},
         {"global_stress_regression", "tests/regression/test_global_stress.c"},
@@ -817,7 +894,7 @@ if has_config("build_regression_tests") then
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
             {"pthread_atfork", "pthread_mutex_lock", "pthread_rwlock_rdlock",
-             "pthread_rwlock_wrlock", "pthread_once", "calloc", "free",
+             "pthread_rwlock_wrlock", "pthread_once", "logger_runtime_calloc", "logger_runtime_free",
              "pthread_create", "write", "close", "vsnprintf", "vfprintf",
              "logger_vlog_internal"}},
         {"global_lifecycle_regression", "tests/regression/test_global_lifecycle.c",
@@ -825,7 +902,7 @@ if has_config("build_regression_tests") then
              "pthread_rwlock_rdlock", "pthread_rwlock_wrlock",
              "pthread_rwlock_unlock", "pthread_join", "pthread_cond_destroy",
              "logger_create", "logger_destroy_status", "logger_file_write",
-             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "free",
+             "logger_file_reopen", "logger_stderr_writev_all", "fsync", "logger_runtime_free",
              "logger_lockdep_assert_held"}},
         {"global_cancel_regression", "tests/regression/test_global_cancel.c",
             {"logger_create", "logger_destroy_status", "logger_file_write",
@@ -1536,4 +1613,74 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+end
+
+-- #218 描述符快照：静态真实生产库与白盒支持归档独立执行；公开 DSO 另测。
+if has_config("build_regression_tests") then
+    local libraries = {{"fork_fd_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(libraries, {"fork_fd_production", "logger"})
+    end
+    for _, spec in ipairs(libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_fork_fd.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"open", "openat", "socket", "close", "closedir",
+                                      "mmap", "mremap", "munmap", "pthread_mutex_lock",
+                                      "pthread_mutex_unlock", "malloc", "calloc", "free",
+                                      "vsnprintf", "pthread_create"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"syslog", "handler-order", "descriptors", "nested",
+                                   "child-eintr", "open-window", "close-reuse-window",
+                                   "file-lock", "map-failure", "grow-failure", "grow",
+                                   "foreign-fd", "parent-unwind", "unmap-failure",
+                                   "lock-failure"}) do
+                add_tests(mode, {runargs = mode, group = "fork-fd", timeout = 20})
+            end
+            on_test(function (target, opt)
+                local args = table.wrap(opt.runargs or target:get("runargs"))
+                local code, errors = os.execv(path.absolute(target:targetfile()), args, {
+                    try = true, timeout = opt.run_timeout or 20000
+                })
+                if code == 77 and (args[1] == "grow" or args[1] == "grow-failure") then
+                    -- 高 fd 需要硬限额至少 32769；明确记录跳过，不把它当作实际通过。
+                    print("FORK_FD_SKIP=%s/%s", target:name(), opt.name)
+                    return true
+                end
+                return code == 0, errors
+            end)
+        target_end()
+    end
+end
+
+if has_config("build_tests") then
+    target("fork_fd_policy_test")
+        set_kind("phony")
+        set_default(false)
+        add_tests("boundaries", {group = "fork-fd", timeout = 30})
+        on_test(function (target, opt)
+            local script = path.join(os.projectdir(), "tests/scripts/test_fork_fd_policy.py")
+            local code, errors = os.execv("python3", {script}, {try = true, timeout = 30000})
+            return code == 0, errors
+        end)
+    target_end()
+end
+
+-- 逻辑分配站点和物理 mmap 站点分别登记，防止包装后丢失原获取边界。
+if has_config("build_tests") then
+    target("runtime_alloc_policy_test")
+        set_kind("phony")
+        set_default(false)
+        add_tests("owned_mappings", {group = "fork-runtime", timeout = 30})
+        on_test(function (target, opt)
+            local script = path.join(os.projectdir(), "tests/scripts/test_runtime_alloc_policy.py")
+            local code, errors = os.execv("python3", {script}, {try = true, timeout = 30000})
+            return code == 0, errors
+        end)
+    target_end()
 end

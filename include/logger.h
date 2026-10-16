@@ -296,12 +296,14 @@ typedef struct {
  * 应在指针所有权转移期间禁用取消。调用者拥有所有成功返回的指针，
  * 并且必须为之后的取消安排清理。
  */
-/* 显式初始化当前进程的 Logger 引导状态，不创建实例。
- * 成功返回 0；已就绪返回 -EALREADY，并发初始化返回 -EAGAIN，
- * 同线程注册重入返回 -EDEADLK；注册失败返回负错误码，允许显式重试。
- * 所有返回路径保留调用方 errno；不能从信号处理函数调用。
- * 当前首阶段尚无继承资源隔离，fork 子方仍返回 -ECHILD（包括对象计数为零）。
- * 不以该入口或注册成功声明 fork 子方完整运行态已经可重建。
+/* 显式初始化当前进程的运行域，不创建日志实例。
+ * 初次调用或有有效 atfork 快照的子方重建成功返回0；重复为-EALREADY，
+ * 并发为-EAGAIN，注册重入为-EDEADLK；失败返回负错误码并保留errno。
+ * 子方必须在fork返回后的普通上下文、新业务线程创建前显式调用；
+ * 不从任何atfork处理函数调用本接口，不复用继承的实例指针。
+ * 无可信快照（原始系统调用、注册窗口等）仍-ECHILD，不能绕过检查。
+ * Linux/glibc候选实现，不承诺多线程fork后的POSIX通用安全；宿主libc/
+ * 区域设置等外部状态尚需专项验证，见docs/v2/FORK_RUNTIME.md。
  */
 LOGGER_API int logger_process_init(void);
 
@@ -419,14 +421,13 @@ LOGGER_API void logger_shutdown(void);
 LOGGER_API int logger_flush_status(void);
 LOGGER_API void logger_flush(void); /* 兼容包装函数；不返回错误 */
 LOGGER_API int logger_reopen(void);
-/* 直接调用 fork 的约定（库不管理宿主进程）：
- * - 在使用任何库运行时之前、进程确实为单线程时 fork，或使用 fork+exec。
- *   异步初始化之后，进程已经是多线程。
- * - pthread_atfork 安装内部子进程失效保护。继承的 Logger/Console
- *   运行时绝不原地修复：执行 exec 前，构造函数及状态 API 均以
- *   ECHILD 拒绝；void 操作不执行实际操作并设置 errno。
- * - 不得使用 vfork、信号处理函数或任意 fork 后的库调用。
- *   父进程描述符/队列保持不变；子进程 fd 保留到 exec/_exit。
+/* fork进程边界：父方继续使用原实例；有效prepare快照的子方先显式
+ * logger_process_init，再按子方配置创建新实例。所有继承实例指针在子方
+ * 失效，不能记录/刷新/普通销毁；不承诺诊断重初始化后的悬垂指针。
+ * 子方处理函数只关闭库拥有的fd引用、失效根指针，不操作旧锁或队列。
+ * 原始系统调用、_Fork/vfork、信号处理函数fork、库内回调重入及不可靠
+ * 资源边界不属于重建入口。未初始化子方普通调用仍提前ECHILD拒绝。
+ * 本功能的平台与外部libc调用链验收仍未完成，不能视作最终发布批准。
  */
 /* 库绝不调用 fork，也不扫描宿主的线程列表。 */
 

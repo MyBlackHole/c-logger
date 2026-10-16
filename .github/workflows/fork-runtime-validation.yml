@@ -1,0 +1,80 @@
+name: fork-runtime-validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'xmake.lua'
+      - '.github/workflows/fork-runtime-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'xmake.lua'
+      - '.github/workflows/fork-runtime-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 归档准确源码与树身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > evidence/source-tree.txt
+          git archive --format=tar.gz --prefix=source/ HEAD > evidence/source.tar.gz
+          sha256sum evidence/source.tar.gz > evidence/source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: logger-runtime-source
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+      - name: 记录实际工具链
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake --version > evidence/xmake.txt
+          gcc --version > evidence/gcc.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: 拒绝缺失的运行域测试
+        run: |
+          test -f src/logger_runtime.c
+          test -f tests/test_fork_reinit.c
+          test -f tests/regression/test_fork_runtime.c
+      - name: 运行完整静态测试与生产隔离检查
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake f -y -m debug -o runtime-build \
+            --build_shared=n --build_tests=y --build_private_tests=y \
+            --build_regression_tests=y
+          xmake test -v -j1 2>&1 | tee evidence/xmake-tests.log
+          mapfile -t archives < <(find runtime-build -type f -name liblogger.a)
+          test "${#archives[@]}" -eq 1
+          python3 scripts/check_production_artifact.py "${archives[0]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logger-runtime-validation
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error

@@ -18,7 +18,7 @@ binary="$build/worker-startup-regression"
     "${flags[@]}" tests/regression/test_worker_startup.c "${libraries[0]}" \
     -pthread -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join \
     -Wl,--wrap=pthread_cond_wait -Wl,--wrap=pthread_cond_destroy \
-    -Wl,--wrap=free -o "$binary"
+    -Wl,--wrap=logger_runtime_free -o "$binary"
 printf 'SOURCE_COMMIT=%s\n' "$(git rev-parse HEAD)"
 printf 'SOURCE_STATUS=%s\n' "$(git status --porcelain --untracked-files=no)"
 "${CC:-cc}" --version | head -n1

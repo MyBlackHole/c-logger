@@ -26,7 +26,15 @@ static const char *const class_names[LOGGER_LOCK_CLASS_NR] = {
 	[LOGGER_LOCK_INSTANCE_PROGRESS] = "instance-progress",
 	[LOGGER_LOCK_QUEUE_WAIT] = "queue-wait",
 	[LOGGER_LOCK_CONSOLE] = "console",
+	[LOGGER_LOCK_RUNTIME_FORMAT] = "runtime-format",
+	[LOGGER_LOCK_RUNTIME_RESOURCE] = "runtime-resource",
 };
+
+void logger_lockdep_reset_child(void)
+{
+	/* 只清当前线程记账，不访问不继承映射中的旧锁。 */
+	state.depth = 0;
+}
 
 const char *logger_lockdep_class_name(logger_lock_class_t class_id)
 {
@@ -52,6 +60,17 @@ static int is_instance(logger_lock_class_t class_id)
 
 static int allowed_after(logger_lock_class_t held, logger_lock_class_t next)
 {
+	/* fork 取得格式锁后再固定资源；禁止资源锁反向等待格式锁。 */
+	if (next == LOGGER_LOCK_RUNTIME_RESOURCE)
+		return held == LOGGER_LOCK_GLOBAL_CONTROL ||
+		       held == LOGGER_LOCK_GLOBAL_LIFETIME ||
+		       held == LOGGER_LOCK_INSTANCE_EMIT ||
+		       held == LOGGER_LOCK_RUNTIME_FORMAT;
+	if (next == LOGGER_LOCK_RUNTIME_FORMAT)
+		return held == LOGGER_LOCK_GLOBAL_CONTROL ||
+		       held == LOGGER_LOCK_GLOBAL_LIFETIME ||
+		       held == LOGGER_LOCK_INSTANCE_EMIT ||
+		       held == LOGGER_LOCK_CONSOLE;
 	if (held == LOGGER_LOCK_GLOBAL_CONTROL)
 		return next == LOGGER_LOCK_GLOBAL_LIFETIME ||
 		       is_instance(next);

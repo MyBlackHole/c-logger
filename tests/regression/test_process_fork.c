@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "support.h"
 #include "logger_internal.h"
+#include "logger_runtime.h"
 #include "console.h"
 #undef CONSOLE_DEBUG
 #include <fcntl.h>
@@ -21,6 +22,10 @@ static _Atomic int strict_child;
 static _Atomic int fail_registration, pause_registration, pause_reader,
 	pause_console;
 static _Atomic int entered, release_pause;
+static _Atomic int release_console_at_prepare;
+static pthread_t console_thread;
+static _Atomic int console_completed, console_joined;
+static _Thread_local int pause_console_flush_lock;
 static _Atomic unsigned registrations;
 static _Atomic unsigned foreign_registrations;
 static _Atomic int omit_registration_observation;
@@ -52,9 +57,27 @@ int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 {
+	if (atomic_load(&release_console_at_prepare) &&
+	    p == &logger_runtime_current()->format_mu) {
+		/* 新协议在 fork 前等待 libc 格式敏感区间结束；精确到达
+		 * prepare 的锁入口后释放夹具，不再等 fork 返回才放行。
+		 */
+		atomic_store(&release_console_at_prepare, 0);
+		atomic_store(&release_pause, 1);
+	}
 	if (strict_child)
 		_exit(90);
-	return __real_pthread_mutex_lock(p);
+	int rc = __real_pthread_mutex_lock(p);
+	/* console_print 在正文格式化之后还会为 fflush 再次取锁。
+	 * 只暂停这个最后区间，避免 prepare 持锁 join 时等待再次取锁。
+	 */
+	if (!rc && pause_console_flush_lock &&
+	    p == &logger_runtime_current()->format_mu) {
+		pause_console_flush_lock = 0;
+		atomic_store(&entered, 1);
+		wait_flag(&release_pause);
+	}
+	return rc;
 }
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *p)
@@ -77,19 +100,19 @@ int __wrap_pthread_once(pthread_once_t *p, void (*f)(void))
 		_exit(90);
 	return __real_pthread_once(p, f);
 }
-void *__real_calloc(size_t, size_t);
-void *__wrap_calloc(size_t n, size_t z)
+void *__real_logger_runtime_calloc(size_t, size_t);
+void *__wrap_logger_runtime_calloc(size_t n, size_t z)
 {
 	if (strict_child)
 		_exit(91);
-	return __real_calloc(n, z);
+	return __real_logger_runtime_calloc(n, z);
 }
-void __real_free(void *);
-void __wrap_free(void *p)
+int __real_logger_runtime_free(void *);
+int __wrap_logger_runtime_free(void *p)
 {
 	if (strict_child)
 		_exit(91);
-	__real_free(p);
+	return __real_logger_runtime_free(p);
 }
 int __real_pthread_create(pthread_t *, const pthread_attr_t *,
 			  void *(*)(void *), void *);
@@ -126,11 +149,10 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
-	if (atomic_exchange(&pause_console, 0)) {
-		atomic_store(&entered, 1);
-		wait_flag(&release_pause);
-	}
-	return __real_vfprintf(f, fmt, a);
+	int result = __real_vfprintf(f, fmt, a);
+	if (atomic_exchange(&pause_console, 0))
+		pause_console_flush_lock = 1;
+	return result;
 }
 void __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
 				 const char *, int, const char *, const char *,
@@ -257,11 +279,14 @@ static void wait_child(pid_t p)
 }
 static void early_child(void)
 {
+	int previous = strict_child;
 	strict_child = 1;
 	/* 在库处理函数之前注册：必须由不可变 PID 所有权，
 	 * 而非处理函数顺序，阻止 logger_init 接触继承的 once。
 	 */
 	CHILD_POSIX(logger_init(&cfg), 70);
+	/* 库后续 child handler 允许 close 已登记引用；拒绝的 API 本身仍禁止 I/O。 */
+	strict_child = previous;
 }
 static void *global_writer(void *p)
 {
@@ -273,8 +298,24 @@ static void *console_writer(void *p)
 {
 	(void)p;
 	CHECK(console_print("parent console\n") == 0);
+	CHECK(!pause_console_flush_lock);
+	atomic_store(&console_completed, 1);
 	return NULL;
 }
+/* 先于 Logger 注册，因 prepare 逆序执行而后于 Logger prepare 运行。
+ * 保留进入 prepare 时 Console 正在格式化的真实交错；只有 Logger
+ * 完成格式区间协调后才回收夹具线程。不能让已退出但未 join 的线程
+ * 记录进入子进程，也不能通过保持线程存活触发 TSan 的忽略模式。
+ */
+static void console_join_prepare(void)
+{
+	CHECK(atomic_load(&entered));
+	CHECK(!atomic_load(&release_console_at_prepare));
+	CHECK(!pthread_join(console_thread, NULL));
+	CHECK(atomic_load(&console_completed));
+	atomic_store(&console_joined, 1);
+}
+
 static void *initializer(void *p)
 {
 	(void)p;
@@ -346,11 +387,12 @@ int main(int argc, char **argv)
 		atomic_store(&omit_registration_observation, 1);
 	const char *mode = argv[1];
 	const char *const modes[] = {
-		"global", "explicit", "console-only", "context-only", "emit-held",
-		"progress-held", "console-held", "reader-held", "registration-window",
-		"earlier-handler", "after-shutdown", "bypass-handler", "prefork",
-		"register-global", "register-explicit", "register-console",
-		"register-context"
+		"global",	    "explicit",	       "console-only",
+		"context-only",	    "emit-held",       "progress-held",
+		"console-held",	    "reader-held",     "registration-window",
+		"earlier-handler",  "after-shutdown",  "bypass-handler",
+		"prefork",	    "register-global", "register-explicit",
+		"register-console", "register-context"
 	};
 	int known = 0;
 	for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
@@ -398,12 +440,14 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "console-only") ||
 		   !strcmp(mode, "console-held")) {
 		console_config_t c = CONSOLE_DEFAULT_CONFIG();
+		if (!strcmp(mode, "console-held"))
+			CHECK(!__real_pthread_atfork(console_join_prepare, NULL,
+						     NULL));
 		console_init(&c);
 		if (!strcmp(mode, "console-held")) {
 			atomic_store(&pause_console, 1);
-			CHECK(!pthread_create(&thread, NULL, console_writer,
-					      NULL));
-			has_thread = 1;
+			CHECK(!pthread_create(&console_thread, NULL,
+					      console_writer, NULL));
 			wait_flag(&entered);
 		}
 	} else if (!strcmp(mode, "context-only")) {
@@ -432,6 +476,8 @@ int main(int argc, char **argv)
 		} else if (!strcmp(mode, "after-shutdown"))
 			logger_shutdown();
 	}
+	if (!strcmp(mode, "console-held"))
+		atomic_store(&release_console_at_prepare, 1);
 	if (getenv("LOGGER_TEST_DUPLICATE_ATFORK")) {
 		/* 真正再次调用注册入口，不是直接把计数器加一。 */
 		void (*child)(void) = logger_process_invalidate_child;
@@ -451,6 +497,8 @@ int main(int argc, char **argv)
 	if (!p)
 		child_guard_matrix();
 	atomic_store(&release_pause, 1);
+	if (!strcmp(mode, "console-held"))
+		CHECK(atomic_load(&console_joined));
 	if (has_thread)
 		CHECK(!pthread_join(thread, NULL));
 	wait_child(p);

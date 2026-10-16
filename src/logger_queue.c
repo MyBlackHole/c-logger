@@ -1,3 +1,4 @@
+#include "logger_runtime.h"
 #include "logger_queue.h"
 #include "logger_cleanup.h"
 #include <errno.h>
@@ -240,11 +241,13 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
-	logger_queue_slot_t *slots __free(free) =
-		calloc(q->cap, sizeof(*slots));
-	logger_queue_spill_t *spills __free(free) =
-		calloc(q->spill_cap, sizeof(*spills));
-	if (!slots || !spills)
+	logger_queue_slot_t *slots __free(runtime_free) =
+		logger_runtime_calloc(q->cap, sizeof(*slots));
+	if (!slots)
+		return -1;
+	logger_queue_spill_t *spills __free(runtime_free) =
+		logger_runtime_calloc(q->spill_cap, sizeof(*spills));
+	if (!spills)
 		return -1;
 
 	for (size_t i = 0; i < q->cap; ++i)
@@ -301,9 +304,13 @@ int logger_queue_destroy(logger_queue_t *q)
 	if (rc)
 		return -rc;
 
-	free(q->spills);
+	rc = logger_runtime_free(q->spills);
+	if (rc)
+		return rc;
 	q->spills = NULL;
-	free(q->slots);
+	rc = logger_runtime_free(q->slots);
+	if (rc)
+		return rc;
 	q->slots = NULL;
 	return 0;
 }

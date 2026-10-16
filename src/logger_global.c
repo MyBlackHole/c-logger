@@ -1,4 +1,6 @@
+#include "logger_libc.h"
 #include "logger_internal.h"
+#include "logger_runtime.h"
 #include "logger_cleanup.h"
 #include "logger_lockdep.h"
 
@@ -17,15 +19,10 @@
  * 锁顺序固定为控制锁 -> 生命周期锁 -> 实例锁。
  * 持有生命周期读锁时禁止反向获取控制锁。
  */
-static pthread_mutex_t g_control_mu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_rwlock_t g_lifetime_lock = PTHREAD_RWLOCK_INITIALIZER;
-static logger_t
-	*g_logger; /* 由生命周期锁保护；绝不把拥有所有权的指针返回给应用 */
-/* 控制方拥有的未发布或已退役实例，由 g_control_mu 保护。
- * 最终释放证明失败时，故意在此保留分配。
- * 这是真正的所有者，不是仅用于消毒器的泄漏抑制或引用计数。
- */
-static logger_t *g_retired;
+#define g_control_mu (logger_runtime_current()->global_control_mu)
+#define g_lifetime_lock (logger_runtime_current()->global_lifetime_lock)
+#define g_logger (logger_runtime_current()->global_logger)
+#define g_retired (logger_runtime_current()->global_retired)
 
 enum global_phase {
 	G_IDLE, G_STARTING, G_RUNNING, G_STOPPING, G_STOPPED, G_BROKEN
@@ -41,9 +38,9 @@ enum global_phase {
  * 不依赖 release/acquire 在历史“失败序不得更强”措辞下的歧义。
  * 票据只控制准入，对象存活仍由 g_lifetime_lock 的生命周期锁保证。
  */
-static _Atomic uint64_t g_ticket;
+#define g_ticket (logger_runtime_current()->global_ticket)
 /* 锁释放失败或拆除不完整会使全局生命周期失效。 */
-static _Atomic int g_lock_error;
+#define g_lock_error (logger_runtime_current()->global_lock_error)
 static _Thread_local int g_in_global;
 
 typedef struct {
@@ -177,11 +174,6 @@ static int begin(global_scope_t *scope)
 		errno = EDEADLK;
 		return -1;
 	}
-	int poison = global_lock_error();
-	if (poison) {
-		errno = poison;
-		return -1;
-	}
 	*scope = (global_scope_t){ .saved_errno = errno };
 	int rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					&scope->old_cancel);
@@ -191,6 +183,8 @@ static int begin(global_scope_t *scope)
 	}
 	g_in_global = 1;
 	rc = logger_process_ensure();
+	if (!rc)
+		rc = -global_lock_error();
 	return rc ? finish(scope, rc) : 0;
 }
 
@@ -547,7 +541,8 @@ void logger_global_write(logger_level_t level, const char *module,
 			 * 生命周期保护覆盖整个 I/O，因此旧的延迟消息不能在新实例发布后继续输出。
 			 */
 			char text[LOGGER_MESSAGE_MAX];
-			int n = vsnprintf(text, sizeof(text), fmt, ap);
+			int n = logger_libc_vsnprintf(text, sizeof(text), fmt,
+						      ap);
 			if (n < 0)
 				rc = -EILSEQ;
 			else {
@@ -557,8 +552,9 @@ void logger_global_write(logger_level_t level, const char *module,
 				 * 保留历史字节，不再进行第二次无界 printf 分配。
 				 */
 				char name[6];
-				(void)snprintf(name, sizeof(name), "%-5s",
-					       logger_level_name(level));
+				(void)logger_libc_snprintf(
+					name, sizeof(name), "%-5s",
+					logger_level_name(level));
 				const char *tag = module ? module : "app";
 				struct iovec vec[] = {
 					{ .iov_base = name, .iov_len = 5 },
@@ -575,4 +571,14 @@ void logger_global_write(logger_level_t level, const char *module,
 		va_end(ap);
 	}
 	(void)finish(&scope, rc);
+}
+
+int logger_global_scope_busy(void)
+{
+	return g_in_global;
+}
+
+void logger_global_reset_child(void)
+{
+	g_in_global = 0;
 }

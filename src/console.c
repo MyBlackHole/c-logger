@@ -1,4 +1,6 @@
+#include "logger_libc.h"
 #include "console.h"
+#include "logger_runtime.h"
 #include "logger_scope.h"
 #include "logger_cleanup.h"
 #include "logger_uapi.h"
@@ -17,10 +19,9 @@
  */
 #define COLOR_BITS 2u
 #define COLOR_MASK 3u
-static _Atomic unsigned g_config = (CONSOLE_NORMAL << COLOR_BITS) |
-				   CONSOLE_COLOR_AUTO;
-static _Atomic int g_console_lock_error;
-static pthread_mutex_t g_console_mu = PTHREAD_MUTEX_INITIALIZER;
+#define g_config (logger_runtime_current()->console_config)
+#define g_console_lock_error (logger_runtime_current()->console_lock_error)
+#define g_console_mu (logger_runtime_current()->console_mu)
 
 static int finish(logger_scope_t *scope, int rc)
 {
@@ -155,15 +156,19 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 	if (guarded) {
 		if (label) {
 			int n = color_enabled(config, out) && ansi ?
-					fprintf(out, "%s%s:\033[0m ", ansi, label) :
-					fprintf(out, "%s: ", label);
+					logger_libc_fprintf(out,
+							    "%s%s:\033[0m ",
+							    ansi, label) :
+					logger_libc_fprintf(out, "%s: ", label);
 			stdio_error(n < 0, &rc, &saw_epipe);
 		}
 		if (!rc)
-			stdio_error(vfprintf(out, fmt, ap) < 0, &rc, &saw_epipe);
+			stdio_error(logger_libc_vfprintf(out, fmt, ap) < 0, &rc,
+				    &saw_epipe);
 		if (!rc && label)
-			stdio_error(fputc('\n', out) == EOF, &rc, &saw_epipe);
-		stdio_error(fflush(out) != 0, &rc, &saw_epipe);
+			stdio_error(logger_libc_fputc('\n', out) == EOF, &rc,
+				    &saw_epipe);
+		stdio_error(logger_libc_fflush(out) != 0, &rc, &saw_epipe);
 	}
 	int unlock_rc = RELEASE_ERR(pthread_mutex_console,
 				    &console_guard);
@@ -227,17 +232,19 @@ int console_debug_source(const char *file, int line, const char *func,
 		char message[3072], merged[4096];
 		va_list ap;
 		va_start(ap, fmt);
-		int n = vsnprintf(message, sizeof(message), fmt, ap);
+		int n = logger_libc_vsnprintf(message, sizeof(message), fmt,
+					      ap);
 		va_end(ap);
 		if (n < 0)
-			rc = -EILSEQ;
+			rc = -(errno ? errno : EILSEQ);
 		else if ((size_t)n >= sizeof(message))
 			rc = -EOVERFLOW;
 		else {
-			n = snprintf(merged, sizeof(merged), "%s:%d %s() %s",
-				     base, line, func ? func : "?", message);
+			n = logger_libc_snprintf(merged, sizeof(merged),
+						 "%s:%d %s() %s", base, line,
+						 func ? func : "?", message);
 			if (n < 0)
-				rc = -EILSEQ;
+				rc = -(errno ? errno : EILSEQ);
 			else if ((size_t)n >= sizeof(merged))
 				rc = -EOVERFLOW;
 		}
@@ -255,10 +262,14 @@ int console_debug_source(const char *file, int line, const char *func,
 				rc = logger_sigpipe_begin(&sigpipe_guard);
 				int guarded = !rc, saw_epipe = 0;
 				if (guarded) {
-					stdio_error(fprintf(stderr, "DEBUG: %s\n", merged) < 0,
+					stdio_error(logger_libc_fprintf(
+							    stderr,
+							    "DEBUG: %s\n",
+							    merged) < 0,
 						    &rc, &saw_epipe);
-					stdio_error(fflush(stderr) != 0, &rc,
-						    &saw_epipe);
+					stdio_error(
+						logger_libc_fflush(stderr) != 0,
+						&rc, &saw_epipe);
 				}
 				int unlock_rc = RELEASE_ERR(
 					pthread_mutex_console,

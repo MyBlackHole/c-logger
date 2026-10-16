@@ -8,7 +8,6 @@ static _Thread_local pthread_mutex_t *failed_mutex;
 static _Thread_local pthread_mutex_t *fail_unlock_mutex;
 static _Thread_local pthread_mutex_t *captured_mutex;
 static _Thread_local pthread_cond_t *fail_signal_cv;
-static _Thread_local int capture_lock_after;
 static _Thread_local int fail_unlock_once;
 static _Thread_local int fail_signal_once;
 static _Thread_local int lock_failed;
@@ -22,7 +21,7 @@ int __real_pthread_cond_signal(pthread_cond_t *);
 
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
-	if (capture_lock_after > 0 && --capture_lock_after == 0) {
+	if (mu == fail_unlock_mutex) {
 		captured_mutex = mu;
 		fail_unlock_mutex = mu;
 	}
@@ -143,7 +142,8 @@ static int test_emit_unlock_failure(void)
 	unlock_failed = 0;
 	invalid_unlock = 0;
 	captured_mutex = NULL;
-	capture_lock_after = 1;
+	/* 格式化现在有独立锁，不能按第几次 lock 猜测输出锁。 */
+	fail_unlock_mutex = &logger->emit_mu;
 	fail_unlock_once = 1;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "unlock-failure",
 					NULL, 0, NULL, "write-may-have-committed");
