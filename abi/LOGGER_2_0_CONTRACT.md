@@ -1,8 +1,7 @@
 # LOGGER_2.0 当前开发 ABI 合同
 
-> **第十三阶段候选，尚未完成全仓库迁移及验收。** 默认入口改为借用普通实例，
-> 新接口 `logger_default_set(expected, replacement)` 取代配置式初始化和库内销毁。
-> 当前生产导出为45个。下面尚未迁移的旧 Global 说明不是新合同；以[候选借用合同](../docs/v2/DEFAULT_BORROW.md)为准。
+> 默认槽借用合同已由 #226 合并；本增量统一刷新/重开的负错误码和 errno 保留。
+> 当前生产导出43个，仍为未发布的开发ABI，不承诺与旧开发签名兼容。
 
 
 本版尚未正式发布。生命周期迁移不兼容旧开发签名，没有适配层或旧 status
@@ -10,7 +9,7 @@
 
 ## 权威与接口变化
 
-Linux x86_64/ELF64 的生产导出由 `abi/logger-2.0.symbols` 精确列出，当前45个；
+Linux x86_64/ELF64 的生产导出由 `abi/logger-2.0.symbols` 精确列出，当前43个；
 SONAME 为 `liblogger.so.2`，符号版本为 `LOGGER_2.0`。移除
 `logger_destroy_status`，`logger_create` 和 `logger_destroy` 的类型变为：
 
@@ -23,14 +22,24 @@ int logger_destroy(logger_t **);
 不可回滚地消费所有权；NULL槽不证明物理释放成功，入口拒绝保留原拥有者。
 详见[生命周期接口](../docs/v2/LIFECYCLE_API.md)。
 
-`logger_process_init`、配置结构、其他导出函数的签名和单个接口行为没有因本次
-变更而统一。默认实例与其他状态接口仍待迁移，不依旧API兼容要求拖延新设计。
-普通系统接口、全局与同步写入的具体错误形式以[API](../API.md)逐项说明为准。
+刷新与重开现在为：
+
+```c
+int logger_flush(logger_t *);
+int logger_reopen(logger_t *);
+int logger_default_flush(void);
+int logger_default_reopen(void);
+```
+
+四者采用0/-errno并保留errno，删除旧status/instance包装，不保留符号别名。
+默认绑定 `logger_default_set` 也采用该规则。配置布局与其他记录/指标/Console
+接口没有借此全部重写，未迁移项的返回形式见[API](../API.md)。
+详细控制语义与错误优先级见[控制操作合同](../docs/v2/CONTROL_API.md)。
 
 ## 单一可执行断言
 
 `tests/packaging/current_abi_contract.c` 精确检查全部类型大小、对齐、字段偏移、
-枚举/配置数值、默认值和当前45个函数类型；`.cpp`包含同一份源，独立检查
+枚举/配置数值、默认值和当前43个函数类型；`.cpp`包含同一份源，独立检查
 C++11布局与真实调用。实际安装消费者调用新创建与销毁函数，不只是编译声明。
 本文不再复制整段测试源码和手工维护的源码哈希，避免修改函数后文档留下旧快照。
 原先完整快照可从Git历史复查，不作为本次新运行证据。
@@ -61,7 +70,7 @@ C++11布局与真实调用。实际安装消费者调用新创建与销毁函数
 ## 必须分别验收的行为
 
 生命周期：借用者静默、取消前后的拥有者交接、普通I/O错误与释放证明失败。
-并发：Global最终释放回执与代次保护，不把空指针当作已经回收的证明。
+并发：默认借用归还与代次保护，不把空指针当作已经回收的证明。
 fork：父方继续，子方有效快照后显式重建，新实例不能复活旧引用；支持范围见
 [运行域合同](../docs/v2/FORK_RUNTIME.md)。
 包装：真实静态/共享产物、精确导出、安装后C/C++11、pkg-config和PIC消费方。

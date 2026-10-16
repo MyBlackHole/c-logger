@@ -72,7 +72,7 @@ static void child_run(int async, int global, int index, int conflict)
 		child_check(logger_create(&cfg, &owner) == 0, 14);
 		child_check(logger_default_set(NULL, owner) == 0, 14);
 		LOG_INFO("CHILD_ONLY=%d", index);
-		child_check(logger_flush_status() == 0, 15);
+		child_check(logger_default_flush() == 0, 15);
 		child_check(logger_default_set(owner, NULL) == 0, 16);
 		child_check(logger_destroy(&owner) == 0, 16);
 	} else {
@@ -80,7 +80,7 @@ static void child_run(int async, int global, int index, int conflict)
 		(void)logger_create(&cfg, &child);
 		child_check(child != NULL, 17);
 		LOGGER_INFO(child, "child", "CHILD_ONLY=%d", index);
-		child_check(logger_flush_instance_status(child) == 0, 18);
+		child_check(logger_flush(child) == 0, 18);
 		child_check(logger_destroy(&child) == 0, 19);
 	}
 	/* 第一个实例结束后创建另一个，不重置进程域。 */

@@ -63,13 +63,13 @@ static inline void invoke(call_result_t *r)
 		LOG_INFO("delayed-record");
 		break;
 	case OP_FLUSH:
-		r->rc = logger_flush_status();
+		r->rc = logger_default_flush();
 		break;
 	case OP_FLUSH_VOID:
-		logger_flush();
+		(void)(r->rc = logger_default_flush());
 		break;
 	case OP_REOPEN:
-		r->rc = logger_reopen();
+		r->rc = logger_default_reopen();
 		break;
 	case OP_LEVEL:
 		logger_set_level(LOGGER_OFF);
@@ -98,9 +98,12 @@ static inline void invoke(call_result_t *r)
 
 static inline void expect_rejection(const call_result_t *r, int error)
 {
+	if (r->op == OP_FLUSH || r->op == OP_FLUSH_VOID || r->op == OP_REOPEN) {
+		CHECK(r->rc == -error && r->error == 0);
+		return;
+	}
 	CHECK(r->error == error);
-	if (r->op == OP_FLUSH || r->op == OP_REOPEN ||
-	    r->op == OP_FILE_METRICS)
+	if (r->op == OP_FILE_METRICS)
 		CHECK(r->rc == -1);
 	if (r->op == OP_DROPPED)
 		CHECK(r->value == 0);

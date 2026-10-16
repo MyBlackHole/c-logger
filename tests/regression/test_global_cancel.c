@@ -110,7 +110,7 @@ static void cleanup(void *unused)
 	CHECK(errno == cleanup_phase_error);
 	if (!cleanup_phase_error) {
 		LOG_INFO("cancel-cleanup-can-log");
-		CHECK(logger_flush_status() == 0);
+		CHECK(logger_default_flush() == 0);
 	}
 	atomic_store(&cleanup_seen, 1);
 	/* 线程正在退出，应用清理中有意不重新启用。 */
@@ -126,17 +126,17 @@ static void *caller(void *unused)
 		delay_controller = 1;
 		CHECK(logger_default_set(owner, NULL) == 0);
 	} else if (!strcmp(scenario, "reopen")) {
-		CHECK(logger_reopen() == 0);
+		CHECK(logger_default_reopen() == 0);
 	} else if (!strcmp(scenario, "flush") ||
 		   !strcmp(scenario, "flush-void")) {
 		watch_cond = 1;
 		if (!strcmp(scenario, "flush"))
-			CHECK(logger_flush_status() == 0);
+			CHECK(logger_default_flush() == 0);
 		else
-			logger_flush();
+			logger_default_flush();
 	} else if (!strcmp(scenario, "reader")) {
 		delay_reader = 1;
-		CHECK(logger_flush_status() == 0);
+		CHECK(logger_default_flush() == 0);
 	} else {
 		LOG_INFO("cancelled-operation-record");
 	}
@@ -152,7 +152,7 @@ static void restore_policy(void)
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("caller-disabled");
-	CHECK(!logger_flush_status());
+	CHECK(!logger_default_flush());
 	CHECK(!fixture_default_destroy(&owner));
 	int previous;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous));
@@ -219,7 +219,7 @@ int main(int argc, char **argv)
 	CHECK(ret == PTHREAD_CANCELED && atomic_load(&cleanup_seen));
 	if (!cleanup_phase_error) {
 		LOG_INFO("main-after-cancel");
-		CHECK(!logger_flush_status());
+		CHECK(!logger_default_flush());
 		CHECK(!fixture_default_destroy(&owner));
 		const char *path = "old.log";
 		CHECK(file_contains(path, "cancel-cleanup-can-log"));
@@ -235,7 +235,7 @@ int main(int argc, char **argv)
 	/* 没有遗留的全局控制锁、读锁或实例锁；另一代次可以工作。 */
 	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("next-generation-after-cancel");
-	CHECK(!logger_flush_status() && !fixture_default_destroy(&owner));
+	CHECK(!logger_default_flush() && !fixture_default_destroy(&owner));
 	puts("global cancellation deferral and post-cancel reuse passed");
 	return 0;
 }

@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 	CHECK(logger != NULL);
 	CHECK(logger_get_state(logger) == LOGGER_STATE_RUNNING);
 	CHECK(created_workers == before_workers + 1);
-	CHECK(logger_flush_instance_status(logger) == 0);
+	CHECK(logger_flush(logger) == 0);
 	CHECK(logger_destroy(&logger) == 0);
 	assert_no_leaks();
 

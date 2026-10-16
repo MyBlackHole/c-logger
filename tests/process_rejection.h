@@ -25,8 +25,8 @@ static void check_process_rejection(int error)
 	CHECK(logger_create(NULL, NULL) == -error && errno == EDOM);
 	CHECK(logger_destroy(NULL) == -error && errno == EDOM);
 	CHECK(logger_default_set(NULL, NULL) == -error && errno == EDOM);
-	CHECK(logger_flush_status() == -1 && errno == error);
-	CHECK(logger_reopen() == -1 && errno == error);
+	CHECK(logger_default_flush() == -error && errno == EDOM);
+	CHECK(logger_default_reopen() == -error && errno == EDOM);
 	LOGGER_INFO(NULL, "init", "forbidden%n", &formatted);
 	CHECK(errno == error && formatted == -1);
 	logger_global_write(LOGGER_INFO, "init", __FILE__, __LINE__, __func__,
@@ -36,8 +36,8 @@ static void check_process_rejection(int error)
 				     __LINE__, __func__, "forbidden%n",
 				     &formatted) == -error);
 	CHECK(errno == error && formatted == -1);
-	CHECK(logger_flush_instance_status(NULL) == -1 && errno == error);
-	CHECK(logger_reopen_instance(NULL) == -1 && errno == error);
+	CHECK(logger_flush(NULL) == -error && errno == error);
+	CHECK(logger_reopen(NULL) == -error && errno == error);
 	logger_set_instance_level(NULL, LOGGER_INFO);
 	CHECK(errno == error);
 	errno = EDOM;

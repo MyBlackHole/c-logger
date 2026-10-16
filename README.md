@@ -13,7 +13,7 @@
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
-当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 45 个当前公开 C ABI 符号**。
+当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 43 个当前公开 C ABI 符号**。
 
 > **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
 > 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、
@@ -146,6 +146,13 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 `logger_create(&cfg, &owner)` 仅向空槽发布成功实例；`logger_destroy(&owner)` 在
 拆除开始前消费拥有者，均返回 0/-errno 并保留 errno。旧签名与 status 销毁
 已移除，详见[生命周期接口](docs/v2/LIFECYCLE_API.md)。其他 API 迁移仍独立进行。
+
+## 刷新与重开
+
+实例调用 `logger_flush(owner)` / `logger_reopen(owner)`，默认槽调用
+`logger_default_flush()` / `logger_default_reopen()`；统一返回0/-errno并保留errno。
+不再提供丢弃状态的包装或旧status符号。完成水位、文件同步、粘滞错误和默认
+借用寿命不变，见[控制操作合同](docs/v2/CONTROL_API.md)。
 
 ## fork 边界
 

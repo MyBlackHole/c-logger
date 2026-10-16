@@ -256,7 +256,7 @@ static void other_handler(void)
 {
 	/* 早注册 handler 的 prepare 在库之后，parent 在库之前执行。 */
 	errno = 0;
-	if (logger_flush_instance_status(created) != -1 || errno != EDEADLK)
+	if (logger_flush(created) != -EDEADLK)
 		_exit(84);
 	++handler_hits;
 }
@@ -473,7 +473,7 @@ static void syslog_case(void)
 	CHECK(l && descriptor_count == 1);
 	fork_probe();
 	LOGGER_INFO(l, "fork", "PARENT_SYSLOG_CONTINUES");
-	CHECK(!logger_flush_instance_status(l));
+	CHECK(!logger_flush(l));
 	char packet[1024];
 	ssize_t n = recv(server, packet, sizeof(packet) - 1, MSG_DONTWAIT);
 	CHECK(n > 0);

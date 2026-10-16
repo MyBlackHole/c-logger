@@ -385,7 +385,7 @@ int main(int argc, char **argv)
 	CHECK(logger_create(&cfg, &parent_logger) == 0);
 	CHECK(parent_logger != NULL);
 	LOGGER_INFO(parent_logger, "parent", "PARENT_ONLY");
-	CHECK(logger_flush_instance_status(parent_logger) == 0);
+	CHECK(logger_flush(parent_logger) == 0);
 	old_regions[0] = logger_runtime_current();
 	old_regions[1] = parent_logger;
 	old_regions[2] = parent_logger->q.slots;

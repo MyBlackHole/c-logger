@@ -33,8 +33,8 @@ int main(int argc, char **argv)
 	}
 
 	LOGGER_INFO(log, "example", "host-owned file and Syslog output");
-	int rc = logger_flush_instance_status(log);
-	int error = rc ? errno : 0;
+	int rc = logger_flush(log);
+	int error = -rc;
 	logger_syslog_metrics_t metrics;
 	if (logger_get_syslog_metrics(log, &metrics) == 0) {
 		printf("local_connected=%d sent=%" PRIu64 " failed=%" PRIu64

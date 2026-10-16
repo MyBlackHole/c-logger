@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 
 	if (async_mode) {
 		LOGGER_INFO(l, "sigpipe", "broken stderr");
-		CHECK(logger_flush_instance_status(l) == -1 && errno == EPIPE);
+		CHECK(logger_flush(l) == -EPIPE);
 	} else {
 		CHECK(logger_log_sync_status(l, LOGGER_INFO, "sigpipe", __FILE__,
 					     __LINE__, __func__, "broken stderr") ==

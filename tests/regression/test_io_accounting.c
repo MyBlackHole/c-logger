@@ -156,7 +156,7 @@ static void spill_policy(void)
 	check_terminal(0, 1, 1, 0);
 
 	atomic_store(&release_format, 1);
-	CHECK(logger_flush_instance_status(instance) == 0);
+	CHECK(logger_flush(instance) == 0);
 	check_terminal(1u + LOGGER_QUEUE_SPILL_LIMIT, 1,
 		       2u + LOGGER_QUEUE_SPILL_LIMIT, 0);
 	CHECK(file_contains("out.log", "spill-fallback-"));
@@ -199,8 +199,8 @@ static void full_queue(const char *mode)
 		 LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED) == failure);
 	check_terminal(0, fallback, fallback && !failure, failure);
 	atomic_store(&release_format, 1);
-	int rc = logger_flush_instance_status(instance);
-	CHECK(failure ? (rc == -1 && errno == ENOSPC) : rc == 0);
+	int rc = logger_flush(instance);
+	CHECK(failure ? rc == -ENOSPC : rc == 0);
 	check_terminal(3, fallback, 3 + (fallback && !failure), failure);
 	CHECK(!file_contains("out.log", "queue-drop"));
 	if (fallback && !failure)
@@ -237,8 +237,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "async-error")) {
 		atomic_store(&fault, WRITEV_ERROR);
 		LOGGER_INFO(instance, "io", "failed-message");
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == ENOSPC);
+		CHECK(logger_flush(instance) == -ENOSPC);
 		check_terminal(1, 0, 0, 1);
 		logger_file_metrics_t file = file_metrics();
 		CHECK(file.write_operations == 1);
@@ -251,8 +250,7 @@ int main(int argc, char **argv)
 		CHECK(file.last_error == 0);
 		atomic_store(&fault, NORMAL);
 		LOGGER_INFO(instance, "io", "later-success");
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == ENOSPC);
+		CHECK(logger_flush(instance) == -ENOSPC);
 		check_terminal(2, 0, 1, 1);
 		file = file_metrics();
 		CHECK(file.write_operations == 2);
@@ -268,8 +266,8 @@ int main(int argc, char **argv)
 		int bad = !strcmp(argv[1], "short-error");
 		atomic_store(&fault, bad ? SHORT_ERROR : SHORT_SUCCESS);
 		LOGGER_INFO(instance, "io", "short-writev-message");
-		int rc = logger_flush_instance_status(instance);
-		CHECK(bad ? (rc == -1 && errno == EIO) : rc == 0);
+		int rc = logger_flush(instance);
+		CHECK(bad ? rc == -EIO : rc == 0);
 		check_terminal(1, 0, !bad, bad);
 		logger_file_metrics_t file = file_metrics();
 		CHECK(file.write_operations == 1);
@@ -294,8 +292,7 @@ int main(int argc, char **argv)
 					     FILE_SYNC_ERROR :
 					     DIR_SYNC_ERROR);
 		LOGGER_INFO(instance, "io", "output-before-sync-failure");
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == EIO);
+		CHECK(logger_flush(instance) == -EIO);
 		check_terminal(1, 0, 1, 0); /* fsync 失败不是额外记录 */
 		logger_file_metrics_t file = file_metrics();
 		CHECK(file.data_sync_attempts == 1);
@@ -307,8 +304,7 @@ int main(int argc, char **argv)
 		      (uint64_t)(!strcmp(argv[1], "dir-fsync")));
 		CHECK(file.last_sync_error == EIO && file.last_error == EIO);
 		atomic_store(&fault, NORMAL);
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == EIO);
+		CHECK(logger_flush(instance) == -EIO);
 		file = file_metrics();
 		CHECK(file.data_sync_attempts == 2);
 		CHECK(file.directory_sync_attempts >= 1);
@@ -319,8 +315,7 @@ int main(int argc, char **argv)
 		CHECK(logger_wait_for_output(instance) == 0);
 		atomic_store(&fault, FILE_SYNC_ERROR);
 		LOGGER_INFO(instance, "io", "must-not-rotate-after-sync-error");
-		CHECK(logger_flush_instance_status(instance) == -1 &&
-		      errno == EIO);
+		CHECK(logger_flush(instance) == -EIO);
 		CHECK(instance->file_backend.fd >= 0);
 		check_terminal(2, 0, 1, 1);
 		logger_file_metrics_t file = file_metrics();
@@ -335,7 +330,7 @@ int main(int argc, char **argv)
 				     "must-not-rotate-after-sync-error"));
 	} else if (!strcmp(argv[1], "sync")) {
 		LOGGER_INFO(instance, "io", "sync-output");
-		CHECK(logger_flush_instance_status(instance) == 0);
+		CHECK(logger_flush(instance) == 0);
 		check_terminal(0, 1, 1, 0);
 	} else {
 		CHECK(!"unknown scenario");

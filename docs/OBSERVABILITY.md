@@ -73,7 +73,7 @@ STARTING/STOPPING/关闭代次的拒绝规则与现有全局指标一致，不�
 - `logger_get_syslog_metrics()`：Syslog 一致快照；该接口需要 `emit_mu`，
   因为 Syslog 后端指标不是原子变量；
 - `audit_get_status()`：Audit 状态、检查点、已提交/检查点序号；
-- `logger_flush_instance_status()`：主动同步与已锁存错误返回，不是纯观测。
+- `logger_flush()`：主动同步与已锁存错误返回，不是纯观测。
 
 <a id="file-backend-metrics"></a>
 

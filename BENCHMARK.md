@@ -115,7 +115,7 @@ python3 scripts/benchmark_fixed_rate.py \
   `emitted + failed` 守恒。`valid` 只证明驱动/计数与 I/O 检查，不表示零丢弃、速率达标或业务 SLO。
 - `output_observed_seconds`/`output_drain_observed_ns`：停止生产后以公开 I/O 完成计数
   轮询观测排空。1ms 轮询和调度误差使其成为观测上界；不是逐条输出延迟分位。
-- `flush_ns`：排空之后调用一次真实文件 `logger_flush_instance_status()` 的整批 fsync
+- `flush_ns`：排空之后调用一次真实文件 `logger_flush()` 的整批 fsync
   屏障耗时。每阶段一次，不能叫每条日志的落盘 P99，也不证明物理断电安全。
   `/dev/null` 无 fsync 契约，跳过该测量，销毁只允许预期的 EINVAL。
 - CPU 用户态/内核态秒数和 RSS 峰值来自独立子进程生命周期 `wait4`，包括初始化、预热、

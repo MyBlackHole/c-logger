@@ -87,7 +87,7 @@ static void output_error(int asynchronous)
 	CHECK(logger != NULL);
 	atomic_store(&fail_line_once, 1);
 	LOGGER_INFO(logger, "coordination", "NOT_A_SUCCESSFUL_RECORD");
-	CHECK(logger_flush_instance_status(logger) == -1 && errno == EIO);
+	CHECK(logger_flush(logger) == -EIO);
 	logger_io_metrics_t metrics;
 	logger_get_io_metrics(logger, &metrics);
 	CHECK(metrics.emitted_records == 0 && metrics.failed_records == 1);

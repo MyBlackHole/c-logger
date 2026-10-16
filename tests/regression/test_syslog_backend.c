@@ -197,7 +197,7 @@ static void run(const char *mode)
 		logger_syslog_metrics_t m = metrics(l);
 		CHECK(!m.connected && m.connect_failures == 1 &&
 		      !m.submitted_records && m.last_error == ENOENT);
-		CHECK(logger_flush_instance_status(l) == -1 && errno == ENOENT);
+		CHECK(logger_flush(l) == -ENOENT);
 		int fd = receiver(endpoint, SOCK_DGRAM);
 		pause_reconnect();
 		CHECK(!write_one(l, "first-deliverable"));
@@ -325,7 +325,7 @@ static void run(const char *mode)
 				CHECK(write_one(l, "failed-no-replay") ==
 				      -EAGAIN);
 		}
-		CHECK(logger_flush_instance_status(l) == -1 && errno == EAGAIN);
+		CHECK(logger_flush(l) == -EAGAIN);
 		logger_syslog_metrics_t m = metrics(l);
 		unsigned extra = c.async_mode ? 4000 : 32;
 		CHECK(m.submitted_records == accepted + 1 + extra);
@@ -348,8 +348,7 @@ static void run(const char *mode)
 		m = metrics(l);
 		CHECK(m.last_error == 0 && m.connect_attempts == 1);
 		if (c.outputs & LOGGER_OUT_FILE) {
-			CHECK(logger_flush_instance_status(l) == -1 &&
-			      errno == EAGAIN);
+			CHECK(logger_flush(l) == -EAGAIN);
 			check_file(accepted + extra + 2, c.async_mode);
 		}
 		CHECK(logger_destroy(&l) == -EAGAIN);

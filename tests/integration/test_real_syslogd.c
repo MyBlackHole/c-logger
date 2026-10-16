@@ -195,7 +195,7 @@ static void scenario_required_delivery(fixture_t *f)
 	CHECK(m.connect_failures == 0);
 	CHECK(m.sent_records == 1);
 	CHECK(m.failed_records == 0);
-	CHECK(logger_flush_instance_status(log) == 0);
+	CHECK(logger_flush(log) == 0);
 	errno = EDOM;
 	CHECK(logger_destroy(&log) == 0);
 	CHECK(log == NULL && errno == EDOM);
@@ -242,8 +242,7 @@ static void scenario_restart_reconnect(fixture_t *f)
 	CHECK(m.last_error == 0);
 
 	errno = 0;
-	CHECK(logger_flush_instance_status(log) == -1);
-	CHECK(errno == d.first_error);
+	CHECK(logger_flush(log) == -d.first_error && errno == 0);
 	errno = EDOM;
 	CHECK(logger_destroy(&log) == -d.first_error);
 	CHECK(log == NULL && errno == EDOM);
@@ -321,9 +320,10 @@ static void scenario_real_backpressure(fixture_t *f)
 	CHECK(kill(f->daemon_pid, SIGCONT) == 0);
 	sleep_ms(50);
 	errno = 0;
-	CHECK(logger_flush_instance_status(log) == -1);
-	CHECK(errno == EAGAIN || errno == ENOBUFS || errno == ENOMEM);
-	CHECK(errno == d.first_error);
+	int flush_rc = logger_flush(log);
+	CHECK(flush_rc == -EAGAIN || flush_rc == -ENOBUFS ||
+	      flush_rc == -ENOMEM);
+	CHECK(flush_rc == -d.first_error && errno == 0);
 	errno = EDOM;
 	CHECK(logger_destroy(&log) == -d.first_error);
 	CHECK(log == NULL && errno == EDOM);

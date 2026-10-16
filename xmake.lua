@@ -1786,3 +1786,51 @@ if has_config("build_regression_tests") then
         target_end()
     end
 end
+
+
+-- 新控制API：公开场景分别链接静态/共享生产库，故障包装不冒称DSO内部拦截。
+if has_config("build_tests") then
+    target("control_api_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_control_api.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "sync", "async", "reopen-error"}) do
+            add_tests(mode, {runargs = mode, group = "control-api", timeout = 20})
+        end
+    target_end()
+end
+
+if has_config("build_regression_tests") then
+    local control_libraries = {{"control_error_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(control_libraries, {"control_error_production", "logger"})
+    end
+    for _, spec in ipairs(control_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_control_errors.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"fsync", "logger_file_reopen", "pthread_setcancelstate",
+                                     "pthread_mutex_lock", "pthread_mutex_unlock",
+                                     "pthread_rwlock_rdlock", "pthread_rwlock_unlock"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scope in ipairs({"instance", "default"}) do
+                for _, mode in ipairs({"healthy", "setup", "restore", "sync", "primary",
+                                       "reopen", "reopen-primary", "reopen-restore", "lock", "unlock"}) do
+                    add_tests(scope .. "-" .. mode,
+                              {runargs = {scope, mode}, group = "control-api", timeout = 20})
+                end
+            end
+            for _, mode in ipairs({"read-lock", "read-unlock"}) do
+                add_tests("default-" .. mode,
+                          {runargs = {"default", mode}, group = "control-api", timeout = 20})
+            end
+        target_end()
+    end
+end

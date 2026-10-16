@@ -63,7 +63,7 @@ static int exec_child(void)
 	c.queue_capacity = 128;
 	CHECK(fixture_default_create(&c, &default_owner) == 0);
 	LOG_INFO("child initialized after exec");
-	CHECK(logger_flush_status() == 0);
+	CHECK(logger_default_flush() == 0);
 	fixture_default_destroy(&default_owner);
 	return 0;
 }
@@ -103,7 +103,7 @@ int main(int argc, char **argv)
 	int status;
 	while (waitpid(p, &status, 0) < 0)
 		CHECK(errno == EINTR);
-	CHECK(logger_flush_status() == 0);
+	CHECK(logger_default_flush() == 0);
 	fixture_default_destroy(&default_owner);
 	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 	CHECK(contains("fork-parent.log", "before fork"));

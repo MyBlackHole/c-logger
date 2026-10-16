@@ -20,7 +20,7 @@ static void *ctl(void *x)
 	while (atomic_load(&run)) {
 		logger_set_instance_level(g, LOGGER_DEBUG);
 		logger_get_metrics(g, &m);
-		logger_flush_instance(g);
+		logger_flush(g);
 		logger_set_instance_level(g, LOGGER_INFO);
 	}
 	return 0;

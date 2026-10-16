@@ -315,20 +315,23 @@ out:
 	return rc;
 }
 
-int logger_flush_status(void)
+int logger_default_flush(void)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return -1;
-	int rc = pin(&scope);
-	if (!rc && logger_flush_instance_status(g_logger))
-		rc = -(errno ? errno : EIO);
-	return finish(&scope, rc);
-}
+	int rc;
 
-void logger_flush(void)
-{
-	(void)logger_flush_status();
+	if (begin(&scope)) {
+		rc = -errno;
+		goto out;
+	}
+	rc = pin(&scope);
+	if (!rc)
+		rc = logger_flush(g_logger);
+	rc = finish_result(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 void logger_set_level(logger_level_t level)
@@ -353,15 +356,23 @@ uint64_t logger_global_dropped(void)
 	return dropped;
 }
 
-int logger_reopen(void)
+int logger_default_reopen(void)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return -1;
-	int rc = pin(&scope);
-	if (!rc && logger_reopen_instance(g_logger))
-		rc = -(errno ? errno : EIO);
-	return finish(&scope, rc);
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto out;
+	}
+	rc = pin(&scope);
+	if (!rc)
+		rc = logger_reopen(g_logger);
+	rc = finish_result(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 void logger_get_global_metrics(logger_metrics_t *out)

@@ -23,9 +23,7 @@ static ssize_t host_write(void *user, const char *text, size_t size)
 			CHECK(console_print("recursive") == -1 &&
 			      errno == EDEADLK);
 			errno = 0;
-			CHECK(logger_flush_instance_status(log_instance) ==
-				      -1 &&
-			      errno == EDEADLK);
+			CHECK(logger_flush(log_instance) == -EDEADLK);
 			errno = 0;
 			CHECK(logger_default_set(NULL, NULL) == -EDEADLK &&
 			      errno == 0);
@@ -43,7 +41,7 @@ static void cleanup(void *unused)
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	CHECK(!console_print("cleanup\n"));
 	LOGGER_INFO(log_instance, "cleanup", "after-cancel");
-	CHECK(!logger_flush_instance_status(log_instance));
+	CHECK(!logger_flush(log_instance));
 	atomic_store(&cleanup_seen, 1);
 }
 static void *print_thread(void *unused)

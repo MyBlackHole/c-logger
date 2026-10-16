@@ -44,6 +44,10 @@ int main(int argc, char **argv)
 		CHECK(dlsym(handle, "logger_init") == NULL);
 		CHECK(dlsym(handle, "logger_shutdown") == NULL);
 		CHECK(dlsym(handle, "logger_shutdown_status") == NULL);
+		CHECK(dlsym(handle, "logger_flush_status") == NULL);
+		CHECK(dlsym(handle, "logger_flush_instance") == NULL);
+		CHECK(dlsym(handle, "logger_flush_instance_status") == NULL);
+		CHECK(dlsym(handle, "logger_reopen_instance") == NULL);
 #undef GET
 		logger_config_t c = LOGGER_DEFAULT_CONFIG();
 		c.outputs = LOGGER_OUT_FILE;

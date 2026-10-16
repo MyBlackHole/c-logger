@@ -184,8 +184,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	uint64_t output_end = now_ns();
 	uint64_t flush_start = now_ns();
 	/* /dev/null 没有 fsync 契约，不能借其 EINVAL 声称文件刷新失败。 */
-	int flush_rc = file_backend ? logger_flush_instance_status(logger) : 0;
-	int flush_error = flush_rc ? errno : 0;
+	int flush_rc = file_backend ? logger_flush(logger) : 0;
+	int flush_error = -flush_rc;
 	uint64_t flush_ns = now_ns() - flush_start;
 	logger_get_io_metrics(logger, &io_after);
 	uint64_t enqueued = after.enqueued - before.enqueued;

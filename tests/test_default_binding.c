@@ -35,7 +35,7 @@ static void absent(void)
 	errno = 0;
 	LOG_INFO("must-not-format%n", &touched);
 	CHECK(errno == ENODEV && touched == 42);
-	CHECK(logger_flush_status() == -1 && errno == ENODEV);
+	CHECK(logger_default_flush() == -ENODEV);
 }
 
 static void healthy(int async)
@@ -60,7 +60,7 @@ static void healthy(int async)
 	CHECK(lines("a.log") == 2);
 	CHECK(file_contains("a.log", "A_DEFAULT"));
 	LOG_INFO("B_DEFAULT");
-	CHECK(logger_flush_status() == 0);
+	CHECK(logger_default_flush() == 0);
 	CHECK(logger_default_set(b, NULL) == 0);
 	absent();
 	LOGGER_INFO(b, "explicit", "B_STILL_OWNED");

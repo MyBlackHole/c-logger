@@ -34,7 +34,7 @@ int main(void)
 		LOGGER_INFO(a, "host-a", "record=%u", i);
 		LOGGER_INFO(b, "host-b", "record=%u", i);
 	}
-	int rc = logger_flush_instance_status(a);
+	int rc = logger_flush(a);
 	logger_io_metrics_t io;
 	logger_get_io_metrics(a, &io);
 	logger_diagnostics_t diagnostics;
