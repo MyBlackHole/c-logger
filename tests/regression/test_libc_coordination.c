@@ -82,8 +82,9 @@ static void output_error(int asynchronous)
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "out.log";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&config);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&config, &logger) == 0);
+	CHECK(logger != NULL);
 	atomic_store(&fail_line_once, 1);
 	LOGGER_INFO(logger, "coordination", "NOT_A_SUCCESSFUL_RECORD");
 	CHECK(logger_flush_instance_status(logger) == -1 && errno == EIO);
@@ -93,7 +94,7 @@ static void output_error(int asynchronous)
 	CHECK(metrics.async_completed + metrics.sync_completed == 1);
 	CHECK(metrics.first_error == EIO && file_size("out.log") == 0);
 	CHECK(!atomic_load(&fail_line_once));
-	CHECK(logger_destroy_status(logger) == -1 && errno == EIO);
+	CHECK(logger_destroy(&logger) == -EIO);
 	leave_temp(directory);
 }
 
@@ -137,8 +138,9 @@ static void checked_log(int unlock)
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "out.log";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&config);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&config, &logger) == 0);
+	CHECK(logger != NULL);
 	format_locks = 0;
 	format_unlocks = 0;
 	reject_lock = !unlock;
@@ -151,12 +153,12 @@ static void checked_log(int unlock)
 	CHECK(format_locks == 1 && format_unlocks == (unlock ? 1u : 0u));
 	if (unlock) {
 		/* 域已毒化，不把无法证明释放的对象当作可重试指针。 */
-		CHECK(logger_destroy_status(logger) == -1 && errno == EIO);
+		CHECK(logger_destroy(&logger) == -EIO);
 	} else {
 		CHECK(logger_log_sync_status(logger, LOGGER_INFO,
 					     "coordination", NULL, 0, NULL,
 					     "AFTER_RETRY") == 0);
-		CHECK(logger_destroy_status(logger) == 0);
+		CHECK(logger_destroy(&logger) == 0);
 		CHECK(file_contains("out.log", "AFTER_RETRY"));
 	}
 	leave_temp(directory);

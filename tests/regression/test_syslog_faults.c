@@ -159,26 +159,28 @@ static void run(const char *mode, int fd)
 	if (!strncmp(mode, "socket-", 7)) {
 		inject_socket = parse_error(mode + 7);
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
-		CHECK(!logger_create(&c) && errno == inject_socket);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
+		      -inject_socket);
 		CHECK(sockets == 1 && connects == 0);
 		return;
 	}
 	if (!strncmp(mode, "connect-", 8)) {
 		inject_connect = parse_error(mode + 8);
-		CHECK(!logger_create(&c) && errno == inject_connect);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
+		      -inject_connect);
 		CHECK(sockets == 1 && connects == 1 && closes == 1);
 		return;
 	}
 	if (!strcmp(mode, "deferred-permission")) {
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		inject_connect = EACCES;
-		CHECK(!logger_create(&c) && errno == EACCES);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EACCES);
 		CHECK(closes == 1);
 		return;
 	}
 	if (!strcmp(mode, "clock-init")) {
 		inject_clock = EIO;
-		CHECK(!logger_create(&c) && errno == EIO);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EIO);
 		CHECK(!sockets);
 		return;
 	}
@@ -186,8 +188,9 @@ static void run(const char *mode, int fd)
 	    !strcmp(mode, "backwards-clock")) {
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		inject_connect = ENOENT;
-		logger_t *l = logger_create(&c);
-		CHECK(l);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		CHECK(sockets == 1 && connects == 1 && closes == 1);
 		for (unsigned i = 0; i < 1000; ++i)
 			CHECK(output(l) == -ENOENT);
@@ -215,11 +218,12 @@ static void run(const char *mode, int fd)
 		CHECK(m.reconnect_successes == 1 && m.connected &&
 		      !m.last_error);
 		CHECK(logger_flush_instance_status(l) == -1 && errno == ENOENT);
-		CHECK(logger_destroy_status(l) == -1 && errno == ENOENT);
+		CHECK(logger_destroy(&l) == -ENOENT);
 		return;
 	}
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	CHECK(connects == 1 && sockets == 1);
 	int error = 0;
 	if (!strncmp(mode, "send-", 5)) {
@@ -329,9 +333,9 @@ static void run(const char *mode, int fd)
 		CHECK(!"unknown mode");
 	if (error) {
 		CHECK(logger_flush_instance_status(l) == -1 && errno == error);
-		CHECK(logger_destroy_status(l) == -1 && errno == error);
+		CHECK(logger_destroy(&l) == -error);
 	} else
-		CHECK(!logger_destroy_status(l));
+		CHECK(!logger_destroy(&l));
 }
 int main(int argc, char **argv)
 {

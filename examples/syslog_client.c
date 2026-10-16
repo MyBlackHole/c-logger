@@ -22,8 +22,10 @@ int main(int argc, char **argv)
 	cfg.syslog.reconnect_interval_ms = 1000;
 	if (argc == 3)
 		cfg.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
-	logger_t *log = logger_create(&cfg);
-	if (!log) {
+	logger_t *log = NULL;
+	int create_rc = logger_create(&cfg, &log);
+	if (create_rc) {
+		errno = -create_rc;
 		perror("logger_create");
 		return 1;
 	}
@@ -40,8 +42,9 @@ int main(int argc, char **argv)
 	} else if (!error)
 		error = errno;
 	/* 没有其他使用者。即使返回 I/O 错误也会释放实例。 */
-	if (logger_destroy_status(log) != 0 && !error)
-		error = errno;
+	int destroy_rc = logger_destroy(&log);
+	if (destroy_rc && !error)
+		error = -destroy_rc;
 	if (error) {
 		fprintf(stderr, "Logger output had an error: %s\n",
 			strerror(error));

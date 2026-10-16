@@ -71,14 +71,15 @@ static int test_normal_lock_path(void)
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-normal", NULL,
 					0, NULL, "normal-lock-path");
 	logger_io_metrics_t metrics;
 	logger_get_io_metrics(logger, &metrics);
 	int bytes = (int)file_size("out.log");
-	int destroy_rc = logger_destroy_status(logger);
+	int destroy_rc = logger_destroy(&logger);
 	leave_temp(dir);
 	CHECK(rc == 0 && bytes > 0 && metrics.emitted_records == 1 &&
 	      metrics.failed_records == 0 && destroy_rc == 0);
@@ -94,8 +95,9 @@ static int test_emit_lock_failure(void)
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 
 	fail_mutex = &logger->emit_mu;
 	errno = 0;
@@ -107,7 +109,7 @@ static int test_emit_lock_failure(void)
 	logger_get_io_metrics(logger, &metrics);
 	int had_invalid_unlock = invalid_unlock;
 	failed_mutex = NULL;
-	int destroy_rc = logger_destroy_status(logger);
+	int destroy_rc = logger_destroy(&logger);
 	(void)destroy_rc;
 	leave_temp(dir);
 
@@ -135,8 +137,9 @@ static int test_emit_unlock_failure(void)
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 
 	lock_failed = 0;
 	unlock_failed = 0;
@@ -151,14 +154,14 @@ static int test_emit_unlock_failure(void)
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
 	logger_get_io_metrics(logger, &metrics);
-	int destroy_rc = logger_destroy_status(logger);
-	int destroy_error = errno;
+	int destroy_rc = logger_destroy(&logger);
+	int destroy_error = -destroy_rc;
 	leave_temp(dir);
 
 	if (!captured_mutex || !unlock_failed || lock_failed || invalid_unlock ||
 	    rc != -EAGAIN || error != EAGAIN || bytes <= 0 ||
 	    metrics.emitted_records != 0 || metrics.failed_records != 1 ||
-	    metrics.first_error != EAGAIN || destroy_rc != -1 ||
+	    metrics.first_error != EAGAIN || destroy_rc != -EAGAIN ||
 	    destroy_error != EAGAIN) {
 		fprintf(stderr,
 			"emit unlock failure: captured=%d unlock=%d lock=%d "
@@ -206,8 +209,9 @@ static int test_queue_notify_lock_failure(void)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
 
 	lock_failed = 0;
@@ -221,16 +225,16 @@ static int test_queue_notify_lock_failure(void)
 	CHECK(wait_for_async_completion(logger) == 0);
 	logger_io_metrics_t metrics;
 	logger_get_io_metrics(logger, &metrics);
-	int destroy_rc = logger_destroy_status(logger);
-	int destroy_error = errno;
+	int destroy_rc = logger_destroy(&logger);
+	int destroy_error = -destroy_rc;
 	int bytes = (int)file_size("out.log");
 	int content_ok = file_contains("out.log", "published-before-notify-error");
 	leave_temp(dir);
 
 	CHECK(had_lock_failure && !had_invalid_unlock &&
-	      metrics.first_error == EAGAIN &&
-	      metrics.async_completed == 1 && destroy_rc == -1 &&
-	      destroy_error == EAGAIN && bytes > 0 && content_ok);
+	      metrics.first_error == EAGAIN && metrics.async_completed == 1 &&
+	      destroy_rc == -EAGAIN && destroy_error == EAGAIN && bytes > 0 &&
+	      content_ok);
 	return 0;
 }
 
@@ -244,8 +248,9 @@ static int test_queue_notify_signal_failure(void)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
 
 	signal_failed = 0;
@@ -258,14 +263,14 @@ static int test_queue_notify_signal_failure(void)
 	logger_io_metrics_t metrics;
 	logger_get_io_metrics(logger, &metrics);
 	uint64_t force_wakes = logger_queue_force_wake_signals(&logger->q);
-	int destroy_rc = logger_destroy_status(logger);
-	int destroy_error = errno;
+	int destroy_rc = logger_destroy(&logger);
+	int destroy_error = -destroy_rc;
 	int bytes = (int)file_size("out.log");
 	int content_ok = file_contains("out.log", "published-before-signal-error");
 	leave_temp(dir);
 
 	CHECK(signal_failed && force_wakes == 1 && metrics.first_error == EIO &&
-	      metrics.async_completed == 1 && destroy_rc == -1 &&
+	      metrics.async_completed == 1 && destroy_rc == -EIO &&
 	      destroy_error == EIO && bytes > 0 && content_ok);
 	return 0;
 }
@@ -280,24 +285,28 @@ static int test_force_wake_lock_failure(void)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
 
 	lock_failed = 0;
 	invalid_unlock = 0;
 	fail_mutex = &logger->q.wait_mu;
 	errno = 0;
-	int rc = logger_destroy_status(logger);
-	int error = errno;
+	logger_t *retained = logger;
+	int rc = logger_destroy(&logger);
+	int error = -rc;
+	CHECK(logger == NULL);
 	int had_lock_failure = lock_failed;
 	int had_invalid_unlock = invalid_unlock;
 	fail_mutex = NULL;
 	unsigned objects = logger_process_object_count();
-	int state = atomic_load_explicit(&logger->state, memory_order_acquire);
+	int state =
+		atomic_load_explicit(&retained->state, memory_order_acquire);
 	leave_temp(dir);
 
-	CHECK(had_lock_failure && !had_invalid_unlock && rc == -1 &&
+	CHECK(had_lock_failure && !had_invalid_unlock && rc == -EAGAIN &&
 	      error == EAGAIN && objects == 1 &&
 	      state == LOGGER_STATE_STOPPING);
 	return 0;

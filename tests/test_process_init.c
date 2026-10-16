@@ -27,12 +27,14 @@ static void cold(void)
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.queue_capacity = 8;
-	logger_t *a = logger_create(&cfg);
-	CHECK(a);
+	logger_t *a = NULL;
+	CHECK(logger_create(&cfg, &a) == 0);
+	CHECK(a != NULL);
 	logger_config_t bcfg = LOGGER_DEFAULT_CONFIG();
 	bcfg.async_mode = 0;
-	logger_t *b = logger_create(&bcfg);
-	CHECK(b);
+	logger_t *b = NULL;
+	CHECK(logger_create(&bcfg, &b) == 0);
+	CHECK(b != NULL);
 	LOGGER_INFO(a, "init", "BEFORE_FORK");
 	CHECK(logger_flush_instance_status(a) == 0);
 
@@ -48,8 +50,8 @@ static void cold(void)
 	wait_ok(pid);
 	CHECK(logger_process_init() == -EALREADY);
 	LOGGER_INFO(a, "init", "PARENT_CONTINUES");
-	CHECK(logger_destroy_status(b) == 0);
-	CHECK(logger_destroy_status(a) == 0);
+	CHECK(logger_destroy(&b) == 0);
+	CHECK(logger_destroy(&a) == 0);
 	CHECK(file_contains("out.log", "BEFORE_FORK"));
 	CHECK(file_contains("out.log", "PARENT_CONTINUES"));
 	/* 对象计数归零不是全进程资源清理证明，不能据此放行子方。 */
@@ -76,11 +78,12 @@ static void prefork(void)
 		cfg.file_path = "out.log";
 		cfg.rotation.mode = LOGGER_ROTATE_NONE;
 		cfg.queue_capacity = 8;
-		logger_t *l = logger_create(&cfg);
+		logger_t *l = NULL;
+		(void)logger_create(&cfg, &l);
 		if (!l)
 			_exit(21);
 		LOGGER_INFO(l, "init", "CHILD_FIRST_INIT");
-		_exit(logger_destroy_status(l) ? 22 : 0);
+		_exit(logger_destroy(&l) ? 22 : 0);
 	}
 	wait_ok(pid);
 	CHECK(logger_process_init() == 0);
@@ -93,10 +96,11 @@ static void implicit(void)
 	/* 分阶段迁移期间，现有创建入口也只能走同一套引导状态机。 */
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.async_mode = 0;
-	logger_t *l = logger_create(&cfg);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&cfg, &l) == 0);
+	CHECK(l != NULL);
 	CHECK(logger_process_init() == -EALREADY);
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 }
 
 int main(int argc, char **argv)

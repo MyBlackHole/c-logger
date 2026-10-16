@@ -11,18 +11,21 @@ Xmake、远端持续集成、最低 Linux/glibc、完整新 API 与性能验收�
 /* 当前候选接口；create/destroy 的完整新签名迁移另行完成。 */
 if (logger_process_init() != 0)
         return -1;
-logger_t *parent = logger_create(&parent_config);
+logger_t *parent = NULL;
+if (logger_create(&parent_config, &parent))
+        return -1;
 /* 检查parent后由宿主调用fork。 */
 pid_t pid = fork();
 if (pid == 0) {
         /* parent在这里失效：不解引用，不执行普通销毁。 */
         if (logger_process_init() != 0)
                 _exit(125);
-        logger_t *child = logger_create(&child_config);
-        if (!child)
+        logger_t *child = NULL;
+        int create_rc = logger_create(&child_config, &child);
+        if (create_rc)
                 _exit(126);
         LOGGER_INFO(child, "child", "子进程的新记录");
-        _exit(logger_destroy_status(child) ? 127 : 0);
+        _exit(logger_destroy(&child) ? 127 : 0);
 }
 /* pid < 0时父方状态仍需按错误回执处理；成功则继续使用parent。 */
 ```

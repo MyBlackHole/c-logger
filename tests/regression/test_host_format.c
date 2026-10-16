@@ -9,7 +9,8 @@ int main(void)
 	c.async_mode = 0;
 	c.detail = LOGGER_DETAIL_DEBUG;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	logger_message_t m = { .level = LOGGER_INFO,
 			       .ts = { 1700000000, 123456000 },
@@ -47,6 +48,6 @@ int main(void)
 			CHECK(b[n - 1] == 'X');
 		}
 	}
-	CHECK(logger_destroy_status(l) == 0);
+	CHECK(logger_destroy(&l) == 0);
 	return 0;
 }

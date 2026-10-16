@@ -6,15 +6,15 @@ static _Atomic int pause_close, entered, released, init_attempted,
 	init_finished;
 static _Thread_local int initializer;
 static logger_config_t cfg;
-int __real_logger_destroy_status(logger_t *);
+int __real_logger_destroy(logger_t **);
 int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __wrap_logger_destroy_status(logger_t *l)
+int __wrap_logger_destroy(logger_t **owner)
 {
 	if (atomic_exchange(&pause_close, 0)) {
 		atomic_store(&entered, 1);
 		wait_flag(&released);
 	}
-	return __real_logger_destroy_status(l);
+	return __real_logger_destroy(owner);
 }
 int __wrap_pthread_mutex_lock(pthread_mutex_t *m)
 {
@@ -66,8 +66,9 @@ int main(int argc, char **argv)
 	for (int i = 0; i < 20; ++i)
 		nap_ms();
 	CHECK(!atomic_load(&init_finished));
-	logger_t *conflict = logger_create(&cfg);
-	CHECK(!conflict && errno == EBUSY);
+	logger_t *conflict = NULL;
+	CHECK(logger_create(&cfg, &conflict) == -EBUSY);
+	CHECK(!conflict);
 	atomic_store(&released, 1);
 	CHECK(pthread_join(stop, NULL) == 0 && pthread_join(init, NULL) == 0);
 	CHECK(atomic_load(&init_finished));

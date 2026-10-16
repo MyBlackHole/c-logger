@@ -144,9 +144,10 @@ int main(int argc, char **argv)
 	c.queue_capacity = 64;
 
 	errno = 0;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	int create_rc = logger_create(&c, &l);
 	CHECK(l == NULL);
-	CHECK(errno == EAGAIN);
+	CHECK(create_rc == -EAGAIN);
 	CHECK(create_failed == !queue_init_failure);
 	CHECK(queue_init_failed == queue_init_failure);
 	CHECK(candidate != NULL);

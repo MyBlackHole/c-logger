@@ -26,7 +26,7 @@ fi
     -Wl,--wrap=pthread_rwlock_wrlock \
     -Wl,--wrap=pthread_rwlock_unlock \
     -Wl,--wrap=pthread_join -Wl,--wrap=pthread_cond_destroy \
-    -Wl,--wrap=logger_create -Wl,--wrap=logger_destroy_status \
+    -Wl,--wrap=logger_create -Wl,--wrap=logger_destroy \
     -Wl,--wrap=logger_file_write -Wl,--wrap=logger_file_reopen \
     -Wl,--wrap=logger_stderr_writev_all -Wl,--wrap=fsync \
     -Wl,--wrap=logger_runtime_free -o "$binary"

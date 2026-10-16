@@ -164,10 +164,11 @@ static void child_log(void)
 {
 	logger_config_t cfg = cfg_for("child.log");
 	cfg.async_mode = child_async;
-	logger_t *l = logger_create(&cfg);
+	logger_t *l = NULL;
+	(void)logger_create(&cfg, &l);
 	child_check(l != NULL, 41);
 	LOGGER_INFO(l, "child", "NEW_RUNTIME_RECORD");
-	child_check(logger_destroy_status(l) == 0, 42);
+	child_check(logger_destroy(&l) == 0, 42);
 	child_check(logger_runtime_current()->allocation_count == 0, 43);
 	child_check(logger_process_object_count() == 0, 44);
 	_exit(0);
@@ -217,8 +218,9 @@ static void mapped_and_retry(const char *mode)
 				    48);
 			child_check(logger_runtime_current() == NULL, 49);
 			logger_config_t cfg = cfg_for("never-created.log");
-			child_check(logger_create(&cfg) == NULL &&
-					    errno == ECHILD,
+			child_check(logger_create(&cfg,
+						  &(logger_t *){ NULL }) ==
+					    -ECHILD,
 				    50);
 		}
 		child_check(logger_process_init() == 0, 51);
@@ -322,8 +324,9 @@ static void allocation_failures(void)
 				fault = failures[f];
 				countdown = i;
 				atomic_store(&mapping_calls, 0);
-				logger_t *l = logger_create(&cfg);
-				int error = errno;
+				logger_t *l = NULL;
+				int create_rc = logger_create(&cfg, &l);
+				int error = -create_rc;
 
 				CHECK(l == NULL && countdown == 0);
 				CHECK(error == allocation_errno);
@@ -332,9 +335,9 @@ static void allocation_failures(void)
 				CHECK(runtime->owned_count == owned_before);
 				CHECK(logger_process_object_count() == 1);
 				/* 失败后同一进程、同一路径可真正创建与释放。 */
-				l = logger_create(&cfg);
-				CHECK(l);
-				CHECK(logger_destroy_status(l) == 0);
+				CHECK(logger_create(&cfg, &l) == 0);
+				CHECK(l != NULL);
+				CHECK(logger_destroy(&l) == 0);
 				CHECK(runtime->allocation_count == before);
 				CHECK(runtime->owned_count == owned_before);
 				++cases;
@@ -379,8 +382,8 @@ int main(int argc, char **argv)
 		CHECK(pthread_atfork(NULL, NULL, early_child) == 0);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = cfg_for("out.log");
-	parent_logger = logger_create(&cfg);
-	CHECK(parent_logger);
+	CHECK(logger_create(&cfg, &parent_logger) == 0);
+	CHECK(parent_logger != NULL);
 	LOGGER_INFO(parent_logger, "parent", "PARENT_ONLY");
 	CHECK(logger_flush_instance_status(parent_logger) == 0);
 	old_regions[0] = logger_runtime_current();
@@ -391,8 +394,7 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "final-unlock")) {
 		final_subject = (uintptr_t)parent_logger;
 		fail_final_unlock = 1;
-		CHECK(logger_destroy_status(parent_logger) == -1 &&
-		      errno == EIO);
+		CHECK(logger_destroy(&parent_logger) == -EIO);
 		CHECK(logger_destroy_receipt_read() == 1);
 		CHECK(logger_runtime_current()->allocation_count == 0);
 		CHECK(!fail_final_unlock && !arm_unlock);
@@ -404,7 +406,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "allocation-errors")) {
 		allocation_failures();
 	} else if (!strcmp(mode, "unmap-retain")) {
-		CHECK(logger_destroy_status(parent_logger) == 0);
+		CHECK(logger_destroy(&parent_logger) == 0);
 		void *p = logger_runtime_malloc(32);
 		CHECK(p);
 		fault = FAIL_UNMAP;
@@ -433,7 +435,7 @@ int main(int argc, char **argv)
 		mapped_and_retry(mode);
 	}
 	LOGGER_INFO(parent_logger, "parent", "PARENT_AFTER");
-	CHECK(logger_destroy_status(parent_logger) == 0);
+	CHECK(logger_destroy(&parent_logger) == 0);
 	CHECK(file_contains("out.log", "PARENT_AFTER"));
 	CHECK(logger_runtime_current()->allocation_count == 0);
 	CHECK(logger_process_object_count() == 0);

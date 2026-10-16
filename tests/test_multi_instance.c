@@ -27,13 +27,16 @@ int main(void)
 	b.file_path = "./mi-b.log";
 	b.async_mode = 0;
 	b.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *A = logger_create(&a), *B = logger_create(&b);
+	logger_t *A = NULL;
+	(void)logger_create(&a, &A);
+	logger_t *B = NULL;
+	(void)logger_create(&b, &B);
 	if (!A || !B)
 		return 1;
 	LOGGER_INFO(A, "alpha", "only-a=%d", 1);
 	LOGGER_ERROR(B, "beta", "only-b=%d", 2);
-	logger_destroy(A);
-	logger_destroy(B);
+	logger_destroy(&A);
+	logger_destroy(&B);
 	if (!contains("./mi-a.log", "only-a=1") ||
 	    contains("./mi-a.log", "only-b=2"))
 		return 2;

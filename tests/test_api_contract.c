@@ -1,8 +1,8 @@
 #include "logger.h"
 #include <errno.h>
 
-/* #108：真实生产目标上的公开返回约定。
- * 普通状态入口为 0 / -1 + errno；旧同步状态写入是 0 / -errno。
+/* 生命周期新接口使用 0/-errno 并保留 errno。尚未迁移的其他状态入口
+ * 保持自己的既定约定；不能用创建/销毁改动默默替换全局接口。
  */
 static int rejected(int rc, int error)
 {
@@ -11,8 +11,9 @@ static int rejected(int rc, int error)
 
 int main(void)
 {
-	errno = 0;
-	if (logger_create(NULL) != NULL || errno != EINVAL)
+	errno = ERANGE;
+	if (logger_create(NULL, &(logger_t *){ NULL }) != -EINVAL ||
+	    errno != ERANGE)
 		return 1;
 
 	errno = 0;
@@ -39,18 +40,39 @@ int main(void)
 
 	/* NULL 销毁不会消费资源，成功不清除调用方已有 errno。 */
 	errno = ERANGE;
-	if (logger_destroy_status(NULL) != 0 || errno != ERANGE)
+	if (logger_destroy(&(logger_t *){ NULL }) != 0 || errno != ERANGE)
 		return 7;
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.async_mode = 0;
-	logger_t *instance = logger_create(&cfg);
+	logger_t *instance = NULL;
+	(void)logger_create(&cfg, &instance);
 	if (!instance)
 		return 8;
 	if (logger_flush_instance_status(instance))
 		return 9;
-	if (logger_destroy_status(instance))
+	errno = EDOM;
+	if (logger_destroy(&instance) || instance != NULL || errno != EDOM)
 		return 10;
+	if (logger_destroy(&instance) || instance != NULL || errno != EDOM)
+		return 11;
+	if (logger_destroy(NULL) != -EINVAL || errno != EDOM)
+		return 12;
+	if (logger_create(&cfg, NULL) != -EINVAL || errno != EDOM)
+		return 13;
+	if (logger_create(&cfg, &instance) != 0 || !instance || errno != EDOM)
+		return 14;
+	logger_t *original = instance;
+	/* 已有拥有者不能被新的创建请求覆盖，即使配置本身非法。 */
+	if (logger_create(NULL, &instance) != -EBUSY || instance != original ||
+	    errno != EDOM)
+		return 15;
+	if (logger_destroy(&instance) || instance != NULL)
+		return 16;
+	cfg.outputs = 1u << 31;
+	if (logger_create(&cfg, &instance) != -EINVAL || instance ||
+	    errno != EDOM)
+		return 17;
 	return 0;
 }

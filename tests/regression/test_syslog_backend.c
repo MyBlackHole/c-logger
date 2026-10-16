@@ -159,14 +159,15 @@ static void run(const char *mode)
 		      errno == EINVAL);
 		CHECK(!memcmp(&before, &after, sizeof(after)));
 		c.outputs = LOGGER_OUT_FILE;
-		logger_t *l = logger_create(&c);
-		CHECK(l);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		CHECK(logger_get_syslog_metrics(l, &after) == -1 &&
 		      errno == ENOTSUP);
 		CHECK(!memcmp(&before, &after, sizeof(after)));
 		CHECK(logger_get_syslog_metrics(l, NULL) == -1 &&
 		      errno == EINVAL);
-		CHECK(logger_destroy_status(l) == 0);
+		CHECK(logger_destroy(&l) == 0);
 		return;
 	}
 	if (!strcmp(mode, "required-missing") || !strcmp(mode, "fd-churn") ||
@@ -175,22 +176,24 @@ static void run(const char *mode)
 		if (!strcmp(mode, "init-cleanup"))
 			c.outputs |= LOGGER_OUT_FILE;
 		for (unsigned i = 0; i < 64; ++i) {
-			CHECK(!logger_create(&c));
-			CHECK(errno == ENOENT);
+			CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
+			      -ENOENT);
 		}
 		CHECK(fd_count() == before);
 		if (c.outputs & LOGGER_OUT_FILE) {
 			c.outputs = LOGGER_OUT_FILE;
-			logger_t *l = logger_create(&c);
-			CHECK(l);
-			CHECK(!logger_destroy_status(l));
+			logger_t *l = NULL;
+			CHECK(logger_create(&c, &l) == 0);
+			CHECK(l != NULL);
+			CHECK(!logger_destroy(&l));
 		}
 		return;
 	}
 	if (!strcmp(mode, "deferred")) {
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
-		logger_t *l = logger_create(&c);
-		CHECK(l);
+		logger_t *l = NULL;
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		logger_syslog_metrics_t m = metrics(l);
 		CHECK(!m.connected && m.connect_failures == 1 &&
 		      !m.submitted_records && m.last_error == ENOENT);
@@ -204,15 +207,14 @@ static void run(const char *mode)
 		m = metrics(l);
 		CHECK(m.connected && m.last_error == 0 && m.sent_records == 1 &&
 		      m.reconnect_successes == 1);
-		CHECK(logger_destroy_status(l) == -1 && errno == ENOENT);
+		CHECK(logger_destroy(&l) == -ENOENT);
 		CHECK(!close(fd));
 		return;
 	}
 	if (!strcmp(mode, "endpoint-type")) {
 		int fd = receiver(endpoint, SOCK_STREAM);
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
-		CHECK(!logger_create(&c));
-		CHECK(errno == EPROTOTYPE);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EPROTOTYPE);
 		CHECK(!close(fd));
 		return;
 	}
@@ -242,8 +244,7 @@ static void run(const char *mode)
 		}
 		if (!strcmp(mode, "tag-injection"))
 			c.ident = "tag\nforged:";
-		CHECK(!logger_create(&c));
-		CHECK(errno == expected);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -expected);
 		return;
 	}
 	int fd = receiver(endpoint, SOCK_DGRAM);
@@ -271,21 +272,22 @@ static void run(const char *mode)
 		c.async_mode = 1;
 		c.queue_capacity = 8192;
 	}
-	logger_t *l = logger_create(&c);
-	CHECK(l);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
+	CHECK(l != NULL);
 	if (!strcmp(mode, "file-fails")) {
 		/* 文件失败的独立实例仍尝试 Syslog。 */
-		CHECK(!logger_destroy_status(l));
+		CHECK(!logger_destroy(&l));
 		c.outputs |= LOGGER_OUT_FILE;
 		c.file_path = "/dev/full";
-		l = logger_create(&c);
-		CHECK(l);
+		CHECK(logger_create(&c, &l) == 0);
+		CHECK(l != NULL);
 		CHECK(write_one(l, "syslog-despite-file-error") == -ENOSPC);
 		read_one(fd, packet, sizeof(packet));
 		CHECK(strstr(packet, "syslog-despite-file-error"));
 		CHECK(metrics(l).sent_records == 1 &&
 		      metrics(l).failed_records == 0);
-		CHECK(logger_destroy_status(l) == -1 && errno == ENOSPC);
+		CHECK(logger_destroy(&l) == -ENOSPC);
 		CHECK(!close(fd));
 		return;
 	} else if (!strcmp(mode, "flags")) {
@@ -350,7 +352,7 @@ static void run(const char *mode)
 			      errno == EAGAIN);
 			check_file(accepted + extra + 2, c.async_mode);
 		}
-		CHECK(logger_destroy_status(l) == -1 && errno == EAGAIN);
+		CHECK(logger_destroy(&l) == -EAGAIN);
 		CHECK(!close(fd));
 		return;
 	} else if (!strcmp(mode, "reconnect") || !strcmp(mode, "copy-path") ||
@@ -378,7 +380,7 @@ static void run(const char *mode)
 			      !strstr(packet, "mutated"));
 		CHECK(!drain(fd));
 		CHECK(metrics(l).reconnect_successes == 1);
-		CHECK(logger_destroy_status(l) == -1);
+		CHECK(logger_destroy(&l) < 0);
 		CHECK(!close(fd));
 		return;
 	} else if (!strcmp(mode, "isolation")) {
@@ -388,19 +390,20 @@ static void run(const char *mode)
 		logger_config_t c2 = config();
 		c2.syslog.path = other;
 		c2.ident = "second";
-		logger_t *l2 = logger_create(&c2);
-		CHECK(l2);
+		logger_t *l2 = NULL;
+		CHECK(logger_create(&c2, &l2) == 0);
+		CHECK(l2 != NULL);
 		CHECK(fill(l) > 0);
 		CHECK(!write_one(l2, "independent"));
 		read_one(f2, packet, sizeof(packet));
 		CHECK(strstr(packet, "second[") &&
 		      strstr(packet, "independent"));
-		CHECK(logger_destroy_status(l) == -1);
+		CHECK(logger_destroy(&l) < 0);
 		l = NULL;
 		CHECK(!write_one(l2, "still-alive"));
 		read_one(f2, packet, sizeof(packet));
 		CHECK(strstr(packet, "still-alive"));
-		CHECK(!logger_destroy_status(l2));
+		CHECK(!logger_destroy(&l2));
 		CHECK(!close(f2));
 		CHECK(!unlink(other));
 	} else if (!strcmp(mode, "threads")) {
@@ -415,7 +418,7 @@ static void run(const char *mode)
 		atomic_store(&observe, 0);
 		CHECK(!pthread_join(obs, NULL));
 		CHECK(metrics(l).submitted_records == 16000);
-		CHECK(logger_destroy_status(l) == -1 && errno == EAGAIN);
+		CHECK(logger_destroy(&l) == -EAGAIN);
 		l = NULL;
 	} else if (!strcmp(mode, "fork-guard")) {
 		pid_t child = fork();
@@ -440,7 +443,7 @@ static void run(const char *mode)
 		CHECK(!"unknown scenario");
 	}
 	if (l)
-		CHECK(!logger_destroy_status(l));
+		CHECK(!logger_destroy(&l));
 	CHECK(!close(fd));
 }
 

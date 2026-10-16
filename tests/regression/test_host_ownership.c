@@ -21,10 +21,10 @@ size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
 static int close_logger(logger_t *l)
 {
 #ifdef TEST_BASELINE
-	logger_destroy(l);
+	logger_destroy(&l);
 	return 0;
 #else
-	return logger_destroy_status(l);
+	return logger_destroy(&l);
 #endif
 }
 
@@ -37,7 +37,8 @@ static logger_t *make_logger(const char *path, int async)
 	c.queue_capacity = 4096;
 	c.detail = LOGGER_DETAIL_DEBUG;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	return l;
 }

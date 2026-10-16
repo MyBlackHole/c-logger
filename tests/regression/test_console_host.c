@@ -79,8 +79,8 @@ int main(int argc, char **argv)
 	cfg.file_path = "host.log";
 	cfg.async_mode = 1;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
-	log_instance = logger_create(&cfg);
-	CHECK(log_instance);
+	CHECK(logger_create(&cfg, &log_instance) == 0);
+	CHECK(log_instance != NULL);
 	FILE *old_stdout = stdout, *old_stderr = stderr;
 	cookie_io_functions_t ops = { .write = host_write };
 	FILE *stream = fopencookie(NULL, "w", ops);
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
 	stdout = old_stdout;
 	stderr = old_stderr;
 	CHECK(!fclose(stream));
-	CHECK(!logger_destroy_status(log_instance));
+	CHECK(!logger_destroy(&log_instance));
 	puts("real host stdio callback integration passed");
 	return 0;
 }

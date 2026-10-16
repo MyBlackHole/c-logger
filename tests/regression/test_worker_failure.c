@@ -392,7 +392,8 @@ int main(int argc, char **argv)
 	if (selected == GLOBAL)
 		CHECK(logger_init(&c) == 0);
 	else {
-		logger_t *l = logger_create(&c);
+		logger_t *l = NULL;
+		(void)logger_create(&c, &l);
 
 		CHECK(l != NULL && l == instance);
 	}
@@ -414,7 +415,7 @@ int main(int argc, char **argv)
 
 	errno = 0;
 	int rc = selected == GLOBAL ? logger_shutdown_status() :
-		logger_destroy_status(instance);
+				      logger_destroy(&instance);
 
 	CHECK(rc == (expected ? -1 : 0) && errno == expected);
 	CHECK(instance == NULL && joined == 1 && released == 1);

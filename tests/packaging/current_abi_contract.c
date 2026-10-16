@@ -225,7 +225,7 @@ ABI_ASSERT(CONSOLE_VERBOSE == 2);
 ABI_ASSERT(CONSOLE_DEBUG == 3);
 ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 
-/* 精确公开函数类型契约：48 个当前生产导出。 */
+/* 精确公开函数类型契约：47 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
 ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
@@ -244,9 +244,8 @@ ABI_FN(logger_context_clear, void, void);
 ABI_FN(logger_context_get, logger_context_t, void);
 ABI_FN(logger_context_set, void, const logger_context_t *);
 ABI_FN(logger_process_init, int, void);
-ABI_FN(logger_create, logger_t *, const logger_config_t *);
-ABI_FN(logger_destroy, void, logger_t *);
-ABI_FN(logger_destroy_status, int, logger_t *);
+ABI_FN(logger_create, int, const logger_config_t *, logger_t **);
+ABI_FN(logger_destroy, int, logger_t **);
 ABI_FN(logger_dropped, uint64_t, const logger_t *);
 ABI_FN(logger_flush, void, void);
 ABI_FN(logger_flush_instance, void, logger_t *);
@@ -327,5 +326,18 @@ int main(void)
 		return 10;
 	if (initialize() != -EALREADY || errno != EDOM)
 		return 11;
+	int (*create)(const logger_config_t *, logger_t **) = logger_create;
+	int (*destroy)(logger_t **) = logger_destroy;
+	logger_t *owner = NULL;
+	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+	cfg.async_mode = 0;
+	if (create(&cfg, &owner) || !owner || errno != EDOM)
+		return 12;
+	if (create(&cfg, &owner) != -EBUSY || !owner || errno != EDOM)
+		return 13;
+	if (destroy(&owner) || owner != NULL || errno != EDOM)
+		return 14;
+	if (destroy(&owner) || owner != NULL || errno != EDOM)
+		return 15;
 	return 0;
 }

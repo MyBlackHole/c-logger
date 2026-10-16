@@ -278,8 +278,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	struct sample *s = calloc(1, sizeof(*s));
 	REQUIRE(s);
 	prepare(s, data, size);
-	logger_t *logger = logger_create(&s->config);
-	REQUIRE(logger);
+	logger_t *logger = NULL;
+	REQUIRE(logger_create(&s->config, &logger) == 0);
+	REQUIRE(logger != NULL);
 	long valid_nsec = s->message.ts.tv_nsec;
 	if (s->invalid_nsec) {
 		s->message.ts.tv_nsec = -1;
@@ -299,7 +300,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	s->message.ts.tv_nsec = valid_nsec;
 	s->invalid_nsec = 0;
 	check_capacity(logger, s, s->length + 1, 1);
-	REQUIRE(!logger_destroy_status(logger));
+	REQUIRE(!logger_destroy(&logger));
 	free(s);
 	return 0;
 }

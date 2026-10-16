@@ -167,16 +167,18 @@ static void scenario_required_missing(fixture_t *f)
 	(void)unlink(f->socket_path);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
 	errno = 0;
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	int create_rc = logger_create(&c, &log);
 	CHECK(log == NULL);
-	CHECK(errno == ENOENT || errno == ECONNREFUSED);
+	CHECK(create_rc == -ENOENT || create_rc == -ECONNREFUSED);
 }
 
 static void scenario_required_delivery(fixture_t *f)
 {
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "required-delivery") == 0);
 	wait_contains(f, "required-delivery");
@@ -187,7 +189,7 @@ static void scenario_required_delivery(fixture_t *f)
 	CHECK(m.sent_records == 1);
 	CHECK(m.failed_records == 0);
 	CHECK(logger_flush_instance_status(log) == 0);
-	CHECK(logger_destroy_status(log) == 0);
+	CHECK(logger_destroy(&log) == 0);
 	stop_daemon(f);
 }
 
@@ -195,7 +197,8 @@ static void scenario_restart_reconnect(fixture_t *f)
 {
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "before-restart") == 0);
 	wait_contains(f, "before-restart");
@@ -233,7 +236,7 @@ static void scenario_restart_reconnect(fixture_t *f)
 	CHECK(logger_flush_instance_status(log) == -1);
 	CHECK(errno != 0);
 	errno = 0;
-	CHECK(logger_destroy_status(log) == -1);
+	CHECK(logger_destroy(&log) < 0);
 	CHECK(errno != 0);
 	stop_daemon(f);
 }
@@ -243,7 +246,8 @@ static void scenario_deferred_reconnect(fixture_t *f)
 	stop_daemon(f);
 	(void)unlink(f->socket_path);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_DEFERRED);
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	logger_syslog_metrics_t m = metrics(log);
 	CHECK(!m.connected);
@@ -267,7 +271,7 @@ static void scenario_deferred_reconnect(fixture_t *f)
 	CHECK(m.last_error == 0);
 
 	errno = 0;
-	CHECK(logger_destroy_status(log) == -1);
+	CHECK(logger_destroy(&log) < 0);
 	CHECK(errno != 0);
 	stop_daemon(f);
 }
@@ -276,7 +280,8 @@ static void scenario_real_backpressure(fixture_t *f)
 {
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
-	logger_t *log = logger_create(&c);
+	logger_t *log = NULL;
+	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "before-backpressure") == 0);
 	wait_contains(f, "before-backpressure");
@@ -308,7 +313,7 @@ static void scenario_real_backpressure(fixture_t *f)
 	CHECK(logger_flush_instance_status(log) == -1);
 	CHECK(errno == EAGAIN || errno == ENOBUFS || errno == ENOMEM);
 	errno = 0;
-	CHECK(logger_destroy_status(log) == -1);
+	CHECK(logger_destroy(&log) < 0);
 	CHECK(errno == EAGAIN || errno == ENOBUFS || errno == ENOMEM);
 	stop_daemon(f);
 }

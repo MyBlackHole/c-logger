@@ -49,8 +49,8 @@ int main(void)
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	instance = logger_create(&c);
-	CHECK(instance);
+	CHECK(logger_create(&c, &instance) == 0);
+	CHECK(instance != NULL);
 	LOGGER_INFO(instance, "barrier", "before-watermark");
 	wait_flag(&first_entered);
 	pthread_t threads[WAITERS];
@@ -84,7 +84,7 @@ int main(void)
 	logger_get_io_metrics(instance, &io);
 	CHECK(io.async_completed == 2 && io.emitted_records == 2 &&
 	      io.first_error == 0);
-	logger_destroy(instance);
+	logger_destroy(&instance);
 	leave_temp(dir);
 	puts("four flush waiters complete at their captured watermark despite later output");
 	return 0;

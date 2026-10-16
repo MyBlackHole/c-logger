@@ -76,8 +76,8 @@ int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
 int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
 int __real_pthread_join(pthread_t, void **);
 int __real_pthread_cond_destroy(pthread_cond_t *);
-logger_t *__real_logger_create(const logger_config_t *);
-int __real_logger_destroy_status(logger_t *);
+int __real_logger_create(const logger_config_t *, logger_t **);
+int __real_logger_destroy(logger_t **);
 int __real_logger_runtime_free(void *);
 
 int __wrap_logger_runtime_free(void *ptr)
@@ -216,7 +216,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 	}
 	return __real_pthread_rwlock_wrlock(rw);
 }
-logger_t *__wrap_logger_create(const logger_config_t *cfg)
+int __wrap_logger_create(const logger_config_t *cfg, logger_t **out)
 {
 	atomic_fetch_add(&create_count, 1);
 	if (atomic_exchange(&pause_create, 0)) {
@@ -226,22 +226,20 @@ logger_t *__wrap_logger_create(const logger_config_t *cfg)
 	if (atomic_exchange(&recurse_create, 0))
 		verify_reentry();
 	if (atomic_exchange(&fail_create, 0)) {
-		errno = ENOSPC;
-		return NULL;
+		return -ENOSPC;
 	}
-	logger_t *created = __real_logger_create(cfg);
-	if (created)
-		atomic_store(&tracked_instance, (uintptr_t)created);
-	return created;
+	int rc = __real_logger_create(cfg, out);
+	if (!rc)
+		atomic_store(&tracked_instance, (uintptr_t)*out);
+	return rc;
 }
-int __wrap_logger_destroy_status(logger_t *l)
+int __wrap_logger_destroy(logger_t **owner)
 {
 	atomic_fetch_add_explicit(&tracked_destroy_calls, 1,
 				  memory_order_relaxed);
 	/* 受控故障发生在最终释放前，不触碰真实同步对象。 */
 	if (atomic_exchange(&reject_destroy_without_receipt, 0)) {
-		errno = EIO;
-		return -1;
+		return -EIO;
 	}
 	if (atomic_exchange(&pause_destroy, 0)) {
 		atomic_store(&entered, 1);
@@ -249,10 +247,9 @@ int __wrap_logger_destroy_status(logger_t *l)
 	}
 	if (atomic_exchange(&recurse_destroy, 0))
 		verify_reentry();
-	int rc = __real_logger_destroy_status(l);
+	int rc = __real_logger_destroy(owner);
 	if (atomic_exchange(&fail_dispose, 0)) {
-		errno = EIO;
-		return -1;
+		return -EIO;
 	}
 	return rc;
 }

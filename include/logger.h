@@ -269,14 +269,14 @@ typedef struct {
 } logger_config_t;
 #define LOGGER_CONFIG_SIZE 144u
 /* 所有权与线程约定：
- * - logger_create() 返回具有所有权的实例；logger_destroy() 释放它。
+ * - logger_create() 成功时写出具有所有权的实例；logger_destroy() 释放它。
  * - cfg 仅在创建期间借用；不得并发修改。
  * - 业务 .so 借用宿主的实例；仅所有者可以销毁。
  * - 每个异步实例拥有独立的工作线程和队列。仅加载 .so 不会启动工作
  *   线程、打开日志或初始化全局门面。
  * - 在实例存续期间，日志记录、级别设置、指标查询和刷新可以并发调用。
  * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
- * 错误约定：返回指针的创建操作使用 NULL + errno；除非另有明确说明，
+ * 错误约定：create/destroy 使用 0/-errno 并保留 errno；其他入口除非另有说明，
  * 返回 int 的公开操作成功时返回 0，失败时返回 -1 并设置 errno。
  */
 /* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
@@ -307,7 +307,12 @@ typedef struct {
  */
 LOGGER_API int logger_process_init(void);
 
-LOGGER_API logger_t *logger_create(const logger_config_t *);
+/* 创建一个当前进程拥有的实例。返回 0/-errno，始终保留调用方 errno。
+ * out 必须指向独占的、已初始化为 NULL 的可写拥有者槽；非空返回 -EBUSY，
+ * 失败保持槽为 NULL，成功才发布完整实例。不得与 cfg 存储重叠。
+ * 本阶段进程域仍按现有规则首次按需初始化，fork 子方必须显式 process_init。
+ */
+LOGGER_API int logger_create(const logger_config_t *, logger_t **out);
 LOGGER_API void logger_context_set(const logger_context_t *);
 LOGGER_API void logger_context_clear(void);
 LOGGER_API logger_context_t logger_context_get(void);
@@ -325,20 +330,15 @@ LOGGER_API void logger_log_source(logger_t *, logger_level_t, logger_source_t,
 #endif
 	;
 
-/* 仅限独占所有者：先停止并等待所有借用者结束。返回 0 或 -1+errno。
- * 普通的最终 I/O/关闭失败仍会消耗并释放实例。
- * 生命周期安全性校验失败（工作线程等待结束、同步设施销毁或内部计数
- * 不变量）也会消耗公开所有权，但可能有意在内部保留已退役的分配，
- * 以免发生 UAF。除进入前被拒绝（如 ECHILD/EDEADLK）外，
- * 一旦销毁已实际开始，任何情况下都不得重试或复用该指针。
- * NULL 视为成功。销毁期间延迟取消。没有隐式引用计数。 */
-LOGGER_API int logger_destroy_status(logger_t *);
-/* 兼容包装函数，丢弃销毁状态。 */
-/* 释放结束时待处理的取消可能在指针已释放后触发宿主清理。
- * 在有效的独占所有权边界调用 destroy 之前，必须先从宿主清理责任中
- * 移除此指针，或在清空指针并释放期间禁用取消。嵌套调用/子进程拒绝
- * 发生在释放之前。不得仅因最终 I/O 返回错误而重试已释放的指针。 */
-LOGGER_API void logger_destroy(logger_t *);
+/* 消费当前进程的实例拥有者，返回 0/-errno，始终保留调用方 errno。
+ * owner == NULL 为 -EINVAL；*owner == NULL 是不获取资源的成功操作。
+ * 调用前先停止并等待全部借用者。准入失败（如 ECHILD/EDEADLK/取消保护
+ * 设置失败）不改变槽；准入成功后先清空 *owner，再排空、join、关闭和释放。
+ * 后续 I/O 错误仍消费所有权；释放证明失败时内部保守保留对象，但公开
+ * 指针同样已失效，不可重试。NULL 槽不是“物理释放已完成”的证明。
+ * 清槽在取消恢复之前；其他别名也同时失效，不支持共享拥有者槽或并发销毁。
+ */
+LOGGER_API int logger_destroy(logger_t **owner);
 LOGGER_API logger_state_t logger_get_state(const logger_t *);
 /* 普通 void 日志操作最多保留 4095 字节的消息。格式化超出此上限时，
  * 保留的文本以 " [truncated]" 结尾。这是字节边界，不保证 UTF-8 码点

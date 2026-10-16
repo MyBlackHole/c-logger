@@ -12,12 +12,13 @@ static int strict_logger(void)
 	c.file_path = "./fault.log";
 	c.async_mode = 0;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
-	logger_t *l = logger_create(&c);
+	logger_t *l = NULL;
+	(void)logger_create(&c, &l);
 	if (!l)
 		return 1;
 	int rc = logger_log_sync_status(l, LOGGER_INFO, "T", __FILE__, __LINE__,
 					__func__, "fault probe");
-	logger_destroy(l);
+	logger_destroy(&l);
 	return rc < 0 ? 0 : 2;
 }
 int main(int argc, char **argv)

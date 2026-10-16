@@ -27,7 +27,10 @@ int main(void)
 	y.outputs = LOGGER_OUT_SYSLOG;
 	y.async_mode = 0;
 	y.ident = "beta";
-	logger_t *A = logger_create(&x), *B = logger_create(&y);
+	logger_t *A = NULL;
+	(void)logger_create(&x, &A);
+	logger_t *B = NULL;
+	(void)logger_create(&y, &B);
 	if (!A || !B)
 		return 3;
 	logger_log(A, LOGGER_INFO, "m", __FILE__, __LINE__, __func__, "one");
@@ -39,8 +42,8 @@ int main(void)
 		return 4;
 	b1[n1] = 0;
 	b2[n2] = 0;
-	logger_destroy(A);
-	logger_destroy(B);
+	logger_destroy(&A);
+	logger_destroy(&B);
 	close(fd);
 	unlink(p);
 	if (!(strstr(b1, "alpha") || strstr(b2, "alpha")))

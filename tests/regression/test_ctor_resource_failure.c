@@ -171,25 +171,27 @@ int main(int argc, char **argv)
 
 	if (fault != FAULT_NONE) {
 		errno = 0;
-		logger_t *candidate = logger_create(&cfg);
+		logger_t *candidate = NULL;
+		int create_rc = logger_create(&cfg, &candidate);
 		CHECK(candidate == NULL);
 		CHECK(refused == 1);
 		int expected_error = ENOMEM;
 		if (fault == FAULT_MUTEX || fault == FAULT_COND)
 			expected_error = EAGAIN;
-		CHECK(errno == expected_error);
+		CHECK(create_rc == -expected_error);
 		CHECK(created_workers == 0);
 		assert_no_leaks(); /* 部分构造不得遗留已分配工作区/同步对象。 */
 		fault = FAULT_NONE;
 	}
 
 	unsigned before_workers = created_workers;
-	logger_t *logger = logger_create(&cfg);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&cfg, &logger) == 0);
 	CHECK(logger != NULL);
 	CHECK(logger_get_state(logger) == LOGGER_STATE_RUNNING);
 	CHECK(created_workers == before_workers + 1);
 	CHECK(logger_flush_instance_status(logger) == 0);
-	CHECK(logger_destroy_status(logger) == 0);
+	CHECK(logger_destroy(&logger) == 0);
 	assert_no_leaks();
 
 	if (argc == 2) {

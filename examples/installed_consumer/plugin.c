@@ -7,10 +7,11 @@ int plugin_run(void)
 	cfg.file_path = "installed-plugin.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.queue_capacity = 16;
-	logger_t *p = logger_create(&cfg);
-	if (!p)
+	logger_t *p = NULL;
+	int create_rc = logger_create(&cfg, &p);
+	if (create_rc)
 		return 1;
 	LOGGER_INFO(p, "plugin",
 		    "SDK owns local logger and destroys before dlclose");
-	return logger_destroy_status(p) ? 2 : 0;
+	return logger_destroy(&p) ? 2 : 0;
 }

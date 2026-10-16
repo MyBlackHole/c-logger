@@ -31,12 +31,13 @@ int main(void)
 	c.file_path = "./redact.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.async_mode = 0;
-	logger_t *logger = logger_create(&c);
+	logger_t *logger = NULL;
+	(void)logger_create(&c, &logger);
 	if (!logger)
 		return 8;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "auth", NULL, 0,
 					NULL, "credential=%s", logger_redact());
-	int close_rc = logger_destroy_status(logger);
+	int close_rc = logger_destroy(&logger);
 	if (rc || close_rc)
 		return 9;
 	FILE *f = fopen("./redact.log", "r");

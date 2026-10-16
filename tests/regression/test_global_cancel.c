@@ -23,8 +23,8 @@ static _Thread_local int delay_reader, delay_controller, watch_cond;
 static int cleanup_phase_error;
 static const char *scenario;
 
-logger_t *__real_logger_create(const logger_config_t *);
-int __real_logger_destroy_status(logger_t *);
+int __real_logger_create(const logger_config_t *, logger_t **);
+int __real_logger_destroy(logger_t **);
 int __real_logger_file_write(logger_file_t *, const char *, size_t,
 			     const struct timespec *, int);
 int __real_logger_file_reopen(logger_file_t *);
@@ -51,19 +51,18 @@ static void rendezvous(enum point p)
 	atomic_store(&at_point, 1);
 	wait_flag(&release_point);
 }
-logger_t *__wrap_logger_create(const logger_config_t *cfg)
+int __wrap_logger_create(const logger_config_t *cfg, logger_t **out)
 {
 	rendezvous(P_CREATE);
 	if (atomic_exchange(&create_fails, 0)) {
-		errno = ENOSPC;
-		return NULL;
+		return -ENOSPC;
 	}
-	return __real_logger_create(cfg);
+	return __real_logger_create(cfg, out);
 }
-int __wrap_logger_destroy_status(logger_t *l)
+int __wrap_logger_destroy(logger_t **owner)
 {
 	rendezvous(P_DISPOSE);
-	return __real_logger_destroy_status(l);
+	return __real_logger_destroy(owner);
 }
 int __wrap_logger_file_write(logger_file_t *f, const char *text, size_t n,
 			     const struct timespec *ts, int sync)

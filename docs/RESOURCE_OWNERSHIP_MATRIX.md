@@ -1,5 +1,7 @@
 # 资源所有权矩阵
 
+> 当前创建/销毁以[新生命周期合同](v2/LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+
 > 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
 > Audit/密码学模块已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
 
@@ -18,7 +20,7 @@
 
 | 资源 | 获取/创建 | 当前/持久所有者 | 转移点 | 最终释放 | 模式 |
 |---|---|---|---|---|---|
-| `logger_t` 堆对象 | `create_logger` 中的 `calloc` | 构造过程，随后为宿主/调用方 | 构造函数成功返回 | `logger_destroy_status/logger_dispose_internal` | EXPLICIT |
+| `logger_t` 堆对象 | `create_logger` 中的 `calloc` | 构造过程，随后为宿主/调用方 | 构造函数成功返回 | `logger_destroy/logger_dispose_internal` | EXPLICIT |
 | 进程活动对象令牌 | `logger_process_object_acquire` | 进程级对象计数/门控 | 与 Logger 构造/销毁配对 | `logger_process_object_release` | SHARED（不是 REFCOUNTED） |
 | `emit_mu` | `pthread_mutex_init` | `logger_t` | 无 | 后端/工作线程拆除后销毁 | EXPLICIT |
 | `progress_mu/progress_cv` | pthread 初始化 | `logger_t` | 无 | 工作线程 join 后销毁 | EXPLICIT |

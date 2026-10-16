@@ -149,8 +149,9 @@ void crash_fixture_write(const char *point)
 	initialize();
 	cut_point = point;
 	logger_config_t c = config(rotates(point));
-	logger_t *logger = logger_create(&c);
-	CHECK(logger);
+	logger_t *logger = NULL;
+	CHECK(logger_create(&c, &logger) == 0);
+	CHECK(logger != NULL);
 	for (unsigned i = 0; i < BASELINE_RECORDS; ++i)
 		emit(logger, i);
 	CHECK(logger_flush_instance_status(logger) == 0);
@@ -298,13 +299,14 @@ void crash_fixture_recover(const char *point)
 	crash_fixture_verify(point, 0);
 	logger_config_t c = config(0);
 	for (unsigned i = 0; i < 2; ++i) {
-		logger_t *logger = logger_create(&c);
-		CHECK(logger); /* 被终止的所有者与先前恢复已释放租约 */
+		logger_t *logger = NULL;
+		CHECK(logger_create(&c, &logger) == 0);
+		CHECK(logger != NULL); /* 被终止的所有者与先前恢复已释放租约 */
 		errno = 0;
-		CHECK(logger_create(&c) == NULL && errno == EBUSY);
+		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EBUSY);
 		emit(logger, BASELINE_RECORDS + 1u + i);
 		CHECK(logger_flush_instance_status(logger) == 0);
-		CHECK(logger_destroy_status(logger) == 0);
+		CHECK(logger_destroy(&logger) == 0);
 		crash_fixture_verify(point, i + 1u);
 	}
 }
