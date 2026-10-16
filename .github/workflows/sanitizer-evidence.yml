@@ -3,6 +3,9 @@ name: sanitizer-evidence
 on:
   pull_request:
     paths:
+      - "scripts/check_asan_runtime.py"
+      - ".github/actions/setup-asan-runtime/**"
+      - "tools/diagnostics/**"
       - 'src/**'
       - 'include/**'
       - 'tests/**'
@@ -43,18 +46,23 @@ jobs:
       - uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: '3.1.1'
+      - name: 验收已修复的 ASan 运行库
+        if: matrix.sanitizer == 'address-undefined'
+        uses: ./.github/actions/setup-asan-runtime
       - name: 配置完整静态运行时检查
         shell: bash
         run: |
           set -euo pipefail
           xmake --version > sanitizer-evidence/xmake.txt
+          toolchain=()
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
             policies="build.sanitizer.address,build.sanitizer.undefined"
+            toolchain=(--toolchain=clang --cc="$CC" --cxx="$CXX" --ld="$CXX" --sh="$CXX")
           else
             policies="build.sanitizer.thread"
           fi
           printf '%s\n' "$policies" > sanitizer-evidence/policies.txt
-          xmake f -m debug -o sanitizer-build \
+          xmake f -P . "${toolchain[@]}" -m debug -o sanitizer-build \
             --build_shared=n --build_tests=y --build_private_tests=y \
             --build_regression_tests=y --policies="$policies" \
             2>&1 | tee sanitizer-evidence/configure.log
@@ -100,4 +108,13 @@ jobs:
           name: sanitizer-evidence-${{ matrix.sanitizer }}
           path: sanitizer-evidence/
           retention-days: 14
+          if-no-files-found: error
+
+      - name: 保留 ASan 运行库验收证据
+        if: always() && matrix.sanitizer == 'address-undefined'
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-runtime-qualification
+          path: asan-runtime-evidence/
+          retention-days: 30
           if-no-files-found: error

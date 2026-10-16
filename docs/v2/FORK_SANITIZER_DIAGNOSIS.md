@@ -119,3 +119,44 @@ PR #223 保持未合并；本文件不关闭 #218/#221，也不构成发布许�
 - https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.3.0/libsanitizer/tsan/tsan_rtl.cpp
 - https://github.com/MyBlackHole/c-logger/actions/runs/38819757977/job/116713182236
 - https://github.com/MyBlackHole/c-logger/actions/runs/38819759146
+
+
+## 第十阶段：运行库修复成为可执行工具链前提
+
+完整 ASan/UBSan 集合改用匹配的 Clang 18 编译器与 compiler-rt；普通 GCC、
+TSan、最低 GCC9/Clang10、glibc 和发布包基线不变。不在 Logger 里操作检测器私有锁。
+
+这不是根据“换一个编译器会绿”选择工具。上游
+[LLVM #75290](https://github.com/llvm/llvm-project/pull/75290) 的
+`e065841` 系列修复增加 fork 前后的分配器、线程表、堆栈记录协调；GCC14.2
+尚未携带该实现。第九阶段的固定 GCC 对象文件、同一 LLVM 运行库有无回调的
+对照保留。Clang18 系列包含该修复；每次 CI 仍记录实际包版本与最终二进制摘要。
+
+三个既有 ASan 工作流保留原 job 名称和全部项目用例，先使用同一套编译/链接
+工具运行独立 Xmake 工具验收，再配置项目完整集合及专项脚本。没有新增 ASan
+跳过、延长原超时、设置 report/exitcode 抑制或修改生产默认工具链。
+
+独立工具工程 `tools/diagnostics/asan-runtime/xmake.lua` 不编译或安装 Logger。
+它检查最终静态链接产物保留上游 `InstallAtForkHandler` 实现符号，真实注册
+数量为1、未删回调；随后在八个持续分配线程下执行96次 fork，子方创建/join
+线程，逐轮退出状态必须全部为0。一次压力通过不是完整竞态证明，符号存在
+也不能代替动态结果。
+
+同时健康程序必须正常完成，刻意的堆越界必须输出 ASan heap-buffer-overflow，
+刻意的有符号溢出必须输出 UBSan signed integer overflow，错误退出码严格为1。
+只有该工具自检的 UBSan 反例关闭错误恢复，以确定它确实终止；项目测试策略
+不变。原始输出、退出码、超时和哈希进入 `asan-runtime-evidence/result.json`。
+若未检测到刻意错误、回调缺失、漏跑/重复任何一轮或使用非默认检测器选项，
+资格检查失败，不降级为跳过。Python判定器正反例另行验收。
+
+本地可显式选择已经核对修复的工具，不能默认把 `clang` 命令当作Clang18：
+
+```sh
+xmake f -P tools/diagnostics/asan-runtime -m debug --toolchain=clang \
+  --cc=clang-18 --cxx=clang++-18 --ld=clang++-18 --sh=clang++-18
+xmake test -P tools/diagnostics/asan-runtime -v -j1
+```
+
+使用 `-P` 是必要的，避免 Xmake 将嵌套工具误识别为仓库根项目。此工具的
+通过不代替根项目637项完整静态集合、最低平台、共享库或生产发布验收。
+远端最终状态以准确PR head 的实际记录为准，不能从本地结果推定。

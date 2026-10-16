@@ -10,8 +10,9 @@
 unsigned sanitizer_atfork_registrations;
 unsigned sanitizer_atfork_dropped;
 int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
-int __wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
-			 void (*child)(void))
+__attribute__((no_sanitize("address", "undefined"))) int
+__wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
+		      void (*child)(void))
 {
 	++sanitizer_atfork_registrations;
 	if (DROP_SANITIZER_ATFORK) {

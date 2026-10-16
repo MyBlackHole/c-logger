@@ -387,11 +387,12 @@ int main(int argc, char **argv)
 		atomic_store(&omit_registration_observation, 1);
 	const char *mode = argv[1];
 	const char *const modes[] = {
-		"global", "explicit", "console-only", "context-only", "emit-held",
-		"progress-held", "console-held", "reader-held", "registration-window",
-		"earlier-handler", "after-shutdown", "bypass-handler", "prefork",
-		"register-global", "register-explicit", "register-console",
-		"register-context"
+		"global",	    "explicit",	       "console-only",
+		"context-only",	    "emit-held",       "progress-held",
+		"console-held",	    "reader-held",     "registration-window",
+		"earlier-handler",  "after-shutdown",  "bypass-handler",
+		"prefork",	    "register-global", "register-explicit",
+		"register-console", "register-context"
 	};
 	int known = 0;
 	for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
@@ -441,7 +442,7 @@ int main(int argc, char **argv)
 		console_config_t c = CONSOLE_DEFAULT_CONFIG();
 		if (!strcmp(mode, "console-held"))
 			CHECK(!__real_pthread_atfork(console_join_prepare, NULL,
-						    NULL));
+						     NULL));
 		console_init(&c);
 		if (!strcmp(mode, "console-held")) {
 			atomic_store(&pause_console, 1);

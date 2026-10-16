@@ -58,7 +58,8 @@ int main(void)
 		if (!pid) {
 			alarm(2);
 			pthread_t thread;
-			int rc = pthread_create(&thread, NULL, child_worker, NULL);
+			int rc = pthread_create(&thread, NULL, child_worker,
+						NULL);
 			if (rc)
 				_exit(3);
 			_exit(pthread_join(thread, NULL) ? 4 : 0);

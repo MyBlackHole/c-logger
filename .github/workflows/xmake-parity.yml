@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - "scripts/check_asan_runtime.py"
+      - ".github/actions/setup-asan-runtime/**"
+      - "tools/diagnostics/**"
       - "scripts/tool_i18n.py"
       - "scripts/benchmark_fixed_rate.py"
       - "locales/**"
@@ -25,6 +28,9 @@ on:
       - ".github/workflows/xmake-parity.yml"
   pull_request:
     paths:
+      - "scripts/check_asan_runtime.py"
+      - ".github/actions/setup-asan-runtime/**"
+      - "tools/diagnostics/**"
       - "scripts/tool_i18n.py"
       - "scripts/benchmark_fixed_rate.py"
       - "locales/**"
@@ -304,14 +310,21 @@ jobs:
         with:
           xmake-version: "3.1.1"
 
+      - name: 验收已修复的 ASan 运行库
+        if: matrix.sanitizer == 'address-undefined'
+        uses: ./.github/actions/setup-asan-runtime
       - name: 配置启用运行时检查的静态库测试集
+        shell: bash
         run: |
+          set -euo pipefail
+          toolchain=()
           if [ "${{ matrix.sanitizer }}" = address-undefined ]; then
             policies="build.sanitizer.address,build.sanitizer.undefined"
+            toolchain=(--toolchain=clang --cc="$CC" --cxx="$CXX" --ld="$CXX" --sh="$CXX")
           else
             policies="build.sanitizer.thread"
           fi
-          xmake f -m debug \
+          xmake f -P . "${toolchain[@]}" -m debug \
             \
             --build_shared=n \
             --build_tests=y \
@@ -333,3 +346,12 @@ jobs:
           artifact="$(find build -type f -name 'liblogger.a' -print -quit)"
           test -n "$artifact"
           python3 scripts/check_production_artifact.py "$artifact"
+
+      - name: 保留 ASan 运行库验收证据
+        if: always() && matrix.sanitizer == 'address-undefined'
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-runtime-qualification
+          path: asan-runtime-evidence/
+          retention-days: 30
+          if-no-files-found: error
