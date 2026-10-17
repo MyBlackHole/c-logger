@@ -1863,7 +1863,8 @@ if has_config("build_regression_tests") then
             add_includedirs("src")
             add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
             for _, symbol in ipairs({"pthread_setcancelstate", "pthread_mutex_lock",
-                                     "pthread_mutex_unlock", "isatty", "vfprintf"}) do
+                                     "pthread_mutex_unlock", "isatty", "vfprintf",
+                                     "__vfprintf_chk"}) do
                 add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
             end
             for _, mode in ipairs({"setup", "restore", "config-primary", "write-primary",

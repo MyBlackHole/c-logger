@@ -34,6 +34,7 @@ int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __real_pthread_mutex_unlock(pthread_mutex_t *);
 int __real_isatty(int);
 int __real_vfprintf(FILE *, const char *, va_list);
+int __real___vfprintf_chk(FILE *, int, const char *, va_list);
 
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
@@ -78,14 +79,30 @@ int __wrap_isatty(int fd)
 	return __real_isatty(fd);
 }
 
-int __wrap_vfprintf(FILE *stream, const char *format, va_list args)
+static int inject_write_failure(void)
 {
 	if (armed && fail_write) {
 		fail_write = 0;
 		errno = ENOSPC;
-		return -1;
+		return 1;
 	}
+	return 0;
+}
+
+int __wrap_vfprintf(FILE *stream, const char *format, va_list args)
+{
+	if (inject_write_failure())
+		return -1;
 	return __real_vfprintf(stream, format, args);
+}
+
+/* glibc 加固构建会改用此入口，不能通过关闭生产加固来使注入命中。 */
+int __wrap___vfprintf_chk(FILE *stream, int flag, const char *format,
+			  va_list args)
+{
+	if (inject_write_failure())
+		return -1;
+	return __real___vfprintf_chk(stream, flag, format, args);
 }
 
 static int call(unsigned op)

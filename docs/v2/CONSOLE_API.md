@@ -62,6 +62,11 @@ console_print/info/warn/error/verbose/debug/debug_source 保留原路由、标�
 fork后显式重初始化。十个故障场景分别链接生产静态和白盒归档；setup/restore
 逐一覆盖十二个入口，其余验证主错优先、TTY输出槽以及锁失败/毒化。
 
+restore在成功重试前通过真实输出验证三个配置变更已经提交，并逐次核对七类
+输出的精确字节，拒绝记录缺失或重复。检查器直接读取文件描述符，不替Console
+刷新FILE。写入故障同时拦截glibc的vfprintf和加固入口__vfprintf_chk，保留生产
+加固选项；未命中实际入口不能算作故障注入通过。
+
 静态新增24个注册项，共享新增14个。原有SIGPIPE、FILE回调、取消、配置并发、
 重入和fork夹具直接迁移断言，不删除信号状态/字节/次数验证。配置扩展测试
 现在检查本次console_init返回值，不能沿用上一条logger_create的旧错误。
