@@ -1576,6 +1576,27 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
+    -- 新候选所有权场景也链接真正的生产静态归档，而非仅靠回归支持库。
+    if not has_config("build_shared") then
+        target("syslog_candidate_production")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_syslog_faults.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, symbol in ipairs({"socket", "connect", "send", "clock_gettime", "close"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({
+                "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse"
+            }) do
+                add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
+            end
+        target_end()
+    end
+
     target("syslog_config_regression")
         for _, scenario in ipairs({
             "exact", "zero-header", "short",

@@ -105,6 +105,11 @@ pthread 取消、longjmp、信号安全、并发回收或异步关闭。Linux cl
 `syslog_fault_regression` 注册为 `candidate-fd-zero`、`candidate-eintr-reuse`、
 `candidate-eio-reuse`；已有连接错误、延迟启动、重试、真实 Syslog 与 DSO 验证保留。
 
+三个场景还单独注册为 `syslog_candidate_production`，在静态配置下直接
+链接真实生产 `logger` 归档；它与 `logger_regression_support` 的白盒验证
+具有不同源码构建身份。此目标不冒充共享库内部调用拦截，生产 DSO 仍由现有
+真实 syslogd 和共享库测试独立验收。
+
 这个扩展仍是 **Syslog 词法临时拥有者** 的有限类型约束，不提供 C 线性类型、
 跨函数 AST 所有权证明、线程/取消生命周期或长期 fd 类型迁移；#210 的 D1–D6
 决策和正式发布验收仍独立。是否满足 CI 由 PR 精确提交的原始执行结果确认，
