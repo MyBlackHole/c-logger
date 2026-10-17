@@ -325,6 +325,18 @@ target("bench_fixed_rate")
     end
 target_end()
 
+-- fork 后 worker 压力专项只供独立普通/ASan CI 运行；
+-- 不注册到完整 TSan 集合，也不将原31项检测器跳过伪装为通过。
+target("fork_worker_stress")
+    set_kind("binary")
+    set_default(false)
+    add_files("tests/regression/test_fork_worker_stress.c")
+    add_deps("logger")
+    add_includedirs("include")
+    add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+               {force = true})
+target_end()
+
 -- 私有输出水位及队列布局只存在于静态链接边界；不扩大共享库 ABI。
 -- 直接复用生产目标，不能用开启锁诊断的回归支持库替代性能测量。
 if not has_config("build_shared") then
