@@ -149,3 +149,28 @@ pthread 取消、longjmp、信号安全、并发回收或异步关闭。Linux cl
 下一次重开正常。两种场景分别由回归支持库和生产静态库执行；不把编译器的
 C 同型结构复制能力误称为线性类型保证。轮转在归档重命名后的 detached
 语义仍须独立审查，未在本阶段迁移。
+
+## 8. 文件轮转新活动候选所有权（#245）
+
+`rotate_impl` 在旧活动文件同步、完成 `rename_noreplace` 及归档目录同步后，
+仍保持旧描述符指向归档文件且 `detached=1`。这一点和已有的四个崩溃切点、
+目录/新文件 fsync 顺序不变。已通过 fork 位图登记的新活动候选则暂时交给
+`logger_owned_fd`；新 inode fsync 时仅借用候选整数，父目录 fsync 成功后才
+通过 `logger_fd_take` 安装为新的长期活动 fd。
+
+若新 inode 或活动目录同步失败，显式 `logger_fd_close_status` **先消费新
+候选再记录 `switch_error`**，保持原始代码的顺序；作用域清理兜底时源已经
+失效，不执行第二次系统关闭。同步主错误继续优先于候选 close(EINTR/EIO)，
+旧归档 fd 不被重新当作活动文件追加，且只能通过显式 `logger_reopen` 解除
+`detached`。
+
+新增四组故障路径：`rotation-candidate-new-sync-{eintr,eio}-reuse` 和
+`rotation-candidate-dir-sync-{eintr,eio}-reuse`。包装器在真实关闭新候选后让
+外部 fd 立即复用原数字，再模拟 close 错误；验证主错误、归档未被追加、
+关闭位图不误伤宿主 fd、旧 fd 存续及后续显式恢复。复用已有的
+`file_backend_regression` 与 `file_reopen_candidate_production` 目标，
+不新增生产钩子、专用测试目录或新的构建体系。
+
+上述类型约束只适用于安装前候选，长期 `logger_file_t.{fd,dir_fd,lock_fd}`
+仍是现有布局，C 同型复制与完整 D2 跨函数所有权尚未由此证明；
+不声明物理掉电认证或正式发布授权。

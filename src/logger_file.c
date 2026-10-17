@@ -581,28 +581,36 @@ static int rotate_impl(logger_file_t *f)
 	rc = sync_directory(f);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_archive_dirsync");
-	int candidate = -1, day = 0;
+	int candidate_fd = -1, day = 0;
 	struct stat st;
 	if (!rc)
 		rc = wall_day(t.tv_sec, &day);
 	if (!rc)
-		rc = open_candidate(f, 1, &candidate, &st);
+		rc = open_candidate(f, 1, &candidate_fd, &st);
+	/* 已归档的旧 fd 不属于候选；新活动 fd 在安装前独占持有。
+	 * 崩溃切点与数据/目录持久化顺序保持不变。
+	 */
+	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
+		logger_fd_own(candidate_fd);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_open");
 	if (!rc)
-		rc = sync_data(f, candidate); /* 先持久化新的空 inode */
+		rc = sync_data(f, logger_fd_number(logger_fd_borrow(&candidate)));
+	/* 先持久化新的空 inode，再同步包含新目录项的父目录。 */
 	if (!rc)
 		rc = sync_directory(f);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_dirsync");
 	if (rc) {
-		if (candidate >= 0)
-			(void)logger_fork_close(candidate);
+		/* 与旧路径相同：先回收新候选，随后记录切换错误；
+		 * close(EINTR/EIO) 不能覆盖失败的 fsync/目录同步主错误。
+		 */
+		int close_rc LOGGER_MAYBE_UNUSED = logger_fd_close_status(&candidate);
 		f->switch_error = -rc;
 		return rc;
 	}
 	int old_fd = f->fd;
-	install_fd(f, candidate, &st, day);
+	install_fd(f, logger_fd_take(&candidate), &st, day);
 	if (logger_fork_close(old_fd))
 		return -errno;
 	return retention(f, t.tv_sec);

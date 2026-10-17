@@ -1615,7 +1615,7 @@ if has_config("build_regression_tests") then
         add_tests("syslog_fallback_pressure", {timeout = 15})
     target_end()
 
-    -- 本轮临时文件候选回滚使用真实生产静态归档独立验收。
+    -- 文件重开和轮转的新活动候选均在真实生产静态归档独立验收。
     if not has_config("build_shared") then
         target("file_reopen_candidate_production")
             set_kind("binary")
@@ -1632,7 +1632,11 @@ if has_config("build_regression_tests") then
                 add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
             end
             for _, scenario in ipairs({
-                "reopen-candidate-eintr-reuse", "reopen-candidate-eio-reuse"
+                "reopen-candidate-eintr-reuse", "reopen-candidate-eio-reuse",
+                "rotation-candidate-new-sync-eintr-reuse",
+                "rotation-candidate-new-sync-eio-reuse",
+                "rotation-candidate-dir-sync-eintr-reuse",
+                "rotation-candidate-dir-sync-eio-reuse"
             }) do
                 add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
             end
@@ -1654,7 +1658,12 @@ if has_config("build_regression_tests") then
             "collision", "clock-backwards",
             "collision-limit", "rotation-unsupported", "rotation-rename-error",
             "rotation-new-open", "rotation-dir-sync", "rotation-new-sync",
-            "rotation-new-dir-sync", "cwd", "directory-rename",
+            "rotation-new-dir-sync",
+            "rotation-candidate-new-sync-eintr-reuse",
+            "rotation-candidate-new-sync-eio-reuse",
+            "rotation-candidate-dir-sync-eintr-reuse",
+            "rotation-candidate-dir-sync-eio-reuse",
+            "cwd", "directory-rename",
             "active-replaced", "retention", "retention-error", "metrics-contract",
             "vectors", "eintr"
         }) do
