@@ -52,7 +52,7 @@ Xmake 在配置阶段校验根 `VERSION` 的格式，并要求导出的版本与
 - 当前 main SONAME：`liblogger.so.2`；
 - 共享库实体文件：`liblogger.so.<VERSION>`；
 - 当前 main ELF 符号版本：`LOGGER_2.0`；
-- 当前公开 C ABI 允许列表：`abi/logger-2.0.symbols`（47 项）；
+- 当前公开 C ABI 允许列表：`abi/logger-2.0.symbols`（43 项）；
 - 当前安装元数据固定 `LOGGER_ABI_VERSION=2`；
 - 历史 v1 显式启用的 fork 辅助接口不属于当前 main；main 已移除该实现、兼容头文件与构建选项；
 - 生产环境默认隐藏可见性，并使用版本脚本 `local: *`；
