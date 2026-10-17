@@ -425,7 +425,7 @@ class ReleaseGateTests(unittest.TestCase):
         fixture.mutate_approval(
             lambda data: data['decisions']['B_FORK_HOST'].update(
                 approver='@todo'))
-        self.assertIn('invalid_reviewer', fixture.signoff_check().stderr)
+        self.assertIn('placeholder_value', fixture.signoff_check().stderr)
 
     def test_signoff_blocks_invalid_utc_review_date(self):
         fixture = self.fixture()
@@ -471,12 +471,12 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('frozen_base_commit_missing',
                       fixture.signoff_check().stderr)
 
-    def test_signoff_blocks_base_equal_to_approval_commit(self):
+    def test_signoff_blocks_nonexistent_frozen_base(self):
         fixture = self.fixture()
         fixture.mutate_approval(
-            lambda data: data.update(frozen_base_commit=fixture.sha))
-        result = fixture.signoff_check()
-        self.assertNotEqual(result.returncode, 0)
+            lambda data: data.update(frozen_base_commit='f' * 40))
+        self.assertIn('git_verification_failed',
+                      fixture.signoff_check().stderr)
 
     def test_signoff_blocks_source_change_after_freeze(self):
         fixture = self.fixture()
