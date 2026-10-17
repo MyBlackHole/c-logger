@@ -22,8 +22,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 	}
 	int rc = __real_pthread_setcancelstate(state, old);
 	/* 先恢复真实状态，再注入失败；不能污染测试宿主线程。 */
-	if (active && !rc && state == PTHREAD_CANCEL_ENABLE &&
-	    restore_error) {
+	if (active && !rc && state == PTHREAD_CANCEL_ENABLE && restore_error) {
 		int error = restore_error;
 		restore_error = 0;
 		errno = ERANGE;
@@ -69,10 +68,14 @@ static void check_set_error(int error, int clear)
 {
 	errno = EDOM;
 	active = 1;
-	int rc = clear ? logger_context_clear() :
-			       logger_context_set(&(logger_context_t){
-				       .request_id = "committed",
-				       .session_id = "new-session" });
+	int rc;
+	if (clear) {
+		rc = logger_context_clear();
+	} else {
+		logger_context_t value = { .request_id = "committed",
+					   .session_id = "new-session" };
+		rc = logger_context_set(&value);
+	}
 	active = 0;
 	CHECK(rc == -error && errno == EDOM);
 	CHECK(!logger_scope_busy());
@@ -112,8 +115,8 @@ int main(int argc, char **argv)
 		char large[140];
 		memset(large, 'X', sizeof(large) - 1);
 		large[sizeof(large) - 1] = 0;
-		CHECK(logger_context_set(&(logger_context_t){
-			      .request_id = large }) == 0);
+		logger_context_t oversized = { .request_id = large };
+		CHECK(logger_context_set(&oversized) == 0);
 		logger_context_t got;
 		CHECK(logger_context_get(&got) == 0);
 		CHECK(got.request_id && strlen(got.request_id) == 63);

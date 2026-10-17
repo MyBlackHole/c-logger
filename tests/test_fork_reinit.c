@@ -57,8 +57,8 @@ static void child_run(int async, int global, int index, int conflict)
 	child_check(logger_process_init() == 0 && errno == EDOM, 10);
 	child_check(logger_process_init() == -EALREADY, 11);
 	logger_context_t context = { 0 };
-	child_check(logger_context_get(&context) == 0 &&
-			    !context.request_id && !context.session_id &&
+	child_check(logger_context_get(&context) == 0, 12);
+	child_check(!context.request_id && !context.session_id &&
 			    !context.trace_id,
 		    12);
 	logger_config_t cfg = config("child.log", async);
@@ -102,9 +102,8 @@ static void normal(const char *mode)
 	int shut = !strcmp(mode, "shutdown-first");
 	int count = !strcmp(mode, "repeated") ? 24 : 1;
 	CHECK(logger_process_init() == 0);
-	CHECK(logger_context_set(
-		      &(logger_context_t){ .request_id = "PARENT_SECRET_CONTEXT" }) ==
-	      0);
+	logger_context_t secret = { .request_id = "PARENT_SECRET_CONTEXT" };
+	CHECK(logger_context_set(&secret) == 0);
 	console_set_verbosity(CONSOLE_QUIET);
 	logger_config_t cfg = config("parent.log", async);
 	logger_t *parent = NULL;

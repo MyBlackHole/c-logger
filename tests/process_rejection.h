@@ -96,8 +96,8 @@ static void check_process_rejection(int error)
 	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error &&
 	      errno == EDOM);
 	CHECK(memcmp(&syslog, &syslog_before, sizeof(syslog)) == 0);
-	CHECK(logger_context_set(&(logger_context_t){
-		      .request_id = "forbidden" }) == -error && errno == EDOM);
+	logger_context_t forbidden = { .request_id = "forbidden" };
+	CHECK(logger_context_set(&forbidden) == -error && errno == EDOM);
 	logger_context_t context = { .request_id = "sentinel",
 				     .session_id = "sentinel",
 				     .trace_id = "sentinel" };

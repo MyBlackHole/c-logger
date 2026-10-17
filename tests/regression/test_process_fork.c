@@ -380,8 +380,8 @@ static void registration_failure(const char *mode)
 	else if (!strcmp(mode, "register-console"))
 		CHECK(console_print("forbidden") == -ENOMEM && errno == 0);
 	else if (!strcmp(mode, "register-context")) {
-		CHECK(logger_context_set(&(logger_context_t){ 0 }) ==
-		      -ENOMEM && errno == 0);
+		logger_context_t empty = { 0 };
+		CHECK(logger_context_set(&empty) == -ENOMEM && errno == 0);
 	} else
 		CHECK(0);
 	CHECK(access("out.log", F_OK) != 0);

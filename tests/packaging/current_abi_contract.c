@@ -412,17 +412,19 @@ static int context_contract(int cold)
 			return 1;
 		return 0;
 	}
-	if (set(&input) || errno != EDOM || get(&output) || errno != EDOM ||
-	    !output.request_id ||
-	    strcmp(output.request_id, "installed-context") ||
-	    !output.session_id ||
-	    strcmp(output.session_id, "installed-session") ||
-	    output.trace_id)
+	if (set(&input) || errno != EDOM || get(&output) || errno != EDOM)
 		return 2;
-	if (get(NULL) != -EINVAL || errno != EDOM ||
-	    clear() || errno != EDOM ||
-	    get(&output) || errno != EDOM ||
-	    output.request_id || output.session_id || output.trace_id)
+	if (!output.request_id || !output.session_id || output.trace_id)
+		return 2;
+	if (strcmp(output.request_id, "installed-context"))
+		return 2;
+	if (strcmp(output.session_id, "installed-session"))
+		return 2;
+	if (get(NULL) != -EINVAL || errno != EDOM)
+		return 3;
+	if (clear() || errno != EDOM || get(&output) || errno != EDOM)
+		return 3;
+	if (output.request_id || output.session_id || output.trace_id)
 		return 3;
 	return 0;
 }
