@@ -497,7 +497,8 @@ static void reopen_candidate_reuse(const char *scenario)
 	candidate_rollback = 0;
 	CHECK(candidate_close_error == 0);
 	CHECK(candidate_fd >= 0 && reused_candidate_fd == candidate_fd);
-	CHECK(test_file_fd(&l->file_backend) == old_fd && fcntl(old_fd, F_GETFD) >= 0);
+	CHECK(test_file_fd(&l->file_backend) == old_fd &&
+	      fcntl(old_fd, F_GETFD) >= 0);
 	CHECK(fcntl(reused_candidate_fd, F_GETFD) >= 0);
 	logger_file_metrics_t metrics;
 
@@ -600,7 +601,8 @@ static void rotation_failure(const char *scenario)
 	CHECK(file_metrics.last_write_error == expected);
 	CHECK(file_metrics.last_error == expected);
 	CHECK(file_metrics.detached);
-	CHECK(test_file_fd(&l->file_backend) == old_fd && l->file_backend.detached);
+	CHECK(test_file_fd(&l->file_backend) == old_fd &&
+	      l->file_backend.detached);
 	const char *archive = "out.20231114T221320.000000Z.log";
 	off_t size = file_size(archive);
 	CHECK(file_contains(archive, "first"));
@@ -648,7 +650,8 @@ static void rotation_candidate_reuse(const char *scenario)
 	CHECK(candidate_close_error == 0);
 	CHECK(renamed && candidate_fd >= 0 &&
 	      reused_candidate_fd == candidate_fd);
-	CHECK(test_file_fd(&l->file_backend) == old_fd && fcntl(old_fd, F_GETFD) >= 0);
+	CHECK(test_file_fd(&l->file_backend) == old_fd &&
+	      fcntl(old_fd, F_GETFD) >= 0);
 	CHECK(l->file_backend.detached && l->file_backend.switch_error == EIO);
 	CHECK(l->file_backend.dir_dirty && l->file_backend.archive_time_valid);
 
@@ -806,8 +809,10 @@ static void file_close_owned_reuse(const char *scenario)
 	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
 
 	CHECK(!logger_file_init(&f, "out.log", rotation, 0600));
-	CHECK(test_file_fd(&f) >= 0 && test_lock_fd(&f) >= 0 && test_dir_fd(&f) >= 0);
-	CHECK(test_file_fd(&f) != test_lock_fd(&f) && test_file_fd(&f) != test_dir_fd(&f));
+	CHECK(test_file_fd(&f) >= 0 && test_lock_fd(&f) >= 0 &&
+	      test_dir_fd(&f) >= 0);
+	CHECK(test_file_fd(&f) != test_lock_fd(&f) &&
+	      test_file_fd(&f) != test_dir_fd(&f));
 	CHECK(test_lock_fd(&f) != test_dir_fd(&f));
 	CHECK(write(test_file_fd(&f), "preserved", 9) == 9);
 	closing_fds[0] = test_file_fd(&f);
@@ -821,7 +826,8 @@ static void file_close_owned_reuse(const char *scenario)
 	CHECK(logger_file_close_status(&f) == -closing_primary_error);
 	closing_file = NULL;
 	CHECK(closing_calls == 3);
-	CHECK(test_file_fd(&f) == -1 && test_lock_fd(&f) == -1 && test_dir_fd(&f) == -1);
+	CHECK(test_file_fd(&f) == -1 && test_lock_fd(&f) == -1 &&
+	      test_dir_fd(&f) == -1);
 	CHECK(logger_file_close_status(&f) == 0);
 	errno = EDOM;
 	logger_file_close(&f);
@@ -851,7 +857,8 @@ static void file_close_owned_zero(void)
 	CHECK(test_dir_fd(&f) == STDIN_FILENO);
 	CHECK(test_file_fd(&f) >= 0 && test_lock_fd(&f) >= 0);
 	CHECK(!logger_file_close_status(&f));
-	CHECK(test_file_fd(&f) == -1 && test_lock_fd(&f) == -1 && test_dir_fd(&f) == -1);
+	CHECK(test_file_fd(&f) == -1 && test_lock_fd(&f) == -1 &&
+	      test_dir_fd(&f) == -1);
 	CHECK(fcntl(STDIN_FILENO, F_GETFD) == -1 && errno == EBADF);
 	CHECK(!logger_file_close_status(&f));
 	if (saved >= 0) {
