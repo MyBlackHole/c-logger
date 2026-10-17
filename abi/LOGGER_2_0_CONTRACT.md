@@ -1,7 +1,8 @@
 # LOGGER_2.0 当前开发 ABI 合同
 
-> 默认槽借用、刷新/重开和Console已迁移；本增量统一记录与状态/指标查询。
-> 当前生产导出43个，仍为未发布的开发ABI，不承诺与旧开发签名兼容。
+> 默认槽、刷新/重开、Console、记录、查询、TLS、脱敏及级别设置的现行
+> 公开合同已完成收口。当前生产导出43个，仍为未发布的开发ABI，
+> 不承诺与旧开发签名兼容；正式 ABI 冻结需独立批准。
 
 
 本版尚未正式发布。生命周期迁移不兼容旧开发签名，没有适配层或旧 status
@@ -32,10 +33,26 @@ int logger_default_reopen(void);
 ```
 
 四者采用0/-errno并保留errno，删除旧status/instance包装，不保留符号别名。
-默认绑定 `logger_default_set`、TLS上下文及脱敏函数也采用该规则。配置布局不变，
-级别设置仍单独迁移。脱敏函数类型不变，但错误状态改为负错误码并保留errno，
+默认绑定 `logger_default_set`、TLS上下文、级别设置及脱敏函数也采用该规则。
+配置布局不变。脱敏函数类型不变，但错误状态改为负错误码并保留errno，
 失败保持输出不变；新旧语义不能混用。当前合同见[API](../API.md)。
 详细控制语义与错误优先级见[控制操作合同](../docs/v2/CONTROL_API.md)。
+
+## 级别设置与 TLS 上下文
+
+```c
+int logger_set_instance_level(logger_t *, logger_level_t);
+int logger_set_level(logger_level_t);
+int logger_context_set(const logger_context_t *);
+int logger_context_clear(void);
+int logger_context_get(logger_context_t *out);
+```
+
+级别设置原来的两个 void 返回已改为0/-errno并保留入口errno；显式设置保留
+无锁原子级别更新，默认设置固定Global代次并取得生命周期借用。TLS get
+只在完整成功后写输出槽，返回的字符串指针仅借用当前线程固定缓冲；set/clear
+若已提交，不因之后的取消恢复失败而回滚。43个符号名称保持不变不等于旧开发
+二进制仍可混用，安装的C/C++11消费方已通过真实类型与状态检查。
 
 ## Console 函数类型与返回值迁移
 

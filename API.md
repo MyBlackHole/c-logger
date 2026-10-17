@@ -21,7 +21,7 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 父方首次使用也必须显式初始化。普通 Logger、Global、Console 与上下文入口不再
 按需建域、不等待初始化者：空闲报 ENODEV、初始化中报 EAGAIN、失败后报告保存的
 初始化错误，只有显式调用才能重试。进程准入先于配置、拥有者槽与实例字段访问。
-状态接口、TLS上下文及脱敏函数使用0/-errno并保留errno；级别设置仍待独立迁移。
+状态接口、TLS 上下文、脱敏函数及两个级别设置入口均使用0/-errno并保留errno；
 纯配置/脱敏辅助函数不需初始化。
 详见[显式进程准入](docs/v2/PROCESS_ADMISSION.md)。
 
@@ -52,7 +52,8 @@ int logger_destroy(logger_t **owner);
 默认入口为 `logger_default_flush()`、`logger_default_reopen()`。四者均为 **0/-errno**，
 所有正常返回保留调用方 errno。已移除旧 status/instance 包装，不能再调用无参
 `logger_flush()` 或 `logger_reopen()`。记录、状态/指标查询和Console也已统一；
-级别设置仍待独立迁移；TLS上下文和脱敏函数已统一。详见[控制操作合同](docs/v2/CONTROL_API.md)。
+级别设置、TLS 上下文和脱敏函数也已统一。显式级别设置保持无锁原子更新，
+默认级别设置先固定生命周期借用；详见[控制操作合同](docs/v2/CONTROL_API.md)。
 
 刷新继续等待进入时捕获的预留完成水位，并同步文件；不代表 Syslog 远端持久化，
 不给阻塞 I/O 提供时限。重开可能在切换文件后报错；错误返回不保证无副作用。
