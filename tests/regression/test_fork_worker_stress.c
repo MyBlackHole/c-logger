@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 #include "logger.h"
-#include "regression/support.h"
+#include "support.h"
 #include <inttypes.h>
 #include <sched.h>
 #include <signal.h>
