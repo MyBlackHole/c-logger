@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "logger_libc.h"
 #include "logger_syslog.h"
+#include "logger_fd.h"
 #include "logger_fork_fd.h"
 #include <errno.h>
 #include <stdint.h>
@@ -127,23 +128,28 @@ static int connect_once(logger_syslog_t *s, int *deferable)
 {
 	*deferable = 0;
 	++s->metrics.connect_attempts;
-	int fd = logger_fork_socket(
-		AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-	if (fd < 0)
+	struct logger_owned_fd candidate = logger_fd_own(logger_fork_socket(
+		AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
+	if (!logger_fd_valid(&candidate))
 		goto failed;
 	struct sockaddr_un address = { 0 };
 	address.sun_family = AF_UNIX;
 	memcpy(address.sun_path, s->path, strlen(s->path) + 1);
 	socklen_t size = (socklen_t)(offsetof(struct sockaddr_un, sun_path) +
 				     strlen(s->path) + 1);
-	if (connect(fd, (const struct sockaddr *)&address, size) != 0) {
+	if (connect(logger_fd_number(logger_fd_borrow(&candidate)),
+		    (const struct sockaddr *)&address, size) != 0) {
 		int error = errno ? errno : EIO;
 		*deferable = endpoint_unavailable(error);
-		close_fd(s, fd);
+		int close_error = logger_fd_close_status(&candidate);
+		if (close_error) {
+			++s->metrics.close_failures;
+			s->metrics.last_close_error = -close_error;
+		}
 		errno = error;
 		goto failed;
 	}
-	s->fd = fd;
+	s->fd = logger_fd_take(&candidate);
 	s->metrics.connected = 1;
 	s->connection_error = 0;
 	if (s->metrics.connect_attempts > 1)
