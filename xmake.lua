@@ -955,6 +955,8 @@ if has_config("build_regression_tests") then
             {"logger_format_line", "write", "writev", "fsync"}},
         {"resource_cleanup_regression", "tests/regression/test_resource_cleanup.c",
             {"free"}},
+        {"fd_ownership_regression", "tests/regression/test_fd_ownership.c",
+            {"close", "fdopendir", "closedir"}},
 
         -- Link-time interception parity, group B: process fork and global lifecycle.
         {"process_fork_regression", "tests/regression/test_process_fork.c",
@@ -1113,6 +1115,32 @@ if has_config("build_regression_tests") then
     target("queue_notify_regression")
         add_tests("queue_notify_wait_error",
                   {runargs = "wait-error", timeout = 15})
+    target_end()
+
+    -- 用真正由 Xmake 选用的编译器验证拥有与借用的 C 类型差异。
+    target("fd_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("fd_ownership_regression")
+        add_tests("owned_borrowed_compile", {group = "fd-ownership", timeout = 60})
+        on_test(function (target, opt)
+            local cc = assert(target:dep("fd_ownership_regression"):tool("cc"))
+            local script = path.join(os.projectdir(), "tests", "scripts", "test_fd_types.py")
+            local code, errors = os.execv("python3", {script, "-v"}, {
+                try = true,
+                envs = {LOGGER_TEST_CC = cc},
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+
+    target("fd_ownership_regression")
+        for _, scenario in ipairs({"close", "take", "cleanup-error",
+            "close-eintr-reuse", "close-eio-reuse", "directory-success",
+            "directory-failure", "directory-retry", "invalid", "zero"}) do
+            add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
+        end
     target_end()
 
     target("resource_cleanup_regression")
