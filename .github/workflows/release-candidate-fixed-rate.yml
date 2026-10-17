@@ -1,0 +1,195 @@
+name: release-candidate-fixed-rate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release-candidate-fixed-rate.yml"
+      - "tests/bench_fixed_rate.c"
+      - "scripts/benchmark_fixed_rate.py"
+      - "tests/scripts/test_fixed_rate_benchmark.py"
+      - "BENCHMARK.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-candidate-fixed-rate.yml"
+      - "tests/bench_fixed_rate.c"
+      - "scripts/benchmark_fixed_rate.py"
+      - "BENCHMARK.md"
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-rate:
+    name: "固定到达率生产证据（${{ matrix.kind }}）"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container:
+      image: ubuntu:20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [static, shared]
+    env:
+      KIND: ${{ matrix.kind }}
+      EVIDENCE_DIR: "release-fixed-rate-evidence"
+
+    steps:
+      - name: 安装最低用户态构建工具
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential binutils ca-certificates curl file git python3 util-linux
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v5
+
+      - name: 仅将当前检出工作区标记为可信 Git 目录
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: 让容器 root 可使用固定 Xmake
+        shell: bash
+        run: |
+          set -euo pipefail
+          real_xmake="$(command -v xmake)"
+          wrapper="$RUNNER_TEMP/xmake-root-bin"
+          mkdir -p "$wrapper"
+          cat > "$wrapper/xmake" <<EOF
+          #!/bin/sh
+          case "\${1:-}" in
+            f|config|run|test|install)
+              task="\$1"
+              shift
+              exec "$real_xmake" "\$task" --root "\$@"
+              ;;
+            *)
+              exec "$real_xmake" --root "\$@"
+              ;;
+          esac
+          EOF
+          chmod +x "$wrapper/xmake"
+          echo "$wrapper" >> "$GITHUB_PATH"
+
+      - name: 记录生产源码与环境身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          git rev-parse HEAD > "$EVIDENCE_DIR/source-commit.txt"
+          git rev-parse 'HEAD^{tree}' > "$EVIDENCE_DIR/source-tree.txt"
+          test "$(cat "$EVIDENCE_DIR/source-commit.txt")" = "$GITHUB_SHA"
+          test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.31'
+          test "$(gcc -dumpversion | cut -d. -f1)" = 9
+          test "$(uname -m)" = x86_64
+          xmake --version > "$EVIDENCE_DIR/xmake-version.txt"
+          gcc --version > "$EVIDENCE_DIR/compiler.txt"
+          uname -a > "$EVIDENCE_DIR/kernel.txt"
+          lscpu > "$EVIDENCE_DIR/cpu.txt"
+          printf '%s\n' "$KIND" > "$EVIDENCE_DIR/linkage.txt"
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - name: 构建无诊断注入的生产库和公开基准驱动
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$KIND" = shared ]; then shared=y; else shared=n; fi
+          xmake f -m release -o rate-build --toolchain=gcc \
+            --build_shared="$shared" --build_tests=n \
+            --build_private_tests=n --build_regression_tests=n
+          xmake -rvD -j2 bench_fixed_rate > "$EVIDENCE_DIR/build.log" 2>&1 || {
+            tail -150 "$EVIDENCE_DIR/build.log"
+            exit 1
+          }
+          grep -q -- '-O3' "$EVIDENCE_DIR/build.log"
+          bench="$(find rate-build -type f -name bench_fixed_rate -print -quit)"
+          if [ "$KIND" = shared ]; then
+            lib="$(find rate-build -type f -name "liblogger.so.$LOGGER_PROJECT_VERSION" -print -quit)"
+          else
+            lib="$(find rate-build -type f -name liblogger.a -print -quit)"
+          fi
+          test -n "$bench" && test -x "$bench" && test -n "$lib"
+          python3 scripts/check_production_artifact.py "$lib"
+          sha256sum "$bench" "$lib" > "$EVIDENCE_DIR/library-driver.sha256"
+          echo "BENCH_BIN=$bench" >> "$GITHUB_ENV"
+          echo "BENCH_LIB=$lib" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$(dirname "$lib"):${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: 先验证固定到达率判定器正反例
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/scripts/test_fixed_rate_benchmark.py -v \
+            > "$EVIDENCE_DIR/checker-tests.log" 2>&1 || {
+            cat "$EVIDENCE_DIR/checker-tests.log"
+            exit 1
+          }
+
+      - name: 执行有限矩阵并记录本次原始回执（证据保留30天）
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/benchmark_fixed_rate.py \
+            --binary "$BENCH_BIN" --library "$BENCH_LIB" \
+            --build-log "$EVIDENCE_DIR/build.log" \
+            --out "$EVIDENCE_DIR/samples" \
+            --threads 1 4 --rates 10000 50000 \
+            --payload-bytes 64 1024 --backends null file \
+            --seconds 2 --warmup 1 --repeats 2 --timeout 45 \
+            2>&1 | tee "$EVIDENCE_DIR/runner.log"
+
+      - name: 汇总原始延迟/丢弃/到达误差，仅核对一致性
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+          root = Path("release-fixed-rate-evidence")
+          rows = [json.loads(s) for s in (root / "samples/results.jsonl").read_text().splitlines() if s]
+          if len(rows) != 32 or any(not x["verification_valid"] for x in rows):
+              raise SystemExit("fixed_rate_evidence_invalid_or_incomplete")
+          keys = ["repeat", "threads", "rate", "payload_bytes", "backend",
+                  "scheduled", "attempted", "generator_missed", "enqueued",
+                  "emitted", "dropped", "sync_fallbacks", "api_p50_ns",
+                  "api_p95_ns", "api_p99_ns", "arrival_late_p99_ns", "flush_ns"]
+          with (root / "summary.csv").open("w", newline="") as stream:
+              writer = csv.DictWriter(stream, fieldnames=keys)
+              writer.writeheader()
+              for item in rows:
+                  case = item["case"]
+                  phase = next(x for x in item["phases"] if x["phase"] == 1)
+                  row = {k: case[k] for k in ("repeat", "threads", "rate",
+                                             "payload_bytes", "backend")}
+                  row.update({k: phase[k] for k in ("scheduled", "attempted",
+                                                   "generator_missed", "enqueued",
+                                                   "emitted", "dropped",
+                                                   "sync_fallbacks", "flush_ns")})
+                  row["api_p50_ns"] = phase["api_ns"]["p50"]
+                  row["api_p95_ns"] = phase["api_ns"]["p95"]
+                  row["api_p99_ns"] = phase["api_ns"]["p99"]
+                  row["arrival_late_p99_ns"] = phase["arrival_late_ns"]["p99"]
+                  writer.writerow(row)
+          print("原始采样与每种链接形态32个样本已逐项校验；无业务SLO通过声明。")
+          PY
+
+      - name: 上传成功或失败时的原始证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-fixed-rate-${{ matrix.kind }}
+          path: release-fixed-rate-evidence/
+          if-no-files-found: warn
+          retention-days: 30
