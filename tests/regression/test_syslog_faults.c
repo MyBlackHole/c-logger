@@ -95,8 +95,8 @@ int __wrap_close(int fd)
 		if (reuse_during_close) {
 			/* 真正 close 已消费旧整数；马上以外部 socket 占用该编号。 */
 			CHECK(reused_fd == -1);
-			int replacement = __real_socket(
-				AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+			int flags = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+			int replacement = __real_socket(AF_UNIX, flags, 0);
 			CHECK(replacement >= 0);
 			if (replacement != fd) {
 				CHECK(dup2(replacement, fd) == fd);
@@ -195,8 +195,9 @@ static void candidate_ownership(const char *mode)
 		return;
 	}
 
-	int closing_error = !strcmp(mode, "candidate-eintr-reuse") ?
-				    EINTR : EIO;
+	int closing_error = EIO;
+	if (!strcmp(mode, "candidate-eintr-reuse"))
+		closing_error = EINTR;
 	int primary_error = closing_error == EINTR ? EINTR : ENOENT;
 	inject_connect = primary_error;
 	inject_close = closing_error;
