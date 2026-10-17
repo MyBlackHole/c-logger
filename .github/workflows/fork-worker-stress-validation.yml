@@ -84,6 +84,11 @@ jobs:
             toolchain=(--toolchain=clang --cc="$CC" --cxx="$CXX" \
                        --ld="$CXX" --sh="$CXX")
             policy=(--policies=build.sanitizer.address,build.sanitizer.undefined)
+            if [ "$shared" = y ]; then
+              # 保留共享库 --no-undefined：Clang 必须显式链接共享
+              # ASan/UBSan 运行库；测试程序与 DSO 使用同一种运行库。
+              policy+=(--shflags=-shared-libsan --ldflags=-shared-libsan)
+            fi
           fi
           xmake f -P . -y -m debug -o stress-build \
             "${toolchain[@]}" "${policy[@]}" \
@@ -105,12 +110,28 @@ jobs:
           test -n "$binary" && test -x "$binary" && test -n "$lib"
           python3 scripts/check_production_artifact.py "$lib"
           sha256sum "$binary" "$lib" > evidence/build-sha256.txt
+          runtime_dir=""
+          if [ "$shared" = y ] &&
+             [ "${{ matrix.runtime }}" = address-undefined ]; then
+            runtime="$("$CC" -print-file-name=libclang_rt.asan-x86_64.so)"
+            test -f "$runtime"
+            runtime_dir="$(dirname "$runtime")"
+            printf '%s\n' "$runtime" > evidence/shared-sanitizer-runtime.txt
+            readelf -d "$lib" > evidence/shared-dynamic.txt
+            grep -q 'libclang_rt.asan' evidence/shared-dynamic.txt
+            grep -q -- '-shared-libsan' evidence/build.log
+          fi
+          export LD_LIBRARY_PATH="$(dirname "$lib"):${runtime_dir:+$runtime_dir:}${LD_LIBRARY_PATH:-}"
           ldd "$binary" > evidence/dependencies.txt
           if [ "$shared" = y ]; then
             grep -q 'liblogger.so.2' evidence/dependencies.txt
           fi
+          if grep -q 'not found' evidence/dependencies.txt; then
+            cat evidence/dependencies.txt
+            exit 1
+          fi
           echo "FORK_WORKER_BIN=$binary" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$(dirname "$lib"):${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
       - name: 父方并发写入时重复 fork，并让子方创建真实异步worker
         shell: bash
