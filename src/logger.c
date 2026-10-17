@@ -71,11 +71,12 @@ static void copy_ctx(char *d, size_t n, const char *s)
 	memcpy(d, s, length);
 	d[length] = 0;
 }
-void logger_context_set(const logger_context_t *c)
+int logger_context_set(const logger_context_t *c)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
+	int rc = logger_scope_begin(&scope);
+	if (rc)
+		return rc;
 	/* 暂存全部字段，允许 set(get()) 以及重叠或交换的 TLS 输入。 */
 	char request[64] = { 0 }, session[64] = { 0 }, trace[64] = { 0 };
 	copy_ctx(request, sizeof(request), c ? c->request_id : NULL);
@@ -87,20 +88,27 @@ void logger_context_set(const logger_context_t *c)
 	g_ctx.request_id = g_request_id[0] ? g_request_id : NULL;
 	g_ctx.session_id = g_session_id[0] ? g_session_id : NULL;
 	g_ctx.trace_id = g_trace_id[0] ? g_trace_id : NULL;
-	(void)logger_scope_end(&scope, 0);
+	/* 恢复取消失败并不撤销已经提交的线程局部上下文。 */
+	return logger_scope_end(&scope, 0);
 }
-void logger_context_clear(void)
+int logger_context_clear(void)
 {
-	logger_context_set(NULL);
+	return logger_context_set(NULL);
 }
-logger_context_t logger_context_get(void)
+int logger_context_get(logger_context_t *out)
 {
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return (logger_context_t){ 0 };
-	logger_context_t out = g_ctx;
-	(void)logger_scope_end(&scope, 0);
-	return out;
+	int rc = logger_scope_begin(&scope);
+	if (rc)
+		return rc;
+	if (!out)
+		return logger_scope_end(&scope, -EINVAL);
+	/* 指针借用当前线程的存储；取消恢复前不能交付快照。 */
+	logger_context_t snapshot = g_ctx;
+	rc = logger_scope_end(&scope, 0);
+	if (!rc)
+		*out = snapshot;
+	return rc;
 }
 static void capture_context(msg_t *m)
 {

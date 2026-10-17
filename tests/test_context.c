@@ -26,9 +26,11 @@ int main(void)
 	logger_context_t ctx = { .request_id = "req-42",
 				 .session_id = "sess-7",
 				 .trace_id = "trace-abcd" };
-	logger_context_set(&ctx);
+	if (logger_context_set(&ctx) != 0)
+		return 7;
 	emit();
-	logger_context_clear();
+	if (logger_context_clear() != 0)
+		return 8;
 	fixture_default_destroy(&default_owner);
 	FILE *f = fopen("./context.log", "r");
 	if (!f)

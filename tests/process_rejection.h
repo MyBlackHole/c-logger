@@ -96,12 +96,15 @@ static void check_process_rejection(int error)
 	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error &&
 	      errno == EDOM);
 	CHECK(memcmp(&syslog, &syslog_before, sizeof(syslog)) == 0);
-	logger_context_set(&(logger_context_t){ .request_id = "forbidden" });
-	CHECK(errno == error);
-	logger_context_t context = logger_context_get();
-	CHECK(errno == error && context.request_id == NULL);
-	logger_context_clear();
-	CHECK(errno == error);
+	CHECK(logger_context_set(&(logger_context_t){
+		      .request_id = "forbidden" }) == -error && errno == EDOM);
+	logger_context_t context = { .request_id = "sentinel",
+				     .session_id = "sentinel",
+				     .trace_id = "sentinel" };
+	logger_context_t context_before = context;
+	CHECK(logger_context_get(&context) == -error && errno == EDOM);
+	CHECK(memcmp(&context, &context_before, sizeof(context)) == 0);
+	CHECK(logger_context_clear() == -error && errno == EDOM);
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
 	int tty = 9;
 	errno = EDOM;

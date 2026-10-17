@@ -126,12 +126,13 @@ static void nested_call(void)
 		      -EDEADLK);
 		expect_query_sentinel(&sys, sizeof(sys));
 	} else if (!strcmp(nested, "context-set"))
-		logger_context_set(&ctx);
+		CHECK(logger_context_set(&ctx) == -EDEADLK);
 	else if (!strcmp(nested, "context-clear"))
-		logger_context_clear();
+		CHECK(logger_context_clear() == -EDEADLK);
 	else if (!strcmp(nested, "context-get")) {
-		ctx = logger_context_get();
-		CHECK(!ctx.request_id);
+		logger_context_t before = ctx;
+		CHECK(logger_context_get(&ctx) == -EDEADLK);
+		CHECK(memcmp(&ctx, &before, sizeof(ctx)) == 0);
 	} else if (!strcmp(nested, "console"))
 		CHECK(console_print("nested") == -EDEADLK);
 	else if (!strcmp(nested, "console-debug"))
@@ -153,10 +154,7 @@ static void nested_call(void)
 		CHECK(LOG_INFO("nested global") == -EDEADLK);
 	else
 		CHECK(!"unknown nested API");
-	CHECK(errno ==
-	      ((!strcmp(nested, "level") || !strncmp(nested, "context-", 8)) ?
-		       EDEADLK :
-		       EDOM));
+	CHECK(errno == (!strcmp(nested, "level") ? EDEADLK : EDOM));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
 static void probe(enum point p)
@@ -592,20 +590,20 @@ static void contract_case(void)
 		logger_context_t c = { .request_id = "request",
 				       .session_id = "session",
 				       .trace_id = "trace" };
-		logger_context_set(&c);
-		c = logger_context_get();
-		logger_context_set(&c);
-		c = logger_context_get();
+		CHECK(logger_context_set(&c) == 0);
+		CHECK(logger_context_get(&c) == 0);
+		CHECK(logger_context_set(&c) == 0);
+		CHECK(logger_context_get(&c) == 0);
 		CHECK(!strcmp(c.request_id, "request"));
 		const char *swap = c.request_id;
 		c.request_id = c.session_id;
 		c.session_id = swap;
-		logger_context_set(&c);
-		c = logger_context_get();
+		CHECK(logger_context_set(&c) == 0);
+		CHECK(logger_context_get(&c) == 0);
 		CHECK(!strcmp(c.request_id, "session") &&
 		      !strcmp(c.session_id, "request"));
-		logger_context_clear();
-		CHECK(!logger_context_get().request_id);
+		CHECK(logger_context_clear() == 0);
+		CHECK(logger_context_get(&c) == 0 && !c.request_id);
 	} else if (!strcmp(scenario, "debug-overflow")) {
 		char s[4000];
 		memset(s, 'x', sizeof(s) - 1);

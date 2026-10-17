@@ -916,6 +916,8 @@ if has_config("build_regression_tests") then
         {"queue_wakeup_litmus", "tests/regression/test_queue_wakeup_litmus.c"},
         {"lockdep_regression", "tests/regression/test_lockdep.c"},
         {"metadata_capture_regression", "tests/regression/test_metadata_capture.c"},
+        {"context_status_regression", "tests/regression/test_context_status.c",
+            {"pthread_setcancelstate"}},
         {"global_flush_regression", "tests/regression/test_global_flush.c"},
         {"stderr_sigpipe_regression", "tests/regression/test_stderr_sigpipe.c"},
         {"lock_failure_regression", "tests/regression/test_lock_failure.c",
@@ -1026,6 +1028,16 @@ if has_config("build_regression_tests") then
             add_tests("default", {timeout = 15})
         target_end()
     end
+
+    target("context_status_regression")
+        for _, scenario in ipairs({
+            "healthy", "get-null", "setup-set", "setup-clear", "setup-get",
+            "restore-set", "restore-clear", "restore-get", "disabled", "threads"
+        }) do
+            add_tests("context_status_" .. scenario,
+                      {runargs = scenario, timeout = 15})
+        end
+    target_end()
 
     target("queue_model_properties")
         for _, seed in ipairs({"1", "7", "107", "4096", "20261014", "4294967295"}) do
