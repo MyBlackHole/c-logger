@@ -216,7 +216,7 @@ static void child_guard_matrix(void)
 	CHILD_STATUS(LOG_INFO("INHERITED_FORBIDDEN"), 14);
 	CHILD_STATUS(logger_default_flush(), 15);
 	CHILD_STATUS(logger_default_reopen(), 16);
-	CHILD_VOID(logger_set_level(LOGGER_DEBUG), 17);
+	CHILD_STATUS(logger_set_level(LOGGER_DEBUG), 17);
 	if (logger_default_set(NULL, NULL) != -ECHILD)
 		_exit(18);
 	logger_metrics_t m;
@@ -250,7 +250,7 @@ static void child_guard_matrix(void)
 	if (errno != EDOM)
 		_exit(27);
 	CHILD_STATUS(logger_reopen(l), 28);
-	CHILD_VOID(logger_set_instance_level(l, LOGGER_ERROR), 31);
+	CHILD_STATUS(logger_set_instance_level(l, LOGGER_ERROR), 31);
 	CHILD_STATUS(logger_get_metrics(l, &m), 32);
 	CHILD_STATUS(logger_get_io_metrics(l, &io), 33);
 	if (!child_query_unchanged(&m, sizeof(m)) ||

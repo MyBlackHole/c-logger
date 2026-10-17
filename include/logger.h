@@ -278,7 +278,7 @@ typedef struct {
  * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
  * 错误约定：进程初始化、create/destroy、默认槽、刷新/重开、记录、
  * 状态/指标查询、Console 与 TLS 上下文已统一 0/-errno，且保留入口 errno。
- * 脱敏辅助函数也使用 0/-errno 并保留 errno；级别设置仍待独立迁移。
+ * 脱敏辅助与级别设置也统一 0/-errno 并保留入口 errno。
  */
 /* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
  * 所有者会收到 EBUSY：应共享同一个存活实例。目录解析在创建时绑定；
@@ -422,7 +422,13 @@ LOGGER_API int logger_flush(logger_t *);
  * 返回错误可能发生于文件切换之后，不保证没有 I/O 副作用或可安全重试。
  */
 LOGGER_API int logger_reopen(logger_t *);
-LOGGER_API void logger_set_instance_level(logger_t *, logger_level_t);
+/* 显式级别设置：0/-errno，保留入口 errno；先做进程准入，
+ * 再验证非空实例和 TRACE..OFF 范围。只执行 release-free 的 relaxed
+ * 原子更新，无锁、不访问后端、不改变取消策略。允许在调用方证明仍
+ * 存活的 STOPPING/STOPPED 实例上更新；不允许与销毁并发。
+ * 失败不修改级别。
+ */
+LOGGER_API int logger_set_instance_level(logger_t *, logger_level_t);
 LOGGER_API int logger_dropped(const logger_t *, uint64_t *out);
 LOGGER_API int logger_get_metrics(const logger_t *, logger_metrics_t *);
 LOGGER_API int logger_get_io_metrics(const logger_t *, logger_io_metrics_t *);
@@ -466,7 +472,15 @@ LOGGER_API int logger_default_reopen(void);
  */
 /* 库绝不调用 fork，也不扫描宿主的线程列表。 */
 
-LOGGER_API void logger_set_level(logger_level_t);
+/* 当前默认实例的级别设置：0/-errno，保留入口 errno。
+ * 先完成 Global 准入及参数校验，再固定当前代次并取得生命周期读锁；
+ * 空默认槽 -ENODEV，代次转换中 -EAGAIN，失效代次 -ESHUTDOWN。
+ * 无效级别 -EINVAL，未提交前的失败不改变默认实例或其他实例。
+ * 成功仅修改当前实例的原子级别，不触发任何输出、刷新或持久化。
+ * 已提交后解锁证明或取消恢复失败仍可能返回负值；不保证回滚。
+ * 全局锁解锁证明失败将毒化绑定，不可据此销毁可能仍被借用的实例。
+ */
+LOGGER_API int logger_set_level(logger_level_t);
 /* 默认查询在固定代次的借用完全归还后才写输出。0/-errno、保留 errno，
  * 所有失败保持输出槽原值；空槽 -ENODEV、转换中 -EAGAIN、代次失效 -ESHUTDOWN。
  */

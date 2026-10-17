@@ -42,9 +42,9 @@ static void check_process_rejection(int error)
 	CHECK(errno == EDOM && formatted == -1);
 	CHECK(logger_flush(NULL) == -error && errno == EDOM);
 	CHECK(logger_reopen(NULL) == -error && errno == EDOM);
-	logger_set_instance_level(NULL, LOGGER_INFO);
-	CHECK(errno == error);
-	errno = EDOM;
+	CHECK(logger_set_instance_level(NULL, LOGGER_INFO) == -error &&
+	      errno == EDOM);
+	CHECK(logger_set_level(LOGGER_INFO) == -error && errno == EDOM);
 	logger_state_t state = LOGGER_STATE_RUNNING;
 	uint64_t dropped = UINT64_C(777);
 	CHECK(logger_get_state(NULL, &state) == -error && errno == EDOM);

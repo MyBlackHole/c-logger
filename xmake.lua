@@ -1847,7 +1847,39 @@ if has_config("build_regression_tests") then
     end
 end
 
--- Console 单一状态合同：公开用例使用真实静态/共享库，故障包装单独验收。
+-- 级别设置状态合同：分别执行生产静态归档与同源故障支持归档。
+if has_config("build_regression_tests") then
+    local level_libraries = {{"level_error_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(level_libraries, {"level_error_production", "logger"})
+    end
+    for _, spec in ipairs(level_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_level_errors.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, symbol in ipairs({"pthread_setcancelstate",
+                                     "pthread_rwlock_rdlock",
+                                     "pthread_rwlock_unlock"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({
+                "cold", "unbound", "instance", "stopped", "concurrent",
+                "global", "disabled", "setup", "restore", "read-lock",
+                "read-unlock", "invalid-restore"
+            }) do
+                add_tests("level_" .. mode,
+                          {runargs = mode, group = "level-status", timeout = 15})
+            end
+        target_end()
+    end
+end
+
+-- Console 单一状态合同：公开用例使用真实静态/共享库，故障包装单独验收.
 if has_config("build_tests") then
     target("console_api_test")
         set_kind("binary")

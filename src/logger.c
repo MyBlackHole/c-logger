@@ -1163,16 +1163,22 @@ out:
 	return rc;
 }
 
-void logger_set_instance_level(logger_t *l, logger_level_t v)
+int logger_set_instance_level(logger_t *l, logger_level_t v)
 {
-	if (reject_access())
-		return;
-	if ((unsigned)v > LOGGER_OFF) {
-		errno = EINVAL;
-		return;
+	int saved = errno;
+	int rc;
+
+	/* 进程归属和重入检查必须先于实例指针解引用。 */
+	if (reject_access()) {
+		rc = -errno;
+		goto out;
 	}
-	if (l)
+	rc = !l || (unsigned)v > LOGGER_OFF ? -EINVAL : 0;
+	if (!rc)
 		atomic_store_explicit(&l->level, v, memory_order_relaxed);
+out:
+	errno = saved;
+	return rc;
 }
 int logger_dropped(const logger_t *l, uint64_t *out)
 {

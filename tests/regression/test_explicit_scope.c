@@ -95,7 +95,10 @@ static void nested_call(void)
 	else if (!strcmp(nested, "create"))
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -EDEADLK);
 	else if (!strcmp(nested, "level"))
-		logger_set_instance_level(log_instance, LOGGER_OFF);
+		CHECK(logger_set_instance_level(log_instance, LOGGER_OFF) ==
+		      -EDEADLK);
+	else if (!strcmp(nested, "global-level"))
+		CHECK(logger_set_level(LOGGER_OFF) == -EDEADLK);
 	else if (!strcmp(nested, "state")) {
 		CHECK(logger_get_state(log_instance, &state) == -EDEADLK);
 		CHECK(state == LOGGER_STATE_RUNNING);
@@ -154,7 +157,7 @@ static void nested_call(void)
 		CHECK(LOG_INFO("nested global") == -EDEADLK);
 	else
 		CHECK(!"unknown nested API");
-	CHECK(errno == (!strcmp(nested, "level") ? EDEADLK : EDOM));
+	CHECK(errno == EDOM);
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
 static void probe(enum point p)
@@ -615,8 +618,9 @@ static void contract_case(void)
 		CHECK(!console_debug_source(__FILE__, 1, __func__, "short"));
 	} else if (!strcmp(scenario, "invalid-level")) {
 		errno = 0;
-		logger_set_instance_level(log_instance, (logger_level_t)-1);
-		CHECK(errno == EINVAL);
+		CHECK(logger_set_instance_level(log_instance,
+						(logger_level_t)-1) == -EINVAL);
+		CHECK(errno == 0);
 		LOGGER_INFO(log_instance, "test", "level-unchanged");
 		CHECK(!logger_flush(log_instance));
 		CHECK(file_contains("scope.log", "level-unchanged"));

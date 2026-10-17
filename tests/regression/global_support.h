@@ -78,7 +78,7 @@ static inline void invoke(call_result_t *r)
 		r->rc = logger_default_reopen();
 		break;
 	case OP_LEVEL:
-		logger_set_level(LOGGER_OFF);
+		r->rc = logger_set_level(LOGGER_OFF);
 		break;
 	case OP_DROPPED:
 		r->rc = logger_global_dropped(&r->value);
@@ -111,11 +111,6 @@ static inline void expect_query_sentinel(const void *out, size_t size)
 
 static inline void expect_rejection(const call_result_t *r, int error)
 {
-	/* 级别设置在本阶段保留旧 errno 合同；其他入口实际检查返回状态。 */
-	if (r->op == OP_LEVEL) {
-		CHECK(r->error == error);
-		return;
-	}
 	CHECK(r->rc == -error && r->error == EDOM);
 	if (r->op == OP_DROPPED)
 		CHECK(r->value == UINT64_C(777));
