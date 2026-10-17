@@ -16,6 +16,8 @@ on:
       - "VERSION"
       - "abi/logger-2.0.symbols"
       - "scripts/check_release_abi.py"
+      - "scripts/check_release_signoff.py"
+      - "validation/release_signoff_v2.json"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/core-validation.yml"
       - ".github/workflows/release-publish.yml"

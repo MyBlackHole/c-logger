@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "product": "c-logger",
+  "version": "2.0.0",
+  "tag": "v2.0.0",
+  "frozen_base_commit": null,
+  "decisions": {
+    "A_ABI": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/100"
+    },
+    "B_FORK_HOST": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/218"
+    },
+    "C_TSAN": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/221"
+    },
+    "D_FUNCTIONAL": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/100"
+    },
+    "E_ENGINEERING": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/210"
+    },
+    "F_RELEASE": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/100"
+    },
+    "D1_TYPES": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/106"
+    },
+    "D2_OWNERSHIP": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/106"
+    },
+    "D3_FAULT_INJECTION": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/106"
+    },
+    "D4_STYLE": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/106"
+    },
+    "D5_PERFORMANCE": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/107"
+    },
+    "D6_FUZZ": {
+      "status": "pending",
+      "approver": null,
+      "approved_at": null,
+      "decision_url": null,
+      "evidence_url": null,
+      "residual_risk": null,
+      "tracking_issue": "https://github.com/MyBlackHole/c-logger/issues/212"
+    }
+  }
+}

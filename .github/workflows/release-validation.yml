@@ -17,6 +17,8 @@ on:
       - "abi/logger-2.0.symbols"
       - "tests/packaging/**"
       - "tests/test_release_gate.py"
+      - "validation/release_signoff_v2.json"
+      - "scripts/check_release_signoff.py"
       - "examples/installed_consumer/**"
       - "scripts/check_release_abi.py"
       - "scripts/check_release_assets.py"

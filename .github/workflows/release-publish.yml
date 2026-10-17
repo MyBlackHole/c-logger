@@ -82,6 +82,11 @@ jobs:
           grep -Fxq 'local abi_manifest = "abi/logger-2.0.symbols"' xmake.lua
           test -s abi/logger-2.0.symbols
           grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' abi/logger-2.0.symbols
+          # Require all human scope decisions before emitting authorized=true.
+          # The record is not an authenticated GitHub review; tag/branch protection
+          # and independent maintainer review remain mandatory.
+          python3 scripts/check_release_signoff.py \
+            --expected-version "${tag#v}" --expected-tag "$tag"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "source_tag_oid=$source_tag_oid" >> "$GITHUB_OUTPUT"
           echo "authorized=true" >> "$GITHUB_OUTPUT"

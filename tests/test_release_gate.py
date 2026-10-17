@@ -6,6 +6,7 @@
 （见 docs/RELEASE_SAFETY.md）。
 """
 import os
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -50,7 +51,7 @@ def command(args, cwd, env=None, check=True):
 
 class Fixture:
     def __init__(self, version=VERSION, abi=ABI, manifest='logger_create\n',
-                 annotated=False, tag=True):
+                 annotated=False, tag=True, approval='approved'):
         self.temp = tempfile.TemporaryDirectory(prefix='logger-release-gate-')
         self.root = Path(self.temp.name)
         self.repo = self.root / 'source'
@@ -69,8 +70,37 @@ class Fixture:
             (self.repo / 'abi/logger-2.0.symbols').write_text(manifest)
         (self.repo / 'docs').mkdir()
         (self.repo / ('docs/RELEASE_NOTES_' + VERSION + '.md')).write_text('Fixture\n')
+        (self.repo / 'scripts').mkdir()
+        (self.repo / 'scripts/check_release_signoff.py').write_text(
+            (ROOT / 'scripts/check_release_signoff.py').read_text())
+        if approval != 'missing':
+            (self.repo / 'validation').mkdir()
+            self.approval_path = self.repo / 'validation/release_signoff_v2.json'
+            document = json.loads(
+                (ROOT / 'validation/release_signoff_v2.json').read_text())
+            document['version'] = VERSION
+            document['tag'] = TAG
+            self.approval_path.write_text(json.dumps(document, indent=2) + '\n')
         self.git('add', '.')
-        self.git('commit', '-qm', 'Local release fixture')
+        self.git('commit', '-qm', 'Local release fixture before signoff')
+        self.frozen_base = self.git('rev-parse', 'HEAD').stdout.strip()
+        if approval == 'approved':
+            document['frozen_base_commit'] = self.frozen_base
+            for item in document['decisions'].values():
+                item['status'] = 'accepted_with_risk'
+                item['approver'] = '@test-release-fixture'
+                item['approved_at'] = '2026-10-17T00:00:00Z'
+                item['decision_url'] = (
+                    item['tracking_issue'] + '#issuecomment-999999')
+                item['evidence_url'] = (
+                    'https://github.com/MyBlackHole/c-logger/actions/runs/39034897525')
+                item['residual_risk'] = (
+                    '本地夹具模拟有风险签收，不代表实际维护者授权、发布许可或新证据。')
+            self.approval_path.write_text(json.dumps(document, indent=2) + '\n')
+            self.git('add', '.')
+            self.git('commit', '-qm', 'Local fixture-only simulated signoff')
+        elif approval not in ('pending', 'missing'):
+            raise ValueError('unrecognized fixture approval state')
         self.sha = self.git('rev-parse', 'HEAD').stdout.strip()
         if tag:
             self.git('tag', *(['-a', '-m', 'Fixture tag'] if annotated else []), TAG)
@@ -105,6 +135,18 @@ class Fixture:
 
     def outputs(self):
         return dict(line.split('=', 1) for line in self.output.read_text().splitlines())
+
+    def signoff_check(self):
+        return command(['python3', 'scripts/check_release_signoff.py',
+                        '--expected-tag', TAG, '--expected-version', VERSION],
+                       self.repo, self.env, check=False)
+
+    def mutate_approval(self, apply):
+        document = json.loads(self.approval_path.read_text())
+        apply(document)
+        self.approval_path.write_text(json.dumps(document, indent=2) + '\n')
+        self.git('add', 'validation/release_signoff_v2.json')
+        self.git('commit', '-qm', 'Mutated local-only signoff fixture')
 
     def move_tag(self, same_commit=False):
         if same_commit:
@@ -169,6 +211,9 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertLess(prepare.index('id: gate'), prepare.index('id: version'))
         self.assertLess(prepare.index('id: gate'), prepare.index('gh release'))
         self.assertIn('authorized: ${{ steps.gate.outputs.authorized }}', prepare)
+        self.assertIn('python3 scripts/check_release_signoff.py', GATE)
+        self.assertLess(GATE.index('check_release_signoff.py'),
+                        GATE.index('echo "authorized=true"'))
         for name in ('package', 'consume-modern', 'publish', 'release-already-exists'):
             job = section(WORKFLOW, name + ':', 2)
             condition = section(job, 'if: >-', 4)
@@ -347,6 +392,123 @@ class ReleaseGateTests(unittest.TestCase):
             if not exists:
                 self.assertIn('--verify-tag', logged)
                 self.assertNotIn('--target', logged)
+
+
+    def test_unsigned_realistic_fixture_never_authorizes_tag(self):
+        for state in ('pending', 'missing'):
+            with self.subTest(state=state):
+                fixture = self.fixture(approval=state)
+                self.assert_rejected(fixture, fixture.run(GATE))
+
+    def test_signoff_validator_positive_is_only_a_local_fixture(self):
+        fixture = self.fixture()
+        result = fixture.signoff_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('RELEASE_SIGNOFF_VALIDATED', result.stdout)
+
+    def test_signoff_blocks_one_pending_decision(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['C_TSAN'].update(status='pending'))
+        self.assertIn('decision_not_signed',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_missing_decision_group(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions'].pop('D3_FAULT_INJECTION'))
+        self.assertIn('required_decision_groups_not_exact',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_reviewer_placeholder(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['B_FORK_HOST'].update(
+                approver='@todo'))
+        self.assertIn('placeholder_value', fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_invalid_utc_review_date(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['D2_OWNERSHIP'].update(
+                approved_at='2026-13-99T00:00:00Z'))
+        self.assertIn('invalid_review_time', fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_wrong_decision_issue(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['F_RELEASE'].update(
+                decision_url='https://github.com/MyBlackHole/c-logger/'
+                             'issues/221#issuecomment-123'))
+        self.assertIn('decision_not_comment_on_required_issue',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_missing_evidence_url(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['D5_PERFORMANCE'].update(
+                evidence_url='TODO'))
+        self.assertIn('placeholder_value', fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_short_risk_declaration(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions']['C_TSAN'].update(
+                residual_risk='none'))
+        self.assertIn('missing_or_short', fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_version_disagreement(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data.update(version='2.9.9'))
+        self.assertIn('release_manifest_version_tag_mismatch',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_frozen_base_absent(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data.update(frozen_base_commit=None))
+        self.assertIn('frozen_base_commit_missing',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_nonexistent_frozen_base(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data.update(frozen_base_commit='f' * 40))
+        self.assertIn('git_verification_failed',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_source_change_after_freeze(self):
+        fixture = self.fixture()
+        (fixture.repo / 'src').mkdir()
+        (fixture.repo / 'src/unsafe.c').write_text('int changed_after_approval;\n')
+        fixture.git('add', '.')
+        fixture.git('commit', '-qm', 'Unapproved post-freeze source drift')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_abi_change_after_freeze(self):
+        fixture = self.fixture()
+        (fixture.repo / 'abi/logger-2.0.symbols').write_text(
+            'logger_create\nlogger_unreviewed\n')
+        fixture.git('add', '.')
+        fixture.git('commit', '-qm', 'Unapproved ABI change')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_dirty_uncommitted_approval(self):
+        fixture = self.fixture()
+        with fixture.approval_path.open('a') as output:
+            output.write('  ')
+        self.assertIn('git_verification_failed',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_extra_unreviewed_group(self):
+        fixture = self.fixture()
+        fixture.mutate_approval(
+            lambda data: data['decisions'].update(OTHER={}))
+        self.assertIn('required_decision_groups_not_exact',
+                      fixture.signoff_check().stderr)
 
 
 if __name__ == '__main__':
