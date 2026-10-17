@@ -167,6 +167,11 @@ static int parse_error(const char *s)
 	CHECK(!"bad test error");
 	return 0;
 }
+static int syslog_fd(const logger_syslog_t *s)
+{
+	return logger_fd_number(logger_fd_borrow(&s->fd));
+}
+
 /* 检查真实 Syslog 候选的所有权交接，不绕开生产 fork 资源登记。 */
 static void candidate_ownership(const char *mode)
 {
@@ -181,7 +186,7 @@ static void candidate_ownership(const char *mode)
 
 		logger_syslog_t syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
-		CHECK(logger_fd_number(logger_fd_borrow(&syslog.fd)) == STDIN_FILENO && syslog.metrics.connected);
+		CHECK(syslog_fd(&syslog) == STDIN_FILENO && syslog.metrics.connected);
 		CHECK(sockets == 1 && connects == 1 && closes == 0);
 		logger_syslog_close(&syslog);
 		logger_syslog_close(&syslog);
@@ -233,7 +238,7 @@ static void candidate_ownership(const char *mode)
 	/* 再由真正生产入口取得原整数，必须可以重新登记并正常关闭。 */
 	logger_syslog_t next;
 	CHECK(!logger_syslog_init(&next, "app", &c.syslog));
-	CHECK(logger_fd_number(logger_fd_borrow(&next.fd)) == stale_fd && next.metrics.connected);
+	CHECK(syslog_fd(&next) == stale_fd && next.metrics.connected);
 	logger_syslog_close(&next);
 	CHECK(!logger_fd_valid(&next.fd) && !next.metrics.connected);
 	CHECK(sockets == 2 && connects == 2 && closes == 2);
@@ -253,7 +258,7 @@ static void retire_ownership(const char *mode)
 	if (!strncmp(mode, "retire-status-", 14)) {
 		logger_syslog_t syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
-		raw = logger_fd_number(logger_fd_borrow(&syslog.fd));
+		raw = syslog_fd(&syslog);
 		CHECK(raw >= 0 && syslog.metrics.connected);
 		CHECK(logger_syslog_close_status(&syslog) == -error);
 		CHECK(!logger_fd_valid(&syslog.fd) && !syslog.metrics.connected);
@@ -265,7 +270,7 @@ static void retire_ownership(const char *mode)
 		logger_t *owner = NULL;
 
 		CHECK(logger_create(&c, &owner) == 0 && owner);
-		raw = logger_fd_number(logger_fd_borrow(&owner->syslog_backend.fd));
+		raw = syslog_fd(&owner->syslog_backend);
 		CHECK(raw >= 0);
 		/* 真实最终释放：错误可回报，已消费的指针不可重试。 */
 		CHECK(logger_destroy(&owner) == -error && owner == NULL);
