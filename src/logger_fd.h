@@ -55,6 +55,15 @@ logger_fd_take(struct logger_owned_fd *owner)
 	return fd;
 }
 
+/* 保持类型的拥有权转移：源先失效，再返回新的唯一拥有者。
+ * 只可移入已为空的目的位置；C 仍允许复制和字段裸访问，调用方必须独占。
+ */
+static inline LOGGER_MUST_CHECK struct logger_owned_fd
+logger_fd_move(struct logger_owned_fd *owner)
+{
+	return logger_fd_own(logger_fd_take(owner));
+}
+
 /* 返回 0/-errno；先失效源，再经过 fork 登记表完成单次关闭。
  * Linux close 即使报 EINTR，也不得恢复源或重试，因为整数可能已被复用。
  * fork 资源锁取得/释放的错误同样由调用者显式处理或上层粘滞诊断保留。
