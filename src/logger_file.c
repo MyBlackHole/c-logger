@@ -15,6 +15,22 @@
 #include <time.h>
 #include <unistd.h>
 
+/* 只在既有的对象寿命、emit_mu 和 fork 租约约束下生成 POSIX 整数。 */
+static inline int file_data_fd(const logger_file_t *f)
+{
+	return logger_fd_number(logger_fd_borrow(&f->fd));
+}
+
+static inline int file_dir_fd(const logger_file_t *f)
+{
+	return logger_fd_number(logger_fd_borrow(&f->dir_fd));
+}
+
+static inline int file_lock_fd(const logger_file_t *f)
+{
+	return logger_fd_number(logger_fd_borrow(&f->lock_fd));
+}
+
 static int internal_rotation(const logger_file_t *f)
 {
 	return f->rotation.mode == LOGGER_ROTATE_SIZE ||
@@ -55,7 +71,7 @@ static int sync_directory(logger_file_t *f)
 	++f->metrics.directory_sync_attempts;
 	int rc;
 	do {
-		rc = fsync(f->dir_fd);
+		rc = fsync(file_dir_fd(f));
 	} while (rc < 0 && errno == EINTR);
 	if (rc < 0) {
 		int error = errno ? errno : EIO;
@@ -72,18 +88,13 @@ int logger_file_close_status(logger_file_t *f)
 	if (!f)
 		return -EINVAL;
 	int error = 0;
-	int *fds[] = { &f->fd, &f->lock_fd, &f->dir_fd };
+	struct logger_owned_fd *fds[] = { &f->fd, &f->lock_fd, &f->dir_fd };
 	/* 保持所有权直到数据 fd 关闭。不显式 LOCK_UN：fork/dup 引用共享 flock；
 	 * 只关闭此所有者的引用。
 	 */
 	for (unsigned i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
-		/* 字段先失效，再由唯一栈上拥有者消费 fork 位图登记。
-		 * 一处 close 失败不能中断其余资源的最终释放。
-		 */
-		struct logger_owned_fd retiring = logger_fd_own(*fds[i]);
-
-		*fds[i] = -1;
-		int rc = logger_fd_close_status(&retiring);
+		/* 长期字段自身先失效，再关闭；保留首错并释放剩余 fd。 */
+		int rc = logger_fd_close_status(fds[i]);
 
 		if (rc && !error)
 			error = -rc;
@@ -136,7 +147,7 @@ static int check_owner(logger_file_t *f)
 	if (!f->managed)
 		return 0;
 	struct stat st;
-	int rc = check_named_fd(f->dir_fd, f->lock_name, f->lock_fd, &st);
+	int rc = check_named_fd(file_dir_fd(f), f->lock_name, file_lock_fd(f), &st);
 	return rc ? rc : regular_single_link(&st);
 }
 
@@ -165,12 +176,12 @@ static int bind_path(logger_file_t *f, const char *path)
 		dir[dlen] = 0;
 	} else
 		memcpy(dir, ".", 2);
-	f->dir_fd =
-		logger_fork_open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
-	if (f->dir_fd < 0)
+	f->dir_fd = logger_fd_own(
+		logger_fork_open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0));
+	if (!logger_fd_valid(&f->dir_fd))
 		return -errno;
 	errno = 0;
-	long maximum = fpathconf(f->dir_fd, _PC_NAME_MAX);
+	long maximum = fpathconf(file_dir_fd(f), _PC_NAME_MAX);
 	if (maximum < 0 && errno)
 		return -errno;
 	if (maximum < 0 || maximum > LOGGER_FILENAME_MAX)
@@ -179,7 +190,7 @@ static int bind_path(logger_file_t *f, const char *path)
 		return -ENAMETOOLONG;
 
 	struct stat st;
-	if (fstatat(f->dir_fd, f->name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+	if (fstatat(file_dir_fd(f), f->name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
 		if (S_ISLNK(st.st_mode))
 			return -ELOOP;
 		if (S_ISCHR(st.st_mode) &&
@@ -232,18 +243,19 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 	f->iov_max = iov_max > 0 && iov_max <= INT_MAX ? (int)iov_max : 16;
 	int rc = bind_path(f, path);
 	if (!rc && f->managed) {
-		f->lock_fd = logger_fork_openat(f->dir_fd, f->lock_name,
-						O_RDWR | O_CREAT | O_CLOEXEC |
-							O_NOFOLLOW | O_NONBLOCK,
-						0600);
-		if (f->lock_fd < 0)
+		int lockfd = logger_fork_openat(file_dir_fd(f), f->lock_name,
+					       O_RDWR | O_CREAT | O_CLOEXEC |
+						       O_NOFOLLOW | O_NONBLOCK,
+					       0600);
+		f->lock_fd = logger_fd_own(lockfd);
+		if (!logger_fd_valid(&f->lock_fd))
 			rc = -errno;
 		if (!rc)
 			rc = check_owner(f);
 		if (!rc) {
 			int locked;
 			do {
-				locked = flock(f->lock_fd, LOCK_EX | LOCK_NB);
+				locked = flock(file_lock_fd(f), LOCK_EX | LOCK_NB);
 			} while (locked && errno == EINTR);
 			if (locked)
 				rc = errno == EAGAIN || errno == EWOULDBLOCK ?
@@ -275,12 +287,12 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
-	int candidate = logger_fork_openat(f->dir_fd, f->name, flags, f->mode);
+	int candidate = logger_fork_openat(file_dir_fd(f), f->name, flags, f->mode);
 	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
 		logger_fd_own(candidate);
 	if (!logger_fd_valid(&fd))
 		return -errno;
-	rc = check_named_fd(f->dir_fd, f->name,
+	rc = check_named_fd(file_dir_fd(f), f->name,
 			    logger_fd_number(logger_fd_borrow(&fd)), st);
 	if (!rc)
 		rc = f->managed ? regular_single_link(st) :
@@ -302,7 +314,7 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 
 static void install_fd(logger_file_t *f, int fd, const struct stat *st, int day)
 {
-	f->fd = fd;
+	f->fd = logger_fd_own(fd);
 	f->device = st->st_dev;
 	f->inode = st->st_ino;
 	f->current_size = f->managed ? (size_t)st->st_size : 0;
@@ -313,7 +325,7 @@ static void install_fd(logger_file_t *f, int fd, const struct stat *st, int day)
 
 static int logger_file_open_reserved(logger_file_t *f)
 {
-	if (!f || f->dir_fd < 0 || f->fd >= 0) {
+	if (!f || !logger_fd_valid(&f->dir_fd) || logger_fd_valid(&f->fd)) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -345,9 +357,9 @@ int logger_file_init(logger_file_t *f, const char *path,
 
 int logger_file_sync(logger_file_t *f)
 {
-	if (!f || f->fd < 0)
+	if (!f || !logger_fd_valid(&f->fd))
 		return -EBADF;
-	int rc = sync_data(f, f->fd);
+	int rc = sync_data(f, file_data_fd(f));
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (!rc && f->detached)
@@ -369,23 +381,26 @@ static int file_reopen_impl(logger_file_t *f)
 	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
 		logger_fd_own(fd);
 	if (!rc && f->managed)
-		rc = sync_data(f, f->fd);
+		rc = sync_data(f, file_data_fd(f));
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (rc) {
 		errno = -rc;
 		return -1;
 	}
-	int old_fd = f->fd;
+	struct logger_owned_fd retiring = logger_fd_move(&f->fd);
 	install_fd(f, logger_fd_take(&candidate), &st, day);
-	if (logger_fork_close(old_fd) < 0)
+	int close_rc = logger_fd_close_status(&retiring);
+	if (close_rc) {
+		errno = -close_rc;
 		return -1; /* 新 fd 已装入；不要重试 close */
+	}
 	return 0;
 }
 
 int logger_file_reopen(logger_file_t *f)
 {
-	if (!f || f->fd < 0) {
+	if (!f || !logger_fd_valid(&f->fd)) {
 		errno = EBADF;
 		return -1;
 	}
@@ -408,7 +423,7 @@ static int check_active(logger_file_t *f)
 	struct stat st;
 	int rc = check_owner(f);
 	if (!rc)
-		rc = check_named_fd(f->dir_fd, f->name, f->fd, &st);
+		rc = check_named_fd(file_dir_fd(f), f->name, file_data_fd(f), &st);
 	if (!rc && (st.st_dev != f->device || st.st_ino != f->inode))
 		rc = -ESTALE;
 	if (!rc)
@@ -484,7 +499,7 @@ static int retention(logger_file_t *f, time_t now)
 	/* 独立的目录描述避免与绑定目录共享 readdir 的偏移。 */
 	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
 		logger_fd_own(logger_fork_openat(
-			f->dir_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0));
+			file_dir_fd(f), ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0));
 	if (!logger_fd_valid(&fd))
 		return -errno;
 	DIR *d = logger_fd_fdopendir(&fd);
@@ -506,7 +521,7 @@ static int retention(logger_file_t *f, time_t now)
 		if (!archive_matches(f, entry->d_name))
 			continue;
 		struct stat st;
-		if (fstatat(f->dir_fd, entry->d_name, &st,
+		if (fstatat(file_dir_fd(f), entry->d_name, &st,
 			    AT_SYMLINK_NOFOLLOW)) {
 			rc = -errno;
 			break;
@@ -517,7 +532,7 @@ static int retention(logger_file_t *f, time_t now)
 		/* difftime 避免有符号 time_t 减法溢出。 */
 		if (difftime(now, st.st_mtime) <= (double)seconds)
 			continue;
-		if (unlinkat(f->dir_fd, entry->d_name, 0)) {
+		if (unlinkat(file_dir_fd(f), entry->d_name, 0)) {
 			rc = -errno;
 			break;
 		}
@@ -564,7 +579,7 @@ static int rotate_impl(logger_file_t *f)
 		if (rc)
 			return rc;
 		if (!logger_fault_should_fail(LOGGER_FAULT_FILE_RENAME) &&
-		    !logger_file_rename_noreplace(f->dir_fd, f->name, name))
+		    !logger_file_rename_noreplace(file_dir_fd(f), f->name, name))
 			break;
 		int error = errno;
 		if (error != EEXIST)
@@ -618,10 +633,11 @@ static int rotate_impl(logger_file_t *f)
 		f->switch_error = -rc;
 		return rc;
 	}
-	int old_fd = f->fd;
+	struct logger_owned_fd retiring = logger_fd_move(&f->fd);
 	install_fd(f, logger_fd_take(&candidate), &st, day);
-	if (logger_fork_close(old_fd))
-		return -errno;
+	int close_rc = logger_fd_close_status(&retiring);
+	if (close_rc)
+		return close_rc;
 	return retention(f, t.tv_sec);
 }
 
@@ -642,7 +658,7 @@ static int rotate(logger_file_t *f)
 
 static int prepare_write(logger_file_t *f, size_t n, const struct timespec *t)
 {
-	if (!f || f->fd < 0)
+	if (!f || !logger_fd_valid(&f->fd))
 		return -EBADF;
 	if (!t || t->tv_nsec < 0 || t->tv_nsec >= 1000000000 ||
 	    n > (size_t)SSIZE_MAX)
@@ -710,7 +726,7 @@ static int vall(logger_file_t *f, struct iovec *v, int count, size_t *written)
 		if (amount > f->iov_max)
 			amount = f->iov_max;
 		++f->metrics.write_syscalls;
-		ssize_t rc = writev(f->fd, v + first, amount);
+		ssize_t rc = writev(file_data_fd(f), v + first, amount);
 		if (rc < 0) {
 			if (errno == EINTR) {
 				++f->metrics.interrupted_write_syscalls;
@@ -759,7 +775,7 @@ int logger_file_write(logger_file_t *f, const char *p, size_t n,
 	int rc = prepare_write(f, n, t);
 	size_t written = 0;
 	if (!rc)
-		rc = all(f, f->fd, p, n, &written);
+		rc = all(f, file_data_fd(f), p, n, &written);
 	account(f, written);
 	if (!rc && sync)
 		rc = logger_file_sync(f);
