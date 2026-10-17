@@ -36,8 +36,6 @@ jobs:
       EVIDENCE_DIR: "release-fixed-rate-evidence"
 
     steps:
-      - uses: actions/checkout@v5
-
       - name: 安装最低用户态构建工具
         shell: bash
         run: |
@@ -45,8 +43,10 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y --no-install-recommends \
-            build-essential binutils ca-certificates curl file git python3
+            build-essential binutils ca-certificates curl file git python3 util-linux
           rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v5
 
       - uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -129,7 +129,7 @@ jobs:
             exit 1
           }
 
-      - name: 执行有限矩阵并永久保留本次原始回执
+      - name: 执行有限矩阵并记录本次原始回执（证据保留30天）
         shell: bash
         run: |
           set -euo pipefail
