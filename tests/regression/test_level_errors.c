@@ -95,6 +95,12 @@ static void *concurrent_setter(void *data)
 	return NULL;
 }
 
+static void start_setter(pthread_t *thread, logger_level_t *level)
+{
+	int rc = pthread_create(thread, NULL, concurrent_setter, level);
+	CHECK(rc == 0);
+}
+
 static void check_instance_range(void)
 {
 	for (int level = LOGGER_TRACE; level <= LOGGER_OFF; ++level) {
@@ -199,9 +205,8 @@ static void check_fault(const char *scenario)
 		CHECK(read_calls == 1 && release_calls == 1);
 		CHECK(atomic_load(&owner->level) == LOGGER_WARN);
 		CHECK(atomic_load(&owner->default_borrowed) == 1);
-		int poison =
-			atomic_load(&logger_runtime_current()->global_lock_error);
-		CHECK(poison == EPROTO);
+		struct logger_runtime *runtime = logger_runtime_current();
+		CHECK(atomic_load(&runtime->global_lock_error) == EPROTO);
 		CHECK(logger_set_level(LOGGER_INFO) == -EDEADLK);
 		return;
 	}
@@ -224,9 +229,8 @@ static void check_cancel_disabled(void)
 	CHECK(cancel_calls == 2 && read_calls == 1 && release_calls == 1);
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &observed) == 0);
 	CHECK(observed == PTHREAD_CANCEL_DISABLE);
-	int rc = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
-					&observed);
-	CHECK(rc == 0);
+	int type = PTHREAD_CANCEL_ASYNCHRONOUS;
+	CHECK(pthread_setcanceltype(type, &observed) == 0);
 	CHECK(observed == PTHREAD_CANCEL_ASYNCHRONOUS);
 	CHECK(pthread_setcanceltype(old_type, NULL) == 0);
 	CHECK(pthread_setcancelstate(old_state, NULL) == 0);
@@ -269,17 +273,16 @@ int main(int argc, char **argv)
 			} else if (!strcmp(scenario, "stopped")) {
 				check_stopped_instance();
 			} else if (!strcmp(scenario, "concurrent")) {
-				logger_level_t levels[2] = { LOGGER_DEBUG, LOGGER_WARN };
+				logger_level_t levels[2];
+				levels[0] = LOGGER_DEBUG;
+				levels[1] = LOGGER_WARN;
 				pthread_t threads[2];
-				for (int i = 0; i < 2; ++i) {
-					int rc = pthread_create(&threads[i], NULL,
-								concurrent_setter,
-								&levels[i]);
-					CHECK(rc == 0);
-				}
+				for (int i = 0; i < 2; ++i)
+					start_setter(&threads[i], &levels[i]);
 				for (int i = 0; i < 2; ++i)
 					CHECK(!pthread_join(threads[i], NULL));
-				CHECK(!logger_set_instance_level(owner, LOGGER_INFO));
+				int rc = logger_set_instance_level(owner, LOGGER_INFO);
+				CHECK(rc == 0);
 				expect_level(LOGGER_INFO);
 			} else if (!strcmp(scenario, "global")) {
 				check_global_ready();
