@@ -25,11 +25,11 @@ int main(void)
 	if (!rejected(logger_reopen(NULL), EINVAL))
 		return 3;
 
-	/* 此兼容状态入口不能被误改为 POSIX 风格 -1 + errno。 */
-	errno = 0;
+	/* 同步严格记录同样保留调用方 errno，不能只检查负错误码。 */
+	errno = EDOM;
 	/* 空元数据用 C11 零指针常量；唯一被测错误是无实例。 */
 	int rc = logger_log_sync_status(NULL, LOGGER_INFO, 0, 0, 0, 0, "x");
-	if (rc != -EINVAL)
+	if (rc != -EINVAL || errno != EDOM)
 		return 4;
 
 	/* 默认刷新与绑定均使用负错误码，并保留调用方 errno。 */

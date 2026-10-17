@@ -32,17 +32,21 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	LOGGER_INFO(log, "example", "host-owned file and Syslog output");
-	int rc = logger_flush(log);
+	int rc = LOGGER_INFO(log, "example",
+			     "host-owned file and Syslog output");
 	int error = -rc;
+	rc = logger_flush(log);
+	if (rc && !error)
+		error = -rc;
 	logger_syslog_metrics_t metrics;
-	if (logger_get_syslog_metrics(log, &metrics) == 0) {
+	rc = logger_get_syslog_metrics(log, &metrics);
+	if (!rc) {
 		printf("local_connected=%d sent=%" PRIu64 " failed=%" PRIu64
 		       " last_error=%d\n",
 		       metrics.connected, metrics.sent_records,
 		       metrics.failed_records, metrics.last_error);
 	} else if (!error)
-		error = errno;
+		error = -rc;
 	/* 没有其他使用者。即使返回 I/O 错误也会释放实例。 */
 	int destroy_rc = logger_destroy(&log);
 	if (destroy_rc && !error)

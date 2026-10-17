@@ -101,7 +101,7 @@ static void check_terminal(uint64_t queued, uint64_t sync, uint64_t good,
 			   uint64_t bad)
 {
 	logger_io_metrics_t io;
-	logger_get_io_metrics(instance, &io);
+	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(io.async_completed == queued);
 	CHECK(io.sync_completed == sync);
 	CHECK(io.emitted_records == good);
@@ -116,27 +116,34 @@ static void spill_policy(void)
 	long_message[sizeof(long_message) - 1u] = '\0';
 
 	atomic_store(&block_first, 1);
-	LOGGER_INFO(instance, "io", "worker-held");
+	errno = EDOM;
+	CHECK(LOGGER_INFO(instance, "io", "worker-held") == 0 && errno == EDOM);
 	wait_flag(&format_entered);
 
+	errno = EDOM;
 	for (size_t i = 0; i < LOGGER_QUEUE_SPILL_LIMIT; ++i)
-		LOGGER_INFO(instance, "io", "%s", long_message);
+		CHECK(LOGGER_INFO(instance, "io", "%s", long_message) == 0 &&
+		      errno == EDOM);
 
 	CHECK(logger_queue_depth(&instance->q) == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_depth(&instance->q) < instance->q.cap);
 
-	LOGGER_INFO(instance, "io", "spill-drop-%s", long_message);
-	LOGGER_ERROR(instance, "io", "spill-fallback-%s", long_message);
+	CHECK(LOGGER_INFO(instance, "io", "spill-drop-%s", long_message) ==
+		      -EAGAIN &&
+	      errno == EDOM);
+	CHECK(LOGGER_ERROR(instance, "io", "spill-fallback-%s", long_message) ==
+		      0 &&
+	      errno == EDOM);
 
 	logger_metrics_t metrics;
-	logger_get_metrics(instance, &metrics);
+	CHECK(logger_get_metrics(instance, &metrics) == 0);
 	CHECK(metrics.enqueued == 1u + LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(metrics.sync_fallbacks == 1);
 	CHECK(dropped(&metrics) == 1);
 	CHECK(metrics.queue_high_watermark == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_spill_exhaustions(&instance->q) == 2);
 	logger_diagnostics_t diagnostics;
-	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);
 	CHECK(diagnostics.state == LOGGER_STATE_RUNNING);
 	CHECK(diagnostics.async_mode && diagnostics.worker_running);
 	CHECK(diagnostics.queue_capacity == LOGGER_QUEUE_SPILL_LIMIT * 2u);
@@ -168,24 +175,30 @@ static void full_queue(const char *mode)
 	int fallback = strcmp(mode, "drop") != 0;
 	int failure = strcmp(mode, "fallback-error") == 0;
 	atomic_store(&block_first, 1);
-	LOGGER_INFO(instance, "io", "worker-held");
+	errno = EDOM;
+	CHECK(LOGGER_INFO(instance, "io", "worker-held") == 0 && errno == EDOM);
 	wait_flag(&format_entered);
-	LOGGER_INFO(instance, "io", "queue-slot-1");
-	LOGGER_INFO(instance, "io", "queue-slot-2");
+	errno = EDOM;
+	CHECK(LOGGER_INFO(instance, "io", "queue-slot-1") == 0 &&
+	      errno == EDOM);
+	CHECK(LOGGER_INFO(instance, "io", "queue-slot-2") == 0 &&
+	      errno == EDOM);
 	if (failure)
 		atomic_store(&fault, WRITE_ERROR);
 	if (fallback)
-		LOGGER_ERROR(instance, "io", "fallback-message");
+		CHECK(LOGGER_ERROR(instance, "io", "fallback-message") ==
+		      (failure ? -ENOSPC : 0));
 	else
-		LOGGER_INFO(instance, "io", "queue-drop");
+		CHECK(LOGGER_INFO(instance, "io", "queue-drop") == -EAGAIN);
+	CHECK(errno == EDOM);
 	logger_metrics_t metrics;
-	logger_get_metrics(instance, &metrics);
+	CHECK(logger_get_metrics(instance, &metrics) == 0);
 	CHECK(metrics.enqueued == 3);
 	CHECK(metrics.sync_fallbacks == (uint64_t)fallback);
 	CHECK(dropped(&metrics) == (uint64_t)!fallback);
 	CHECK(metrics.queue_high_watermark <= 2);
 	logger_diagnostics_t diagnostics;
-	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);
 	CHECK(diagnostics.queue_capacity == 2);
 	CHECK(diagnostics.queue_depth == 2);
 	CHECK(diagnostics.completion_backlog == 3);
@@ -338,9 +351,9 @@ int main(int argc, char **argv)
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;
 	logger_diagnostics_t diagnostics;
-	logger_get_metrics(instance, &metrics);
-	logger_get_io_metrics(instance, &io);
-	logger_get_diagnostics(instance, &diagnostics);
+	CHECK(logger_get_metrics(instance, &metrics) == 0);
+	CHECK(logger_get_io_metrics(instance, &io) == 0);
+	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);
 	CHECK(diagnostics.enqueued == metrics.enqueued);
 	CHECK(diagnostics.sync_fallbacks == metrics.sync_fallbacks);
 	CHECK(diagnostics.consumer_batches == metrics.consumer_batches);

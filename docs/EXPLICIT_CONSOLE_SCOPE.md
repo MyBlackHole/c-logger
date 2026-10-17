@@ -5,7 +5,8 @@
 > 现行设计入口见 [v2/README.md](v2/README.md)。本文保留的 Audit 专属名称、结构与行为仅为历史背景；
 > Audit/密码学模块已退役，不属于当前 API、对象图或验证范围。普通 Logger 条款仍适用。
 
-此文描述当前加固版本。公开函数签名、公开结构布局、普通文件/Audit 格式未变。
+此文描述当前作用域机制。公开结构布局和普通日志格式保持；函数签名按ABI 2
+生命周期、控制、Console及[记录](v2/RECORD_API.md)/[查询](v2/QUERY_API.md)合同迁移。
 它不让裸指针在并发销毁、释放后访问或卸载代码时自动变安全。
 
 <a id="私有-scope-的目的和限制"></a>
@@ -34,11 +35,11 @@ ASYNCHRONOUS 类型，应先把取消状态设为 DISABLE，再调用 Logger，�
 `pthread_testcancel()`（仅原状态 ENABLE），挂起的延迟取消先触发，清理释放尚未交出的实例。
 文件/协调文件等初始化副作用不撤销；不能据此假设文件系统事务回滚。
 
-已启用 ASYNCHRONOUS 取消的直接构造返回 NULL/ENOTSUP，不读取后端配置或创建实例/后端资源；
+已启用ASYNCHRONOUS取消的直接构造返回-ENOTSUP并保持空拥有者槽，不创建实例/后端资源；
 进程身份防护的注册可能已发生，因此不承诺完全没有运行时副作用。
 原因是裸 C 指针从被调用函数返回到宿主赋值没有可对异步取消原子化的交接点。宿主可以先禁用取消，
 建立自己的所有权和清理后再恢复。原来已经 DISABLE 的策略不被库擅自启用。
-Global/Audit 在其外层已禁用取消的生命周期内调用构造函数，行为仍合法。
+宿主在已禁用取消的生命周期内调用构造函数，行为仍合法；默认槽不再构造实例。
 
 宿主对于成功返回的指针要负责后续线程取消的清理。例如，在已满足独占销毁前提时：
 
@@ -46,16 +47,15 @@ Global/Audit 在其外层已禁用取消的生命周期内调用构造函数，�
 static void release_owned(void *opaque)
 {
     logger_t **slot = opaque;
-    logger_t *owned = *slot;
-    *slot = NULL; /* 先从宿主清理处理器的所有权中移除，避免取消后再次销毁 */
-    (void)logger_destroy_status(owned);
+    /* 公开销毁在不可逆处置前消费槽；业务仍须安排独占销毁。 */
+    (void)logger_destroy(slot);
 }
 
 /* 默认延迟取消；真实项目仍要在这里处理构造/输出错误。 */
 logger_t *owned = NULL;
 pthread_cleanup_push(release_owned, &owned);
-owned = logger_create(&cfg);
-if (owned) {
+int rc = logger_create(&cfg, &owned);
+if (!rc) {
     LOGGER_INFO(owned, "host", "work");
     /* 停止并 join 所有其他借用者之后，才有独占销毁权。 */
     release_owned(&owned);
@@ -64,13 +64,15 @@ pthread_cleanup_pop(0);
 ```
 
 如果最终处置在恢复取消状态时触发宿主清理，原实例可能已经释放；不要重复销毁。
-NULL 销毁不注册新运行时。ECHILD / EDEADLK 是处置前拒绝；正常处置末尾的 I/O 失败仍释放实例。
+销毁不注册新运行时；准入成功后有效空槽是无操作成功。ECHILD/EDEADLK是处置前
+拒绝；正常处置末尾的I/O失败仍消费拥有权，释放证明失败则由内部保守保留。
 不允许多个所有者同时销毁，不允许把 get_state(STOPPED) 当成旧指针可再次使用的证据。
 
 ## 重入契约
 
 同一线程已在 Logger/Console 内部执行时，从其格式化、后端、FILE 回调或拦截器中再次调用
-资源 API，返回 EDEADLK（void 入口不输出并设置 errno；查询返回约定的零/停止值）。
+资源API时拒绝重入。已迁移的记录、查询、控制、所有权和Console返回-EDEADLK并
+保留errno，查询保持完整输出槽；级别设置与TLS上下文仍采用各自当前返回形式。
 这是保守的跨实例规则：即使嵌套目标是另一个 Logger，也不支持在内部回调中获取另一套资源。
 它不阻止正常先后使用 A/B，不阻止不同线程使用不同或同一个活跃实例，也不妨碍 SDK → 宿主日志
 适配器 → Logger 这一普通顶层调用；SDK 回调尚未执行在 Logger 内部。

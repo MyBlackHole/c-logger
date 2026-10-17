@@ -30,10 +30,23 @@ int main(void)
 		return 1;
 	}
 
-	LOGGER_INFO(network, "network", "connected fd=%d", 42);
-	LOGGER_DEBUG(network, "network", "received bytes=%zu", (size_t)4096);
-	LOGGER_INFO(storage, "storage", "volume opened id=%s", "vol-1");
-	LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
+	int record_rc = LOGGER_INFO(network, "network", "connected fd=%d", 42);
+	int next_rc = LOGGER_DEBUG(network, "network", "received bytes=%zu",
+				   (size_t)4096);
+	if (!record_rc)
+		record_rc = next_rc;
+	next_rc =
+		LOGGER_INFO(storage, "storage", "volume opened id=%s", "vol-1");
+	if (!record_rc)
+		record_rc = next_rc;
+	next_rc =
+		LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
+	if (!record_rc)
+		record_rc = next_rc;
+	if (record_rc) {
+		errno = -record_rc;
+		perror("logger_log");
+	}
 
 	/* 销毁前停止并回收使用这些指针的每个线程。 */
 	int storage_rc = logger_destroy(&storage);
@@ -43,5 +56,5 @@ int main(void)
 		perror("logger_destroy");
 		return 1;
 	}
-	return 0;
+	return record_rc ? 1 : 0;
 }

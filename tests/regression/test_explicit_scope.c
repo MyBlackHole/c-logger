@@ -67,15 +67,17 @@ static void nested_call(void)
 	logger_syslog_metrics_t sys;
 	logger_diagnostics_t diagnostics;
 	logger_file_metrics_t file_metrics;
+	logger_state_t state = LOGGER_STATE_RUNNING;
+	uint64_t dropped = UINT64_C(777);
 	logger_config_t cfg = config_for("nested.log", 0);
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	logger_context_t ctx = { .request_id = "nested" };
-	errno = 0;
+	errno = EDOM;
 	if (!strcmp(nested, "log"))
-		LOGGER_INFO(log_instance, "test", "nested");
+		CHECK(LOGGER_INFO(log_instance, "test", "nested") == -EDEADLK);
 	else if (!strcmp(nested, "source"))
-		logger_log_source(log_instance, LOGGER_INFO, LOGGER_SOURCE(),
-				  "nested");
+		CHECK(logger_log_source(log_instance, LOGGER_INFO,
+					LOGGER_SOURCE(), "nested") == -EDEADLK);
 	else if (!strcmp(nested, "sync"))
 		CHECK(logger_log_sync_status(log_instance, LOGGER_INFO, "x",
 					     __FILE__, __LINE__, __func__,
@@ -94,31 +96,35 @@ static void nested_call(void)
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -EDEADLK);
 	else if (!strcmp(nested, "level"))
 		logger_set_instance_level(log_instance, LOGGER_OFF);
-	else if (!strcmp(nested, "state"))
-		CHECK(logger_get_state(log_instance) == LOGGER_STATE_STOPPED);
-	else if (!strcmp(nested, "dropped"))
-		CHECK(logger_dropped(log_instance) == 0);
-	else if (!strcmp(nested, "metrics")) {
-		memset(&metrics, 0xff, sizeof(metrics));
-		logger_get_metrics(log_instance, &metrics);
-		CHECK(!metrics.enqueued);
+	else if (!strcmp(nested, "state")) {
+		CHECK(logger_get_state(log_instance, &state) == -EDEADLK);
+		CHECK(state == LOGGER_STATE_RUNNING);
+	} else if (!strcmp(nested, "dropped")) {
+		CHECK(logger_dropped(log_instance, &dropped) == -EDEADLK);
+		CHECK(dropped == UINT64_C(777));
+	} else if (!strcmp(nested, "metrics")) {
+		memset(&metrics, 0xa5, sizeof(metrics));
+		CHECK(logger_get_metrics(log_instance, &metrics) == -EDEADLK);
+		expect_query_sentinel(&metrics, sizeof(metrics));
 	} else if (!strcmp(nested, "io")) {
-		memset(&io, 0xff, sizeof(io));
-		logger_get_io_metrics(log_instance, &io);
-		CHECK(!io.emitted_records);
+		memset(&io, 0xa5, sizeof(io));
+		CHECK(logger_get_io_metrics(log_instance, &io) == -EDEADLK);
+		expect_query_sentinel(&io, sizeof(io));
 	} else if (!strcmp(nested, "diagnostics")) {
-		memset(&diagnostics, 0xff, sizeof(diagnostics));
-		logger_get_diagnostics(log_instance, &diagnostics);
-		CHECK(!diagnostics.enqueued && !diagnostics.observation_flags);
+		memset(&diagnostics, 0xa5, sizeof(diagnostics));
+		CHECK(logger_get_diagnostics(log_instance, &diagnostics) ==
+		      -EDEADLK);
+		expect_query_sentinel(&diagnostics, sizeof(diagnostics));
 	} else if (!strcmp(nested, "file-metrics")) {
-		memset(&file_metrics, 0x5a, sizeof(file_metrics));
+		memset(&file_metrics, 0xa5, sizeof(file_metrics));
 		CHECK(logger_get_file_metrics(log_instance, &file_metrics) ==
-		      -1);
-		CHECK(((unsigned char *)&file_metrics)[0] == 0x5a);
+		      -EDEADLK);
+		expect_query_sentinel(&file_metrics, sizeof(file_metrics));
 	} else if (!strcmp(nested, "syslog")) {
-		memset(&sys, 0x5a, sizeof(sys));
-		CHECK(logger_get_syslog_metrics(log_instance, &sys) == -1);
-		CHECK(((unsigned char *)&sys)[0] == 0x5a);
+		memset(&sys, 0xa5, sizeof(sys));
+		CHECK(logger_get_syslog_metrics(log_instance, &sys) ==
+		      -EDEADLK);
+		expect_query_sentinel(&sys, sizeof(sys));
 	} else if (!strcmp(nested, "context-set"))
 		logger_context_set(&ctx);
 	else if (!strcmp(nested, "context-clear"))
@@ -144,16 +150,13 @@ static void nested_call(void)
 	} else if (!strcmp(nested, "global"))
 		CHECK(logger_default_set(NULL, NULL) == -EDEADLK);
 	else if (!strcmp(nested, "global-write"))
-		LOG_INFO("nested global");
+		CHECK(LOG_INFO("nested global") == -EDEADLK);
 	else
 		CHECK(!"unknown nested API");
 	CHECK(errno ==
-	      ((!strcmp(nested, "create") || !strcmp(nested, "destroy") ||
-		!strcmp(nested, "destroy-void") || !strcmp(nested, "global") ||
-		!strcmp(nested, "flush") || !strcmp(nested, "flush-void") ||
-		!strcmp(nested, "reopen") || !strncmp(nested, "console", 7)) ?
-		       0 :
-		       EDEADLK));
+	      ((!strcmp(nested, "level") || !strncmp(nested, "context-", 8)) ?
+		       EDEADLK :
+		       EDOM));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
 static void probe(enum point p)

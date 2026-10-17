@@ -8,8 +8,8 @@
 #define LOGGER_MESSAGE_MAX 4096
 #define LOGGER_LINE_MAX 5120
 
-/* 普通无返回值的日志保留长度受限的字节前缀，并添加可见标记。
- * 返回状态的路径会拒绝超长文本，而不使用此机制。
+/* 普通日志保留长度受限的字节前缀，并添加可见标记。
+ * 严格同步路径拒绝超长文本，不使用此机制；两种路径均返回状态。
  */
 static inline void logger_text_mark_truncated(char *text, size_t capacity)
 {

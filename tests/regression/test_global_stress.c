@@ -39,6 +39,13 @@ static pthread_barrier_t init_barrier, run_barrier;
 static _Atomic int ready[8];
 static _Atomic int succeeded, already;
 static logger_config_t cfg;
+
+static void expect_concurrent_result(int rc)
+{
+	CHECK(rc == 0 || rc == -ESHUTDOWN || rc == -EAGAIN || rc == -ENODEV);
+	CHECK(errno == EDOM);
+}
+
 static void *initializer(void *unused)
 {
 	(void)unused;
@@ -59,7 +66,8 @@ static void *producer(void *ptr)
 	int rc = pthread_barrier_wait(&run_barrier);
 	CHECK(rc == 0 || rc == PTHREAD_BARRIER_SERIAL_THREAD);
 	while (atomic_load(&running)) {
-		LOG_INFO("producer=%zu", id);
+		errno = EDOM;
+		expect_concurrent_result(LOG_INFO("producer=%zu", id));
 		atomic_fetch_add(&calls, 1);
 		atomic_store(&ready[id], 1);
 	}
@@ -73,9 +81,11 @@ static void *controller(void *ptr)
 	while (atomic_load(&running)) {
 		logger_metrics_t m;
 		logger_io_metrics_t io;
-		logger_get_global_metrics(&m);
-		logger_get_global_io_metrics(&io);
-		(void)logger_global_dropped();
+		uint64_t dropped;
+		errno = EDOM;
+		expect_concurrent_result(logger_get_global_metrics(&m));
+		expect_concurrent_result(logger_get_global_io_metrics(&io));
+		expect_concurrent_result(logger_global_dropped(&dropped));
 		logger_set_level(LOGGER_INFO);
 		int rc = logger_default_flush();
 		CHECK(rc == 0 || rc == -ESHUTDOWN || rc == -EAGAIN ||

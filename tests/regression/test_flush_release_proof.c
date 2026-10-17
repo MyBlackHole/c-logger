@@ -91,7 +91,9 @@ static void cancelled_flush_cleanup(void *unused)
 	 * 此清理运行前读侧生命周期保护已释放。
 	 */
 	CHECK(!logger_scope_busy());
-	CHECK(logger_get_state(subject) == LOGGER_STATE_STOPPING);
+	logger_state_t state;
+	CHECK(logger_get_state(subject, &state) == 0 &&
+	      state == LOGGER_STATE_STOPPING);
 	atomic_store(&cancel_cleanup_ran, 1);
 }
 

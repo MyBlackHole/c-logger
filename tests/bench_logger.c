@@ -55,12 +55,17 @@ int main(int argc, char **argv)
 		pthread_join(ts[i], NULL);
 	double b = sec();
 	logger_metrics_t m;
-	logger_get_global_metrics(&m);
-	unsigned long long dropped =
-		(unsigned long long)logger_global_dropped();
+	uint64_t dropped;
+	if (logger_get_global_metrics(&m) || logger_global_dropped(&dropped)) {
+		fixture_default_destroy(&default_owner);
+		free(ts);
+		free(as);
+		return 1;
+	}
 	fixture_default_destroy(&default_owner);
 	printf("threads=%d attempted=%ld producer_seconds=%.6f attempted_logs_per_sec=%.0f dropped=%llu hwm=%llu enqueued=%llu batches=%llu records=%llu sync_fb=%llu\n",
-	       n, each * n, b - a, (each * n) / (b - a), dropped,
+	       n, each * n, b - a, (each * n) / (b - a),
+	       (unsigned long long)dropped,
 	       (unsigned long long)m.queue_high_watermark,
 	       (unsigned long long)m.enqueued,
 	       (unsigned long long)m.consumer_batches,

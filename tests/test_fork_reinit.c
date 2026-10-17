@@ -124,9 +124,11 @@ static void normal(const char *mode)
 			/* 未初始化时仍先于旧指针解引用拒绝；初始化后旧指针失效，
 			 * 绝不测试“再次使用被释放指针可以可靠诊断”。
 			 */
-			errno = 0;
-			LOGGER_INFO(parent, "old", "MUST_NOT_APPEAR");
-			child_check(errno == ECHILD, 23);
+			errno = EDOM;
+			child_check(LOGGER_INFO(parent, "old",
+						"MUST_NOT_APPEAR") == -ECHILD &&
+					    errno == EDOM,
+				    23);
 			child_run(async, global, i, !shut);
 		}
 		wait_ok(pid);

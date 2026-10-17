@@ -27,35 +27,75 @@ static void check_process_rejection(int error)
 	CHECK(logger_default_set(NULL, NULL) == -error && errno == EDOM);
 	CHECK(logger_default_flush() == -error && errno == EDOM);
 	CHECK(logger_default_reopen() == -error && errno == EDOM);
-	LOGGER_INFO(NULL, "init", "forbidden%n", &formatted);
-	CHECK(errno == error && formatted == -1);
-	logger_global_write(LOGGER_INFO, "init", __FILE__, __LINE__, __func__,
-			    "forbidden%n", &formatted);
-	CHECK(errno == error && formatted == -1);
+	CHECK(LOGGER_INFO(NULL, "init", "forbidden%n", &formatted) == -error);
+	CHECK(errno == EDOM && formatted == -1);
+	CHECK(logger_log_source(NULL, LOGGER_INFO, LOGGER_SOURCE(),
+				"forbidden%n", &formatted) == -error);
+	CHECK(errno == EDOM && formatted == -1);
+	CHECK(logger_global_write(LOGGER_INFO, "init", __FILE__, __LINE__,
+				  __func__, "forbidden%n",
+				  &formatted) == -error);
+	CHECK(errno == EDOM && formatted == -1);
 	CHECK(logger_log_sync_status(NULL, LOGGER_INFO, "init", __FILE__,
 				     __LINE__, __func__, "forbidden%n",
 				     &formatted) == -error);
-	CHECK(errno == error && formatted == -1);
-	CHECK(logger_flush(NULL) == -error && errno == error);
-	CHECK(logger_reopen(NULL) == -error && errno == error);
+	CHECK(errno == EDOM && formatted == -1);
+	CHECK(logger_flush(NULL) == -error && errno == EDOM);
+	CHECK(logger_reopen(NULL) == -error && errno == EDOM);
 	logger_set_instance_level(NULL, LOGGER_INFO);
 	CHECK(errno == error);
 	errno = EDOM;
-	CHECK(logger_dropped(NULL) == 0 && errno == error);
+	logger_state_t state = LOGGER_STATE_RUNNING;
+	uint64_t dropped = UINT64_C(777);
+	CHECK(logger_get_state(NULL, &state) == -error && errno == EDOM);
+	CHECK(state == LOGGER_STATE_RUNNING);
+	CHECK(logger_dropped(NULL, &dropped) == -error && errno == EDOM);
+	CHECK(dropped == UINT64_C(777));
+	CHECK(logger_global_dropped(&dropped) == -error && errno == EDOM);
+	CHECK(dropped == UINT64_C(777));
 	logger_metrics_t metrics;
+	logger_metrics_t metrics_before;
 	memset(&metrics, 0xa5, sizeof(metrics));
-	logger_get_metrics(NULL, &metrics);
-	CHECK(errno == error && metrics.enqueued == 0);
+	memcpy(&metrics_before, &metrics, sizeof(metrics));
+	CHECK(logger_get_metrics(NULL, &metrics) == -error && errno == EDOM);
+	CHECK(memcmp(&metrics, &metrics_before, sizeof(metrics)) == 0);
+	CHECK(logger_get_global_metrics(&metrics) == -error && errno == EDOM);
+	CHECK(memcmp(&metrics, &metrics_before, sizeof(metrics)) == 0);
 	logger_io_metrics_t io;
-	logger_get_io_metrics(NULL, &io);
-	CHECK(errno == error && io.emitted_records == 0);
+	logger_io_metrics_t io_before;
+	memset(&io, 0xa5, sizeof(io));
+	memcpy(&io_before, &io, sizeof(io));
+	CHECK(logger_get_io_metrics(NULL, &io) == -error && errno == EDOM);
+	CHECK(memcmp(&io, &io_before, sizeof(io)) == 0);
+	CHECK(logger_get_global_io_metrics(&io) == -error && errno == EDOM);
+	CHECK(memcmp(&io, &io_before, sizeof(io)) == 0);
 	logger_diagnostics_t diagnostics;
-	logger_get_diagnostics(NULL, &diagnostics);
-	CHECK(errno == error && diagnostics.emitted_records == 0);
+	logger_diagnostics_t diagnostics_before;
+	memset(&diagnostics, 0xa5, sizeof(diagnostics));
+	memcpy(&diagnostics_before, &diagnostics, sizeof(diagnostics));
+	CHECK(logger_get_diagnostics(NULL, &diagnostics) == -error &&
+	      errno == EDOM);
+	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) ==
+	      0);
+	CHECK(logger_get_global_diagnostics(&diagnostics) == -error &&
+	      errno == EDOM);
+	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) ==
+	      0);
 	logger_file_metrics_t file;
-	CHECK(logger_get_file_metrics(NULL, &file) == -1 && errno == error);
+	logger_file_metrics_t file_before;
+	memset(&file, 0xa5, sizeof(file));
+	memcpy(&file_before, &file, sizeof(file));
+	CHECK(logger_get_file_metrics(NULL, &file) == -error && errno == EDOM);
+	CHECK(memcmp(&file, &file_before, sizeof(file)) == 0);
+	CHECK(logger_get_global_file_metrics(&file) == -error && errno == EDOM);
+	CHECK(memcmp(&file, &file_before, sizeof(file)) == 0);
 	logger_syslog_metrics_t syslog;
-	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -1 && errno == error);
+	logger_syslog_metrics_t syslog_before;
+	memset(&syslog, 0xa5, sizeof(syslog));
+	memcpy(&syslog_before, &syslog, sizeof(syslog));
+	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error &&
+	      errno == EDOM);
+	CHECK(memcmp(&syslog, &syslog_before, sizeof(syslog)) == 0);
 	logger_context_set(&(logger_context_t){ .request_id = "forbidden" });
 	CHECK(errno == error);
 	logger_context_t context = logger_context_get();

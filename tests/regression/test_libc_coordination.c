@@ -86,10 +86,13 @@ static void output_error(int asynchronous)
 	CHECK(logger_create(&config, &logger) == 0);
 	CHECK(logger != NULL);
 	atomic_store(&fail_line_once, 1);
-	LOGGER_INFO(logger, "coordination", "NOT_A_SUCCESSFUL_RECORD");
+	errno = EDOM;
+	CHECK(LOGGER_INFO(logger, "coordination", "NOT_A_SUCCESSFUL_RECORD") ==
+	      (asynchronous ? 0 : -EIO));
+	CHECK(errno == EDOM);
 	CHECK(logger_flush(logger) == -EIO);
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	CHECK(metrics.emitted_records == 0 && metrics.failed_records == 1);
 	CHECK(metrics.async_completed + metrics.sync_completed == 1);
 	CHECK(metrics.first_error == EIO && file_size("out.log") == 0);
@@ -146,9 +149,10 @@ static void checked_log(int unlock)
 	reject_lock = !unlock;
 	reject_unlock = unlock;
 	int error = unlock ? EIO : EAGAIN;
+	errno = EDOM;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "coordination",
 					NULL, 0, NULL, "NOT_ACCEPTED");
-	CHECK(rc == -error && errno == error);
+	CHECK(rc == -error && errno == EDOM);
 	CHECK(file_size("out.log") == 0);
 	CHECK(format_locks == 1 && format_unlocks == (unlock ? 1u : 0u));
 	if (unlock) {

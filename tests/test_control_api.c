@@ -37,7 +37,7 @@ static void ready(int async)
 	result(logger_flush(owner), 0);
 	result(logger_default_flush(), 0);
 	logger_io_metrics_t io;
-	logger_get_io_metrics(owner, &io);
+	CHECK(logger_get_io_metrics(owner, &io) == 0);
 	CHECK(io.emitted_records == 32 && io.failed_records == 0);
 	result(logger_reopen(owner), 0);
 	result(logger_default_reopen(), 0);

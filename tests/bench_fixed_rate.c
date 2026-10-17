@@ -114,7 +114,9 @@ static int wait_output(logger_t *logger, const logger_metrics_t *m)
 	uint64_t deadline = now_ns() + 10000000000ull;
 	for (;;) {
 		logger_io_metrics_t io;
-		logger_get_io_metrics(logger, &io);
+		int rc = logger_get_io_metrics(logger, &io);
+		if (rc)
+			return rc;
 		if (io.async_completed == m->enqueued &&
 		    io.sync_completed == m->sync_fallbacks)
 			return 0;
@@ -156,8 +158,11 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 		((volatile uint64_t *)p.calls)[i] = 0;
 		((volatile uint64_t *)p.late)[i] = 0;
 	}
-	logger_get_metrics(logger, &before);
-	logger_get_io_metrics(logger, &io_before);
+	if (logger_get_metrics(logger, &before) ||
+	    logger_get_io_metrics(logger, &io_before)) {
+		failed = 1;
+		goto cleanup;
+	}
 	for (; started < threads; started++) {
 		producers[started].phase = &p;
 		producers[started].index = started;
@@ -179,7 +184,10 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 			generator_error = producers[i].error;
 	}
 	uint64_t producer_end = now_ns();
-	logger_get_metrics(logger, &after);
+	if (logger_get_metrics(logger, &after)) {
+		failed = 1;
+		goto cleanup;
+	}
 	int output_rc = wait_output(logger, &after);
 	uint64_t output_end = now_ns();
 	uint64_t flush_start = now_ns();
@@ -187,7 +195,10 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	int flush_rc = file_backend ? logger_flush(logger) : 0;
 	int flush_error = -flush_rc;
 	uint64_t flush_ns = now_ns() - flush_start;
-	logger_get_io_metrics(logger, &io_after);
+	if (logger_get_io_metrics(logger, &io_after)) {
+		failed = 1;
+		goto cleanup;
+	}
 	uint64_t enqueued = after.enqueued - before.enqueued;
 	uint64_t fallback = after.sync_fallbacks - before.sync_fallbacks;
 	uint64_t dropped = drops(&after) - drops(&before);

@@ -77,7 +77,7 @@ static int test_normal_lock_path(void)
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-normal", NULL,
 					0, NULL, "normal-lock-path");
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int bytes = (int)file_size("out.log");
 	int destroy_rc = logger_destroy(&logger);
 	leave_temp(dir);
@@ -100,20 +100,20 @@ static int test_emit_lock_failure(void)
 	CHECK(logger != NULL);
 
 	fail_mutex = &logger->emit_mu;
-	errno = 0;
+	errno = EDOM;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-failure", NULL,
 					0, NULL, "must-not-be-written");
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int had_invalid_unlock = invalid_unlock;
 	failed_mutex = NULL;
 	int destroy_rc = logger_destroy(&logger);
 	(void)destroy_rc;
 	leave_temp(dir);
 
-	if (!lock_failed || rc != -EAGAIN || error != EAGAIN || bytes != 0 ||
+	if (!lock_failed || rc != -EAGAIN || error != EDOM || bytes != 0 ||
 	    had_invalid_unlock || metrics.emitted_records != 0 ||
 	    metrics.failed_records != 1 || metrics.first_error != EAGAIN) {
 		fprintf(stderr,
@@ -148,18 +148,19 @@ static int test_emit_unlock_failure(void)
 	/* 格式化现在有独立锁，不能按第几次 lock 猜测输出锁。 */
 	fail_unlock_mutex = &logger->emit_mu;
 	fail_unlock_once = 1;
+	errno = EDOM;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "unlock-failure",
 					NULL, 0, NULL, "write-may-have-committed");
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
 	leave_temp(dir);
 
-	if (!captured_mutex || !unlock_failed || lock_failed || invalid_unlock ||
-	    rc != -EAGAIN || error != EAGAIN || bytes <= 0 ||
+	if (!captured_mutex || !unlock_failed || lock_failed ||
+	    invalid_unlock || rc != -EAGAIN || error != EDOM || bytes <= 0 ||
 	    metrics.emitted_records != 0 || metrics.failed_records != 1 ||
 	    metrics.first_error != EAGAIN || destroy_rc != -EAGAIN ||
 	    destroy_error != EAGAIN) {
@@ -217,14 +218,16 @@ static int test_queue_notify_lock_failure(void)
 	lock_failed = 0;
 	invalid_unlock = 0;
 	fail_mutex = &logger->q.wait_mu;
-	logger_log(logger, LOGGER_INFO, "queue-lock-failure", NULL, 0, NULL,
-		   "published-before-notify-error");
+	errno = EDOM;
+	CHECK(logger_log(logger, LOGGER_INFO, "queue-lock-failure", NULL, 0,
+			 NULL, "published-before-notify-error") == -EAGAIN);
+	CHECK(errno == EDOM);
 	int had_lock_failure = lock_failed;
 	int had_invalid_unlock = invalid_unlock;
 	fail_mutex = NULL;
 	CHECK(wait_for_async_completion(logger) == 0);
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
 	int bytes = (int)file_size("out.log");
@@ -256,12 +259,14 @@ static int test_queue_notify_signal_failure(void)
 	signal_failed = 0;
 	fail_signal_cv = &logger->q.wait_cv;
 	fail_signal_once = 1;
-	logger_log(logger, LOGGER_INFO, "queue-signal-failure", NULL, 0, NULL,
-		   "published-before-signal-error");
+	errno = EDOM;
+	CHECK(logger_log(logger, LOGGER_INFO, "queue-signal-failure", NULL, 0,
+			 NULL, "published-before-signal-error") == -EIO);
+	CHECK(errno == EDOM);
 	fail_signal_cv = NULL;
 	CHECK(wait_for_async_completion(logger) == 0);
 	logger_io_metrics_t metrics;
-	logger_get_io_metrics(logger, &metrics);
+	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	uint64_t force_wakes = logger_queue_force_wake_signals(&logger->q);
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;

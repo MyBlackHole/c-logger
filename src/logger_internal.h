@@ -106,9 +106,8 @@ int logger_emit_status(logger_t *, const logger_message_t *, int);
 /* 消耗并推进 iovecs，同时保留调用者的 SIGPIPE 策略。 */
 struct iovec;
 int logger_stderr_writev_all(struct iovec *, int);
-void logger_vlog_internal(logger_t *, logger_level_t, const char *,
-			  const char *, int, const char *, const char *,
-			  va_list);
+int logger_vlog_internal(logger_t *, logger_level_t, const char *, const char *,
+			 int, const char *, const char *, va_list);
 logger_worker_workspace_t *logger_worker_workspace_create(size_t);
 void logger_worker_workspace_destroy(logger_worker_workspace_t *);
 void *logger_worker_main(void *);

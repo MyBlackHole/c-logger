@@ -5,8 +5,9 @@
 #include <limits.h>
 
 /* 编译进宿主，不是 SDK。回调 user 是借用的 logger_t *。
- * 普通 logger_log 是尽力而为；用所有者侧指标或刷新获取错误。
- * 它不是审计提交确认。
+ * logger_log 返回提交或同步输出状态；此 void 回调没有状态返回通道，
+ * 适配器明确丢弃单次结果。所有者侧指标/刷新仍用于观察输出错误，
+ * 不能重建已丢弃的单次提交结果。
  */
 static inline void example_to_logger(void *user, const example_log_record_t *r)
 {
@@ -27,7 +28,7 @@ static inline void example_to_logger(void *user, const example_log_record_t *r)
 		return;
 	}
 	/* 把消息视为数据。绝不把插件消息用作 printf 格式串。 */
-	logger_log((logger_t *)user, level, r->module, r->file, r->line,
-		   r->function, "%.*s", (int)r->message_len, r->message);
+	(void)logger_log((logger_t *)user, level, r->module, r->file, r->line,
+			 r->function, "%.*s", (int)r->message_len, r->message);
 }
 #endif

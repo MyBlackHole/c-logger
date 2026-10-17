@@ -58,8 +58,9 @@ static void *reader(void *unused)
 {
 	(void)unused;
 	poisoned_reader = 1;
-	LOG_INFO("OLD_READER");
-	CHECK(errno == EIO);
+	errno = EDOM;
+	CHECK(LOG_INFO("OLD_READER") == -EIO);
+	CHECK(errno == EDOM);
 	atomic_store(&reader_done, 1);
 	return NULL;
 }

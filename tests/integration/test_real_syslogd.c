@@ -163,7 +163,7 @@ static logger_diagnostics_t diagnostics(logger_t *log)
 {
 	logger_diagnostics_t out;
 	memset(&out, 0, sizeof(out));
-	logger_get_diagnostics(log, &out);
+	CHECK(logger_get_diagnostics(log, &out) == 0);
 	return out;
 }
 

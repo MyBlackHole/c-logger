@@ -201,14 +201,16 @@ int main(int argc, char **argv)
 			wait_flag(&format_entered);
 		p.destroy(a);
 		p.destroy(b);
-		CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
+		logger_state_t state;
+		CHECK(logger_get_state(l, &state) == 0 &&
+		      state == LOGGER_STATE_RUNNING);
 		CHECK(dlclose(p.handle) == 0);
 		p.handle = NULL;
 		atomic_store(&allow_format, 1);
 		LOGGER_INFO(l, "host", "owner-can-still-log");
 		CHECK(logger_flush(l) == 0);
 		logger_io_metrics_t io;
-		logger_get_io_metrics(l, &io);
+		CHECK(logger_get_io_metrics(l, &io) == 0);
 		CHECK(io.emitted_records == expected + 1 &&
 		      io.failed_records == 0);
 		CHECK(close_logger(l) == 0);

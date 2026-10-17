@@ -75,14 +75,14 @@ int main(void)
 		CHECK(results[i] == 0);
 	}
 	logger_io_metrics_t io;
-	logger_get_io_metrics(instance, &io);
+	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(io.async_completed == 1 && io.emitted_records == 1 &&
 	      io.failed_records == 0);
 	CHECK(file_contains("out.log", "before-watermark"));
 	CHECK(!file_contains("out.log", "after-watermark"));
 	atomic_store(&second_release, 1);
 	CHECK(logger_flush(instance) == 0);
-	logger_get_io_metrics(instance, &io);
+	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(io.async_completed == 2 && io.emitted_records == 2 &&
 	      io.first_error == 0);
 	logger_destroy(&instance);

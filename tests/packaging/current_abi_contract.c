@@ -11,8 +11,9 @@
 #define ABI_ALIGNOF(type) alignof(type)
 /* 导出 ABI 为 C。声明上的 GCC 格式属性不是 C 函数类型的一部分，
  * 但 C++ 类型特征比较会在这些属性被丢弃时发出警告。
- * 因此精确函数类型由下方 C11 编译单元冻结；C++11 独立冻结
- * 布局、数值常量与默认初始化器。
+ * 因此 ABI_FN 的精确类型断言由 C11 编译单元冻结；C++11 独立冻结
+ * 布局、数值常量与默认初始化器，并通过下方 16 个记录与查询入口的
+ * 真实函数指针赋值和调用验证新函数类型及行为。
  */
 #define ABI_FN(name, ret, ...) \
 	static_assert(true, "C function types are checked by the C11 contract")
@@ -245,26 +246,26 @@ ABI_FN(logger_context_set, void, const logger_context_t *);
 ABI_FN(logger_process_init, int, void);
 ABI_FN(logger_create, int, const logger_config_t *, logger_t **);
 ABI_FN(logger_destroy, int, logger_t **);
-ABI_FN(logger_dropped, uint64_t, const logger_t *);
+ABI_FN(logger_dropped, int, const logger_t *, uint64_t *);
 ABI_FN(logger_flush, int, logger_t *);
 ABI_FN(logger_default_flush, int, void);
-ABI_FN(logger_get_global_diagnostics, void, logger_diagnostics_t *);
+ABI_FN(logger_get_global_diagnostics, int, logger_diagnostics_t *);
 ABI_FN(logger_get_global_file_metrics, int, logger_file_metrics_t *);
-ABI_FN(logger_get_global_io_metrics, void, logger_io_metrics_t *);
-ABI_FN(logger_get_global_metrics, void, logger_metrics_t *);
-ABI_FN(logger_get_diagnostics, void, const logger_t *, logger_diagnostics_t *);
+ABI_FN(logger_get_global_io_metrics, int, logger_io_metrics_t *);
+ABI_FN(logger_get_global_metrics, int, logger_metrics_t *);
+ABI_FN(logger_get_diagnostics, int, const logger_t *, logger_diagnostics_t *);
 ABI_FN(logger_get_file_metrics, int, logger_t *, logger_file_metrics_t *);
-ABI_FN(logger_get_io_metrics, void, const logger_t *, logger_io_metrics_t *);
-ABI_FN(logger_get_metrics, void, const logger_t *, logger_metrics_t *);
-ABI_FN(logger_get_state, logger_state_t, const logger_t *);
+ABI_FN(logger_get_io_metrics, int, const logger_t *, logger_io_metrics_t *);
+ABI_FN(logger_get_metrics, int, const logger_t *, logger_metrics_t *);
+ABI_FN(logger_get_state, int, const logger_t *, logger_state_t *);
 ABI_FN(logger_get_syslog_metrics, int, logger_t *, logger_syslog_metrics_t *);
-ABI_FN(logger_global_dropped, uint64_t, void);
-ABI_FN(logger_global_write, void, logger_level_t, const char *, const char *,
+ABI_FN(logger_global_dropped, int, uint64_t *);
+ABI_FN(logger_global_write, int, logger_level_t, const char *, const char *,
        int, const char *, const char *, ...);
 ABI_FN(logger_default_set, int, logger_t *, logger_t *);
-ABI_FN(logger_log, void, logger_t *, logger_level_t, const char *, const char *,
+ABI_FN(logger_log, int, logger_t *, logger_level_t, const char *, const char *,
        int, const char *, const char *, ...);
-ABI_FN(logger_log_source, void, logger_t *, logger_level_t, logger_source_t,
+ABI_FN(logger_log_source, int, logger_t *, logger_level_t, logger_source_t,
        const char *, ...);
 ABI_FN(logger_log_sync_status, int, logger_t *, logger_level_t, const char *,
        const char *, int, const char *, const char *, ...);
@@ -274,6 +275,121 @@ ABI_FN(logger_default_reopen, int, void);
 ABI_FN(logger_reopen, int, logger_t *);
 ABI_FN(logger_set_instance_level, void, logger_t *, logger_level_t);
 ABI_FN(logger_set_level, void, logger_level_t);
+
+static int query_sentinel(const void *out, size_t size)
+{
+	const unsigned char *bytes = (const unsigned char *)out;
+	for (size_t i = 0; i < size; ++i)
+		if (bytes[i] != 0xa5)
+			return 0;
+	return 1;
+}
+
+/* C 与 C++11 都实际调用全部记录/查询类型，不以导出名称代替函数类型。 */
+static int record_query_contract(logger_t *owner, int cold)
+{
+	int (*record)(logger_t *, logger_level_t, const char *, const char *,
+		      int, const char *, const char *, ...) = logger_log;
+	int (*source_record)(logger_t *, logger_level_t, logger_source_t,
+			     const char *, ...) = logger_log_source;
+	int (*global_record)(logger_level_t, const char *, const char *, int,
+			     const char *, const char *,
+			     ...) = logger_global_write;
+	int (*strict_record)(logger_t *, logger_level_t, const char *,
+			     const char *, int, const char *, const char *,
+			     ...) = logger_log_sync_status;
+	int (*state_query)(const logger_t *, logger_state_t *) =
+		logger_get_state;
+	int (*dropped_query)(const logger_t *, uint64_t *) = logger_dropped;
+	int (*global_dropped_query)(uint64_t *) = logger_global_dropped;
+	int (*metrics_query)(const logger_t *, logger_metrics_t *) =
+		logger_get_metrics;
+	int (*io_query)(const logger_t *, logger_io_metrics_t *) =
+		logger_get_io_metrics;
+	int (*diagnostics_query)(const logger_t *, logger_diagnostics_t *) =
+		logger_get_diagnostics;
+	int (*global_metrics_query)(logger_metrics_t *) =
+		logger_get_global_metrics;
+	int (*global_io_query)(logger_io_metrics_t *) =
+		logger_get_global_io_metrics;
+	int (*global_diagnostics_query)(logger_diagnostics_t *) =
+		logger_get_global_diagnostics;
+	int (*file_query)(logger_t *, logger_file_metrics_t *) =
+		logger_get_file_metrics;
+	int (*global_file_query)(logger_file_metrics_t *) =
+		logger_get_global_file_metrics;
+	int (*syslog_query)(logger_t *, logger_syslog_metrics_t *) =
+		logger_get_syslog_metrics;
+	logger_source_t source = LOGGER_SOURCE();
+	int expected = cold ? -ENODEV : 0;
+	int backend_error = cold ? -ENODEV : -ENOTSUP;
+	logger_state_t state = LOGGER_STATE_CREATED;
+	uint64_t dropped = UINT64_C(777);
+	logger_metrics_t metrics;
+	logger_io_metrics_t io;
+	logger_diagnostics_t diagnostics;
+	logger_file_metrics_t file;
+	logger_syslog_metrics_t syslog;
+
+	errno = EDOM;
+	if (record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "record") !=
+		    expected ||
+	    errno != EDOM ||
+	    source_record(owner, LOGGER_INFO, source, "source") != expected ||
+	    errno != EDOM ||
+	    global_record(LOGGER_INFO, "abi", NULL, 0, NULL, "default") !=
+		    expected ||
+	    errno != EDOM ||
+	    strict_record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "strict") !=
+		    expected ||
+	    errno != EDOM)
+		return 1;
+	if (state_query(owner, &state) != expected || errno != EDOM ||
+	    state != (cold ? LOGGER_STATE_CREATED : LOGGER_STATE_RUNNING))
+		return 2;
+	if (dropped_query(owner, &dropped) != expected || errno != EDOM ||
+	    dropped != (cold ? UINT64_C(777) : 0) ||
+	    global_dropped_query(&dropped) != expected || errno != EDOM ||
+	    dropped != (cold ? UINT64_C(777) : 0))
+		return 3;
+	memset(&metrics, 0xa5, sizeof(metrics));
+	if (metrics_query(owner, &metrics) != expected || errno != EDOM ||
+	    (cold ? !query_sentinel(&metrics, sizeof(metrics)) :
+		    metrics.enqueued != 0 || metrics.sync_fallbacks != 0) ||
+	    global_metrics_query(&metrics) != expected || errno != EDOM ||
+	    (cold ? !query_sentinel(&metrics, sizeof(metrics)) :
+		    metrics.enqueued != 0 || metrics.sync_fallbacks != 0))
+		return 4;
+	memset(&io, 0xa5, sizeof(io));
+	if (io_query(owner, &io) != expected || errno != EDOM ||
+	    (cold ? !query_sentinel(&io, sizeof(io)) :
+		    io.emitted_records != 4 || io.failed_records != 0) ||
+	    global_io_query(&io) != expected || errno != EDOM ||
+	    (cold ? !query_sentinel(&io, sizeof(io)) :
+		    io.emitted_records != 4 || io.failed_records != 0))
+		return 5;
+	memset(&diagnostics, 0xa5, sizeof(diagnostics));
+	if (diagnostics_query(owner, &diagnostics) != expected ||
+	    errno != EDOM ||
+	    (cold ? !query_sentinel(&diagnostics, sizeof(diagnostics)) :
+		    diagnostics.state != LOGGER_STATE_RUNNING) ||
+	    global_diagnostics_query(&diagnostics) != expected ||
+	    errno != EDOM ||
+	    (cold ? !query_sentinel(&diagnostics, sizeof(diagnostics)) :
+		    diagnostics.state != LOGGER_STATE_RUNNING))
+		return 6;
+	memset(&file, 0xa5, sizeof(file));
+	if (file_query(owner, &file) != backend_error || errno != EDOM ||
+	    !query_sentinel(&file, sizeof(file)) ||
+	    global_file_query(&file) != backend_error || errno != EDOM ||
+	    !query_sentinel(&file, sizeof(file)))
+		return 7;
+	memset(&syslog, 0xa5, sizeof(syslog));
+	if (syslog_query(owner, &syslog) != backend_error || errno != EDOM ||
+	    !query_sentinel(&syslog, sizeof(syslog)))
+		return 8;
+	return 0;
+}
 
 static int defaults_match(void)
 {
@@ -329,6 +445,8 @@ int main(void)
 	    logger_default_flush() != -ENODEV || errno != EDOM ||
 	    logger_default_reopen() != -ENODEV || errno != EDOM)
 		return 21;
+	if (record_query_contract(NULL, 1))
+		return 28;
 	/* Console 配置返回状态，TTY 用独立输出槽，不再混淆错误与 false。 */
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
 	int (*configure_console)(const console_config_t *) = console_init;
@@ -375,6 +493,8 @@ int main(void)
 	int (*set_default)(logger_t *, logger_t *) = logger_default_set;
 	if (set_default(NULL, owner) || errno != EDOM)
 		return 18;
+	if (record_query_contract(owner, 0))
+		return 29;
 	/* 安装后的 C/C++ 使用全部四个新控制签名；stderr 无文件可重开。 */
 	int (*flush)(logger_t *) = logger_flush;
 	int (*reopen)(logger_t *) = logger_reopen;

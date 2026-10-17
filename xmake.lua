@@ -1849,6 +1849,104 @@ if has_config("build_tests") then
     target_end()
 end
 
+-- 记录状态覆盖真实生产输出；同源故障矩阵分别链接生产与支持静态归档。
+if has_config("build_tests") then
+    target("record_api_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_record_api.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "sync", "async", "stderr-error"}) do
+            add_tests(mode, {runargs = mode, group = "record-api", timeout = 20})
+        end
+    target_end()
+end
+
+if has_config("build_regression_tests") then
+    local record_libraries = {{"record_error_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(record_libraries, {"record_error_production", "logger"})
+    end
+    for _, spec in ipairs(record_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_record_errors.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"clock_gettime", "vsnprintf", "__vsnprintf_chk", "write",
+                                     "pthread_setcancelstate", "pthread_mutex_lock",
+                                     "pthread_mutex_unlock", "pthread_rwlock_rdlock",
+                                     "pthread_rwlock_unlock", "pthread_cond_signal",
+                                     "pthread_cond_wait", "pthread_create"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, entry in ipairs({"log", "source", "default", "sync"}) do
+                for _, mode in ipairs({"clock", "format", "format-primary", "write", "write-primary",
+                                       "setup", "restore", "errno", "emit-lock", "emit-unlock",
+                                       "format-lock", "format-unlock"}) do
+                    add_tests(entry .. "-" .. mode,
+                              {runargs = {entry, mode}, group = "record-api", timeout = 20})
+                end
+            end
+            for _, mode in ipairs({"inner-setup", "inner-restore", "read-lock", "read-unlock", "read-unlock-primary"}) do
+                add_tests("default-" .. mode,
+                          {runargs = {"default", mode}, group = "record-api", timeout = 20})
+            end
+            for _, entry in ipairs({"log", "source", "default"}) do
+                for _, mode in ipairs({"queue-drop", "spill-drop", "fallback-error", "notify-lock", "notify-signal"}) do
+                    add_tests(entry .. "-" .. mode,
+                              {runargs = {entry, mode}, group = "record-api", timeout = 20})
+                end
+            end
+        target_end()
+    end
+end
+
+-- 查询只在最终成功时发布结果；共享库公开用例与静态内部故障分别验收。
+if has_config("build_tests") then
+    target("query_api_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_query_api.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "sync", "async", "fork", "syslog"}) do
+            add_tests(mode, {runargs = mode, group = "query-api", timeout = 20})
+        end
+    target_end()
+end
+
+if has_config("build_regression_tests") then
+    local query_libraries = {{"query_error_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(query_libraries, {"query_error_production", "logger"})
+    end
+    for _, spec in ipairs(query_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_query_errors.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_setcancelstate", "pthread_mutex_lock", "pthread_mutex_unlock",
+                                     "pthread_rwlock_rdlock", "pthread_rwlock_unlock",
+                                     "write", "writev", "fsync", "connect", "send"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"setup", "restore", "no-scope", "emit-lock", "emit-unlock", "read-lock",
+                                   "read-unlock-dropped", "read-unlock-metrics", "read-unlock-io",
+                                   "read-unlock-diagnostics", "read-unlock-file", "primary", "release-primary",
+                                   "syslog-restore", "syslog-lock", "syslog-unlock"}) do
+                add_tests(mode, {runargs = mode, group = "query-api", timeout = 20})
+            end
+        target_end()
+    end
+end
+
 if has_config("build_regression_tests") then
     local console_libraries = {{"console_error_regression", "logger_regression_support"}}
     if not has_config("build_shared") then

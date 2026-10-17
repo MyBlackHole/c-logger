@@ -130,7 +130,7 @@ static int finish_result(global_scope_t *scope, int rc)
 	return rc ? rc : -error;
 }
 
-/* 便利读取入口尚采用各自的 POSIX 风格；不让控制接口再引入这种风格。 */
+/* 级别设置及 begin 的内部错误桥接仍使用 POSIX 风格。 */
 static int finish(global_scope_t *scope, int rc)
 {
 	rc = finish_result(scope, rc);
@@ -345,15 +345,26 @@ void logger_set_level(logger_level_t level)
 	(void)finish(&scope, rc);
 }
 
-uint64_t logger_global_dropped(void)
+int logger_global_dropped(uint64_t *out)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return 0;
-	int rc = pin(&scope);
-	uint64_t dropped = rc ? 0 : logger_dropped(g_logger);
-	(void)finish(&scope, rc);
-	return dropped;
+	uint64_t snapshot;
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto done;
+	}
+	rc = !out ? -EINVAL : pin(&scope);
+	if (!rc)
+		rc = logger_dropped(g_logger, &snapshot);
+	rc = finish_result(&scope, rc);
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
 int logger_default_reopen(void)
@@ -375,75 +386,121 @@ out:
 	return rc;
 }
 
-void logger_get_global_metrics(logger_metrics_t *out)
+int logger_get_global_metrics(logger_metrics_t *out)
 {
-	if (!out)
-		return;
-	memset(out, 0, sizeof(*out));
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return;
-	int rc = pin(&scope);
+	logger_metrics_t snapshot;
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto done;
+	}
+	rc = !out ? -EINVAL : pin(&scope);
 	if (!rc)
-		logger_get_metrics(g_logger, out);
-	(void)finish(&scope, rc);
+		rc = logger_get_metrics(g_logger, &snapshot);
+	rc = finish_result(&scope, rc);
+	/* 借用释放和取消恢复都成功后，才写出不再依赖实例寿命的副本。 */
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
-void logger_get_global_io_metrics(logger_io_metrics_t *out)
+int logger_get_global_io_metrics(logger_io_metrics_t *out)
 {
-	if (!out)
-		return;
-	memset(out, 0, sizeof(*out));
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return;
-	int rc = pin(&scope);
+	logger_io_metrics_t snapshot;
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto done;
+	}
+	rc = !out ? -EINVAL : pin(&scope);
 	if (!rc)
-		logger_get_io_metrics(g_logger, out);
-	(void)finish(&scope, rc);
+		rc = logger_get_io_metrics(g_logger, &snapshot);
+	rc = finish_result(&scope, rc);
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
-void logger_get_global_diagnostics(logger_diagnostics_t *out)
+int logger_get_global_diagnostics(logger_diagnostics_t *out)
 {
-	if (!out)
-		return;
-	memset(out, 0, sizeof(*out));
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return;
-	int rc = pin(&scope);
+	logger_diagnostics_t snapshot;
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto done;
+	}
+	rc = !out ? -EINVAL : pin(&scope);
 	if (!rc)
-		logger_get_diagnostics(g_logger, out);
-	(void)finish(&scope, rc);
+		rc = logger_get_diagnostics(g_logger, &snapshot);
+	rc = finish_result(&scope, rc);
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
 int logger_get_global_file_metrics(logger_file_metrics_t *out)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return -1;
-	int rc = !out ? -EINVAL : pin(&scope);
+	logger_file_metrics_t snapshot;
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto done;
+	}
+	rc = !out ? -EINVAL : pin(&scope);
 	if (!rc)
-		rc = logger_file_metrics_snapshot(g_logger, out);
-	return finish(&scope, rc);
+		rc = logger_file_metrics_snapshot(g_logger, &snapshot);
+	rc = finish_result(&scope, rc);
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
-void logger_global_write(logger_level_t level, const char *module,
-			 const char *file, int line, const char *func,
-			 const char *fmt, ...)
+int logger_global_write(logger_level_t level, const char *module,
+			const char *file, int line, const char *func,
+			const char *fmt, ...)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return;
-	int rc = !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : pin(&scope);
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto out;
+	}
+	rc = !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : pin(&scope);
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);
-		logger_vlog_internal(g_logger, level, module, file, line, func,
-				     fmt, ap);
+		/* 默认借用的成功锁操作也可能改变 errno；%m 使用最外层入口值。 */
+		errno = saved;
+		rc = logger_vlog_internal(g_logger, level, module, file, line,
+					  func, fmt, ap);
 		va_end(ap);
 	}
-	(void)finish(&scope, rc);
+	rc = finish_result(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 int logger_global_scope_busy(void)

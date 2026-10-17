@@ -60,6 +60,39 @@ def main():
         cases["type-" + symbol] = (
             "int (*f)(void) = " + symbol + ";",
             "int (*f)(int *) = " + symbol + ";", symbol)
+    for symbol, arguments in (
+            ("logger_log", "logger_t *, logger_level_t, const char *, const char *, "
+                           "int, const char *, const char *, ..."),
+            ("logger_log_source", "logger_t *, logger_level_t, logger_source_t, "
+                                  "const char *, ..."),
+            ("logger_global_write", "logger_level_t, const char *, const char *, "
+                                    "int, const char *, const char *, ...")):
+        cases["status-" + symbol] = (
+            "void (*f)(" + arguments + ") = " + symbol + ";",
+            "int (*f)(" + arguments + ") = " + symbol + ";", symbol)
+    for suffix, kind in (("metrics", "logger_metrics_t"),
+                         ("io_metrics", "logger_io_metrics_t"),
+                         ("diagnostics", "logger_diagnostics_t")):
+        for global_query in (False, True):
+            symbol = "logger_get_" + ("global_" if global_query else "") + suffix
+            arguments = ("" if global_query else "const logger_t *, ") + kind + " *"
+            cases["status-" + symbol] = (
+                "void (*f)(" + arguments + ") = " + symbol + ";",
+                "int (*f)(" + arguments + ") = " + symbol + ";", symbol)
+    for symbol, kind, instance in (("logger_get_state", "logger_state_t", True),
+                                   ("logger_dropped", "uint64_t", True),
+                                   ("logger_global_dropped", "uint64_t", False)):
+        old_arguments = "const logger_t *" if instance else "void"
+        arguments = ("const logger_t *, " if instance else "") + kind + " *"
+        old_call = "NULL" if instance else ""
+        call = "NULL, &out" if instance else "&out"
+        cases["type-" + symbol] = (
+            kind + " (*f)(" + old_arguments + ") = " + symbol + ";",
+            "int (*f)(" + arguments + ") = " + symbol + ";", symbol)
+        cases["output-" + symbol] = (
+            "void f(void) { (void)" + symbol + "(" + old_call + "); }",
+            "void f(void) { " + kind + " out; (void)" + symbol +
+            "(" + call + "); }", symbol)
     env = dict(os.environ, LC_ALL="C")
     with tempfile.TemporaryDirectory(prefix="logger-api-types-") as folder:
         path = Path(folder) / "contract.c"

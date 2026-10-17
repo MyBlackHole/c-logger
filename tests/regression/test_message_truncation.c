@@ -13,12 +13,14 @@ static const char marker[] = " [truncated]";
 
 static void emit(logger_t *log, const char *mode, const char *text)
 {
+	errno = EDOM;
 	if (!strcmp(mode, "global") || !strcmp(mode, "bootstrap"))
-		logger_global_write(LOGGER_INFO, "truncation", NULL, 0, NULL,
-				    "%s", text);
+		CHECK(logger_global_write(LOGGER_INFO, "truncation", NULL, 0,
+					  NULL, "%s", text) == 0);
 	else
-		logger_log(log, LOGGER_INFO, "truncation", NULL, 0, NULL,
-			   "%s", text);
+		CHECK(logger_log(log, LOGGER_INFO, "truncation", NULL, 0, NULL,
+				 "%s", text) == 0);
+	CHECK(errno == EDOM);
 }
 
 static void flush(logger_t *log, const char *mode)
@@ -55,9 +57,9 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "bootstrap")) {
 		/* 无默认实例不再提供启动回退：必须在读取变参前拒绝。 */
 		int touched = 7;
-		errno = 0;
-		LOG_INFO("%8192s%n", "", &touched);
-		CHECK(errno == ENODEV && touched == 7);
+		errno = EDOM;
+		CHECK(LOG_INFO("%8192s%n", "", &touched) == -ENODEV);
+		CHECK(errno == EDOM && touched == 7);
 		CHECK(access("message.log", F_OK) != 0);
 		CHECK(chdir("/") == 0 && rmdir(dir) == 0);
 		return 0;
@@ -135,15 +137,18 @@ int main(int argc, char **argv)
 					    "small-body") == -EOVERFLOW);
 	}
 	/* C 区域设置无法编码此代理码点：格式化失败不输出任何内容。 */
+	errno = EDOM;
 	if (!strcmp(mode, "global") || !strcmp(mode, "bootstrap"))
-		logger_global_write(LOGGER_INFO, "truncation", NULL, 0, NULL,
-				    "%lc", (wint_t)0xd800);
+		CHECK(logger_global_write(LOGGER_INFO, "truncation", NULL, 0,
+					  NULL, "%lc",
+					  (wint_t)0xd800) == -EILSEQ);
 	else if (!strcmp(mode, "status"))
 		CHECK(logger_log_sync_status(log, LOGGER_INFO, "truncation", NULL,
 					    0, NULL, "%lc", (wint_t)0xd800) == -EILSEQ);
 	else
-		logger_log(log, LOGGER_INFO, "truncation", NULL, 0, NULL,
-			   "%lc", (wint_t)0xd800);
+		CHECK(logger_log(log, LOGGER_INFO, "truncation", NULL, 0, NULL,
+				 "%lc", (wint_t)0xd800) == -EILSEQ);
+	CHECK(errno == EDOM);
 	flush(log, mode);
 	clearerr(file);
 	CHECK(fgetc(file) == EOF && !ferror(file));
@@ -151,9 +156,9 @@ int main(int argc, char **argv)
 	if (strcmp(mode, "bootstrap")) {
 		logger_io_metrics_t io;
 		if (!strcmp(mode, "global"))
-			logger_get_global_io_metrics(&io);
+			CHECK(logger_get_global_io_metrics(&io) == 0);
 		else
-			logger_get_io_metrics(log, &io);
+			CHECK(logger_get_io_metrics(log, &io) == 0);
 		uint64_t expected = !strcmp(mode, "status") ? 3 :
 			!strncmp(mode, "metadata-", 9) ? 7 : 5;
 		CHECK(io.emitted_records == expected);

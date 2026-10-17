@@ -21,7 +21,8 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 父方首次使用也必须显式初始化。普通 Logger、Global、Console 与上下文入口不再
 按需建域、不等待初始化者：空闲报 ENODEV、初始化中报 EAGAIN、失败后报告保存的
 初始化错误，只有显式调用才能重试。进程准入先于配置、拥有者槽与实例字段访问。
-各函数保留当前的返回形式，未一并转换其 errno 风格；纯配置/脱敏辅助函数不需初始化。
+已迁移的状态接口使用0/-errno并保留errno；级别设置、TLS上下文与脱敏辅助函数
+仍遵循各自当前返回形式。纯配置/脱敏辅助函数不需初始化。
 详见[显式进程准入](docs/v2/PROCESS_ADMISSION.md)。
 
 子方普通日志入口不隐式完成重建；必须先调用该接口，再创建新实例。旧实例指针
@@ -50,14 +51,32 @@ int logger_destroy(logger_t **owner);
 刷新与重开已迁移，实例入口为 `logger_flush(owner)`、`logger_reopen(owner)`；
 默认入口为 `logger_default_flush()`、`logger_default_reopen()`。四者均为 **0/-errno**，
 所有正常返回保留调用方 errno。已移除旧 status/instance 包装，不能再调用无参
-`logger_flush()` 或 `logger_reopen()`。记录、指标和 Console 的其余返回形式仍待迁移，
-不宣称全部 API 已统一。详见[控制操作合同](docs/v2/CONTROL_API.md)。
+`logger_flush()` 或 `logger_reopen()`。记录、状态/指标查询和Console也已统一；
+级别设置、TLS上下文及脱敏辅助函数仍单独迁移。详见[控制操作合同](docs/v2/CONTROL_API.md)。
 
 刷新继续等待进入时捕获的预留完成水位，并同步文件；不代表 Syslog 远端持久化，
 不给阻塞 I/O 提供时限。重开可能在切换文件后报错；错误返回不保证无副作用。
 指标仍为并发近似快照，不是逐记录接受回执。
 
+## 记录状态
+
+`logger_log`、`logger_log_source`、`logger_global_write`与`logger_log_sync_status`
+均返回0/-errno并保留入口errno；`LOGGER_*`、`LOG_*`宏传回函数状态。级别过滤
+返回0且不格式化，非法参数和停止状态先于过滤拒绝。GNU `%m` 使用公开入口的errno。
+
+普通同步或队列满后的同步回退返回本次实际输出结果；异步成功表示记录入队，
+不表示后端已输出或持久化。容量不足且策略为DROP时返回-EAGAIN并计入丢弃。
+负返回可能发生于记录发布、部分写入或完整输出之后，如通知、解锁或取消恢复
+失败，因此不能直接重试。严格同步入口继续拒绝正文/整行溢出并强制文件同步，
+但不替代等待先前异步水位的flush。完整边界见[记录合同](docs/v2/RECORD_API.md)。
+
 ## 诊断与可观测性
+
+十二个状态/指标查询统一返回0/-errno并保留errno，任何失败保持整个输出槽原值。
+`logger_get_state(owner, &state)`、`logger_dropped(owner, &count)`和
+`logger_global_dropped(&count)`现在通过输出槽返回数值。六个旧void指标入口
+失败时的清零规则已明确替换；调用方必须检查rc后使用结果，NULL参数在准入成功
+后返回-EINVAL。详细类型与发布时点见[查询合同](docs/v2/QUERY_API.md)。
 
 `logger_get_diagnostics()` 提供无需获取后端锁的统一运行状态快照，包括队列深度/容量、
 完成积压、溢出区使用/耗尽、工作线程等待/唤醒、丢弃/回退、输出失败和
@@ -75,7 +94,7 @@ STOPPING/BROKEN 准入门。文件/Syslog 的完整一致输出端指标分别�
 ## 普通日志字符串寿命
 
 调用者的 fmt/source/context 输入必须在对应调用期间有效，不得并发修改。
-用户消息仍通过 `vsnprintf` 复制。普通 void 日志入口（仅在已绑定默认实例时提供全局输出）最多保留4095字节正文，
+用户消息仍通过 `vsnprintf` 复制。普通日志入口（仅在已绑定默认实例时提供全局输出）最多保留4095字节正文，
 超限时正文尾部明确替换为 ` [truncated]`；未超限正文保持原字节。边界按字节处理，
 不承诺保留UTF-8码点。接口使用NUL终止的C字符串文本，内嵌NUL不是二进制消息接口。同步普通输出若因过长元数据耗尽整行缓冲，也在LF前放置同一标记。
 需要完整正文确认时使用 `logger_log_sync_status()`，超限返回
@@ -97,7 +116,7 @@ STOPPING/BROKEN 准入门。文件/Syslog 的完整一致输出端指标分别�
 使用完毕先 `logger_default_set(owner, NULL)` 等待默认借用退出，再由宿主调用
 `logger_destroy(&owner)`。更换默认实例用 `logger_default_set(old, next)`；解绑只
 归还借用，不隐含 flush/join。绑定时销毁返回 -EBUSY 并保留拥有者槽。空默认槽的
-LOG_* 返回 ENODEV，不格式化、不输出。业务 SDK 不应隐式改变宿主的默认绑定。
+LOG_* 返回 -ENODEV，不格式化、不输出。业务 SDK 不应隐式改变宿主的默认绑定。
 进程初始化仍由宿主显式调用，实际锁/代次/错误规则见[默认借用合同](docs/v2/DEFAULT_BORROW.md)。
 Console 是应用终端展示工具，不是业务 SDK 隐式输出通道。其stdio写入使用线程局部SIGPIPE保护，
 关闭管道返回 `-EPIPE` 并保留入口errno（如更早已有格式错误则保留首错），不改变宿主全局信号处理函数、屏蔽字或既有待处理信号。
@@ -171,7 +190,8 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 临时资源全部释放。构造期间如果存在待处理的延迟取消，会处置尚未返回给调用方的候选实例；如果启用了
 异步取消，构造阶段直接以 ENOTSUP 拒绝。已经成功返回的裸指针仍由宿主负责管理。Logger/Console
 自身回调中再次嵌套调用 Logger/Console 资源操作（即使目标是另一个实例）会以 EDEADLK 拒绝。
-正常的 SDK 到宿主适配器属于顶层调用，继续受到支持。函数签名和公开布局均未改变。
+正常的 SDK 到宿主适配器属于顶层调用，继续受到支持。公开结构布局不变，函数类型
+按上述ABI 2迁移重新编译；记录与查询拒绝均返回负错误码并保留入口errno。
 
 ## 历史 Audit 与旧 ABI
 
