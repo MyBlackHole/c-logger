@@ -267,13 +267,14 @@ static void child_guard_matrix(void)
 	errno = EDOM;
 	if (logger_destroy(&l) != -ECHILD || l != old || errno != EDOM)
 		_exit(37);
-	CHILD_VOID(
+	CHILD_STATUS(
 		logger_context_set(&(logger_context_t){ .request_id = "new" }),
 		38);
-	CHILD_VOID(logger_context_clear(), 39);
-	errno = 0;
-	logger_context_t ctx = logger_context_get();
-	if (ctx.request_id || ctx.session_id || ctx.trace_id || errno != ECHILD)
+	CHILD_STATUS(logger_context_clear(), 39);
+	logger_context_t ctx;
+	memset(&ctx, 0xa5, sizeof(ctx));
+	CHILD_STATUS(logger_context_get(&ctx), 40);
+	if (!child_query_unchanged(&ctx, sizeof(ctx)))
 		_exit(40);
 
 	console_config_t console_cfg = CONSOLE_DEFAULT_CONFIG();
@@ -379,8 +380,8 @@ static void registration_failure(const char *mode)
 	else if (!strcmp(mode, "register-console"))
 		CHECK(console_print("forbidden") == -ENOMEM && errno == 0);
 	else if (!strcmp(mode, "register-context")) {
-		logger_context_set(&(logger_context_t){ 0 });
-		CHECK(errno == ENOMEM);
+		logger_context_t empty = { 0 };
+		CHECK(logger_context_set(&empty) == -ENOMEM && errno == 0);
 	} else
 		CHECK(0);
 	CHECK(access("out.log", F_OK) != 0);
@@ -492,8 +493,8 @@ int main(int argc, char **argv)
 			wait_flag(&entered);
 		}
 	} else if (!strcmp(mode, "context-only")) {
-		logger_context_set(&(logger_context_t){
-			.request_id = "inherited-secret-id" });
+		CHECK(logger_context_set(&(logger_context_t){
+			      .request_id = "inherited-secret-id" }) == 0);
 	} else if (!strcmp(mode, "explicit") || !strcmp(mode, "emit-held") ||
 		   !strcmp(mode, "progress-held")) {
 		CHECK(logger_create(&cfg, &instance) == 0);

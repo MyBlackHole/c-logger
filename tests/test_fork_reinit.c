@@ -56,7 +56,8 @@ static void child_run(int async, int global, int index, int conflict)
 	errno = EDOM;
 	child_check(logger_process_init() == 0 && errno == EDOM, 10);
 	child_check(logger_process_init() == -EALREADY, 11);
-	logger_context_t context = logger_context_get();
+	logger_context_t context = { 0 };
+	child_check(logger_context_get(&context) == 0, 12);
 	child_check(!context.request_id && !context.session_id &&
 			    !context.trace_id,
 		    12);
@@ -101,8 +102,8 @@ static void normal(const char *mode)
 	int shut = !strcmp(mode, "shutdown-first");
 	int count = !strcmp(mode, "repeated") ? 24 : 1;
 	CHECK(logger_process_init() == 0);
-	logger_context_set(
-		&(logger_context_t){ .request_id = "PARENT_SECRET_CONTEXT" });
+	logger_context_t secret = { .request_id = "PARENT_SECRET_CONTEXT" };
+	CHECK(logger_context_set(&secret) == 0);
 	console_set_verbosity(CONSOLE_QUIET);
 	logger_config_t cfg = config("parent.log", async);
 	logger_t *parent = NULL;
@@ -133,9 +134,10 @@ static void normal(const char *mode)
 		}
 		wait_ok(pid);
 	}
-	CHECK(logger_context_get().request_id != NULL);
-	CHECK(!strcmp(logger_context_get().request_id,
-		      "PARENT_SECRET_CONTEXT"));
+	logger_context_t parent_context;
+	CHECK(logger_context_get(&parent_context) == 0);
+	CHECK(parent_context.request_id != NULL);
+	CHECK(!strcmp(parent_context.request_id, "PARENT_SECRET_CONTEXT"));
 	if (global) {
 		LOG_INFO("PARENT_AFTER");
 		CHECK(logger_default_set(parent, NULL) == 0);

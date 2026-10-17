@@ -276,8 +276,9 @@ typedef struct {
  *   线程、打开日志或初始化全局门面。
  * - 在实例存续期间，日志记录、级别设置、指标查询和刷新可以并发调用。
  * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
- * 错误约定：create/destroy、刷新/重开使用 0/-errno 并保留 errno；其他入口除非另有说明，
- * 返回 int 的公开操作成功时返回 0，失败时返回 -1 并设置 errno。
+ * 错误约定：进程初始化、create/destroy、默认槽、刷新/重开、记录、
+ * 状态/指标查询、Console 与 TLS 上下文已统一 0/-errno，且保留入口 errno。
+ * 级别设置和脱敏辅助入口另按各自现行约定，待独立迁移。
  */
 /* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
  * 所有者会收到 EBUSY：应共享同一个存活实例。目录解析在创建时绑定；
@@ -317,9 +318,19 @@ LOGGER_API int logger_process_init(void);
  * 调用前必须显式 process_init；进程准入失败先于读取配置或拥有者槽。
  */
 LOGGER_API int logger_create(const logger_config_t *, logger_t **out);
-LOGGER_API void logger_context_set(const logger_context_t *);
-LOGGER_API void logger_context_clear(void);
-LOGGER_API logger_context_t logger_context_get(void);
+/* 当前线程的请求上下文；不分配堆存储，不拥有调用方字符串。
+ * set 先把三个字段分别截断复制到线程局部的 63 字节缓冲，再发布指针，
+ * 允许使用先前 get 的指针或在当前线程中交换字段作为 set 输入。
+ * NULL set 等价于 clear；字段 NULL 或空串表示没有对应字段。
+ * 返回 0/-errno，保留入口 errno。准入失败不修改上下文；
+ * 取消恢复失败时 set/clear 的变更可能已经生效，不能据负值回滚。
+ * get 只在完整成功后写输出槽；NULL 槽为 -EINVAL，其他失败保持全槽不变。
+ * get 返回本线程存储的借用指针，不得跨线程或在线程退出后使用，
+ * 下一次本线程 set/clear 将使先前快照中的字符串内容失效。
+ */
+LOGGER_API int logger_context_set(const logger_context_t *);
+LOGGER_API int logger_context_clear(void);
+LOGGER_API int logger_context_get(logger_context_t *out);
 
 /* 显式的秘密信息处理辅助函数。日志器不会检查任意 printf 文本中的
  * 秘密信息。调用者必须先脱敏，再记录敏感数据。 */

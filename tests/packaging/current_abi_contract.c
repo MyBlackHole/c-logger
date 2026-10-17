@@ -240,9 +240,9 @@ ABI_FN(console_stdout_is_tty, int, int *);
 ABI_FN(console_verbose, int, const char *, ...);
 ABI_FN(console_warn, int, const char *, ...);
 
-ABI_FN(logger_context_clear, void, void);
-ABI_FN(logger_context_get, logger_context_t, void);
-ABI_FN(logger_context_set, void, const logger_context_t *);
+ABI_FN(logger_context_clear, int, void);
+ABI_FN(logger_context_get, int, logger_context_t *);
+ABI_FN(logger_context_set, int, const logger_context_t *);
 ABI_FN(logger_process_init, int, void);
 ABI_FN(logger_create, int, const logger_config_t *, logger_t **);
 ABI_FN(logger_destroy, int, logger_t **);
@@ -391,6 +391,42 @@ static int record_query_contract(logger_t *owner, int cold)
 	return 0;
 }
 
+/* 安装包 C/C++11 消费者不仅检查函数指针类型，还实际执行 TLS 合同。 */
+static int context_contract(int cold)
+{
+	int (*set)(const logger_context_t *) = logger_context_set;
+	int (*clear)(void) = logger_context_clear;
+	int (*get)(logger_context_t *) = logger_context_get;
+	logger_context_t input = { "installed-context", "installed-session",
+				   NULL };
+	logger_context_t output = { "unchanged", "unchanged", "unchanged" };
+	logger_context_t before = output;
+	errno = EDOM;
+	if (cold) {
+		if (set(&input) != -ENODEV || errno != EDOM ||
+		    get(&output) != -ENODEV || errno != EDOM ||
+		    memcmp(&output, &before, sizeof(output)) != 0 ||
+		    clear() != -ENODEV || errno != EDOM)
+			return 1;
+		return 0;
+	}
+	if (set(&input) || errno != EDOM || get(&output) || errno != EDOM)
+		return 2;
+	if (!output.request_id || !output.session_id || output.trace_id)
+		return 2;
+	if (strcmp(output.request_id, "installed-context"))
+		return 2;
+	if (strcmp(output.session_id, "installed-session"))
+		return 2;
+	if (get(NULL) != -EINVAL || errno != EDOM)
+		return 3;
+	if (clear() || errno != EDOM || get(&output) || errno != EDOM)
+		return 3;
+	if (output.request_id || output.session_id || output.trace_id)
+		return 3;
+	return 0;
+}
+
 static int defaults_match(void)
 {
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
@@ -447,6 +483,8 @@ int main(void)
 		return 21;
 	if (record_query_contract(NULL, 1))
 		return 28;
+	if (context_contract(1))
+		return 30;
 	/* Console 配置返回状态，TTY 用独立输出槽，不再混淆错误与 false。 */
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
 	int (*configure_console)(const console_config_t *) = console_init;
@@ -465,6 +503,8 @@ int main(void)
 		return 10;
 	if (initialize() != -EALREADY || errno != EDOM)
 		return 11;
+	if (context_contract(0))
+		return 31;
 	if (configure_console(&console) || errno != EDOM ||
 	    set_color(CONSOLE_COLOR_NEVER) || errno != EDOM ||
 	    set_verbosity(CONSOLE_QUIET) || errno != EDOM)
