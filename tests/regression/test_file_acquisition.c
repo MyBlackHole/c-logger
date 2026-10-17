@@ -179,7 +179,7 @@ static void two_writes(logger_file_t *f, int second_error)
 		CHECK(f->metrics.rotation_failures == 1);
 		CHECK(f->metrics.last_rotation_error == second_error);
 		CHECK(!f->detached);
-		CHECK(f->fd >= 0);
+		CHECK(logger_fd_valid(&f->fd));
 	} else
 		CHECK(f->metrics.rotation_successes == 1);
 }
@@ -214,13 +214,15 @@ int main(int argc, char **argv)
 		errno = 0;
 		CHECK(logger_file_init(&file, "out.log", rotation, 0600) == -1);
 		CHECK(errno == expected && failed == 1);
-		CHECK(file.fd == -1 && file.dir_fd == -1 && file.lock_fd == -1);
+		CHECK(!logger_fd_valid(&file.fd) && !logger_fd_valid(&file.dir_fd) &&
+		      !logger_fd_valid(&file.lock_fd));
 		all_descriptors_released(baseline);
 		selected = FAULT_NONE;
 	}
 
 	CHECK(!logger_file_init(&file, "out.log", rotation, 0600));
-	CHECK(file.fd >= 0 && file.dir_fd >= 0 && file.lock_fd >= 0);
+	CHECK(logger_fd_valid(&file.fd) && logger_fd_valid(&file.dir_fd) &&
+	      logger_fd_valid(&file.lock_fd));
 	if (selected == FAULT_RETENTION_DIRECTORY ||
 	    selected == FAULT_FDOPENDIR) {
 		int expected = selected == FAULT_FDOPENDIR ? ENOMEM : EMFILE;
