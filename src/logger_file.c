@@ -594,8 +594,10 @@ static int rotate_impl(logger_file_t *f)
 		logger_fd_own(candidate_fd);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_open");
-	if (!rc)
-		rc = sync_data(f, logger_fd_number(logger_fd_borrow(&candidate)));
+	if (!rc) {
+		int new_fd = logger_fd_number(logger_fd_borrow(&candidate));
+		rc = sync_data(f, new_fd);
+	}
 	/* 先持久化新的空 inode，再同步包含新目录项的父目录。 */
 	if (!rc)
 		rc = sync_directory(f);
@@ -605,7 +607,8 @@ static int rotate_impl(logger_file_t *f)
 		/* 与旧路径相同：先回收新候选，随后记录切换错误；
 		 * close(EINTR/EIO) 不能覆盖失败的 fsync/目录同步主错误。
 		 */
-		int close_rc LOGGER_MAYBE_UNUSED = logger_fd_close_status(&candidate);
+		int close_rc LOGGER_MAYBE_UNUSED =
+			logger_fd_close_status(&candidate);
 		f->switch_error = -rc;
 		return rc;
 	}
