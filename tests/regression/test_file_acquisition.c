@@ -214,7 +214,8 @@ int main(int argc, char **argv)
 		errno = 0;
 		CHECK(logger_file_init(&file, "out.log", rotation, 0600) == -1);
 		CHECK(errno == expected && failed == 1);
-		CHECK(!logger_fd_valid(&file.fd) && !logger_fd_valid(&file.dir_fd) &&
+		CHECK(!logger_fd_valid(&file.fd) &&
+		      !logger_fd_valid(&file.dir_fd) &&
 		      !logger_fd_valid(&file.lock_fd));
 		all_descriptors_released(baseline);
 		selected = FAULT_NONE;
