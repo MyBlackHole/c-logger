@@ -1,71 +1,70 @@
 #include "logger.h"
 #include <errno.h>
-#include <stdint.h>
 #include <string.h>
-
-static const char redacted[] = "[REDACTED]";
 
 const char *logger_redact(void)
 {
-	return redacted;
+	return "[REDACTED]";
 }
 
 int logger_mask_secret(const char *v, char *out, size_t cap, size_t pre,
 		       size_t suf)
 {
 	int saved = errno;
-	int rc = 0;
+	int rc = -EINVAL;
 
-	if (!out || !cap) {
-		rc = -EINVAL;
+	if (!out || !cap)
 		goto done;
-	}
 	if (!v) {
-		if (cap < sizeof(redacted)) {
+		if (cap < sizeof("[REDACTED]")) {
 			rc = -ENOSPC;
 			goto done;
 		}
-		memcpy(out, redacted, sizeof(redacted));
+		memcpy(out, "[REDACTED]", sizeof("[REDACTED]"));
+		rc = 0;
 		goto done;
 	}
 	size_t n = strlen(v);
+
 	if (pre > n)
 		pre = n;
 	if (suf > n - pre)
 		suf = n - pre;
-	/* 绝不通过此辅助函数泄露整个值，包括空字符串。 */
-	if (suf == n - pre) {
+	/* 裁剪保证 pre + suf 不溢出；绝不通过参数组合完整披露原值。 */
+	if (pre + suf >= n) {
 		pre = 0;
 		suf = 0;
 	}
-	/* 三个遮挡字节和终止符都纳入容量；检查完成前不修改输出。 */
-	if (pre > SIZE_MAX - 4u || suf > SIZE_MAX - 4u - pre) {
+	size_t visible = pre + suf;
+
+	if (visible > SIZE_MAX - sizeof("***")) {
 		rc = -EOVERFLOW;
 		goto done;
 	}
-	size_t need = pre + suf + 4u;
+	size_t need = visible + sizeof("***");
+
 	if (need > cap) {
 		rc = -ENOSPC;
 		goto done;
 	}
-	/* 两个源片段有序且不相交，目标片段之间保留三个遮挡字节。
-	 * 向右移动先保存后缀，向左或原地先保存前缀；memmove 处理片段
-	 * 自身的重叠。遮挡最后写入，避免短隐藏区扩展时提前覆盖后缀。
-	 * 地址比较依赖受支持 Linux/ELF 平台的平坦 uintptr_t 地址模型。
+	/* Linux 平坦地址空间：按目的地址方向保全尚未读取的首尾片段。
+	 * 向低地址移动先复制前缀；向高地址移动先复制后缀。
+	 * 两段目标区不重叠，最后写遮挡串和终止符，避免覆盖源后缀。
 	 */
-	if ((uintptr_t)out > (uintptr_t)v) {
-		if (suf)
-			memmove(out + pre + 3u, v + n - suf, suf);
+	if ((uintptr_t)out <= (uintptr_t)v) {
 		if (pre)
 			memmove(out, v, pre);
+		if (suf)
+			memmove(out + pre + 3, v + n - suf, suf);
 	} else {
+		if (suf)
+			memmove(out + pre + 3, v + n - suf, suf);
 		if (pre)
 			memmove(out, v, pre);
-		if (suf)
-			memmove(out + pre + 3u, v + n - suf, suf);
 	}
 	memcpy(out + pre, "***", 3);
-	out[need - 1u] = '\0';
+	out[need - 1] = 0;
+	rc = 0;
 done:
 	errno = saved;
 	return rc;

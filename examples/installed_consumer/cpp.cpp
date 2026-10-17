@@ -3,33 +3,21 @@
 #include <logger_version.h>
 #include <errno.h>
 #include <string.h>
-/* 由搬迁后的独立 C/C++11 消费者执行，只依赖安装的公开接口。 */
-static int mask_contract(void)
-{
-	int (*mask)(const char *, char *, size_t, size_t, size_t) =
-		logger_mask_secret;
-	char value[32] = "abcdef";
-	char tiny[3] = { 'X', 'Y', 'Z' };
-	errno = EDOM;
-	if (mask(value, value, sizeof(value), 1, 4) || errno != EDOM)
-		return 1;
-	if (strcmp(value, "a***cdef"))
-		return 2;
-	if (mask("secret", tiny, sizeof(tiny), 0, 0) != -ENOSPC)
-		return 3;
-	if (errno != EDOM || memcmp(tiny, "XYZ", sizeof(tiny)))
-		return 4;
-	if (mask(NULL, value, sizeof(value), 0, 0) || errno != EDOM)
-		return 5;
-	if (strcmp(value, logger_redact()))
-		return 6;
-	return 0;
-}
-
 int main()
 {
-	if (mask_contract())
-		return 30;
+	char masked[16] = "abcd";
+	int (*mask)(const char *, char *, size_t, size_t, size_t) =
+		logger_mask_secret;
+
+	errno = EDOM;
+	if (mask(masked, masked, sizeof(masked), 1, 1) || errno != EDOM)
+		return 40;
+	if (strcmp(masked, "a***d"))
+		return 41;
+	if (mask(NULL, masked, 2, 0, 0) != -ENOSPC || errno != EDOM)
+		return 42;
+	if (strcmp(masked, "a***d"))
+		return 43;
 	if (logger_process_init() != 0)
 		return 1;
 	auto cfg = LOGGER_DEFAULT_CONFIG();

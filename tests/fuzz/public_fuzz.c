@@ -38,7 +38,6 @@ static void mask_property(const uint8_t *data, size_t size)
 	char *out = (char *)&result[8];
 	errno = EDOM;
 	int rc = logger_mask_secret(value, out, cap, pre, suf);
-	REQUIRE(errno == EDOM);
 	size_t expected_length;
 	char expected[128];
 	if (!value) {
@@ -61,17 +60,21 @@ static void mask_property(const uint8_t *data, size_t size)
 		expected[expected_length - 1] = '\0';
 	}
 	if (!cap) {
-		REQUIRE(rc == -EINVAL);
+		REQUIRE(rc == -EINVAL && errno == EDOM);
 	} else if (cap < expected_length) {
-		REQUIRE(rc == -ENOSPC);
+		REQUIRE(rc == -ENOSPC && errno == EDOM);
 	} else {
 		REQUIRE(rc == 0);
 		REQUIRE(!memcmp(out, expected, expected_length));
 		REQUIRE(strlen(out) == expected_length - 1);
 	}
+	REQUIRE(errno == EDOM);
+	if (rc)
+		for (size_t i = 0; i < sizeof(result); ++i)
+			REQUIRE(result[i] == 0xa5);
 	for (size_t i = 0; i < 8; ++i)
 		REQUIRE(result[i] == 0xa5);
-	/* 失败全槽保持，成功也不能写结果终止符之后的可用容量。 */
+	/* 成功只允许写结果及 NUL，不能修改余下的可用容量。 */
 	size_t written = rc ? 0 : expected_length;
 	for (size_t i = 8 + written; i < sizeof(result); ++i)
 		REQUIRE(result[i] == 0xa5);
@@ -86,9 +89,9 @@ static void mask_property(const uint8_t *data, size_t size)
 	if (!rc)
 		memcpy(before + offset, expected, expected_length);
 	errno = EDOM;
-	int overlap = logger_mask_secret(value ? (char *)arena + 160 : NULL,
-					 (char *)arena + offset, cap,
-					 data[2], data[3]);
+	const char *source = value ? (const char *)arena + 160 : NULL;
+	char *target = (char *)arena + offset;
+	int overlap = logger_mask_secret(source, target, cap, data[2], data[3]);
 	REQUIRE(overlap == rc && errno == EDOM);
 	REQUIRE(!memcmp(arena, before, sizeof(arena)));
 }

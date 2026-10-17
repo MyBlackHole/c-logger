@@ -277,8 +277,8 @@ typedef struct {
  * - 在实例存续期间，日志记录、级别设置、指标查询和刷新可以并发调用。
  * - 所有者必须先停止并等待所有显式实例使用者结束，再销毁实例。
  * 错误约定：进程初始化、create/destroy、默认槽、刷新/重开、记录、
- * 状态/指标查询、Console、TLS 上下文及脱敏操作使用 0/-errno，保留 errno。
- * 级别设置仍按现行约定待独立迁移；常量标记查询没有失败路径。
+ * 状态/指标查询、Console 与 TLS 上下文已统一 0/-errno，且保留入口 errno。
+ * 脱敏辅助函数也使用 0/-errno 并保留 errno；级别设置仍待独立迁移。
  */
 /* 普通文件是单一所有者的目标（<basename>.logger.lock）。第二个独立
  * 所有者会收到 EBUSY：应共享同一个存活实例。目录解析在创建时绑定；
@@ -334,16 +334,16 @@ LOGGER_API int logger_context_get(logger_context_t *out);
 
 /* 显式的秘密信息处理辅助函数。日志器不会检查任意 printf 文本中的
  * 秘密信息。调用者必须先脱敏，再记录敏感数据。 */
-/* 返回不可修改的静态标记；无需进程初始化，没有失败路径。 */
+/* 不会失败，返回静态只读标记，不需要进程初始化或调用方释放。 */
 LOGGER_API const char *logger_redact(void);
-/* 返回 0/-errno，所有正常返回保留 errno；不分配、不加锁、不执行 I/O。
- * out 必须提供 out_size 个可写字节；NULL 或零容量返回 -EINVAL。
- * value 是调用期间有效的 NUL 终止字符串，NULL 值生成 [REDACTED]。
- * 前后缀按字节截取并钳制到输入长度；会暴露整个值时改为 ***。
- * 容量含终止符；不足 -ENOSPC，长度计算溢出 -EOVERFLOW。
- * 支持原地及任意部分重叠；失败保持整个输出原值，成功只写结果和 NUL。
- * 本操作不是安全擦除，原始存储和终止符后的旧字节可能仍含秘密；
- * 失败后不得把保留的原输出当成已脱敏结果。 */
+/* 返回 0/-errno，保留入口 errno；此纯辅助函数不依赖进程域。
+ * value 须为可读的 NUL 结尾字符串，NULL 表示输出 "[REDACTED]"。
+ * out 须有 out_size 字节可写空间；NULL/零容量 -EINVAL，容量不足
+ * -ENOSPC，结果长度溢出 -EOVERFLOW。所有失败保持整个输出缓冲原值。
+ * 首尾长度按字节裁剪；若组合会完整披露原值，则只输出 "***"。
+ * 支持原地及部分重叠，成功只写结果和终止符，不清除缓冲区剩余秘密。
+ * 调用方必须检查状态，不能在失败后记录仍含原值的缓冲区。
+ */
 LOGGER_API int logger_mask_secret(const char *value, char *out, size_t out_size,
 				  size_t visible_prefix, size_t visible_suffix);
 
