@@ -273,8 +273,8 @@ ABI_FN(logger_mask_secret, int, const char *, char *, size_t, size_t, size_t);
 ABI_FN(logger_redact, const char *, void);
 ABI_FN(logger_default_reopen, int, void);
 ABI_FN(logger_reopen, int, logger_t *);
-ABI_FN(logger_set_instance_level, void, logger_t *, logger_level_t);
-ABI_FN(logger_set_level, void, logger_level_t);
+ABI_FN(logger_set_instance_level, int, logger_t *, logger_level_t);
+ABI_FN(logger_set_level, int, logger_level_t);
 
 static int query_sentinel(const void *out, size_t size)
 {
@@ -427,6 +427,46 @@ static int context_contract(int cold)
 	return 0;
 }
 
+/* 安装消费同时执行类型及真实行为，不以旧 ABI 的导出名称替代签名。 */
+static int level_contract(logger_t *owner, int cold)
+{
+	int (*set_instance)(logger_t *, logger_level_t) =
+		logger_set_instance_level;
+	int (*set_default)(logger_level_t) = logger_set_level;
+	errno = EDOM;
+	if (cold) {
+		if (set_instance((logger_t *)(uintptr_t)1, LOGGER_INFO) !=
+			    -ENODEV ||
+		    errno != EDOM || set_default(LOGGER_INFO) != -ENODEV ||
+		    errno != EDOM)
+			return 1;
+		return 0;
+	}
+	logger_diagnostics_t diag;
+	if (set_instance(owner, LOGGER_DEBUG) || errno != EDOM)
+		return 2;
+	if (logger_get_diagnostics(owner, &diag) || errno != EDOM ||
+	    diag.level != LOGGER_DEBUG)
+		return 3;
+	if (set_default(LOGGER_WARN) || errno != EDOM)
+		return 4;
+	if (logger_get_global_diagnostics(&diag) || errno != EDOM ||
+	    diag.level != LOGGER_WARN)
+		return 5;
+	if (set_instance(NULL, LOGGER_INFO) != -EINVAL || errno != EDOM ||
+	    set_default((logger_level_t)-1) != -EINVAL || errno != EDOM ||
+	    set_instance(owner, (logger_level_t)(LOGGER_OFF + 1)) !=
+		    -EINVAL ||
+	    errno != EDOM)
+		return 6;
+	if (logger_get_diagnostics(owner, &diag) || errno != EDOM ||
+	    diag.level != LOGGER_WARN)
+		return 7;
+	if (set_default(LOGGER_INFO) || errno != EDOM)
+		return 8;
+	return 0;
+}
+
 static int defaults_match(void)
 {
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
@@ -485,6 +525,8 @@ int main(void)
 		return 28;
 	if (context_contract(1))
 		return 30;
+	if (level_contract(NULL, 1))
+		return 32;
 	/* Console 配置返回状态，TTY 用独立输出槽，不再混淆错误与 false。 */
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
 	int (*configure_console)(const console_config_t *) = console_init;
@@ -535,6 +577,8 @@ int main(void)
 		return 18;
 	if (record_query_contract(owner, 0))
 		return 29;
+	if (level_contract(owner, 0))
+		return 33;
 	/* 安装后的 C/C++ 使用全部四个新控制签名；stderr 无文件可重开。 */
 	int (*flush)(logger_t *) = logger_flush;
 	int (*reopen)(logger_t *) = logger_reopen;

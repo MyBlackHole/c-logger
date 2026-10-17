@@ -130,7 +130,7 @@ static int finish_result(global_scope_t *scope, int rc)
 	return rc ? rc : -error;
 }
 
-/* 级别设置及 begin 的内部错误桥接仍使用 POSIX 风格。 */
+/* begin 的内部错误桥接仍使用 POSIX 风格；公开 API 统一 0/-errno。 */
 static int finish(global_scope_t *scope, int rc)
 {
 	rc = finish_result(scope, rc);
@@ -334,15 +334,27 @@ out:
 	return rc;
 }
 
-void logger_set_level(logger_level_t level)
+int logger_set_level(logger_level_t level)
 {
+	int saved = errno;
 	global_scope_t scope;
-	if (begin(&scope))
-		return;
-	int rc = (unsigned)level <= LOGGER_OFF ? pin(&scope) : -EINVAL;
-	if (!rc)
-		logger_set_instance_level(g_logger, level);
-	(void)finish(&scope, rc);
+	int rc;
+
+	if (begin(&scope)) {
+		rc = -errno;
+		goto out;
+	}
+	rc = (unsigned)level <= LOGGER_OFF ? pin(&scope) : -EINVAL;
+	if (!rc) {
+		/* 生命周期读侧已固定默认代次；不要重复进入公开实例作用域。 */
+		atomic_store_explicit(&g_logger->level, level,
+				      memory_order_relaxed);
+	}
+	/* 更新已提交后，取消恢复或解锁证明仍可能返回错误。 */
+	rc = finish_result(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 int logger_global_dropped(uint64_t *out)
