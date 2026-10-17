@@ -36,7 +36,7 @@ static void mask_property(const uint8_t *data, size_t size)
 	unsigned char result[144];
 	memset(result, 0xa5, sizeof(result));
 	char *out = (char *)&result[8];
-	errno = 0;
+	errno = EDOM;
 	int rc = logger_mask_secret(value, out, cap, pre, suf);
 	size_t expected_length;
 	char expected[128];
@@ -60,14 +60,18 @@ static void mask_property(const uint8_t *data, size_t size)
 		expected[expected_length - 1] = '\0';
 	}
 	if (!cap) {
-		REQUIRE(rc == -1 && errno == EINVAL);
+		REQUIRE(rc == -EINVAL && errno == EDOM);
 	} else if (cap < expected_length) {
-		REQUIRE(rc == -1 && errno == ENOSPC);
+		REQUIRE(rc == -ENOSPC && errno == EDOM);
 	} else {
 		REQUIRE(rc == 0);
 		REQUIRE(!memcmp(out, expected, expected_length));
 		REQUIRE(strlen(out) == expected_length - 1);
 	}
+	REQUIRE(errno == EDOM);
+	if (rc)
+		for (size_t i = 0; i < sizeof(result); ++i)
+			REQUIRE(result[i] == 0xa5);
 	for (size_t i = 0; i < 8; ++i)
 		REQUIRE(result[i] == 0xa5);
 	for (size_t i = 8 + cap; i < sizeof(result); ++i)

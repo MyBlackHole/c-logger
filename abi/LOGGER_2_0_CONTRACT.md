@@ -32,8 +32,9 @@ int logger_default_reopen(void);
 ```
 
 四者采用0/-errno并保留errno，删除旧status/instance包装，不保留符号别名。
-默认绑定 `logger_default_set` 也采用该规则。配置布局不变，级别设置、TLS上下文
-和脱敏辅助函数仍单独迁移，当前返回形式见[API](../API.md)。
+默认绑定 `logger_default_set`、TLS上下文及脱敏函数也采用该规则。配置布局不变，
+级别设置仍单独迁移。脱敏函数类型不变，但错误状态改为负错误码并保留errno，
+失败保持输出不变；新旧语义不能混用。当前合同见[API](../API.md)。
 详细控制语义与错误优先级见[控制操作合同](../docs/v2/CONTROL_API.md)。
 
 ## Console 函数类型与返回值迁移
