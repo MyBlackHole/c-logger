@@ -147,7 +147,9 @@ static int check_owner(logger_file_t *f)
 	if (!f->managed)
 		return 0;
 	struct stat st;
-	int rc = check_named_fd(file_dir_fd(f), f->lock_name, file_lock_fd(f), &st);
+	int dirfd = file_dir_fd(f);
+	int lockfd = file_lock_fd(f);
+	int rc = check_named_fd(dirfd, f->lock_name, lockfd, &st);
 	return rc ? rc : regular_single_link(&st);
 }
 
@@ -243,10 +245,11 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 	f->iov_max = iov_max > 0 && iov_max <= INT_MAX ? (int)iov_max : 16;
 	int rc = bind_path(f, path);
 	if (!rc && f->managed) {
-		int lockfd = logger_fork_openat(file_dir_fd(f), f->lock_name,
-					       O_RDWR | O_CREAT | O_CLOEXEC |
-						       O_NOFOLLOW | O_NONBLOCK,
-					       0600);
+		int dirfd = file_dir_fd(f);
+		int flags = O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW |
+			    O_NONBLOCK;
+		int lockfd =
+			logger_fork_openat(dirfd, f->lock_name, flags, 0600);
 		f->lock_fd = logger_fd_own(lockfd);
 		if (!logger_fd_valid(&f->lock_fd))
 			rc = -errno;
@@ -287,7 +290,8 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
-	int candidate = logger_fork_openat(file_dir_fd(f), f->name, flags, f->mode);
+	int dirfd = file_dir_fd(f);
+	int candidate = logger_fork_openat(dirfd, f->name, flags, f->mode);
 	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
 		logger_fd_own(candidate);
 	if (!logger_fd_valid(&fd))
@@ -423,7 +427,8 @@ static int check_active(logger_file_t *f)
 	struct stat st;
 	int rc = check_owner(f);
 	if (!rc)
-		rc = check_named_fd(file_dir_fd(f), f->name, file_data_fd(f), &st);
+		rc = check_named_fd(file_dir_fd(f), f->name,
+			    file_data_fd(f), &st);
 	if (!rc && (st.st_dev != f->device || st.st_ino != f->inode))
 		rc = -ESTALE;
 	if (!rc)
@@ -497,9 +502,10 @@ static int retention(logger_file_t *f, time_t now)
 	if (!f->rotation.retention_days)
 		return 0;
 	/* 独立的目录描述避免与绑定目录共享 readdir 的偏移。 */
+	int dirfd = file_dir_fd(f);
 	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
 		logger_fd_own(logger_fork_openat(
-			file_dir_fd(f), ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0));
+			dirfd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0));
 	if (!logger_fd_valid(&fd))
 		return -errno;
 	DIR *d = logger_fd_fdopendir(&fd);
@@ -573,13 +579,14 @@ static int rotate_impl(logger_file_t *f)
 	if (rc)
 		return rc;
 	char name[LOGGER_FILENAME_MAX + 1];
+	int dirfd = file_dir_fd(f);
 	unsigned attempt;
 	for (attempt = 0; attempt < LOGGER_ARCHIVE_ATTEMPTS; ++attempt) {
 		rc = archive_name(f, &t, name, sizeof(name));
 		if (rc)
 			return rc;
 		if (!logger_fault_should_fail(LOGGER_FAULT_FILE_RENAME) &&
-		    !logger_file_rename_noreplace(file_dir_fd(f), f->name, name))
+		    !logger_file_rename_noreplace(dirfd, f->name, name))
 			break;
 		int error = errno;
 		if (error != EEXIST)
