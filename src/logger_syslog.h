@@ -1,6 +1,7 @@
 #ifndef LOGGER_SYSLOG_H
 #define LOGGER_SYSLOG_H
 #include "logger.h"
+#include "logger_fd.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/un.h>
@@ -9,7 +10,7 @@
  * 初始化成功后配置不再变化，也不存在后台重连线程。
  */
 typedef struct {
-	int fd;
+	struct logger_owned_fd fd; /* 私有唯一所有者；无 fd 时 value=-1 */
 	char ident[128];
 	char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
 	unsigned facility;
