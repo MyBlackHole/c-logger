@@ -302,3 +302,34 @@ fork 操作期间保持存活并持续生成独立编号记录。测试两种子
 并不是穷举所有fork与锁交错，也不是对缺失的31项进行TSan动态检查。
 宿主外部libc/分配器/stdio状态与POSIX多线程fork的一般限制不因此解除；
 测试结果须以准确最终源码的CI回执为准，不能由本说明预先标记通过。
+
+## 宿主自身 FILE 流锁：不跨所有权边界的受控测试（#255）
+
+Logger 的资源协调与 `format_mu` 只串行化本库自己的文件描述符、时间转换、
+格式化和输出。宿主自己通过 `fopen` 获得的 `FILE *` **不属于 Logger**：
+不能在 atfork 处理函数、子方运行域重建、实例关闭过程中擅自调用
+`fclose`/`funlockfile` 或替宿主恢复原始线程/外部库隐藏锁。
+
+受控生产测试 `fork_host_file_boundary` 只考察一个有限场景：父方
+保持异步 Logger 文件实例，并由独立业务线程通过 `flockfile` 持有**自己的**
+`foreign.log` 流锁。正常 `fork` 后子方仅根据父方已记录的原始 fd
+整数调用 `fcntl(F_GETFD)`，确认外部宿主 fd 没被 Logger 关闭；
+先确认旧 Logger 实例在子方返回 `-ECHILD`，显式重建新进程域，
+只用新实例写入自己的 `child.log`，flush 和消费式销毁。
+子方**绝不读取、写入、刷新或解锁继承的外部 `FILE *`**。
+父方在 locked 模式下直到子方退出才放行持锁线程，并核对
+`foreign.log` 可继续写入/关闭、父子文件无串写。
+对照模式先释放宿主 FILE 锁并 join 外部线程，再正常 fork。
+
+该路径在现有 `fork-worker-stress-validation` 的
+生产静态/共享库 × 普通GCC/校准Clang ASan/UBSan 四种身份下，
+每身份 held/quiesced 各三轮。准确通过数、原始日志、源码提交/tree
+与构建身份必须按对应 PR 的**真实运行结果**验收，
+不可由测试文件存在、普通 CI 全绿或本文描述提前推断。
+
+**不支持/未验证的情形**：子方使用继承的外部 `FILE *`、
+在宿主其他线程执行 `setlocale/tzset/dlopen` 或自定义printf/分配器
+临界区时重建运行域、信号处理函数中的fork、原始系统调用绕过处理函数，
+以及任意非本库的全局锁/线程安全状态。Linux/glibc 特定探针成功
+也不把这些转换成通用POSIX保证；#218必须由维护者明确批准范围，
+#221原生TSan对31个post-fork-worker动态场景的能力缺口依然开放。

@@ -5,16 +5,22 @@ on:
     paths:
       - ".github/workflows/fork-worker-stress-validation.yml"
       - "tests/regression/test_fork_worker_stress.c"
+      - "tests/regression/test_fork_host_file.c"
       - "scripts/run_fork_worker_stress.py"
+      - "scripts/check_fork_host_file.py"
       - "tests/scripts/test_run_fork_worker_stress.py"
+      - "tests/scripts/test_check_fork_host_file.py"
       - "xmake.lua"
   push:
     branches: [main]
     paths:
       - ".github/workflows/fork-worker-stress-validation.yml"
       - "tests/regression/test_fork_worker_stress.c"
+      - "tests/regression/test_fork_host_file.c"
       - "scripts/run_fork_worker_stress.py"
+      - "scripts/check_fork_host_file.py"
       - "tests/scripts/test_run_fork_worker_stress.py"
+      - "tests/scripts/test_check_fork_host_file.py"
       - "xmake.lua"
 
 permissions:
@@ -68,6 +74,8 @@ jobs:
           set -euo pipefail
           python3 tests/scripts/test_run_fork_worker_stress.py -v \
             2>&1 | tee evidence/runner-selftests.log
+          python3 tests/scripts/test_check_fork_host_file.py -v \
+            2>&1 | tee evidence/host-runner-selftests.log
 
       - name: 构建真实生产静态/共享库与非默认压力程序
         shell: bash
@@ -94,7 +102,8 @@ jobs:
             "${toolchain[@]}" "${policy[@]}" \
             --build_shared="$shared" --build_tests=n \
             --build_private_tests=n --build_regression_tests=n
-          xmake -rvD -j2 fork_worker_stress > evidence/build.log 2>&1 || {
+          xmake -rvD -j2 fork_worker_stress fork_host_file_boundary \
+            > evidence/build.log 2>&1 || {
             tail -150 evidence/build.log
             exit 1
           }
@@ -102,14 +111,16 @@ jobs:
             grep -q -- '-fsanitize=address' evidence/build.log
           fi
           binary="$(find stress-build -type f -name fork_worker_stress -perm -111 -print -quit)"
+          hostbin="$(find stress-build -type f -name fork_host_file_boundary -perm -111 -print -quit)"
           if [ "$shared" = y ]; then
             lib="$(find stress-build -type f -name "liblogger.so.$LOGGER_PROJECT_VERSION" -print -quit)"
           else
             lib="$(find stress-build -type f -name liblogger.a -print -quit)"
           fi
           test -n "$binary" && test -x "$binary" && test -n "$lib"
+          test -n "$hostbin" && test -x "$hostbin"
           python3 scripts/check_production_artifact.py "$lib"
-          sha256sum "$binary" "$lib" > evidence/build-sha256.txt
+          sha256sum "$binary" "$hostbin" "$lib" > evidence/build-sha256.txt
           runtime_dir=""
           if [ "$shared" = y ] &&
              [ "${{ matrix.runtime }}" = address-undefined ]; then
@@ -123,13 +134,17 @@ jobs:
           fi
           export LD_LIBRARY_PATH="$(dirname "$lib"):${runtime_dir:+$runtime_dir:}${LD_LIBRARY_PATH:-}"
           ldd "$binary" > evidence/dependencies.txt
+          ldd "$hostbin" > evidence/host-dependencies.txt
           if [ "$shared" = y ]; then
             grep -q 'liblogger.so.2' evidence/dependencies.txt
+            grep -q 'liblogger.so.2' evidence/host-dependencies.txt
           fi
-          if grep -q 'not found' evidence/dependencies.txt; then
-            cat evidence/dependencies.txt
+          if grep -q 'not found' evidence/dependencies.txt ||
+             grep -q 'not found' evidence/host-dependencies.txt; then
+            cat evidence/dependencies.txt evidence/host-dependencies.txt
             exit 1
           fi
+          echo "FORK_HOST_BIN=$hostbin" >> "$GITHUB_ENV"
           echo "FORK_WORKER_BIN=$binary" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
@@ -143,6 +158,17 @@ jobs:
             2>&1 | tee evidence/proof.log
           grep -qx 'FORK_STRESS_EVIDENCE_OK samples=6' \
             <(tail -n 1 evidence/proof.log)
+
+      - name: 宿主FILE被其他线程持有时验证父子域与fd非干扰
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_fork_host_file.py \
+            --binary "$FORK_HOST_BIN" \
+            --output evidence/host-observations --repeats 3 \
+            2>&1 | tee evidence/host-proof.log
+          grep -qx 'FORK_HOST_EVIDENCE_OK samples=6' \
+            <(tail -n 1 evidence/host-proof.log)
 
       - name: 无论成功失败均保留原始退出状态与完整源身份
         if: always()
