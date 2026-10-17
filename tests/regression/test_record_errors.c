@@ -111,7 +111,8 @@ int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t size,
 
 ssize_t __wrap_write(int fd, const void *data, size_t length)
 {
-	if (active && owner && fd == owner->file_backend.fd) {
+	if (active && owner &&
+	    fd == logger_fd_number(logger_fd_borrow(&owner->file_backend.fd))) {
 		int error = take_error(&write_error);
 		if (error) {
 			errno = error;

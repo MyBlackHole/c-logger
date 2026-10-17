@@ -1,7 +1,7 @@
 file	api	arguments
 src/logger_file.c	logger_fork_open	dir,O_RDONLY|O_DIRECTORY|O_CLOEXEC,0
-src/logger_file.c	logger_fork_openat	file_dir_fd(f),f->lock_name,O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK,0600
-src/logger_file.c	logger_fork_openat	file_dir_fd(f),f->name,flags,f->mode
-src/logger_file.c	logger_fork_openat	"file_dir_fd(f),""."",O_RDONLY|O_DIRECTORY|O_CLOEXEC,0"
+src/logger_file.c	logger_fork_openat	dirfd,f->lock_name,flags,0600
+src/logger_file.c	logger_fork_openat	dirfd,f->name,flags,f->mode
+src/logger_file.c	logger_fork_openat	"dirfd,""."",O_RDONLY|O_DIRECTORY|O_CLOEXEC,0"
 src/logger_fd.h	logger_fork_fdopendir	owner->value
 src/logger_syslog.c	logger_fork_socket	AF_UNIX,SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0
