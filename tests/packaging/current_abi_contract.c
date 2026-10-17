@@ -397,7 +397,8 @@ static int context_contract(int cold)
 	int (*set)(const logger_context_t *) = logger_context_set;
 	int (*clear)(void) = logger_context_clear;
 	int (*get)(logger_context_t *) = logger_context_get;
-	logger_context_t input = { "installed-context", "installed-session", NULL };
+	logger_context_t input = { "installed-context", "installed-session",
+				   NULL };
 	logger_context_t output = { "unchanged", "unchanged", "unchanged" };
 	logger_context_t before = output;
 	errno = EDOM;
