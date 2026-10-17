@@ -1,5 +1,30 @@
 # 2026-10-17：#210 对当前 ABI 2 主线的有限增量
 
+## 2026-10-17 主线后续证据增量（历史E0–E9内容不重写）
+
+**当前基线**：`2a2c0a738b331dc93327ecab09bac8c149672914`
+（[#254](https://github.com/MyBlackHole/c-logger/pull/254) 已合并）。
+本节**只更新原始映射后的事实变化**，下文较早的
+`acb7a997` 与当时尚未合入的PR #215/#217状态均为历史时点，
+不是今天仍需直接合并旧分支的建议。D1–D6 的范围/风险尚无维护者批准，
+也未授权创建 `v2.0.0` 标签与正式 Release。
+
+| 范围 | 已获得的当前可查证证据 | 仍然缺失的决策/边界 |
+|---|---|---|
+| D1 类型隔离 | [#237](https://github.com/MyBlackHole/c-logger/pull/237) 和之后的[#240](https://github.com/MyBlackHole/c-logger/pull/240)、[#242](https://github.com/MyBlackHole/c-logger/pull/242)、[#244](https://github.com/MyBlackHole/c-logger/pull/244)、[#246](https://github.com/MyBlackHole/c-logger/pull/246)、[#248](https://github.com/MyBlackHole/c-logger/pull/248) 已在真实 fd 候选/退役边界有限实现拥有/借用与单次移交测试；旧PR #217已关闭并由较新实现替代 | 其余六类单位/状态类型仍未统一静态隔离，C结构仍可同型复制；不能声称D1七类已全部完成 |
+| D2 所有权/AST | 资源获取清单、消费式销毁、fork fd位图、生产回归与失效原句柄检测有可执行门禁 | 完整跨函数别名/宏/函数指针/逃逸检查未完成，是否接受有限静态+动态替代尚待决策 |
+| D3/D4 注入和风格 | 测试归档链接期包装、隔离故障库、固定clang-format18与同步资源规则持续生效 | 统一故障注入API、完整AST及全套复杂度/命名lint未自动实现；未批准视为后续增强 |
+| D5 性能 | [#249](https://github.com/MyBlackHole/c-logger/pull/249) 的[生产固定到达率](https://github.com/MyBlackHole/c-logger/actions/runs/39028623049)：静态、共享各32项有效采样，共各192万计划调用；分别实际完成1919974/1919962，Logger丢弃均0，逐槽位延迟原始制品已核验 | 共享CI的样本API P99不等于逐记录持久化延迟或业务SLO；目标硬件、实际吞吐/P99/丢弃阈值和缓存行硬件证据仍待明确 |
+| D6 模糊治理 | 历史五份语料有Git原件、校验器、有限CI模型与恢复回放 | [#212](https://github.com/MyBlackHole/c-logger/issues/212)的周期执行与失败样本闭环尚未启用；是否为2.0阻断由维护者决定 |
+| fork独立约束 | [#250](https://github.com/MyBlackHole/c-logger/pull/250)的8/8高fd扩容/回滚实测；[#252](https://github.com/MyBlackHole/c-logger/pull/252)固定TSan **964项实际通过/31项明确跳过**与ASan同源执行核验；[#254](https://github.com/MyBlackHole/c-logger/pull/254)普通+ASan静态/共享的24/24真实父方并发、子方独立worker场景，完整16/16CI及Linux5.10.271客机成功 | TSan原生31项动态检查仍不支持；宿主外部libc状态不被Logger内部锁保护，#218/#221不得自动关闭 |
+
+当前新增 [#255](https://github.com/MyBlackHole/c-logger/issues/255) 只验证
+**宿主独立FILE锁**的受控范围；不能以这一个样例替代多线程fork一般支持
+或替维护者接受范围。旧PR #215/#217已经因被更新实现替代而关闭，
+[#227](https://github.com/MyBlackHole/c-logger/pull/227)仍是实验草稿，
+未经完整上游验收不进入发布运行库。Audit与物理掉电认证仍不属于普通
+Logger 2.0 的范围。
+
 > **所有 D1–D6 仍未批准改变范围**。以下是待维护者评审的建议与验证工作，
 > 不是投票结果、发布许可、正式标签、CI全绿总结或自动关闭父议题。
 > 完整原始需求仍在 [#106逐项矩阵](ISSUE_106.md)、[#107逐项矩阵](ISSUE_107.md)
