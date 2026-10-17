@@ -30,8 +30,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 	}
 	int rc = __real_pthread_setcancelstate(state, old);
 	/* 先实际恢复调用线程的取消策略，再模拟恢复错误。 */
-	if (active && !rc && state == PTHREAD_CANCEL_ENABLE &&
-	    fail_restore) {
+	if (active && !rc && state == PTHREAD_CANCEL_ENABLE && fail_restore) {
 		int error = fail_restore;
 		fail_restore = 0;
 		errno = ERANGE;
@@ -100,18 +99,18 @@ static void check_instance_range(void)
 {
 	for (int level = LOGGER_TRACE; level <= LOGGER_OFF; ++level) {
 		errno = EDOM;
-		CHECK(logger_set_instance_level(owner,
-						(logger_level_t)level) == 0);
+		logger_level_t value = (logger_level_t)level;
+		CHECK(logger_set_instance_level(owner, value) == 0);
 		CHECK(errno == EDOM);
 		expect_level((logger_level_t)level);
 	}
 	CHECK(logger_set_instance_level(owner, LOGGER_INFO) == 0);
 	errno = EDOM;
-	CHECK(logger_set_instance_level(owner, (logger_level_t)-1) ==
-	      -EINVAL);
+	logger_level_t invalid = (logger_level_t)-1;
+	CHECK(logger_set_instance_level(owner, invalid) == -EINVAL);
 	CHECK(errno == EDOM);
-	CHECK(logger_set_instance_level(owner, (logger_level_t)(LOGGER_OFF + 1))
-		      == -EINVAL);
+	invalid = (logger_level_t)(LOGGER_OFF + 1);
+	CHECK(logger_set_instance_level(owner, invalid) == -EINVAL);
 	CHECK(errno == EDOM);
 	CHECK(logger_set_instance_level(NULL, LOGGER_INFO) == -EINVAL);
 	CHECK(errno == EDOM);
@@ -186,7 +185,8 @@ static void check_fault(const char *scenario)
 		CHECK(cancel_calls == 1 && read_calls == 0);
 		expect_default_level(LOGGER_INFO);
 	} else if (!strcmp(scenario, "restore")) {
-		CHECK(cancel_calls == 2 && read_calls == 1 && release_calls == 1);
+		CHECK(cancel_calls == 2 && read_calls == 1);
+		CHECK(release_calls == 1);
 		expect_default_level(LOGGER_WARN);
 	} else if (!strcmp(scenario, "read-lock")) {
 		CHECK(cancel_calls == 2 && read_calls == 1 && !release_calls);
@@ -199,8 +199,9 @@ static void check_fault(const char *scenario)
 		CHECK(read_calls == 1 && release_calls == 1);
 		CHECK(atomic_load(&owner->level) == LOGGER_WARN);
 		CHECK(atomic_load(&owner->default_borrowed) == 1);
-		CHECK(atomic_load(&logger_runtime_current()->global_lock_error) ==
-		      EPROTO);
+		int poison =
+			atomic_load(&logger_runtime_current()->global_lock_error);
+		CHECK(poison == EPROTO);
 		CHECK(logger_set_level(LOGGER_INFO) == -EDEADLK);
 		return;
 	}
@@ -223,7 +224,9 @@ static void check_cancel_disabled(void)
 	CHECK(cancel_calls == 2 && read_calls == 1 && release_calls == 1);
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &observed) == 0);
 	CHECK(observed == PTHREAD_CANCEL_DISABLE);
-	CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &observed) == 0);
+	int rc = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
+					&observed);
+	CHECK(rc == 0);
 	CHECK(observed == PTHREAD_CANCEL_ASYNCHRONOUS);
 	CHECK(pthread_setcanceltype(old_type, NULL) == 0);
 	CHECK(pthread_setcancelstate(old_state, NULL) == 0);
@@ -266,18 +269,17 @@ int main(int argc, char **argv)
 			} else if (!strcmp(scenario, "stopped")) {
 				check_stopped_instance();
 			} else if (!strcmp(scenario, "concurrent")) {
-				logger_level_t levels[2] = {
-					LOGGER_DEBUG, LOGGER_WARN
-				};
+				logger_level_t levels[2] = { LOGGER_DEBUG, LOGGER_WARN };
 				pthread_t threads[2];
+				for (int i = 0; i < 2; ++i) {
+					int rc = pthread_create(&threads[i], NULL,
+								concurrent_setter,
+								&levels[i]);
+					CHECK(rc == 0);
+				}
 				for (int i = 0; i < 2; ++i)
-					CHECK(pthread_create(&threads[i], NULL,
-							     concurrent_setter,
-							     &levels[i]) == 0);
-				for (int i = 0; i < 2; ++i)
-					CHECK(pthread_join(threads[i], NULL) == 0);
-				CHECK(logger_set_instance_level(owner, LOGGER_INFO) ==
-				      0);
+					CHECK(!pthread_join(threads[i], NULL));
+				CHECK(!logger_set_instance_level(owner, LOGGER_INFO));
 				expect_level(LOGGER_INFO);
 			} else if (!strcmp(scenario, "global")) {
 				check_global_ready();
@@ -288,7 +290,7 @@ int main(int argc, char **argv)
 			}
 			if (strcmp(scenario, "read-unlock") != 0) {
 				if (bound)
-					CHECK(logger_default_set(owner, NULL) == 0);
+					CHECK(!logger_default_set(owner, NULL));
 				CHECK(logger_destroy(&owner) == 0);
 				CHECK(owner == NULL);
 				CHECK(logger_process_object_count() == 0);

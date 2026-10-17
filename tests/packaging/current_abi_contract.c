@@ -453,11 +453,12 @@ static int level_contract(logger_t *owner, int cold)
 	if (logger_get_global_diagnostics(&diag) || errno != EDOM ||
 	    diag.level != LOGGER_WARN)
 		return 5;
-	if (set_instance(NULL, LOGGER_INFO) != -EINVAL || errno != EDOM ||
-	    set_default((logger_level_t)-1) != -EINVAL || errno != EDOM ||
-	    set_instance(owner, (logger_level_t)(LOGGER_OFF + 1)) !=
-		    -EINVAL ||
-	    errno != EDOM)
+	if (set_instance(NULL, LOGGER_INFO) != -EINVAL || errno != EDOM)
+		return 6;
+	if (set_default((logger_level_t)-1) != -EINVAL || errno != EDOM)
+		return 6;
+	logger_level_t invalid = (logger_level_t)(LOGGER_OFF + 1);
+	if (set_instance(owner, invalid) != -EINVAL || errno != EDOM)
 		return 6;
 	if (logger_get_diagnostics(owner, &diag) || errno != EDOM ||
 	    diag.level != LOGGER_WARN)
