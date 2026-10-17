@@ -6,6 +6,19 @@
 
 int main(void)
 {
+	char masked[16] = "abcd";
+	int (*mask)(const char *, char *, size_t, size_t, size_t) =
+		logger_mask_secret;
+
+	errno = EDOM;
+	if (mask(masked, masked, sizeof(masked), 1, 1) || errno != EDOM)
+		return 40;
+	if (strcmp(masked, "a***d"))
+		return 41;
+	if (mask(NULL, masked, 2, 0, 0) != -ENOSPC || errno != EDOM)
+		return 42;
+	if (strcmp(masked, "a***d"))
+		return 43;
 	if (logger_process_init() != 0)
 		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();

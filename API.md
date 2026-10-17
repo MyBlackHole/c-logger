@@ -21,8 +21,8 @@ Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅�
 父方首次使用也必须显式初始化。普通 Logger、Global、Console 与上下文入口不再
 按需建域、不等待初始化者：空闲报 ENODEV、初始化中报 EAGAIN、失败后报告保存的
 初始化错误，只有显式调用才能重试。进程准入先于配置、拥有者槽与实例字段访问。
-已迁移的状态接口使用0/-errno并保留errno；级别设置、TLS上下文与脱敏辅助函数
-仍遵循各自当前返回形式。纯配置/脱敏辅助函数不需初始化。
+状态接口、TLS上下文及脱敏函数使用0/-errno并保留errno；级别设置仍待独立迁移。
+纯配置/脱敏辅助函数不需初始化。
 详见[显式进程准入](docs/v2/PROCESS_ADMISSION.md)。
 
 子方普通日志入口不隐式完成重建；必须先调用该接口，再创建新实例。旧实例指针
@@ -52,7 +52,7 @@ int logger_destroy(logger_t **owner);
 默认入口为 `logger_default_flush()`、`logger_default_reopen()`。四者均为 **0/-errno**，
 所有正常返回保留调用方 errno。已移除旧 status/instance 包装，不能再调用无参
 `logger_flush()` 或 `logger_reopen()`。记录、状态/指标查询和Console也已统一；
-级别设置、TLS上下文及脱敏辅助函数仍单独迁移。详见[控制操作合同](docs/v2/CONTROL_API.md)。
+级别设置仍待独立迁移；TLS上下文和脱敏函数已统一。详见[控制操作合同](docs/v2/CONTROL_API.md)。
 
 刷新继续等待进入时捕获的预留完成水位，并同步文件；不代表 Syslog 远端持久化，
 不给阻塞 I/O 提供时限。重开可能在切换文件后报错；错误返回不保证无副作用。
@@ -206,3 +206,21 @@ Audit/crypto 不是当前生产 API，安装库不导出 `audit_*`，也不安�
 `console_stdout_is_tty(&answer)`及stderr对应入口成功写入0/1，ENOTTY表示非终端；
 EBADF等为负错误码，失败（包括收尾错误）保留answer原值。原有标准流、标签、
 缓冲、过滤、SIGPIPE和取消合同继续保持，完整规则见[Console合同](docs/v2/CONSOLE_API.md)。
+
+## 脱敏辅助合同
+
+`logger_redact()` 返回静态只读的 `[REDACTED]` 标记，不会失败，不需要释放。
+`logger_mask_secret()` 返回 `0/-errno`，所有正常返回保留入口 `errno`；两者均无需
+进程初始化。传入的非空字符串必须可读并以 NUL 结尾，输出区须真实拥有所声明的容量。
+
+首尾可见长度按字节裁剪；会完整披露原值的组合退化为 `***`，NULL 输入输出
+`[REDACTED]`。容量必须包括终止符：NULL 输出或零容量为 `-EINVAL`，空间不足为
+`-ENOSPC`，结果长度计算溢出为 `-EOVERFLOW`。失败不清零或修改任何输出字节；
+调用方必须检查返回值，不能在失败后记录保留的旧数据。
+
+支持输入输出完全或部分重叠，成功只写结果及 NUL。它不是安全擦除函数：原缓冲区
+结果范围以外仍可能保留秘密；日志器也不自动检查任意 printf 文本里的敏感内容。
+
+`tests/test_redaction.c` 用独立的逐字节模型检查原地、双向偏移、零容量、精确容量、
+NULL、空串、超长可见参数和整个缓冲区保持规则；既有 libFuzzer 检查负错误码与
+完整失败缓冲区。安装后的 C11/C++11 消费者在初始化进程域之前实际执行这些接口。
