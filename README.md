@@ -154,6 +154,12 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 不再提供丢弃状态的包装或旧status符号。完成水位、文件同步、粘滞错误和默认
 借用寿命不变，见[控制操作合同](docs/v2/CONTROL_API.md)。
 
+## Console 状态接口
+
+Console 配置、输出及TTY查询统一返回0/-errno并保留errno。TTY使用输出槽，
+区分正常的非终端与查询错误；Console不拥有默认Logger。旧签名和errno错误风格
+不保留，见[Console合同](docs/v2/CONSOLE_API.md)。
+
 ## fork 边界
 
 #218 的当前开发实现支持**有效 fork 快照下的子方显式运行域重建**：父进程

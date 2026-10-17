@@ -1,6 +1,6 @@
 # 2.0 新公开 API 与所有权迁移合同（#218 后续）
 
-状态：**设计与实施顺序已明确，代码尚未迁移**。本文件不声明接口已经导出或通过测试。前置运行域已在 #223 合并。
+状态：运行域、显式进程准入、create/destroy、默认槽借用及flush/reopen已在主线实现；Console在本增量迁移。记录与指标的剩余接口仍未全部迁移，不以文档或单轮CI代替最终发布验收。
 
 ## 目标
 
@@ -9,7 +9,7 @@
 * 统一公开状态接口为 `0/-errno`，不混用 `-1+errno`；**不保持旧 API 源码/ABI 兼容**。
 * 对所有权消费与返回错误进行区分，不能仅凭负返回值推断旧句柄仍有效。
 
-## 拟定接口（未实现）
+## 主线已实现的核心接口
 
 ```c
 typedef struct logger logger_t;
@@ -19,14 +19,12 @@ int logger_create(const logger_config_t *cfg, logger_t **out);
 int logger_destroy(logger_t **owner);
 int logger_flush(logger_t *log);
 int logger_reopen(logger_t *log);
-int logger_log_sync(logger_t *log, logger_level_t level,
-                    const logger_source_t *source, const char *fmt, ...);
 ```
 
 ### 创建
 
-* `out == NULL` 为 `-EINVAL`；进入构造前令 `*out = NULL`，不读取旧值。
-* 未初始化进程域返回 `-ENXIO`；继承但尚未重建的子进程返回 `-ECHILD`，检查必须先于任何实例锁/候选 I/O。
+* 准入成功后，`out == NULL` 为 `-EINVAL`，非空拥有者槽为 `-EBUSY`且保留旧值。只接受显式初始化为空的槽，构造失败仍为空；不能盲目清槽泄漏原拥有者。
+* 未初始化进程域返回 `-ENODEV`；继承但尚未重建的子进程返回 `-ECHILD`，检查必须先于任何实例锁/候选 I/O。
 * 成功完整构造实例并发布 `*out` 后返回 0；失败保持 NULL，原始错误码保留，清理失败另记内部诊断。
 * 创建与公开所有权交付之间必须明确取消点：不能在 `*out` 发布后发生隐式取消而遗失所有权。
 * 只有进程域初始化入口允许显式失败重试；普通 create 不自动重建进程域。
@@ -45,7 +43,7 @@ int logger_log_sync(logger_t *log, logger_level_t level,
 
 * 同步状态日志的错误模型改为 `0/-errno`，调用方无需额外读取 errno；异步接受、后端输出完成与持久化确认是不同事件。
 * `flush` 只确认当前实例的既定完成水位与文件同步，不确认 Syslog 持久化或物理断电。
-* Global/Console 如继续保留，仅是宿主显式持有实例上的便利门面，不拥有第二套可独立关闭的 Logger 实例。
+* 默认槽仅借用宿主实例，通过logger_default_set显式绑定/解绑；不会创建或销毁实例。Console是独立终端展示工具，不借用默认Logger，也不拥有第二套Logger。
 * 旧 `logger_create` 指针返回、`logger_destroy_status`、void 销毁及全局独立所有权接口最终删除；不提供永久兼容包装。
 
 ## 实施顺序与门禁
@@ -60,7 +58,9 @@ int logger_log_sync(logger_t *log, logger_level_t level,
 
 ## 特别风险
 
-* `logger_process_init` 目前与既有入口的按需初始化共存，强制显式前提不能只改文档；必须删除隐式调用并验证所有入口。
+* 普通入口的隐式进程初始化已删除；新增入口仍须验证冷状态、初始化中、失败及fork后的准入，不能回退为按需初始化。
 * 销毁错误返回不能让业务方误以为旧指针可重试；清空拥有者与不可逆操作之间的取消/信号窗口需实测。
 * 跨静态库副本传递裸指针仍不安全；不能把进程代次检查包装成任意失效指针可诊断保证。
 * 对同一文件的多进程写入/轮转与进程初始化正交，仍需单独设计。
+
+Console实际合同见[Console接口](CONSOLE_API.md)；记录和指标入口的统一状态返回仍是后续代码任务。

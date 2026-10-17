@@ -20,8 +20,8 @@ static ssize_t host_write(void *user, const char *text, size_t size)
 	if (atomic_exchange(&arm, 0)) {
 		if (reentry) {
 			errno = 0;
-			CHECK(console_print("recursive") == -1 &&
-			      errno == EDEADLK);
+			CHECK(console_print("recursive") == -EDEADLK &&
+			      errno == 0);
 			errno = 0;
 			CHECK(logger_flush(log_instance) == -EDEADLK);
 			errno = 0;
@@ -64,7 +64,7 @@ static void *configure(void *id)
 		cfg.color = CONSOLE_COLOR_NEVER;
 	}
 	while (atomic_load(&config_run))
-		console_init(&cfg);
+		CHECK(console_init(&cfg) == 0);
 	return NULL;
 }
 int main(int argc, char **argv)
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	cc.verbosity = CONSOLE_DEBUG;
 	cc.color = CONSOLE_COLOR_NEVER;
-	console_init(&cc);
+	CHECK(console_init(&cc) == 0);
 	if (!strcmp(argv[1], "cancel")) {
 		atomic_store(&arm, 1);
 		pthread_t t;
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
 		atomic_store(&config_run, 0);
 		CHECK(!pthread_join(a, NULL));
 		CHECK(!pthread_join(b, NULL));
-		console_init(&cc);
+		CHECK(console_init(&cc) == 0);
 		CHECK(!console_debug("final"));
 		CHECK(atomic_load(&writes) > 0);
 		CHECK(atomic_load(&escapes) == 0);

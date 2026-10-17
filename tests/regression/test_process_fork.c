@@ -262,24 +262,23 @@ static void child_guard_matrix(void)
 		_exit(40);
 
 	console_config_t console_cfg = CONSOLE_DEFAULT_CONFIG();
-	CHILD_VOID(console_init(&console_cfg), 41);
-	CHILD_VOID(console_set_verbosity(CONSOLE_QUIET), 42);
-	CHILD_VOID(console_set_color(CONSOLE_COLOR_NEVER), 43);
-	CHILD_POSIX(console_print("INHERITED_FORBIDDEN"), 44);
-	CHILD_POSIX(console_info("forbidden"), 45);
-	CHILD_POSIX(console_warn("forbidden"), 46);
-	CHILD_POSIX(console_error("forbidden"), 47);
-	CHILD_POSIX(console_verbose("forbidden"), 48);
-	CHILD_POSIX(console_debug("forbidden"), 49);
-	CHILD_POSIX(console_debug_source(__FILE__, __LINE__, __func__,
-					 "forbidden"),
-		    50);
-	errno = 0;
-	if (console_stdout_is_tty() != 0 || errno != ECHILD)
-		_exit(51);
-	errno = 0;
-	if (console_stderr_is_tty() != 0 || errno != ECHILD)
-		_exit(52);
+	CHILD_STATUS(console_init(&console_cfg), 41);
+	CHILD_STATUS(console_set_verbosity(CONSOLE_QUIET), 42);
+	CHILD_STATUS(console_set_color(CONSOLE_COLOR_NEVER), 43);
+	CHILD_STATUS(console_print("INHERITED_FORBIDDEN"), 44);
+	CHILD_STATUS(console_info("forbidden"), 45);
+	CHILD_STATUS(console_warn("forbidden"), 46);
+	CHILD_STATUS(console_error("forbidden"), 47);
+	CHILD_STATUS(console_verbose("forbidden"), 48);
+	CHILD_STATUS(console_debug("forbidden"), 49);
+	CHILD_STATUS(console_debug_source(__FILE__, __LINE__, __func__,
+					  "forbidden"),
+		     50);
+	int tty = 9;
+	CHILD_STATUS(console_stdout_is_tty(&tty), 51);
+	CHILD_STATUS(console_stderr_is_tty(&tty), 52);
+	if (tty != 9)
+		_exit(53);
 
 	if (logger_default_set(NULL, NULL) != -ECHILD)
 		_exit(66);
@@ -363,7 +362,7 @@ static void registration_failure(const char *mode)
 	else if (!strcmp(mode, "register-explicit"))
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	else if (!strcmp(mode, "register-console"))
-		CHECK(console_print("forbidden") == -1 && errno == ENOMEM);
+		CHECK(console_print("forbidden") == -ENOMEM && errno == 0);
 	else if (!strcmp(mode, "register-context")) {
 		logger_context_set(&(logger_context_t){ 0 });
 		CHECK(errno == ENOMEM);

@@ -104,17 +104,17 @@ int main(void)
 		.tail = 0,
 	};
 	future_console.config.struct_size = sizeof(future_console);
-	errno = 0;
-	console_init(&future_console.config);
-	if (errno)
+	errno = EDOM;
+	rc = console_init(&future_console.config);
+	if (rc || errno != EDOM)
 		return 17;
 
 	future_console.config = CONSOLE_DEFAULT_CONFIG();
 	future_console.config.struct_size = sizeof(future_console);
 	future_console.tail = UINT64_C(1);
-	errno = 0;
-	console_init(&future_console.config);
-	if (rc != -E2BIG)
+	errno = EDOM;
+	rc = console_init(&future_console.config);
+	if (rc != -E2BIG || errno != EDOM)
 		return 18;
 
 	return 0;

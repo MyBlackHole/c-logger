@@ -71,3 +71,4 @@ docs/v2/DEFAULT_MIGRATION.md
 docs/v2/TSAN_FORK_MODEL.md
 
 docs/v2/CONTROL_API.md
+docs/v2/CONSOLE_API.md

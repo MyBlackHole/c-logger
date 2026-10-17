@@ -112,7 +112,8 @@ static void nested_call(void)
 		CHECK(!diagnostics.enqueued && !diagnostics.observation_flags);
 	} else if (!strcmp(nested, "file-metrics")) {
 		memset(&file_metrics, 0x5a, sizeof(file_metrics));
-		CHECK(logger_get_file_metrics(log_instance, &file_metrics) == -1);
+		CHECK(logger_get_file_metrics(log_instance, &file_metrics) ==
+		      -1);
 		CHECK(((unsigned char *)&file_metrics)[0] == 0x5a);
 	} else if (!strcmp(nested, "syslog")) {
 		memset(&sys, 0x5a, sizeof(sys));
@@ -126,19 +127,21 @@ static void nested_call(void)
 		ctx = logger_context_get();
 		CHECK(!ctx.request_id);
 	} else if (!strcmp(nested, "console"))
-		CHECK(console_print("nested") == -1);
+		CHECK(console_print("nested") == -EDEADLK);
 	else if (!strcmp(nested, "console-debug"))
 		CHECK(console_debug_source(__FILE__, __LINE__, __func__,
-					   "nested") == -1);
+					   "nested") == -EDEADLK);
 	else if (!strcmp(nested, "console-init"))
-		console_init(&cc);
+		CHECK(console_init(&cc) == -EDEADLK);
 	else if (!strcmp(nested, "console-level"))
-		console_set_verbosity(CONSOLE_QUIET);
+		CHECK(console_set_verbosity(CONSOLE_QUIET) == -EDEADLK);
 	else if (!strcmp(nested, "console-color"))
-		console_set_color(CONSOLE_COLOR_ALWAYS);
-	else if (!strcmp(nested, "console-tty"))
-		CHECK(!console_stdout_is_tty());
-	else if (!strcmp(nested, "global"))
+		CHECK(console_set_color(CONSOLE_COLOR_ALWAYS) == -EDEADLK);
+	else if (!strcmp(nested, "console-tty")) {
+		int tty = 9;
+		CHECK(console_stdout_is_tty(&tty) == -EDEADLK);
+		CHECK(tty == 9);
+	} else if (!strcmp(nested, "global"))
 		CHECK(logger_default_set(NULL, NULL) == -EDEADLK);
 	else if (!strcmp(nested, "global-write"))
 		LOG_INFO("nested global");
@@ -148,7 +151,7 @@ static void nested_call(void)
 	      ((!strcmp(nested, "create") || !strcmp(nested, "destroy") ||
 		!strcmp(nested, "destroy-void") || !strcmp(nested, "global") ||
 		!strcmp(nested, "flush") || !strcmp(nested, "flush-void") ||
-		!strcmp(nested, "reopen")) ?
+		!strcmp(nested, "reopen") || !strncmp(nested, "console", 7)) ?
 		       0 :
 		       EDEADLK));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
@@ -571,7 +574,7 @@ static void contract_case(void)
 		CHECK(!logger_flush(log_instance));
 		atomic_store(&cancel_setup_fail, 1);
 		errno = 0;
-		CHECK(console_print("no-output") == -1 && errno == EINVAL);
+		CHECK(console_print("no-output") == -EINVAL && errno == 0);
 		CHECK(!console_print("okay\n"));
 		actor = 0;
 	} else if (!strcmp(scenario, "stdio-first-error")) {
@@ -579,7 +582,7 @@ static void contract_case(void)
 		atomic_store(&stdio_fail, 1);
 		atomic_store(&flush_fail, 1);
 		errno = 0;
-		CHECK(console_info("fail") == -1 && errno == ENOSPC);
+		CHECK(console_info("fail") == -ENOSPC && errno == 0);
 		CHECK(!console_info("after-error"));
 		actor = 0;
 	} else if (!strcmp(scenario, "context-alias")) {
@@ -606,8 +609,8 @@ static void contract_case(void)
 		s[sizeof(s) - 1] = 0;
 		errno = 0;
 		CHECK(console_debug_source(__FILE__, 1, __func__, "%s", s) ==
-			      -1 &&
-		      errno == EOVERFLOW);
+			      -EOVERFLOW &&
+		      errno == 0);
 		CHECK(!console_debug_source(__FILE__, 1, __func__, "short"));
 	} else if (!strcmp(scenario, "invalid-level")) {
 		errno = 0;

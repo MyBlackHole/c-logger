@@ -63,13 +63,15 @@ static void check_process_rejection(int error)
 	logger_context_clear();
 	CHECK(errno == error);
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
-	console_init(&console);
-	CHECK(errno == error);
-	console_set_color(CONSOLE_COLOR_NEVER);
-	CHECK(errno == error);
-	CHECK(console_stdout_is_tty() == 0 && errno == error);
-	CHECK(console_print("forbidden%n", &formatted) == -1);
-	CHECK(errno == error && formatted == -1);
+	int tty = 9;
+	errno = EDOM;
+	CHECK(console_init(&console) == -error && errno == EDOM);
+	CHECK(console_set_color(CONSOLE_COLOR_NEVER) == -error);
+	CHECK(console_set_verbosity(CONSOLE_NORMAL) == -error);
+	CHECK(console_stdout_is_tty(&tty) == -error && tty == 9);
+	CHECK(console_stderr_is_tty(&tty) == -error && tty == 9);
+	CHECK(console_print("forbidden%n", &formatted) == -error);
+	CHECK(errno == EDOM && formatted == -1);
 	/* 无运行域的纯辅助函数继续可用，不偷偷初始化。 */
 	char masked[32];
 	CHECK(logger_redact() != NULL);

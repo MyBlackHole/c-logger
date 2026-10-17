@@ -46,7 +46,7 @@ return logger_destroy(&owner);
 
 `logger_process_init`、`logger_create`、`logger_destroy` 使用 0/-errno，
 所有正常返回保留调用方 errno。其他公开接口仍遵守其当前约定，例如 Global 和
-Console 的状态接口使用 -1/errno；void 入口通过既有 errno 约定报告拒绝。
+Console 全部接口现返回0/-errno并保留errno；拒绝不修改TTY输出槽。
 本增量不冒称全部 API 的返回风格已统一。
 
 进程准入先于读取配置、拥有者槽和实例字段，因而未初始化时 `create(NULL,NULL)`

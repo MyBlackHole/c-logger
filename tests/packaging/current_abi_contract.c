@@ -19,13 +19,13 @@
 #else
 #define ABI_ASSERT(expr) _Static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) _Alignof(type)
-#define ABI_FN(name, ret, ...) \
-	_Static_assert(__builtin_types_compatible_p(__typeof__(&name), \
-						   ret (*)(__VA_ARGS__)), \
+#define ABI_FN(name, ret, ...)                                             \
+	_Static_assert(__builtin_types_compatible_p(__typeof__(&name),     \
+						    ret (*)(__VA_ARGS__)), \
 		       "function type drift: " #name)
 #endif
 
-#define ABI_TYPE(type, size_, align_) \
+#define ABI_TYPE(type, size_, align_)        \
 	ABI_ASSERT(sizeof(type) == (size_)); \
 	ABI_ASSERT(ABI_ALIGNOF(type) == (align_))
 
@@ -226,15 +226,16 @@ ABI_ASSERT(CONSOLE_CONFIG_VERSION == 1);
 /* 精确公开函数类型契约：43 个当前生产导出。 */
 
 ABI_FN(console_debug, int, const char *, ...);
-ABI_FN(console_debug_source, int, const char *, int, const char *, const char *, ...);
+ABI_FN(console_debug_source, int, const char *, int, const char *, const char *,
+       ...);
 ABI_FN(console_error, int, const char *, ...);
 ABI_FN(console_info, int, const char *, ...);
-ABI_FN(console_init, void, const console_config_t *);
+ABI_FN(console_init, int, const console_config_t *);
 ABI_FN(console_print, int, const char *, ...);
-ABI_FN(console_set_color, void, console_color_mode_t);
-ABI_FN(console_set_verbosity, void, console_verbosity_t);
-ABI_FN(console_stderr_is_tty, int, void);
-ABI_FN(console_stdout_is_tty, int, void);
+ABI_FN(console_set_color, int, console_color_mode_t);
+ABI_FN(console_set_verbosity, int, console_verbosity_t);
+ABI_FN(console_stderr_is_tty, int, int *);
+ABI_FN(console_stdout_is_tty, int, int *);
 ABI_FN(console_verbose, int, const char *, ...);
 ABI_FN(console_warn, int, const char *, ...);
 
@@ -258,11 +259,11 @@ ABI_FN(logger_get_metrics, void, const logger_t *, logger_metrics_t *);
 ABI_FN(logger_get_state, logger_state_t, const logger_t *);
 ABI_FN(logger_get_syslog_metrics, int, logger_t *, logger_syslog_metrics_t *);
 ABI_FN(logger_global_dropped, uint64_t, void);
-ABI_FN(logger_global_write, void, logger_level_t, const char *, const char *, int,
-       const char *, const char *, ...);
+ABI_FN(logger_global_write, void, logger_level_t, const char *, const char *,
+       int, const char *, const char *, ...);
 ABI_FN(logger_default_set, int, logger_t *, logger_t *);
-ABI_FN(logger_log, void, logger_t *, logger_level_t, const char *, const char *, int,
-       const char *, const char *, ...);
+ABI_FN(logger_log, void, logger_t *, logger_level_t, const char *, const char *,
+       int, const char *, const char *, ...);
 ABI_FN(logger_log_source, void, logger_t *, logger_level_t, logger_source_t,
        const char *, ...);
 ABI_FN(logger_log_sync_status, int, logger_t *, logger_level_t, const char *,
@@ -278,8 +279,9 @@ static int defaults_match(void)
 {
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
 	if (l.struct_size != 144 || l.version != 1 || l.level != LOGGER_INFO ||
-	    l.detail != LOGGER_DETAIL_VERBOSE || l.outputs != LOGGER_OUT_STDERR ||
-	    l.file_path != NULL || l.rotation.mode != LOGGER_ROTATE_SIZE_DAILY ||
+	    l.detail != LOGGER_DETAIL_VERBOSE ||
+	    l.outputs != LOGGER_OUT_STDERR || l.file_path != NULL ||
+	    l.rotation.mode != LOGGER_ROTATE_SIZE_DAILY ||
 	    l.rotation.max_file_size != 100u * 1024u * 1024u ||
 	    l.rotation.retention_days != 30 || l.file_mode != 0640 ||
 	    l.async_mode != 1 || l.queue_capacity != 8192 ||
@@ -288,8 +290,9 @@ static int defaults_match(void)
 	    strcmp(l.ident, "app"))
 		return 1;
 	const logger_overflow_policy_t overflow[6] = {
-		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,
-		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_SYNC, LOGGER_OVERFLOW_SYNC
+		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,
+		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,
+		LOGGER_OVERFLOW_SYNC, LOGGER_OVERFLOW_SYNC
 	};
 	for (unsigned i = 0; i < 6; ++i)
 		if (l.overflow[i] != overflow[i])
@@ -326,12 +329,40 @@ int main(void)
 	    logger_default_flush() != -ENODEV || errno != EDOM ||
 	    logger_default_reopen() != -ENODEV || errno != EDOM)
 		return 21;
+	/* Console 配置返回状态，TTY 用独立输出槽，不再混淆错误与 false。 */
+	console_config_t console = CONSOLE_DEFAULT_CONFIG();
+	int (*configure_console)(const console_config_t *) = console_init;
+	int (*set_color)(console_color_mode_t) = console_set_color;
+	int (*set_verbosity)(console_verbosity_t) = console_set_verbosity;
+	int (*is_stdout_tty)(int *) = console_stdout_is_tty;
+	int (*is_stderr_tty)(int *) = console_stderr_is_tty;
+	int tty = 7;
+	errno = EDOM;
+	if (configure_console(&console) != -ENODEV || errno != EDOM ||
+	    is_stdout_tty(&tty) != -ENODEV || tty != 7 || errno != EDOM)
+		return 23;
 	int (*initialize)(void) = logger_process_init;
 	errno = EDOM;
 	if (initialize() != 0 || errno != EDOM)
 		return 10;
 	if (initialize() != -EALREADY || errno != EDOM)
 		return 11;
+	if (configure_console(&console) || errno != EDOM ||
+	    set_color(CONSOLE_COLOR_NEVER) || errno != EDOM ||
+	    set_verbosity(CONSOLE_QUIET) || errno != EDOM)
+		return 24;
+	if (configure_console(NULL) != -EINVAL || errno != EDOM ||
+	    set_color((console_color_mode_t)-1) != -EINVAL || errno != EDOM ||
+	    is_stdout_tty(NULL) != -EINVAL || errno != EDOM)
+		return 25;
+	/* 真实安装消费环境中的输出描述符必须有效，答案可以是终端或非终端。 */
+	if (is_stdout_tty(&tty) || (tty != 0 && tty != 1) || errno != EDOM ||
+	    is_stderr_tty(&tty) || (tty != 0 && tty != 1) || errno != EDOM)
+		return 26;
+	int (*print_console)(const char *, ...) = console_print;
+	if (print_console(NULL) != -EINVAL || errno != EDOM ||
+	    console_info("filtered-installed-console") || errno != EDOM)
+		return 27;
 	int (*create)(const logger_config_t *, logger_t **) = logger_create;
 	int (*destroy)(logger_t **) = logger_destroy;
 	logger_t *owner = NULL;

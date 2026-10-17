@@ -1834,3 +1834,44 @@ if has_config("build_regression_tests") then
         target_end()
     end
 end
+
+-- Console 单一状态合同：公开用例使用真实静态/共享库，故障包装单独验收。
+if has_config("build_tests") then
+    target("console_api_test")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/test_console_api.c")
+        add_deps("logger")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        for _, mode in ipairs({"cold", "config-output", "tty", "fork"}) do
+            add_tests(mode, {runargs = mode, group = "console-api", timeout = 20})
+        end
+    target_end()
+end
+
+if has_config("build_regression_tests") then
+    local console_libraries = {{"console_error_regression", "logger_regression_support"}}
+    if not has_config("build_shared") then
+        table.insert(console_libraries, {"console_error_production", "logger"})
+    end
+    for _, spec in ipairs(console_libraries) do
+        target(spec[1])
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_console_errors.c")
+            add_deps(spec[2])
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+            for _, symbol in ipairs({"pthread_setcancelstate", "pthread_mutex_lock",
+                                     "pthread_mutex_unlock", "isatty", "vfprintf",
+                                     "__vfprintf_chk"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, mode in ipairs({"setup", "restore", "config-primary", "write-primary",
+                                   "tty-primary", "tty-terminal", "tty-nonterminal",
+                                   "tty-missing-error", "lock", "unlock"}) do
+                add_tests(mode, {runargs = mode, group = "console-api", timeout = 20})
+            end
+        target_end()
+    end
+end

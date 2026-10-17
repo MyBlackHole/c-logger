@@ -43,35 +43,36 @@ static inline console_config_t console_defaults_cpp(void)
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
 #endif
-/* Console 与 Logger 共用进程保护。子进程继承的输出接口在使用 stdio
- * 或互斥锁前返回 -1/ECHILD；设置接口不执行操作，并设置 errno=ECHILD。
- * TTY 判定返回 0，并设置 errno=ECHILD。使用新运行时前须执行 exec。
- * 这些是防御性错误，不代表通用的异步信号安全控制台 API。
- * Console 的设置/初始化是进程全局配置操作。
- * 打印函数成功时返回 0，stdio 失败时返回 -1，并在底层 libc 操作
- * 提供 errno 时保留该值。已关闭管道上的输出/刷新失败返回 -1/EPIPE，
- * 不会因 SIGPIPE 终止宿主。这仅使用调用线程的信号屏蔽字，随后恢复
- * 原屏蔽字，保留已待处理的 SIGPIPE，不改变进程的信号处理函数。
- * 保留 FILE 缓冲/错误状态，以及对宿主缓冲数据的正常刷新；
- * 较早的 stdio 错误优先于后续 EPIPE。
- * 宿主在 Console 之外直接执行的写入/刷新不受保护。 */
-/* Console 操作在格式化、持有内部互斥锁及执行 FILE 操作期间延迟取消，
- * 释放后恢复调用者的策略，并以 EDEADLK 拒绝同一线程内递归的
- * Logger/Console 回调。这不是信号处理函数 API，也不是有时限的 I/O
- * 接口。宿主不得在回调内更改取消策略、调用 pthread_exit/longjmp
- * 或卸载代码。整个 init 以原子方式应用配置快照；无效的配置/设置值
- * 会设置 EINVAL，不改变配置。debug_source 返回 EOVERFLOW，
- * 而不会静默截断其有界的来源/消息缓冲区。fmt 为 NULL 时始终报
- * EINVAL，即使该诊断信息本来会被过滤。
+/* 所有 Console 接口成功返回 0，失败返回负 errno；正常返回均保留调用方
+ * errno。输出成功也包括按 verbosity 过滤的诊断，但 fmt==NULL 始终 EINVAL。
+ * 不再提供 void 配置接口或返回布尔值的无参 TTY 查询。
+ *
+ * 宿主先调用 logger_process_init()；未就绪为 ENODEV，初始化进行中为 EAGAIN，
+ * fork 子方重新初始化前为 ECHILD。同线程重入为 EDEADLK。准入失败先于配置/
+ * 输出槽访问、stdio、取消策略或锁操作；这些接口不是异步信号安全 API。
+ *
+ * Console 是独立的终端展示通道，不创建、借用或销毁默认 Logger。init 只配置
+ * 已就绪进程域。NULL 配置和非法字段为 EINVAL，原配置不变；需恢复默认值时
+ * 显式传入 CONSOLE_DEFAULT_CONFIG()。成功的配置提交和输出不会因之后的
+ * 取消策略恢复失败而撤销；主操作错误优先于收尾错误。
+ *
+ * 操作期间延迟取消，va_end 和资源释放后才恢复调用方策略。宿主不得在回调中
+ * 更改取消策略、pthread_exit/longjmp 或卸载库。debug_source 拒绝超限缓冲，
+ * 返回 EOVERFLOW。输出不是有时限 I/O，不提供持久化保证。
+ *
+ * FILE 缓冲及正常刷新语义不变。闭管道为 EPIPE，调用线程局部 SIGPIPE 保护
+ * 保留原屏蔽字和待处理信号，不改变宿主信号处理函数；较早的 stdio 主错误优先。
+ * 宿主在 Console 之外直接写入/刷新不受保护。printf 的 %m 使用入口 errno。
  */
-/* Console 同样要求宿主先调用 logger.h 中的 logger_process_init()。
- * console_init 只配置已就绪运行域，不承担进程引导或隐式重试。
+LOGGER_API int console_init(const console_config_t *);
+LOGGER_API int console_set_verbosity(console_verbosity_t);
+LOGGER_API int console_set_color(console_color_mode_t);
+/* 查询成功写入 0/1（非终端/终端），ENOTTY 是成功的非终端结果。
+ * EBADF 等错误仍返回负错误码；包括收尾失败在内的任意失败不修改 *out。
+ * out==NULL 为 EINVAL；调用方保证非空输出槽独占、存活且可写。
  */
-LOGGER_API void console_init(const console_config_t *);
-LOGGER_API void console_set_verbosity(console_verbosity_t);
-LOGGER_API void console_set_color(console_color_mode_t);
-LOGGER_API int console_stdout_is_tty(void);
-LOGGER_API int console_stderr_is_tty(void);
+LOGGER_API int console_stdout_is_tty(int *out);
+LOGGER_API int console_stderr_is_tty(int *out);
 /* 稳定的结果/数据通道：始终使用 stdout，无标签或颜色。 */
 LOGGER_API int console_print(const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
