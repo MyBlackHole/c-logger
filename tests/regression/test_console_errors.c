@@ -148,15 +148,13 @@ static void expect_output(FILE *sink, off_t *offset, const char *expected)
 
 static void cancel_matrix(FILE *sink, int setup)
 {
-	static const char *const output[] = {
-		"text\n",
-		"INFO: text\n",
-		"WARN: text\n",
-		"ERROR: text\n",
-		"INFO: text\n",
-		"DEBUG: text\n",
-		"DEBUG: source.c:7 f() text\n"
-	};
+	static const char *const output[] = { "text\n",
+					      "INFO: text\n",
+					      "WARN: text\n",
+					      "ERROR: text\n",
+					      "INFO: text\n",
+					      "DEBUG: text\n",
+					      "DEBUG: source.c:7 f() text\n" };
 	off_t offset = 0;
 
 	for (unsigned i = 0; i < 12; ++i) {
@@ -166,13 +164,16 @@ static void cancel_matrix(FILE *sink, int setup)
 			 * 相同值重复提交掩盖恢复失败时未提交或回滚的缺陷。
 			 */
 			console_config_t before = CONSOLE_DEFAULT_CONFIG();
-			before.verbosity = i == 1 ? CONSOLE_DEBUG : CONSOLE_QUIET;
+			before.verbosity = i == 1 ? CONSOLE_DEBUG :
+						    CONSOLE_QUIET;
 			before.color = i == 2 ? CONSOLE_COLOR_NEVER :
-					       CONSOLE_COLOR_ALWAYS;
+						CONSOLE_COLOR_ALWAYS;
 			check(console_init(&before), 0);
 			check(console_debug("committed"), 0);
-			expect_output(sink, &offset,
-				      i == 1 ? "\033[90mDEBUG:\033[0m committed\n" : "");
+			expect_output(
+				sink, &offset,
+				i == 1 ? "\033[90mDEBUG:\033[0m committed\n" :
+					 "");
 		}
 		query_output = 7;
 		fail_setup = setup;
@@ -185,7 +186,8 @@ static void cancel_matrix(FILE *sink, int setup)
 		/* 恢复失败已经写出的记录仍须恰好出现一次；设置取消失败
 		 * 则不得输出。这里在后继调用之前检查，不能由重试补足。
 		 */
-		expect_output(sink, &offset, !setup && i >= 5 ? output[i - 5] : "");
+		expect_output(sink, &offset,
+			      !setup && i >= 5 ? output[i - 5] : "");
 		if (!setup && i < 3) {
 			/* 成功重试前观察新配置；若提交被推迟到 finish 成功
 			 * 之后，旧静默级别或旧颜色会使精确字节断言失败。
