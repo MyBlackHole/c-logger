@@ -465,7 +465,7 @@ static logger_t *create_logger(const logger_config_t *input)
 		return NULL;
 	}
 	l->file_backend = LOGGER_FILE_EMPTY;
-	l->syslog_backend.fd = -1;
+	l->syslog_backend.fd = logger_fd_own(-1);
 	atomic_init(&l->level, cfg.level);
 	atomic_init(&l->state, LOGGER_STATE_CREATED);
 	atomic_init(&l->default_borrowed, 0);
