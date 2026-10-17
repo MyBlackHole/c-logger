@@ -1568,6 +1568,7 @@ if has_config("build_regression_tests") then
             "send-eintr", "send-pipe", "send-reset", "send-notconn",
             "send-refused", "send-io", "eintr-then-success", "zero-send",
             "short-send", "clock-disconnect", "close-disconnect",
+            "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse",
             "reconnect-failure", "oversize", "max-packet"
         }) do
             add_tests("syslog_fault_" .. scenario,
