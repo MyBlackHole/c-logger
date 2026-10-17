@@ -43,10 +43,10 @@ static void *parent_write(void *arg)
 {
 	struct parent_writer *writer = arg;
 	atomic_fetch_add_explicit(&ready, 1, memory_order_release);
-	for (unsigned i = 0; i < PARENT_LIMIT &&
-			     !atomic_load_explicit(&stop_writers,
-						  memory_order_acquire);
-	     ++i) {
+	for (unsigned i = 0; i < PARENT_LIMIT; ++i) {
+		if (atomic_load_explicit(&stop_writers,
+					 memory_order_acquire))
+			break;
 		CHECK(LOGGER_INFO(parent_owner, "fork-stress",
 				  "PARENT_WRITER=%u:%u", writer->number,
 				  i) == 0);
@@ -63,8 +63,9 @@ static void *child_write(void *arg)
 {
 	struct child_writer *writer = arg;
 	for (unsigned i = 0; i < CHILD_RECORDS; ++i) {
-		if (LOGGER_INFO(writer->logger, "fork-child",
-				"CHILD_WORKER=%u", i)) {
+		int rc = LOGGER_INFO(writer->logger, "fork-child",
+				     "CHILD_WORKER=%u", i);
+		if (rc) {
 			writer->failure = 1;
 			return NULL;
 		}
@@ -87,15 +88,13 @@ static void child_run(unsigned number)
 		     21);
 	child_expect(logger_process_init() == 0, 22);
 	char path[48];
-	child_expect(snprintf(path, sizeof(path), "child-%u.log", number) >
-			     0,
-		     23);
+	int path_len = snprintf(path, sizeof(path), "child-%u.log", number);
+	child_expect(path_len > 0, 23);
 	logger_config_t cfg = file_config(path);
 	logger_t *own = NULL;
 	child_expect(logger_create(&cfg, &own) == 0 && own, 24);
-	child_expect(LOGGER_INFO(own, "child", "CHILD_BEGIN=%u",
-				 number) == 0,
-		     25);
+	int begin_rc = LOGGER_INFO(own, "child", "CHILD_BEGIN=%u", number);
+	child_expect(begin_rc == 0, 25);
 	struct child_writer writer = { .logger = own };
 	pthread_t producer;
 	child_expect(pthread_create(&producer, NULL, child_write, &writer) == 0,
@@ -162,17 +161,18 @@ int main(int argc, char **argv)
 	CHECK(logger_create(&cfg, &parent_owner) == 0 && parent_owner);
 	CHECK(LOGGER_INFO(parent_owner, "parent", "PARENT_BEGIN") == 0);
 
-	struct parent_writer writers[PARENT_THREADS] = {
-		{ .number = 0 }, { .number = 1 }
-	};
+	struct parent_writer writers[PARENT_THREADS] = { 0 };
+	for (unsigned i = 0; i < PARENT_THREADS; ++i)
+		writers[i].number = i;
 	pthread_t threads[PARENT_THREADS];
 	for (unsigned i = 0; i < PARENT_THREADS; ++i)
 		CHECK(pthread_create(&threads[i], NULL, parent_write,
 				     &writers[i]) == 0);
-	for (unsigned wait = 0; wait < 5000 && atomic_load(&ready) !=
-					     PARENT_THREADS;
-	     ++wait)
+	for (unsigned wait = 0; wait < 5000; ++wait) {
+		if (atomic_load(&ready) == PARENT_THREADS)
+			break;
 		nap_ms();
+	}
 	CHECK(atomic_load(&ready) == PARENT_THREADS);
 
 	pid_t children[CHILDREN];
