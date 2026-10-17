@@ -96,3 +96,13 @@ Logger 2.0 的范围。
 **不可创建/推送`v2.0.0`标签**，其push会触发正式发布；
 已经发布的v1.0.0保持不变。决定书及实际发布前证据将继续依
 [发布前核查](../../docs/v2/RELEASE_PREFLIGHT.md)维护。
+
+## 本阶段增量：Syslog 长期 fd 类型化候选（待准确 CI 验收）
+
+候选将私有 `logger_syslog_t.fd` 从裸整数迁为 `logger_owned_fd`，连接成功时
+使用 `logger_fd_move` 转移责任，实际 `send` 只借用数字，销毁仍调用一次
+`logger_fork_close` 并保留首错；新增编译正反例及旧关闭后同号复用验证。
+具体回归与证明范围见 [fd 拥有权](../../docs/v2/FD_OWNERSHIP.md)。
+这只是 D1/T1 的一个补齐候选，需以**本 PR 精确 head 的全部适用 CI**为准；
+不签署 D1 其他单位类型、D2 跨函数分析或 A–F/D1–D6 全部决策，
+不创建 `v2.0.0` 标签或 Release。
