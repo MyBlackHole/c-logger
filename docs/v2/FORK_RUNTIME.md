@@ -238,3 +238,35 @@ GCC 与 Clang 各执行生产静态/白盒 `grow`、`grow-failure`
 **最终合并与验收结论必须以精确 PR 最终 head 的实际运行结果为准**；
 这段原始 head 证据不会被文档追加后的新提交冒称为同一SHA的重跑；
 先前 skip 原始记录保留。
+
+## TSan fork 后工作线程能力跳过的同源强制审计（#251）
+
+`sanitizer-evidence` 的完整 TSan 静态测试中，由于运行库对多线程 fork
+后创建工作线程的限制，Xmake 会将这些场景的明确退出 77 记作
+skip-equivalent。因此 995 项测试登记且聚合结果为 0 失败时，
+**不能写成 TSan 实际执行了 995 项**；在 #250 已归档的准确源码上，
+实际为 TSan 执行 964 项、31 项明确跳过。
+
+新增同一 CI 工作流的 `fork-coverage-accounting` 后置审计 job，
+从两份**同源**运行证据 `sanitizer-evidence-thread`、
+`sanitizer-evidence-address-undefined` 以及独立的 `tsan-fork-model`
+原始 artifact 自动核对：
+
+- 固定 31 项：公开 `fork_reinit_public_test` 5 项，
+  真实生产归档 `fork_runtime_production_regression` 13 项，
+  白盒支持归档 `fork_runtime_regression` 13 项；逐项验证明确的
+  TSan `tsan-post-fork-worker` 原因及 Xmake skip 回执，不把 77 算作检测通过；
+- ASan/UBSan 对应 31 项必须有真实 `FORK_REINIT_PUBLIC_PASS`
+  或 `FORK_RUNTIME_PASS` 语义标记，且完整日志逐项运行/通过名目一致、
+  两构建的源 commit/tree 一致并匹配当前 PR HEAD，退出码都为 0；
+- TSan 已支持的 9 个真实同步 fork 锚点仍须有 PASS 回执；
+  检测器资格的健康案例退出 0、真实锁逆序与真实数据竞争诊断各退出 66
+  且出现指定的警告文本。缺任一原始制品、缺跳过/真实通过标记、
+  重复或额外跳过、篡改原因、异源日志及关闭警告均失败；
+- 审计器和其正反自测结果保存在独立 JSON/原始输入 SHA-256 制品中。
+  实际接入结果只有在该最终版本 CI 成功后才可以认定为有效门禁。
+
+这仅补齐**跳过与对照执行的证据可核验性**，不能通过文本审计
+创造缺失的31条 TSan 多线程 fork 后 worker 动态覆盖；
+`#221` 的运行库能力缺口、`#218` 宿主调用边界与 D1–D6 风险签收
+仍单独保持开放，不得以该审计器的绿色结果关闭或签收。

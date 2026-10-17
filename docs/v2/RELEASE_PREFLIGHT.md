@@ -135,3 +135,20 @@ GCC 和 Clang 在 Ubuntu24.04 宿主（`RLIMIT_NOFILE` 软/硬限额 65536）
 [发布安全](../RELEASE_SAFETY.md)为准。若A–F未签收，**当前结论为不创建标签，
 而不是声称全部工程检查失败**。[#218](https://github.com/MyBlackHole/c-logger/issues/218)
 和[#221](https://github.com/MyBlackHole/c-logger/issues/221)保持开放，不通过文档强制关闭。
+
+## 2026-10-17：TSan skip-equivalent 的准确口径与候选审计（#251）
+
+`sanitizer-evidence` 的 Xmake 完整静态测试必须区分
+**注册数、实际执行成功数、明确因 TSan 限制而跳过数**。
+主线 #250 的受测提交 `557098ee59bff8e3558709c3d0f40ef3e3e0602d`
+原始日志为：TSan 注册 995 项，实际执行成功 964 项、因 post-fork-worker
+限制跳过 31 项；ASan/UBSan 对照 995 项实际执行成功（0 跳过）。
+现有独立 TSan 映射模型的健康/真实锁逆序/真实数据竞争
+运行退出码为 0/66/66，不能当作额外31项的动态检测覆盖。
+
+新 `scripts/audit_fork_tsan_coverage.py` 与对应独立 CI 后置 job
+要求源代码提交和树一致、跳过的31个具体标签与原因完整、
+ASan/UBSan 的相同31项有真实成功标记、TSan另9项同步锚点真实执行、
+检测器三个资格回执仍能拒绝真实错误。**只有对应准确源码的审计工作流
+实际成功，才可将此列为新的发布工程门禁证据**。它不自动授权
+TSan受限线程模型的剩余风险；#221保持开放，不改变正式发布所需人工决策。
