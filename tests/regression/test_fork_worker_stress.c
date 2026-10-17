@@ -44,8 +44,7 @@ static void *parent_write(void *arg)
 	struct parent_writer *writer = arg;
 	atomic_fetch_add_explicit(&ready, 1, memory_order_release);
 	for (unsigned i = 0; i < PARENT_LIMIT; ++i) {
-		if (atomic_load_explicit(&stop_writers,
-					 memory_order_acquire))
+		if (atomic_load(&stop_writers))
 			break;
 		CHECK(LOGGER_INFO(parent_owner, "fork-stress",
 				  "PARENT_WRITER=%u:%u", writer->number,
