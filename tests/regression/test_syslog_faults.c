@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "support.h"
 #include "logger_internal.h"
+#include "logger_fork_fd.h"
+#include "logger_syslog.h"
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -10,7 +12,8 @@
 static int inject_socket, inject_connect, inject_send, inject_clock,
 	inject_close;
 static unsigned send_interrupts, sends, connects, sockets, closes;
-static int send_partial, watch;
+static int send_partial, watch, reuse_during_close;
+static int reused_fd = -1;
 static uint64_t now_ms = 10000;
 static char endpoint[108], temp[] = "/tmp/lg-sys-fault-XXXXXX";
 
@@ -89,6 +92,18 @@ int __wrap_close(int fd)
 		++closes;
 	int rc = __real_close(fd);
 	if (watch && inject_close) {
+		if (reuse_during_close) {
+			/* 真正 close 已消费旧整数；马上以外部 socket 占用该编号。 */
+			CHECK(reused_fd == -1);
+			int flags = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+			int replacement = __real_socket(AF_UNIX, flags, 0);
+			CHECK(replacement >= 0);
+			if (replacement != fd) {
+				CHECK(dup2(replacement, fd) == fd);
+				CHECK(!__real_close(replacement));
+			}
+			reused_fd = fd;
+		}
 		errno = inject_close;
 		return -1;
 	}
@@ -152,10 +167,89 @@ static int parse_error(const char *s)
 	CHECK(!"bad test error");
 	return 0;
 }
+/* 检查真实 Syslog 候选的所有权交接，不绕开生产 fork 资源登记。 */
+static void candidate_ownership(const char *mode)
+{
+	logger_config_t c = config();
+
+	if (!strcmp(mode, "candidate-fd-zero")) {
+		/* stdin 可能已由 CI 关闭；在两种情况下都能恢复原有状态。 */
+		int saved_stdin = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 3);
+		CHECK(saved_stdin >= 0 || errno == EBADF);
+		if (saved_stdin >= 0)
+			CHECK(!__real_close(STDIN_FILENO));
+
+		logger_syslog_t syslog;
+		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
+		CHECK(syslog.fd == STDIN_FILENO && syslog.metrics.connected);
+		CHECK(sockets == 1 && connects == 1 && closes == 0);
+		logger_syslog_close(&syslog);
+		logger_syslog_close(&syslog);
+		CHECK(syslog.fd == -1 && !syslog.metrics.connected);
+		CHECK(closes == 1);
+		CHECK(fcntl(STDIN_FILENO, F_GETFD) == -1 && errno == EBADF);
+		if (saved_stdin >= 0) {
+			CHECK(dup2(saved_stdin, STDIN_FILENO) == STDIN_FILENO);
+			CHECK(!__real_close(saved_stdin));
+		}
+		return;
+	}
+
+	int closing_error = EIO;
+	if (!strcmp(mode, "candidate-eintr-reuse"))
+		closing_error = EINTR;
+	int primary_error = closing_error == EINTR ? EINTR : ENOENT;
+	inject_connect = primary_error;
+	inject_close = closing_error;
+	reuse_during_close = 1;
+
+	logger_syslog_t failed;
+	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
+	      errno == primary_error);
+	CHECK(failed.fd == -1 && !failed.metrics.connected);
+	CHECK(failed.connection_error == primary_error);
+	CHECK(failed.metrics.connect_attempts == 1 &&
+	      failed.metrics.connect_failures == 1);
+	CHECK(failed.metrics.close_failures == 1 &&
+	      failed.metrics.last_close_error == closing_error);
+	CHECK(failed.metrics.last_error == primary_error);
+	CHECK(failed.metrics.interrupted_calls ==
+	      (unsigned)(primary_error == EINTR));
+	CHECK(sockets == 1 && connects == 1 && closes == 1);
+	CHECK(reused_fd >= 0);
+	int stale_fd = reused_fd;
+	logger_syslog_close(&failed);
+	CHECK(closes == 1 && fcntl(stale_fd, F_GETFD) >= 0);
+
+	/* 位图已注销：旧所有者绝不能关闭宿主复用的同一整数。 */
+	CHECK(logger_fork_close(stale_fd) == -1 && errno == EBADF);
+	CHECK(fcntl(stale_fd, F_GETFD) >= 0);
+	CHECK(!__real_close(stale_fd));
+	reused_fd = -1;
+	inject_connect = 0;
+	inject_close = 0;
+	reuse_during_close = 0;
+
+	/* 再由真正生产入口取得原整数，必须可以重新登记并正常关闭。 */
+	logger_syslog_t next;
+	CHECK(!logger_syslog_init(&next, "app", &c.syslog));
+	CHECK(next.fd == stale_fd && next.metrics.connected);
+	logger_syslog_close(&next);
+	CHECK(next.fd == -1 && !next.metrics.connected);
+	CHECK(sockets == 2 && connects == 2 && closes == 2);
+	CHECK(fcntl(stale_fd, F_GETFD) == -1 && errno == EBADF);
+}
+
 static void run(const char *mode, int fd)
 {
 	logger_config_t c = config();
 	watch = 1;
+	if (!strcmp(mode, "candidate-fd-zero") ||
+	    !strcmp(mode, "candidate-eintr-reuse") ||
+	    !strcmp(mode, "candidate-eio-reuse")) {
+		candidate_ownership(mode);
+		return;
+	}
 	if (!strncmp(mode, "socket-", 7)) {
 		inject_socket = parse_error(mode + 7);
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;

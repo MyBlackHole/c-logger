@@ -1,4 +1,4 @@
-# 文件候选描述符的拥有、借用与条件移交（#216）
+# 文件和 Syslog 候选描述符的拥有、借用与条件移交（#216、#239）
 
 本阶段实现 #106/#210 的 D1/T1 有限子集：`src/logger_fd.h` 和文件后端
 两个真实词法候选路径。它不依赖 PR #215 合并，不表示批准 D1–D6 的全部
@@ -12,7 +12,7 @@
 
 | 操作 | 合同 |
 |---|---|
-| `logger_fd_own(raw)` | 仅接管已经通过 `logger_fork_open*` 完成登记的 fd；不 dup、不分配；失败值为 -1，不能用零初始化表示空。不得从未登记的宿主原始 fd 直接制造本库拥有者 |
+| `logger_fd_own(raw)` | 仅接管已经通过 `logger_fork_open*`、`logger_fork_socket` 等协调入口登记的 fd；不 dup、不分配；失败值为 -1，不能用零初始化表示空。不得从未登记的宿主原始 fd 直接制造本库拥有者 |
 | `logger_fd_borrow(&owner)` | 取得借用视图，不延长寿命、不允许在源关闭/移交后继续使用 |
 | `logger_fd_number(view)` | 显式 POSIX 整数边界；该整数不因此具有关闭权 |
 | `logger_fd_take(&owner)` | 源先失效为 -1，将原始 fd 移交给仍使用 int 的所有者；空源返回 -1 |
@@ -77,7 +77,7 @@ C 允许同类型结构赋值、memcpy、显式强转和直接字段访问。因
 `logger_fd_number`/`logger_fd_take` 是有意保留的裸 int 边界；禁止从 borrowed
 整数再次 own 只能由审查约束，本类型系统无法自动追踪。
 
-logger_file_t 长期字段、Syslog fd 和其他原始 int 路径没有在本阶段迁移。
+logger_file_t 长期字段、Syslog 长期 fd 和其他原始 int 路径没有在本阶段迁移。
 字节/记录、索引/计数、代次/序列、标志/枚举、状态和期限/时长仍分别待处理。
 D2 的通用 AST/跨函数释放绕过检查没有实现，不能把条件移交 helper 当作其完成。
 
@@ -87,3 +87,30 @@ pthread 取消、longjmp、信号安全、并发回收或异步关闭。Linux cl
 失败时故意保持毒化，不得偷偷重试或将未登记的宿主fd当成本库已拥有资源。
 生产未新增分配或故障开关；
 是否保持完全相同的生成指令/吞吐仍需单独测量，本阶段不承诺性能收益。
+
+## 5. Syslog 临时候选追加迁移（#239、PR #240）
+
+在不修改 `logger_syslog_t.fd` 长期字段、公开 API/ABI 和重连状态机的前提下，
+`src/logger_syslog.c:connect_once` 使用 `logger_fd_own(logger_fork_socket(...))`
+取得已登记的唯一候选。系统 `connect` 经 `logger_fd_borrow` 和
+`logger_fd_number` 得到非拥有整数；失败时 `logger_fd_close_status` 消费候选，
+记录关闭失败指标，但恢复原连接错误的 `errno`；成功时使用
+`logger_fd_take` 将裸整数显式移交给仍受既有锁保护的长期 `s->fd`。
+
+生产关闭继续由 `logger_fork_close` 消费 fork 位图后完成单次 Linux close。
+测试中的 `__wrap_close` 在真实关闭后模拟 EINTR/EIO，并用新的外部 socket
+复用旧整数；验证没有第二次关闭、位图拒绝把外部描述符冒充已登记的所有权，
+随后又能重新登记并关闭同一整数。额外测试 fd 0 成功移交与双重 close 防护。
+新增场景位于 `tests/regression/test_syslog_faults.c`，用 Xmake
+`syslog_fault_regression` 注册为 `candidate-fd-zero`、`candidate-eintr-reuse`、
+`candidate-eio-reuse`；已有连接错误、延迟启动、重试、真实 Syslog 与 DSO 验证保留。
+
+三个场景还单独注册为 `syslog_candidate_production`，在静态配置下直接
+链接真实生产 `logger` 归档；它与 `logger_regression_support` 的白盒验证
+具有不同源码构建身份。此目标不冒充共享库内部调用拦截，生产 DSO 仍由现有
+真实 syslogd 和共享库测试独立验收。
+
+这个扩展仍是 **Syslog 词法临时拥有者** 的有限类型约束，不提供 C 线性类型、
+跨函数 AST 所有权证明、线程/取消生命周期或长期 fd 类型迁移；#210 的 D1–D6
+决策和正式发布验收仍独立。是否满足 CI 由 PR 精确提交的原始执行结果确认，
+不能把草稿提交视为已验证通过。
