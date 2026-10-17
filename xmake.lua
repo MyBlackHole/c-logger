@@ -1615,6 +1615,30 @@ if has_config("build_regression_tests") then
         add_tests("syslog_fallback_pressure", {timeout = 15})
     target_end()
 
+    -- 本轮临时文件候选回滚使用真实生产静态归档独立验收。
+    if not has_config("build_shared") then
+        target("file_reopen_candidate_production")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_file_backend.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, symbol in ipairs({
+                "openat", "fsync", "close", "clock_gettime",
+                "logger_file_rename_noreplace", "unlinkat", "flock", "writev"
+            }) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs({
+                "reopen-candidate-eintr-reuse", "reopen-candidate-eio-reuse"
+            }) do
+                add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
+            end
+        target_end()
+    end
+
     target("file_backend_regression")
         for _, scenario in ipairs({
             "owner-same", "owner-process", "owner-race", "owner-exit",
@@ -1625,7 +1649,9 @@ if has_config("build_regression_tests") then
             "lock-fifo", "device-rotate", "device-shared", "init-cleanup",
             "reopen-ok", "reopen-permission", "reopen-space", "reopen-emfile",
             "reopen-directory", "reopen-symlink", "reopen-sync",
-            "reopen-dir-sync", "reopen-close", "collision", "clock-backwards",
+            "reopen-dir-sync", "reopen-close",
+            "reopen-candidate-eintr-reuse", "reopen-candidate-eio-reuse",
+            "collision", "clock-backwards",
             "collision-limit", "rotation-unsupported", "rotation-rename-error",
             "rotation-new-open", "rotation-dir-sync", "rotation-new-sync",
             "rotation-new-dir-sync", "cwd", "directory-rename",

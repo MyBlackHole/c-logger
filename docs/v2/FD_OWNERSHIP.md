@@ -133,3 +133,19 @@ pthread 取消、longjmp、信号安全、并发回收或异步关闭。Linux cl
 
 本阶段不是已确认生产损坏的缺陷修复，亦非 C 线性类型或 D2 全程序 AST 证明。
 不改变公开 API/ABI、文件轮转及 Syslog 重连协议，也不新增 Audit/断电测试。
+
+## 7. 文件重开临时候选的持有与安装（#243）
+
+`file_reopen_impl` 中的已登记候选经既有 `open_candidate` 取回后，立即交给
+`logger_owned_fd` 词法拥有者。旧数据 fd 和目录同步完成前，失败只能通过
+`logger_fd_cleanup` 消费新候选的 fork 位图登记，保留原同步错误；同步成功后
+`logger_fd_take` 才把候选移交给原有长期字段 `f->fd`。
+
+此修改不改变文件打开/检查、目录同步、旧文件关闭或轮转的时序，不改变
+`logger_file_t` 布局。现有 `reopen-sync`、`reopen-dir-sync`、`reopen-close`
+保持原验收；新增 `reopen-candidate-eintr-reuse` 和 `reopen-candidate-eio-reuse`
+在旧数据 fsync 失败时，先真实关闭新候选，再由宿主复用同号 fd 并合成关闭错误。
+验证原 `-EIO` 错误不被关闭错误覆盖、旧 fd 保持可用、重复关闭被协调器拒绝、
+下一次重开正常。两种场景分别由回归支持库和生产静态库执行；不把编译器的
+C 同型结构复制能力误称为线性类型保证。轮转在归档重命名后的 detached
+语义仍须独立审查，未在本阶段迁移。
