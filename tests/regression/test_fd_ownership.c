@@ -92,7 +92,11 @@ static void take_once(void)
 	}
 	CHECK(close_calls == 0);
 	CHECK(fcntl(raw, F_GETFD) >= 0);
-	CHECK(!__real_close(raw));
+	/* take 仅移交所有权，最终关闭仍必须消费 fork 位图登记。 */
+	CHECK(!logger_fork_close(raw));
+	CHECK(close_calls == 1);
+	CHECK(fcntl(raw, F_GETFD) == -1 && errno == EBADF);
+	CHECK(logger_fork_close(raw) == -1 && errno == EBADF);
 }
 
 static int scope_error(void)
