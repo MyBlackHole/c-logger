@@ -16,8 +16,10 @@ static int data_open_error, rename_error, fixed_time, sync_error,
 	close_error_fd = -1;
 static int old_fd = -1, renamed, rename_calls, vector_max, unlink_error,
 	   flock_eintr, new_synced;
-static int candidate_rollback, candidate_close_error, candidate_fd = -1,
-	   reused_candidate_fd = -1;
+static int candidate_rollback;
+static int candidate_close_error;
+static int candidate_fd = -1;
+static int reused_candidate_fd = -1;
 static _Atomic int failures, wins;
 static logger_t *winner;
 static struct timespec frozen = { 1700000000, 0 };
