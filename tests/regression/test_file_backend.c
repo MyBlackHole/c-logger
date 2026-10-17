@@ -20,6 +20,11 @@ static int candidate_rollback;
 static int candidate_close_error;
 static int candidate_fd = -1;
 static int reused_candidate_fd = -1;
+static logger_file_t *closing_file;
+static int closing_fds[3];
+static unsigned closing_calls;
+static int closing_primary_error, closing_secondary_error;
+static int closing_reused_fd = -1;
 static _Atomic int failures, wins;
 static logger_t *winner;
 static struct timespec frozen = { 1700000000, 0 };
@@ -99,6 +104,33 @@ int __wrap_fsync(int fd)
 }
 int __wrap_close(int fd)
 {
+	if (closing_file) {
+		unsigned phase = closing_calls++;
+
+		CHECK(phase < 3 && fd == closing_fds[phase]);
+		CHECK(phase != 0 || closing_file->fd == -1);
+		CHECK(phase != 1 || closing_file->lock_fd == -1);
+		CHECK(phase != 2 || closing_file->dir_fd == -1);
+		CHECK(!__real_close(fd));
+		if (phase == 0) {
+			/* close 已真实消费 fd，再由宿主立即复用旧整数。 */
+			int replacement = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+			CHECK(replacement >= 0);
+			if (replacement != fd) {
+				CHECK(dup2(replacement, fd) == fd);
+				CHECK(!__real_close(replacement));
+			}
+			closing_reused_fd = fd;
+			errno = closing_primary_error;
+			return -1;
+		}
+		if (phase == 1) {
+			errno = closing_secondary_error;
+			return -1;
+		}
+		return 0;
+	}
 	int rc = __real_close(fd);
 	if (candidate_rollback && fd == candidate_fd) {
 		CHECK(rc == 0 && candidate_close_error);
@@ -751,6 +783,69 @@ static void vectors(void)
 	CHECK(logger_file_writev(&f, v, 7, 99, &t, 0) == -EINVAL);
 	CHECK(logger_file_close_status(&f) == 0);
 }
+/* 最终关闭的顺序、首错优先和 fd 整数复用必须由生产路径验证。 */
+static void file_close_owned_reuse(const char *scenario)
+{
+	logger_file_t f = LOGGER_FILE_EMPTY;
+	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
+
+	CHECK(!logger_file_init(&f, "out.log", rotation, 0600));
+	CHECK(f.fd >= 0 && f.lock_fd >= 0 && f.dir_fd >= 0);
+	CHECK(f.fd != f.lock_fd && f.fd != f.dir_fd);
+	CHECK(f.lock_fd != f.dir_fd);
+	CHECK(write(f.fd, "preserved", 9) == 9);
+	closing_fds[0] = f.fd;
+	closing_fds[1] = f.lock_fd;
+	closing_fds[2] = f.dir_fd;
+	closing_primary_error =
+		!strcmp(scenario, "close-owned-first-eintr") ? EINTR : EIO;
+	closing_secondary_error =
+		closing_primary_error == EINTR ? EIO : EINTR;
+	closing_file = &f;
+
+	CHECK(logger_file_close_status(&f) == -closing_primary_error);
+	closing_file = NULL;
+	CHECK(closing_calls == 3);
+	CHECK(f.fd == -1 && f.lock_fd == -1 && f.dir_fd == -1);
+	CHECK(logger_file_close_status(&f) == 0);
+	errno = EDOM;
+	logger_file_close(&f);
+	CHECK(errno == EDOM && closing_calls == 3);
+	CHECK(file_contains("out.log", "preserved"));
+
+	/* 旧登记消失，但宿主复用的整数仍须可用。 */
+	CHECK(closing_reused_fd == closing_fds[0]);
+	CHECK(fcntl(closing_reused_fd, F_GETFD) >= 0);
+	CHECK(logger_fork_close(closing_reused_fd) == -1 && errno == EBADF);
+	CHECK(fcntl(closing_reused_fd, F_GETFD) >= 0);
+	CHECK(!__real_close(closing_reused_fd));
+	closing_reused_fd = -1;
+}
+
+static void file_close_owned_zero(void)
+{
+	int saved = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 3);
+
+	CHECK(saved >= 0 || errno == EBADF);
+	if (saved >= 0)
+		CHECK(!__real_close(STDIN_FILENO));
+	logger_file_t f = LOGGER_FILE_EMPTY;
+	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
+
+	CHECK(!logger_file_init(&f, "out.log", rotation, 0600));
+	CHECK(f.dir_fd == STDIN_FILENO);
+	CHECK(f.fd >= 0 && f.lock_fd >= 0);
+	CHECK(!logger_file_close_status(&f));
+	CHECK(f.fd == -1 && f.lock_fd == -1 && f.dir_fd == -1);
+	CHECK(fcntl(STDIN_FILENO, F_GETFD) == -1 && errno == EBADF);
+	CHECK(!logger_file_close_status(&f));
+	if (saved >= 0) {
+		CHECK(dup2(saved, STDIN_FILENO) == STDIN_FILENO);
+		CHECK(!__real_close(saved));
+	}
+	CHECK(logger_file_close_status(NULL) == -EINVAL);
+}
+
 static void cleanup(const char *path)
 {
 	DIR *d = opendir(path);
@@ -812,6 +907,11 @@ int main(int argc, char **argv)
 		metrics_contract();
 	else if (!strcmp(s, "vectors"))
 		vectors();
+	else if (!strcmp(s, "close-owned-fd-zero"))
+		file_close_owned_zero();
+	else if (!strcmp(s, "close-owned-first-eintr") ||
+		 !strcmp(s, "close-owned-first-eio"))
+		file_close_owned_reuse(s);
 	else if (!strcmp(s, "eintr")) {
 		flock_eintr = 1;
 		logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);

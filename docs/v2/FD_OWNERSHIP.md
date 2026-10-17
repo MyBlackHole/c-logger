@@ -174,3 +174,27 @@ C 同型结构复制能力误称为线性类型保证。轮转在归档重命名
 上述类型约束只适用于安装前候选，长期 `logger_file_t.{fd,dir_fd,lock_fd}`
 仍是现有布局，C 同型复制与完整 D2 跨函数所有权尚未由此证明；
 不声明物理掉电认证或正式发布授权。
+
+## 9. 长期文件三 fd 顺序退役与首次错误优先（#247）
+
+`logger_file_close_status` 在最终释放时，继续按活动数据 fd、`lock_fd`、
+`dir_fd` 的原次序逐个关闭。每次先将原有长期字段失效为 `-1`，再通过
+私有 `logger_owned_fd` 承接已由 fork 位图登记的整数；调用
+`logger_fd_close_status` 消费该局部拥有者并仅关闭一次。
+
+如果首个数据 fd 的 Linux close 报告 EINTR/EIO，仍继续消费锁 fd 和目录 fd；
+后续即使报告另一个错误，最终回执仍返回最先遇到的错误。失效的三个字段
+再次关闭不触发系统调用，`logger_file_close` 的无回执包装保留调用者的
+`errno`。不调用 `LOCK_UN`、不删除协调锁文件、不调整各 fd 的实际存活时序。
+
+`close-owned-first-eintr`、`close-owned-first-eio` 分别使首个 fd 在真实
+close 后立即被宿主 `/dev/null` 复用并合成不同错误，第二个锁 fd 返回相反的
+模拟错误；包装器检查每个字段在自身系统关闭前已失效、第三个目录 fd 仍
+完成关闭，外部复用的整数不会被 fork 位图误关。
+`close-owned-fd-zero` 验证目录 fd 为 0 时的有效关闭以及重复/NULL 关闭边界。
+以上场景复用 `file_backend_regression` 与真实生产静态库
+`file_reopen_candidate_production`，不引入新 API、全局锁、动态分配或
+性能热路径变化。
+
+本阶段不等于完整 C 线性类型、D2 AST/跨函数生命周期分析、正式
+`v2.0.0` 发布或安全审计测试的完成。

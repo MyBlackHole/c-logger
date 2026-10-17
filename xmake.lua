@@ -1636,7 +1636,9 @@ if has_config("build_regression_tests") then
                 "rotation-candidate-new-sync-eintr-reuse",
                 "rotation-candidate-new-sync-eio-reuse",
                 "rotation-candidate-dir-sync-eintr-reuse",
-                "rotation-candidate-dir-sync-eio-reuse"
+                "rotation-candidate-dir-sync-eio-reuse",
+                "close-owned-first-eintr", "close-owned-first-eio",
+                "close-owned-fd-zero"
             }) do
                 add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
             end
@@ -1665,7 +1667,8 @@ if has_config("build_regression_tests") then
             "rotation-candidate-dir-sync-eio-reuse",
             "cwd", "directory-rename",
             "active-replaced", "retention", "retention-error", "metrics-contract",
-            "vectors", "eintr"
+            "vectors", "eintr", "close-owned-first-eintr",
+            "close-owned-first-eio", "close-owned-fd-zero"
         }) do
             add_tests("file_" .. scenario,
                       {runargs = scenario, timeout = 20})
