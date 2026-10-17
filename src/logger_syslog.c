@@ -283,12 +283,12 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 			return record_failure(s, errno);
 	}
 
+	int fd = logger_fd_number(logger_fd_borrow(&s->fd));
 	int error = EINTR;
 	for (unsigned i = 0; i < SYSLOG_SEND_ATTEMPTS; ++i) {
 		++s->metrics.send_attempts;
 		ssize_t sent =
-			send(logger_fd_number(logger_fd_borrow(&s->fd)), packet,
-			     size, MSG_NOSIGNAL | MSG_DONTWAIT);
+			send(fd, packet, size, MSG_NOSIGNAL | MSG_DONTWAIT);
 		if (sent == (ssize_t)size) {
 			++s->metrics.sent_records;
 			s->metrics.last_error = 0;
