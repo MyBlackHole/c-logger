@@ -186,11 +186,13 @@ static void candidate_ownership(const char *mode)
 
 		logger_syslog_t syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
-		CHECK(syslog_fd(&syslog) == STDIN_FILENO && syslog.metrics.connected);
+		CHECK(syslog_fd(&syslog) == STDIN_FILENO &&
+		      syslog.metrics.connected);
 		CHECK(sockets == 1 && connects == 1 && closes == 0);
 		logger_syslog_close(&syslog);
 		logger_syslog_close(&syslog);
-		CHECK(!logger_fd_valid(&syslog.fd) && !syslog.metrics.connected);
+		CHECK(!logger_fd_valid(&syslog.fd) &&
+		      !syslog.metrics.connected);
 		CHECK(closes == 1);
 		CHECK(fcntl(STDIN_FILENO, F_GETFD) == -1 && errno == EBADF);
 		if (saved_stdin >= 0) {
@@ -261,7 +263,8 @@ static void retire_ownership(const char *mode)
 		raw = syslog_fd(&syslog);
 		CHECK(raw >= 0 && syslog.metrics.connected);
 		CHECK(logger_syslog_close_status(&syslog) == -error);
-		CHECK(!logger_fd_valid(&syslog.fd) && !syslog.metrics.connected);
+		CHECK(!logger_fd_valid(&syslog.fd) &&
+		      !syslog.metrics.connected);
 		CHECK(syslog.metrics.close_failures == 1 &&
 		      syslog.metrics.last_close_error == error);
 		CHECK(logger_syslog_close_status(&syslog) == 0);
