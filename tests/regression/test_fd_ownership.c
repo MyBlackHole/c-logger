@@ -97,6 +97,16 @@ static void take_once(void)
 	CHECK(close_calls == 1);
 	CHECK(fcntl(raw, F_GETFD) == -1 && errno == EBADF);
 	CHECK(logger_fork_close(raw) == -1 && errno == EBADF);
+
+	/* 不经裸 int 往返，直接将拥有者移入另一私有字段。 */
+	struct logger_owned_fd source = logger_fd_own(new_fd());
+	struct logger_owned_fd destination = logger_fd_move(&source);
+	CHECK(!logger_fd_valid(&source) && logger_fd_valid(&destination));
+	int moved = logger_fd_number(logger_fd_borrow(&destination));
+	CHECK(!logger_fd_close_status(&source));
+	CHECK(!logger_fd_close_status(&destination));
+	CHECK(fcntl(moved, F_GETFD) == -1 && errno == EBADF);
+	CHECK(close_calls == 2);
 }
 
 static int scope_error(void)
