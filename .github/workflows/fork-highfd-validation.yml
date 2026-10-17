@@ -1,0 +1,93 @@
+name: fork-highfd-validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fork-highfd-validation.yml"
+      - "tests/regression/test_fork_fd.c"
+      - "tests/scripts/check_fork_highfd.py"
+      - "src/logger_fork_fd.c"
+      - "src/logger_runtime.c"
+      - "xmake.lua"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fork-highfd-validation.yml"
+      - "tests/regression/test_fork_fd.c"
+      - "tests/scripts/check_fork_highfd.py"
+      - "src/logger_fork_fd.c"
+      - "src/logger_runtime.c"
+      - "xmake.lua"
+
+permissions:
+  contents: read
+
+jobs:
+  high-fd:
+    name: "真实 fd≥32768（${{ matrix.toolchain }}）"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: 保留精确源码和环境证据
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse 'HEAD^{tree}' > evidence/source-tree.txt
+          test "$(cat evidence/source-commit.txt)" = "$GITHUB_SHA"
+          uname -a > evidence/kernel.txt
+          getconf GNU_LIBC_VERSION > evidence/glibc.txt
+          ${{ matrix.toolchain }} --version > evidence/compiler.txt
+          xmake --version > evidence/xmake.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - name: 验证高fd判定器不能误收跳过
+        run: python3 tests/scripts/check_fork_highfd.py --selftest
+
+      - name: 链接实际生产静态库及独立白盒支持库
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake f -y -m debug -o highfd-build \
+            --toolchain="${{ matrix.toolchain }}" --build_shared=n \
+            --build_tests=n --build_private_tests=n --build_regression_tests=y
+          xmake -rvD -j2 fork_fd_production fork_fd_regression \
+            > evidence/build.log 2>&1 || {
+            tail -150 evidence/build.log
+            exit 1
+          }
+          prod="$(find highfd-build -type f -name fork_fd_production -perm -111 -print -quit)"
+          reg="$(find highfd-build -type f -name fork_fd_regression -perm -111 -print -quit)"
+          test -n "$prod" && test -n "$reg"
+          python3 scripts/check_production_artifact.py \
+            "$(find highfd-build -type f -name liblogger.a -print -quit)"
+          sha256sum "$prod" "$reg" > evidence/driver.sha256
+          echo "PROD_BIN=$prod" >> "$GITHUB_ENV"
+          echo "REG_BIN=$reg" >> "$GITHUB_ENV"
+
+      - name: 两个真实高fd边界必须执行，禁止退出77冒充通过
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/scripts/check_fork_highfd.py \
+            --binary "$PROD_BIN" --binary "$REG_BIN" \
+            --out evidence/probes | tee evidence/proof.log
+          grep -qx 'HIGHFD_PROVEN=4/4' evidence/proof.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fork-highfd-${{ matrix.toolchain }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 30

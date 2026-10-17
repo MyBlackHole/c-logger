@@ -200,3 +200,24 @@ CAS 判定器包含故意错误的临时源码和全树扫描，运行上限由 
 
 格式锁取得后再次检查进程域封闭状态；等待期间被封闭的调用不进入 libc。
 对应 post-lock-poison 用例在真实加锁成功后注入封闭，检查输出未改变且锁实际归还。
+
+## 高 fd 扩容：独立不可跳过的验证入口（#218）
+
+常规 `fork_fd_regression` / `fork_fd_production` 的 `grow` 与
+`grow-failure` 在 fd 硬限额不足的环境仍明确退出 77；这是诚实跳过，
+**不是通过**。新增独立 `fork-highfd-validation`（`.github/workflows/fork-highfd-validation.yml`）
+在 Ubuntu 24.04 GitHub 宿主（非原 Ubuntu20.04 容器）直接构建两个静态
+库身份并分别执行 `grow` 与 `grow-failure`，以实际编号至少 32768
+的 fd 扩容/回滚分支为验收入口。
+
+独立判定器读取 `RLIMIT_NOFILE`，软限额不够时只能在已有硬限额内上调；
+硬限额不足直接失败，不能自动跳过或假装执行。驱动自身 `grow` 断言
+fd 实际至少 32768，`grow-failure` 断言 mremap 故障已被消费；
+所有四项真实子进程均须退出 0 并产生 `FORK_FD_PASS`，
+任何 77、`FORK_FD_SKIP`、缺失成功标记、超时均判定未验证。
+原始提交/tree、实际 GCC/Clang 与 Xmake 版本、二进制摘要、
+fd 限额、每个子进程的 stdout/stderr/退出码和执行时长保存为独立制品。
+
+这只针对高 fd 位图扩容及故障回滚，不能推广为任意大句柄上限、
+所有 Linux/glibc 组合、fork 后多线程检测器覆盖或宿主外部 libc 安全。
+**合并与验收结论必须以精确 PR head 的实际运行结果为准**；先前 skip 原始记录保留。
