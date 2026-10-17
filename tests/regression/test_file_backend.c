@@ -577,6 +577,66 @@ static void rotation_failure(const char *scenario)
 	CHECK(logger_flush(l) == -expected);
 	finish(l);
 }
+/* 新活动 inode/目录持久化失败后，即使候选 close 出错也不能重用旧归档 fd。 */
+static void rotation_candidate_reuse(const char *scenario)
+{
+	fixed_time = 1;
+	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
+	logger_t *l = NULL;
+
+	CHECK(logger_create(&c, &l) == 0 && l);
+	emit(l, "first");
+	old_fd = l->file_backend.fd;
+	unsigned count = fds();
+	candidate_rollback = 1;
+	candidate_close_error = strstr(scenario, "eintr") ? EINTR : EIO;
+	sync_error = strstr(scenario, "dir-sync") ? 5 : 3;
+
+	errno = EDOM;
+	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
+				     __func__, "unwritten") == -EIO &&
+	      errno == EDOM);
+	candidate_rollback = 0;
+	CHECK(candidate_close_error == 0);
+	CHECK(renamed && candidate_fd >= 0 &&
+	      reused_candidate_fd == candidate_fd);
+	CHECK(l->file_backend.fd == old_fd && fcntl(old_fd, F_GETFD) >= 0);
+	CHECK(l->file_backend.detached && l->file_backend.switch_error == EIO);
+	CHECK(l->file_backend.dir_dirty && l->file_backend.archive_time_valid);
+
+	logger_file_metrics_t metrics;
+	CHECK(logger_get_file_metrics(l, &metrics) == 0);
+	CHECK(metrics.rotation_attempts == 1 && metrics.rotation_failures == 1);
+	CHECK(!metrics.rotation_successes);
+	CHECK(metrics.last_rotation_error == EIO);
+	CHECK(metrics.last_write_error == EIO && metrics.last_error == EIO);
+
+	const char *archive = "out.20231114T221320.000000Z.log";
+	off_t size = file_size(archive);
+	CHECK(file_contains(archive, "first"));
+	CHECK(!file_contains(archive, "unwritten"));
+	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
+				     __func__, "not-in-archive") == -EIO);
+	CHECK(file_size(archive) == size);
+
+	/* close 真实消费后，宿主重用相同整数；旧 fork 登记不得再次关闭它。 */
+	CHECK(fcntl(reused_candidate_fd, F_GETFD) >= 0);
+	CHECK(logger_fork_close(reused_candidate_fd) == -1 && errno == EBADF);
+	CHECK(fcntl(reused_candidate_fd, F_GETFD) >= 0);
+	CHECK(!__real_close(reused_candidate_fd));
+	CHECK(fds() == count);
+
+	sync_error = 0;
+	CHECK(logger_reopen(l) == 0 && !l->file_backend.detached);
+	CHECK(l->file_backend.fd != old_fd);
+	l->file_backend.rotation.mode = LOGGER_ROTATE_NONE;
+	emit(l, "new-active");
+	CHECK(file_contains("out.log", "new-active"));
+	CHECK(file_size(archive) == size);
+	CHECK(logger_flush(l) == -EIO);
+	finish(l);
+}
+
 static void cwd_case(int rename_parent)
 {
 	CHECK(mkdir("a", 0700) == 0 && mkdir("b", 0700) == 0);
@@ -734,6 +794,8 @@ int main(int argc, char **argv)
 		 !strcmp(s, "rotation-unsupported") ||
 		 !strcmp(s, "rotation-rename-error"))
 		collision(s);
+	else if (!strncmp(s, "rotation-candidate-", 19))
+		rotation_candidate_reuse(s);
 	else if (!strncmp(s, "rotation-", 9))
 		rotation_failure(s);
 	else if (!strcmp(s, "cwd"))
