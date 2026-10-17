@@ -357,21 +357,21 @@ static int file_reopen_impl(logger_file_t *f)
 	int rc = wall_day(time(NULL), &day);
 	if (!rc)
 		rc = open_candidate(f, 0, &fd, &st);
-	/* 候选对象的错误不会使正在使用的 fd 退役。切换前同步旧分段；
-	 * 打开错误或 fsync 错误都不会将其抹除。
+	/* 旧 fd 同步期间，新候选仍由词法拥有者负责清理。
+	 * 只有全部准备成功，才将它移交给长期 f->fd。
 	 */
+	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
+		logger_fd_own(fd);
 	if (!rc && f->managed)
 		rc = sync_data(f, f->fd);
 	if (!rc && f->dir_dirty)
 		rc = sync_directory(f);
 	if (rc) {
-		if (fd >= 0)
-			(void)logger_fork_close(fd);
 		errno = -rc;
 		return -1;
 	}
 	int old_fd = f->fd;
-	install_fd(f, fd, &st, day);
+	install_fd(f, logger_fd_take(&candidate), &st, day);
 	if (logger_fork_close(old_fd) < 0)
 		return -1; /* 新 fd 已装入；不要重试 close */
 	return 0;

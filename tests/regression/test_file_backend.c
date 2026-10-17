@@ -15,6 +15,8 @@ static int data_open_error, rename_error, fixed_time, sync_error,
 	close_error_fd = -1;
 static int old_fd = -1, renamed, rename_calls, vector_max, unlink_error,
 	   flock_eintr, new_synced;
+static int candidate_rollback, candidate_close_error, candidate_fd = -1,
+	   reused_candidate_fd = -1;
 static _Atomic int failures, wins;
 static logger_t *winner;
 static struct timespec frozen = { 1700000000, 0 };
@@ -41,7 +43,12 @@ int __wrap_openat(int d, const char *p, int flags, ...)
 		errno = data_open_error;
 		return -1;
 	}
-	return __real_openat(d, p, flags, mode);
+	int fd = __real_openat(d, p, flags, mode);
+	if (candidate_rollback && fd >= 0 && !strcmp(p, "out.log")) {
+		CHECK(candidate_fd == -1);
+		candidate_fd = fd;
+	}
+	return fd;
 }
 int __wrap_clock_gettime(clockid_t which, struct timespec *t)
 {
@@ -90,6 +97,21 @@ int __wrap_fsync(int fd)
 int __wrap_close(int fd)
 {
 	int rc = __real_close(fd);
+	if (candidate_rollback && fd == candidate_fd) {
+		CHECK(rc == 0 && candidate_close_error);
+		/* 真实 close 后由宿主占用相同整数，再合成 EINTR/EIO。 */
+		int replacement = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+		CHECK(replacement >= 0);
+		if (replacement != fd) {
+			CHECK(dup2(replacement, fd) == fd);
+			CHECK(!__real_close(replacement));
+		}
+		reused_candidate_fd = fd;
+		errno = candidate_close_error;
+		candidate_close_error = 0;
+		return -1;
+	}
 	if (fd == close_error_fd) {
 		close_error_fd = -1;
 		errno = EIO;
@@ -403,6 +425,50 @@ static void reopen_case(const char *scenario)
 		CHECK(logger_flush(l) == 0);
 	finish(l);
 }
+/* reopen 旧文件同步失败，新候选必须由词法拥有者单次回滚。 */
+static void reopen_candidate_reuse(const char *scenario)
+{
+	logger_config_t c = config("out.log", LOGGER_ROTATE_EXTERNAL);
+	logger_t *l = NULL;
+
+	CHECK(logger_create(&c, &l) == 0 && l);
+	emit(l, "first");
+	old_fd = l->file_backend.fd;
+	CHECK(rename("out.log", "old.log") == 0);
+	unsigned count = fds();
+	sync_error = 1;
+	candidate_rollback = 1;
+	candidate_close_error =
+		!strcmp(scenario, "reopen-candidate-eintr-reuse") ? EINTR : EIO;
+
+	errno = EDOM;
+	CHECK(logger_reopen(l) == -EIO && errno == EDOM);
+	candidate_rollback = 0;
+	CHECK(candidate_close_error == 0);
+	CHECK(candidate_fd >= 0 && reused_candidate_fd == candidate_fd);
+	CHECK(l->file_backend.fd == old_fd && fcntl(old_fd, F_GETFD) >= 0);
+	CHECK(fcntl(reused_candidate_fd, F_GETFD) >= 0);
+	logger_file_metrics_t metrics;
+
+	CHECK(logger_get_file_metrics(l, &metrics) == 0);
+	CHECK(metrics.reopen_attempts == 1 && metrics.reopen_failures == 1 &&
+	      metrics.last_reopen_error == EIO);
+	/* fork 位图不再拥有候选整数：不可关闭宿主复用的 fd。 */
+	CHECK(logger_fork_close(reused_candidate_fd) == -1 && errno == EBADF);
+	CHECK(fcntl(reused_candidate_fd, F_GETFD) >= 0);
+	CHECK(!__real_close(reused_candidate_fd));
+	CHECK(fds() == count);
+
+	sync_error = 0;
+	emit(l, "preserved");
+	CHECK(file_contains("old.log", "preserved"));
+	CHECK(logger_reopen(l) == 0);
+	CHECK(l->file_backend.fd != old_fd);
+	emit(l, "new-active");
+	CHECK(file_contains("out.log", "new-active"));
+	finish(l);
+}
+
 static void collision(const char *scenario)
 {
 	fixed_time = 1;
@@ -657,6 +723,8 @@ int main(int argc, char **argv)
 	else if (!strncmp(s, "path-", 5) || !strncmp(s, "lock-", 5) ||
 		 !strcmp(s, "name-long") || !strcmp(s, "device-rotate"))
 		invalid_path(s);
+	else if (!strncmp(s, "reopen-candidate-", 17))
+		reopen_candidate_reuse(s);
 	else if (!strncmp(s, "reopen-", 7))
 		reopen_case(s);
 	else if (!strncmp(s, "collision", 9) || !strcmp(s, "clock-backwards") ||
