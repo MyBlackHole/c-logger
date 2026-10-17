@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PREAMBLE = '''#define _GNU_SOURCE
 #include "logger_fd.h"
 #include "logger_syslog.h"
+#include "logger_file.h"
 int probe(struct logger_owned_fd *owner, struct logger_borrowed_fd borrowed,
           int raw)
 {
@@ -59,6 +60,23 @@ CASES = {
                           "logger_syslog_t syslog = {0};\n"
                           "syslog.fd = logger_fd_own(raw);\n"
                           "return logger_fd_valid(&syslog.fd);"),
+    "file_borrowed_assign": ("logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                             "file.fd = borrowed;\nreturn 0;",
+                             "logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                             "file.fd = logger_fd_move(owner);\n"
+                             "return logger_fd_valid(&file.fd);"),
+    "file_raw_assign": ("logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                        "file.lock_fd = raw;\nreturn 0;",
+                        "logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                        "file.lock_fd = logger_fd_move(owner);\n"
+                        "return logger_fd_valid(&file.lock_fd);"),
+    "file_owned_as_int": ("logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                          "file.dir_fd = logger_fd_move(owner);\n"
+                          "return fpathconf(file.dir_fd, _PC_NAME_MAX);",
+                          "logger_file_t file = LOGGER_FILE_EMPTY;\n"
+                          "file.dir_fd = logger_fd_move(owner);\n"
+                          "return fpathconf(logger_fd_number("
+                          "logger_fd_borrow(&file.dir_fd)), _PC_NAME_MAX);"),
     "syslog_owner_as_int": ("logger_syslog_t syslog = {0};\n"
                             "syslog.fd = logger_fd_own(raw);\n"
                             "return close(syslog.fd);",
