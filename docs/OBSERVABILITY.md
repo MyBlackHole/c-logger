@@ -18,11 +18,18 @@ c-logger 的可观测性接口用于**发现和定位运行时退化**，不是�
 
 ## 接口分层
 
+十二个状态/指标查询均返回0/-errno，正常返回保留调用方errno，完整成功才写
+输出槽。失败保持原值，包括最终解锁或取消恢复失败；旧void指标的失败清零
+规则已被替换。所有示例必须先检查返回状态，再使用本次快照。类型、准入和
+存活的故障/停止实例规则见[查询合同](v2/QUERY_API.md)。
+
 ### logger_get_diagnostics
 
 ```c
 logger_diagnostics_t d;
-logger_get_diagnostics(logger, &d);
+int rc = logger_get_diagnostics(logger, &d);
+if (rc)
+        return rc;
 ```
 
 显式实例的统一低开销快照。
@@ -54,7 +61,9 @@ logger_get_diagnostics(logger, &d);
 
 ```c
 logger_diagnostics_t d;
-logger_get_global_diagnostics(&d);
+int rc = logger_get_global_diagnostics(&d);
+if (rc)
+        return rc;
 ```
 
 通过全局代次/生命周期固定保护（pin）获取同样的快照。
@@ -66,7 +75,7 @@ STARTING/STOPPING/关闭代次的拒绝规则与现有全局指标一致，不�
 
 统一诊断不替换更细的专项接口：
 
-- `logger_get_metrics()`：稳定旧队列/丢弃指标 ABI；
+- `logger_get_metrics()`：队列/丢弃指标，结构布局保持；
 - `logger_get_io_metrics()`：完成/输出记账；
 - `logger_get_file_metrics()`：文件输出端一致快照；需要 `emit_mu`，但不执行任何 I/O；
 - `logger_get_global_file_metrics()`：通过全局代次固定保护读取同一文件快照；
@@ -277,7 +286,9 @@ queue_depth > 0
 
 ```c
 logger_diagnostics_t now = {0};
-logger_get_diagnostics(log, &now);
+int rc = logger_get_diagnostics(log, &now);
+if (rc)
+        return rc;
 
 uint64_t dropped_delta = now.dropped_records - prev.dropped_records;
 uint64_t failed_delta = now.failed_records - prev.failed_records;

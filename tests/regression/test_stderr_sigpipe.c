@@ -59,9 +59,9 @@ int main(int argc, char **argv)
 	if (bootstrap) {
 		int touched = 7;
 		errno = EDOM;
-		logger_global_write(LOGGER_INFO, "sigpipe", __FILE__, __LINE__,
-				    __func__, "unbound%n", &touched);
-		CHECK(errno == ENODEV && touched == 7);
+		CHECK(logger_global_write(LOGGER_INFO, "sigpipe", __FILE__, __LINE__,
+					  __func__, "unbound%n", &touched) == -ENODEV);
+		CHECK(errno == EDOM && touched == 7);
 		check_sigpipe_state(preblocked, pending);
 		if (healthy) {
 			CHECK(fcntl(pipefd[0], F_SETFL, O_NONBLOCK) == 0);
@@ -82,18 +82,20 @@ int main(int argc, char **argv)
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 
+	errno = EDOM;
 	if (async_mode) {
-		LOGGER_INFO(l, "sigpipe", "broken stderr");
+		CHECK(LOGGER_INFO(l, "sigpipe", "broken stderr") == 0);
 		CHECK(logger_flush(l) == -EPIPE);
 	} else {
 		CHECK(logger_log_sync_status(l, LOGGER_INFO, "sigpipe", __FILE__,
 					     __LINE__, __func__, "broken stderr") ==
 		      -EPIPE);
 	}
+	CHECK(errno == EDOM);
 	check_sigpipe_state(preblocked, 0);
 
 	logger_io_metrics_t io;
-	logger_get_io_metrics(l, &io);
+	CHECK(logger_get_io_metrics(l, &io) == 0);
 	CHECK(io.emitted_records == 0);
 	CHECK(io.failed_records == 1);
 	CHECK(io.first_error == EPIPE);

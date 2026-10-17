@@ -105,9 +105,12 @@ static void cleanup(void *unused)
 	int old;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	logger_io_metrics_t io;
-	errno = 0;
-	logger_get_global_io_metrics(&io);
-	CHECK(errno == cleanup_phase_error);
+	memset(&io, 0xa5, sizeof(io));
+	errno = EDOM;
+	CHECK(logger_get_global_io_metrics(&io) == -cleanup_phase_error);
+	CHECK(errno == EDOM);
+	if (cleanup_phase_error)
+		expect_query_sentinel(&io, sizeof(io));
 	if (!cleanup_phase_error) {
 		LOG_INFO("cancel-cleanup-can-log");
 		CHECK(logger_default_flush() == 0);

@@ -154,19 +154,20 @@ static void run(const char *mode)
 	if (!strcmp(mode, "invalid-metrics")) {
 		logger_syslog_metrics_t before, after;
 		memset(&before, 0xa5, sizeof(before));
-		after = before;
-		CHECK(logger_get_syslog_metrics(NULL, &after) == -1 &&
-		      errno == EINVAL);
+		memcpy(&after, &before, sizeof(after));
+		errno = EDOM;
+		CHECK(logger_get_syslog_metrics(NULL, &after) == -EINVAL &&
+		      errno == EDOM);
 		CHECK(!memcmp(&before, &after, sizeof(after)));
 		c.outputs = LOGGER_OUT_FILE;
 		logger_t *l = NULL;
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
-		CHECK(logger_get_syslog_metrics(l, &after) == -1 &&
-		      errno == ENOTSUP);
+		CHECK(logger_get_syslog_metrics(l, &after) == -ENOTSUP &&
+		      errno == EDOM);
 		CHECK(!memcmp(&before, &after, sizeof(after)));
-		CHECK(logger_get_syslog_metrics(l, NULL) == -1 &&
-		      errno == EINVAL);
+		CHECK(logger_get_syslog_metrics(l, NULL) == -EINVAL &&
+		      errno == EDOM);
 		CHECK(logger_destroy(&l) == 0);
 		return;
 	}
@@ -334,10 +335,11 @@ static void run(const char *mode)
 		      m.backpressure_records == m.failed_records);
 		CHECK(m.connected && m.connect_attempts == 1);
 		logger_io_metrics_t io;
-		logger_get_io_metrics(l, &io);
+		CHECK(logger_get_io_metrics(l, &io) == 0);
 		CHECK(io.emitted_records == accepted &&
 		      io.failed_records == 1 + extra);
-		CHECK(logger_dropped(l) == 0);
+		uint64_t dropped;
+		CHECK(logger_dropped(l, &dropped) == 0 && dropped == 0);
 		if (c.async_mode)
 			CHECK(io.async_completed == 4000);
 		CHECK(drain(fd) == accepted);
@@ -425,9 +427,10 @@ static void run(const char *mode)
 		if (!child) {
 			logger_syslog_metrics_t out, before;
 			memset(&before, 0xa5, sizeof(before));
-			out = before;
+			memcpy(&out, &before, sizeof(out));
+			errno = EDOM;
 			int rc = logger_get_syslog_metrics(l, &out);
-			_exit(rc == -1 && errno == ECHILD &&
+			_exit(rc == -ECHILD && errno == EDOM &&
 					      !memcmp(&out, &before,
 						      sizeof(out)) ?
 				      0 :

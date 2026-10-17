@@ -584,9 +584,10 @@ static void metrics_contract(void)
 	CHECK(l != NULL);
 	logger_file_metrics_t metrics;
 	memset(&metrics, 0x5a, sizeof(metrics));
-	errno = 0;
-	CHECK(logger_get_file_metrics(l, &metrics) == -1 && errno == ENOTSUP);
-	CHECK(((unsigned char *)&metrics)[0] == 0x5a);
+	errno = EDOM;
+	CHECK(logger_get_file_metrics(l, &metrics) == -ENOTSUP && errno == EDOM);
+	for (size_t i = 0; i < sizeof(metrics); ++i)
+		CHECK(((unsigned char *)&metrics)[i] == 0x5a);
 	CHECK(logger_destroy(&l) == 0);
 
 	logger_config_t file = config("out.log", LOGGER_ROTATE_NONE);

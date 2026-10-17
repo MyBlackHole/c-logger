@@ -139,6 +139,8 @@ try:
     # The copy is a stand-alone consumer tree, not add_subdirectory(Logger).
     consumer = work / 'external source'
     shutil.copytree(a.source / 'examples/installed_consumer', consumer)
+    for name in ('current_abi_contract.c', 'current_abi_contract.cpp'):
+        shutil.copy2(a.source / 'tests/packaging' / name, consumer / name)
     cb = work / 'external build'
     run([a.cmake, '-S', consumer, '-B', cb, '-DCMAKE_PREFIX_PATH='+str(prefix),
          '-DCMAKE_C_COMPILER='+a.cc, '-DCMAKE_CXX_COMPILER='+a.cxx,
@@ -177,13 +179,25 @@ try:
          '-o',exe]+flags)
     pe['LD_LIBRARY_PATH']=str(pkg_lib)
     wd=work/'pkg run';wd.mkdir();run([exe],cwd=wd,env=pe)
+    # 从搬迁后的包取得全部编译与链接参数，在独立消费树中执行完整函数合同。
+    # C++ 包装文件包含同目录的 C 合同，两者都只发现已安装的公共头和库。
+    abi_consumers = []
+    for compiler, standard, extension in [(a.cc, 'c11', 'c'), (a.cxx, 'c++11', 'cpp')]:
+        contract = work / ('installed-abi-' + extension)
+        source = consumer / ('current_abi_contract.' + extension)
+        run([compiler, '-std=' + standard, '-Wall', '-Wextra', '-Wpedantic',
+             '-Werror', '-pedantic-errors', source, '-o', contract] + flags)
+        wd = work / ('installed-abi-' + extension + ' run')
+        wd.mkdir()
+        run([contract], cwd=wd, env=pe)
+        abi_consumers.append(contract)
     consumer_glibc = []
     if a.max_consumer_glibc:
         # liblogger.a itself cannot establish a GLIBC floor. Inspect final
         # executables and the PIC SDK DSO after linking on the baseline, and
         # retain their reports alongside the runtime checks above.
         for linked in [cb/'logger_consumer', cb/'logger_cpp',
-                       cb/'libinstalled_plugin.so', cb/'plugin_loader', exe]:
+                       cb/'libinstalled_plugin.so', cb/'plugin_loader', exe] + abi_consumers:
             # The shared plugin can import only Logger and have no direct
             # libc calls; liblogger.so is inspected separately below. A plugin
             # embedding liblogger.a must still expose and pass its GLIBC needs.
@@ -250,6 +264,7 @@ try:
                       'VERSION/header/CMake/pkg-config identity',
                       '文档清单与 Markdown 相对文件链接',
                       'CMake consumer','C++11 consumer','PIC SDK plugin','pkg-config consumer',
+                      '安装后 C/C++11 记录与查询函数类型及行为',
                       'version/components rejection','current C/C++ layouts and defaults','production isolation']}
     (work/'RESULT.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2))

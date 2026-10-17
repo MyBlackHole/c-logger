@@ -362,7 +362,7 @@ static void test_failure_or_gap(void)
 
 	logger_diagnostics_t d;
 
-	logger_get_diagnostics(instance, &d);
+	CHECK(logger_get_diagnostics(instance, &d) == 0);
 	CHECK(d.enqueued == producers && d.dropped_records == 0);
 	if (!healthy_worker()) {
 		CHECK(atomic_load(&error_broadcasts) == 1);

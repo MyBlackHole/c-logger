@@ -84,7 +84,9 @@ static void generation(enum operation op)
 	CHECK(pthread_join(reader, NULL) == 0);
 	expect_rejection(&r, ESHUTDOWN);
 	/* 延迟级别设置、重开、刷新和写入均不能落到新代次。 */
-	CHECK(logger_get_state(new_owner) == LOGGER_STATE_RUNNING);
+	logger_state_t state;
+	CHECK(logger_get_state(new_owner, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	LOG_INFO("new-still-visible");
 	finish_owners(new_owner);
 	CHECK(file_lines("old.log") == 1 && file_lines("new.log") == 2);

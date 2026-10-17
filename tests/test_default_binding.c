@@ -32,9 +32,9 @@ static unsigned lines(const char *path)
 static void absent(void)
 {
 	int touched = 42;
-	errno = 0;
-	LOG_INFO("must-not-format%n", &touched);
-	CHECK(errno == ENODEV && touched == 42);
+	errno = EDOM;
+	CHECK(LOG_INFO("must-not-format%n", &touched) == -ENODEV);
+	CHECK(errno == EDOM && touched == 42);
 	CHECK(logger_default_flush() == -ENODEV);
 }
 
@@ -55,7 +55,8 @@ static void healthy(int async)
 	CHECK(logger_default_set(NULL, b) == -ESTALE && errno == ERANGE);
 	CHECK(logger_default_set(a, a) == 0);
 	CHECK(logger_default_set(a, b) == 0);
-	CHECK(logger_get_state(a) == LOGGER_STATE_RUNNING);
+	logger_state_t state;
+	CHECK(logger_get_state(a, &state) == 0 && state == LOGGER_STATE_RUNNING);
 	CHECK(logger_destroy(&a) == 0 && a == NULL);
 	CHECK(lines("a.log") == 2);
 	CHECK(file_contains("a.log", "A_DEFAULT"));
@@ -64,7 +65,7 @@ static void healthy(int async)
 	CHECK(logger_default_set(b, NULL) == 0);
 	absent();
 	LOGGER_INFO(b, "explicit", "B_STILL_OWNED");
-	CHECK(logger_get_state(b) == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(b, &state) == 0 && state == LOGGER_STATE_RUNNING);
 	CHECK(logger_destroy(&b) == 0 && !b);
 	CHECK(lines("b.log") == 2);
 }
@@ -73,9 +74,10 @@ static void io_failure(void)
 {
 	logger_t *l = make_logger("/dev/full", 0);
 	CHECK(logger_default_set(NULL, l) == 0);
-	LOG_ERROR("expected-output-failure");
+	errno = EDOM;
+	CHECK(LOG_ERROR("expected-output-failure") < 0 && errno == EDOM);
 	logger_io_metrics_t io;
-	logger_get_io_metrics(l, &io);
+	CHECK(logger_get_io_metrics(l, &io) == 0 && errno == EDOM);
 	CHECK(io.first_error != 0);
 	errno = EDOM;
 	/* 解绑只归还借用，不擅自刷新，亦不代替宿主报告最终 I/O 错误。 */
@@ -124,12 +126,13 @@ static void *stress_reader(void *unused)
 	(void)unused;
 	wait_flag(&start_readers);
 	for (unsigned i = 0; i < 400; ++i) {
-		errno = 0;
-		LOG_INFO("CONCURRENT_RECORD_%u", i);
-		if (!errno)
+		errno = EDOM;
+		int rc = LOG_INFO("CONCURRENT_RECORD_%u", i);
+		CHECK(errno == EDOM);
+		if (!rc)
 			atomic_fetch_add(&accepted, 1);
 		else
-			CHECK(errno == EAGAIN || errno == ESHUTDOWN);
+			CHECK(rc == -EAGAIN || rc == -ESHUTDOWN);
 	}
 	return NULL;
 }

@@ -29,7 +29,7 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
 
 ## ABI 破坏与迁移
 
-- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和 47 个当前公开 C 符号。
+- 使用 SONAME `liblogger.so.2`、ELF 符号版本 `LOGGER_2.0` 和43个当前公开C符号。
   不可替换 SONAME 1 库；必须使用同版头文件重新构建并验收消费方，不承诺 v1 源码兼容。
 - 删除 Audit/crypto 产品、`audit.h` 和 `audit_*` 导出。普通日志不提供审计事务、
   哈希链、不可变存储或可信锚点。旧审计用户继续使用 `release/1.x`，或迁移独立组件。
@@ -41,8 +41,8 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
   内部轮转要求 `RENAME_NOREPLACE`，不以覆盖归档降级；目录必须可信。
 
 具体公开合同见 [API](../API.md)、[配置规则](UAPI.md)和[宿主持有集成](HOST_OWNED.md)。
-旧引导阶段曾有48个导出；本次移除旧销毁状态入口后为47个，且创建和销毁的
-函数类型已经变化，不承诺开发快照之间兼容。[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
+旧引导阶段曾有48个导出；移除旧所有权及控制包装后当前为43个。生命周期、
+Console、记录和查询函数类型已经变化，不承诺开发快照之间兼容。[当前 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)
 按现有可执行快照整理，最终稳定 ABI/API 的发布确认须与最终源码验收一并记录，
 不能仅凭旧开发文案断言实现未完成，也不能仅凭本稿断言合同已经冻结。
 
@@ -69,11 +69,12 @@ musl、AArch64、32 位和 NFS/SMB 不在本次范围。详见[支持矩阵](v2/
 `logger_create()` 和 `logger_destroy(&owner)` 采用 0/-errno 并保留调用方 errno。
 `logger_flush(owner)`、`logger_reopen(owner)` 及默认槽的对应接口也采用 0/-errno，
 保留 errno；旧刷新 status/instance 包装与拥有型 Global 关闭接口不再提供。
-`logger_log_sync_status()` 采用 0/-errno。刷新等待既定完成水位并
+四个记录入口与十二个状态/指标查询采用0/-errno并保留errno。查询完整成功才
+写输出槽，替换旧void指标的失败清零规则。刷新等待既定完成水位并
 同步文件，不给阻塞 I/O 提供硬超时，也不证明本地 Syslog daemon 已持久化。
 部分写入后仍可能报错，应用重试可能重复；未确认尾部没有自动修复或 exactly-once 承诺。
 
-普通 void 日志正文最多 4095 字节，超限有可见截断标记；同步状态日志超限返回
+普通日志正文最多4095字节，超限有可见截断标记；严格同步日志超限返回
 -EOVERFLOW 且不输出。截断按字节处理，不保证 UTF-8 码点完整。Syslog 为本地非阻塞
 Unix 数据报，重连由后续日志触发，不提供磁盘重试队列、历史重放或远端持久确认。
 Logger/Console 不是信号安全 API；支持延迟取消或入口前禁用取消，不支持一般
@@ -127,4 +128,12 @@ ASYNC+ENABLE 取消、跨调用 longjmp/pthread_exit 或宿主取消私有工作
 
 Console配置、TTY查询和输出均采用0/-errno并保留errno；五个配置/查询签名
 已修改，不兼容旧开发头文件，符号数不变。参见[Console合同](v2/CONSOLE_API.md)。
-这不等于全部Logger记录/指标接口已统一或正式发布获批。
+## 记录与查询开发接口迁移
+
+普通记录由void改为int，传回实际格式化、同步输出、同步回退和队列通知错误。
+容量DROP返回-EAGAIN；发布后通知失败仍可能已经接受，负返回不构成安全重试
+条件。三个原标量查询改用输出槽，六个void结构查询改为int，三个后端查询
+删除-1/errno错误风格。结构布局和导出数量不变，必须用同版头文件重编调用方。
+详细见[记录合同](v2/RECORD_API.md)和[查询合同](v2/QUERY_API.md)。
+
+级别设置、TLS上下文与脱敏辅助函数的剩余迁移及正式发布验收继续独立进行。

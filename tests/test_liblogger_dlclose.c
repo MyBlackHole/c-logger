@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "logger.h" /* 仅有声明；此可执行文件不链接 logger */
 #include <dlfcn.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +24,7 @@ int main(int argc, char **argv)
 		CHECK(handle != NULL);
 		int (*initialize_fn)(void);
 		int (*create_fn)(const logger_config_t *, logger_t **);
-		void (*log_fn)(logger_t *, logger_level_t, const char *,
+		int (*log_fn)(logger_t *, logger_level_t, const char *,
 			       const char *, int, const char *, const char *,
 			       ...);
 		int (*destroy_fn)(logger_t **);
@@ -58,9 +59,12 @@ int main(int argc, char **argv)
 		logger_t *l = NULL;
 		CHECK(create_fn(&c, &l) == 0);
 		CHECK(l != NULL);
-		for (int j = 0; j < 10; ++j)
-			log_fn(l, LOGGER_INFO, "dlclose", __FILE__, __LINE__,
-			       __func__, "n=%d j=%d", n, j);
+		for (int j = 0; j < 10; ++j) {
+			errno = EDOM;
+			CHECK(log_fn(l, LOGGER_INFO, "dlclose", __FILE__, __LINE__,
+				     __func__, "n=%d j=%d", n, j) == 0);
+			CHECK(errno == EDOM);
+		}
 		CHECK(destroy_fn(&l) == 0); /* dlclose 前不再有调用或工作线程 */
 		CHECK(l == NULL);
 		CHECK(dlclose(handle) == 0);

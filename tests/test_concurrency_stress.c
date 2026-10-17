@@ -4,6 +4,7 @@
 #include <unistd.h>
 static logger_t *g;
 static _Atomic int run = 1;
+static _Atomic int query_error;
 static void *prod(void *x)
 {
 	long id = (long)x;
@@ -19,7 +20,9 @@ static void *ctl(void *x)
 	logger_metrics_t m;
 	while (atomic_load(&run)) {
 		logger_set_instance_level(g, LOGGER_DEBUG);
-		logger_get_metrics(g, &m);
+		int rc = logger_get_metrics(g, &m);
+		if (rc)
+			atomic_store(&query_error, rc);
 		logger_flush(g);
 		logger_set_instance_level(g, LOGGER_INFO);
 	}
@@ -51,5 +54,5 @@ int main(void)
 	pthread_join(c1, 0);
 	pthread_join(c2, 0);
 	logger_destroy(&g);
-	return 0;
+	return atomic_load(&query_error) ? 4 : 0;
 }

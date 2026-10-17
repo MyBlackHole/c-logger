@@ -57,8 +57,13 @@ cleanup:
 	plugin.destroy(second);
 	plugin.destroy(first);
 	if (logger) {
-		LOGGER_INFO(logger, "host",
-			    "SDK instances stopped; logger still usable");
+		int record_rc = LOGGER_INFO(logger, "host",
+					    "SDK instances stopped; logger still usable");
+		if (record_rc) {
+			errno = -record_rc;
+			perror("logger_log");
+			result = 1;
+		}
 		int flush_rc = logger_flush(logger);
 		if (flush_rc) {
 			errno = -flush_rc;

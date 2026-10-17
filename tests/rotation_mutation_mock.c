@@ -33,7 +33,7 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 	return 0;
 }
 
-void logger_global_write(logger_level_t level, const char *module,
+int logger_global_write(logger_level_t level, const char *module,
 			 const char *file, int line, const char *function,
 			 const char *format, ...)
 {
@@ -43,6 +43,7 @@ void logger_global_write(logger_level_t level, const char *module,
 	(void)line;
 	(void)function;
 	(void)format;
+	return 0;
 }
 
 int logger_destroy(logger_t **owner)

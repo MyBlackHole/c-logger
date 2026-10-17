@@ -21,7 +21,9 @@ int main(void)
 	if (p < 0)
 		return 3;
 	if (p == 0) {
-		LOG_INFO("must safely disappear");
+		errno = EDOM;
+		if (LOG_INFO("must safely disappear") != -ECHILD || errno != EDOM)
+			_exit(12);
 		if (logger_default_flush() != -ECHILD)
 			_exit(10);
 		if (logger_default_set(NULL, NULL) != -ECHILD)

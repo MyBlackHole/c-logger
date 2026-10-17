@@ -93,15 +93,15 @@ int main(int argc, char **argv)
 	 */
 	int rc = logger_wait_for_output(l);
 	clock_gettime(CLOCK_MONOTONIC, &output_end);
-	logger_metrics_t m;
-	logger_io_metrics_t io;
-	logger_get_metrics(l, &m);
-	logger_get_io_metrics(l, &io);
+	logger_metrics_t m = { 0 };
+	logger_io_metrics_t io = { 0 };
+	int metrics_rc = logger_get_metrics(l, &m);
+	int io_rc = logger_get_io_metrics(l, &io);
 	uint64_t drops = 0;
 	for (unsigned i = 0; i < 6; ++i)
 		drops += m.dropped[i];
 	uint64_t attempted = started * nr;
-	int valid = !error && rc == 0 &&
+	int valid = !error && !metrics_rc && !io_rc && rc == 0 &&
 		    m.enqueued + m.sync_fallbacks + drops == attempted &&
 		    io.async_completed == m.enqueued &&
 		    io.sync_completed == m.sync_fallbacks &&

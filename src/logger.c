@@ -155,12 +155,22 @@ static void prepare_record_metadata(logger_t *l, msg_t *m, const char *module,
 		capture_context(m);
 }
 
-logger_state_t logger_get_state(const logger_t *l)
+int logger_get_state(const logger_t *l, logger_state_t *out)
 {
-	if (reject_access())
-		return LOGGER_STATE_STOPPED;
-	return l ? atomic_load_explicit(&l->state, memory_order_acquire) :
-		   LOGGER_STATE_STOPPED;
+	int saved = errno;
+	int rc = -EINVAL;
+
+	if (reject_access()) {
+		rc = -errno;
+		goto done;
+	}
+	if (!l || !out)
+		goto done;
+	*out = atomic_load_explicit(&l->state, memory_order_acquire);
+	rc = 0;
+done:
+	errno = saved;
+	return rc;
 }
 static void update_high_watermark(logger_t *l)
 {
@@ -174,20 +184,21 @@ static void update_high_watermark(logger_t *l)
 	}
 }
 
-static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
-		      const char *f, int line, const char *fn, const char *fmt,
-		      va_list ap)
+static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
+		     const char *f, int line, const char *fn, const char *fmt,
+		     va_list ap, int format_errno)
 {
-	if (!l || !fmt || (unsigned)lv >= LOGGER_OFF ||
-	    lv < atomic_load_explicit(&l->level, memory_order_relaxed))
-		return;
+	if (lv < atomic_load_explicit(&l->level, memory_order_relaxed))
+		return 0;
 	msg_t m = { .level = lv };
 	prepare_record_metadata(l, &m, mod, f, line, fn);
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
-		return;
+		return -(errno ? errno : EIO);
+	/* 元数据与时钟调用不能改变正文中 GNU %m 的公开入口值。 */
+	errno = format_errno;
 	int formatted = logger_libc_vsnprintf(m.text, sizeof(m.text), fmt, ap);
 	if (formatted < 0)
-		return;
+		return -(errno ? errno : EILSEQ);
 	size_t stored = (size_t)formatted < sizeof(m.text) ?
 				(size_t)formatted :
 				sizeof(m.text) - 1u;
@@ -195,57 +206,70 @@ static void vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 		logger_text_mark_truncated(m.text, sizeof(m.text));
 	m.text_len = (uint16_t)stored;
 
-	if (!l->async_mode) {
-		(void)logger_emit_status(l, &m, 0);
-	} else {
-		int push_rc = logger_queue_push(&l->q, &m);
-		if (push_rc > 0) {
-			atomic_fetch_add_explicit(&l->enqueued, 1,
-						  memory_order_relaxed);
-			update_high_watermark(l);
-		} else if (push_rc < 0) {
-			/* 记录已发布；通知失败后不能回滚 MPSC 槽位，只能停止接纳。 */
-			int error = -push_rc;
-			atomic_fetch_add_explicit(&l->enqueued, 1,
-						  memory_order_relaxed);
-			update_high_watermark(l);
-			logger_note_io_error(l, error);
-			logger_note_lifecycle_error(l, error);
-			int wait_error = logger_queue_wait_error(&l->q);
-			if (wait_error) {
-				logger_note_synchronization_error(l, wait_error);
-			} else {
-				int wake_rc = logger_queue_wake_force(&l->q);
-				if (wake_rc) {
-					logger_note_lifecycle_error(l, -wake_rc);
-					wait_error = logger_queue_wait_error(&l->q);
-					if (wait_error)
-						logger_note_synchronization_error(l,
-									  wait_error);
-				}
-			}
-		} else if (l->overflow[lv] == LOGGER_OVERFLOW_SYNC) {
-			/* 同步回退不计入队列丢弃，I/O 结果由独立指标记录。 */
-			atomic_fetch_add_explicit(&l->sync_fallbacks, 1,
-						  memory_order_relaxed);
-			(void)logger_emit_status(l, &m, 0);
-		} else {
-			atomic_fetch_add_explicit(&l->dropped_by_level[lv], 1,
-						  memory_order_relaxed);
-		}
+	if (!l->async_mode)
+		return logger_emit_status(l, &m, 0);
+	int push_rc = logger_queue_push(&l->q, &m);
+	if (push_rc > 0) {
+		atomic_fetch_add_explicit(&l->enqueued, 1,
+					  memory_order_relaxed);
+		update_high_watermark(l);
+		return 0;
 	}
+	if (push_rc < 0) {
+		/* 记录已发布；通知失败后不能回滚 MPSC 槽位，只能停止接纳。 */
+		int error = -push_rc;
+		atomic_fetch_add_explicit(&l->enqueued, 1,
+					  memory_order_relaxed);
+		update_high_watermark(l);
+		logger_note_io_error(l, error);
+		logger_note_lifecycle_error(l, error);
+		int wait_error = logger_queue_wait_error(&l->q);
+		if (wait_error) {
+			logger_note_synchronization_error(l, wait_error);
+		} else {
+			int wake_rc = logger_queue_wake_force(&l->q);
+			if (wake_rc) {
+				logger_note_lifecycle_error(l, -wake_rc);
+				wait_error = logger_queue_wait_error(&l->q);
+				if (wait_error)
+					logger_note_synchronization_error(l,
+								  wait_error);
+			}
+		}
+		return push_rc;
+	}
+	if (l->overflow[lv] == LOGGER_OVERFLOW_SYNC) {
+		/* 同步回退不计入队列丢弃，返回本次实际 I/O 结果。 */
+		atomic_fetch_add_explicit(&l->sync_fallbacks, 1,
+					  memory_order_relaxed);
+		return logger_emit_status(l, &m, 0);
+	}
+	atomic_fetch_add_explicit(&l->dropped_by_level[lv], 1,
+				  memory_order_relaxed);
+	return -EAGAIN;
 }
-void logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
-			  const char *file, int line, const char *function,
-			  const char *fmt, va_list args)
+int logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
+			 const char *file, int line, const char *function,
+			 const char *fmt, va_list args)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
-	if (l && atomic_load_explicit(&l->state, memory_order_acquire) ==
-			 LOGGER_STATE_RUNNING)
-		vlog_body(l, level, module, file, line, function, fmt, args);
-	(void)logger_scope_end(&scope, 0);
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto out;
+	if (!l || !fmt || (unsigned)level >= LOGGER_OFF)
+		rc = -EINVAL;
+	else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
+		 LOGGER_STATE_RUNNING)
+		rc = -ESHUTDOWN;
+	else
+		rc = vlog_body(l, level, module, file, line, function, fmt, args,
+			       saved);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 static int copy_logger_config(const logger_config_t *in,
@@ -836,53 +860,68 @@ out:
 	return rc;
 }
 
-void logger_log(logger_t *l, logger_level_t level, const char *module,
-		const char *file, int line, const char *function,
-		const char *fmt, ...)
+int logger_log(logger_t *l, logger_level_t level, const char *module,
+	       const char *file, int line, const char *function,
+	       const char *fmt, ...)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
-	int rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto out;
+	rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);
-		vlog_body(l, level, module, file, line, function, fmt, ap);
+		rc = vlog_body(l, level, module, file, line, function, fmt, ap,
+			       saved);
 		va_end(ap);
 	}
-	(void)logger_scope_end(&scope, rc);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
-void logger_log_source(logger_t *l, logger_level_t level,
-		       logger_source_t source, const char *fmt, ...)
+int logger_log_source(logger_t *l, logger_level_t level,
+		      logger_source_t source, const char *fmt, ...)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return;
-	int rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto out;
+	rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);
-		vlog_body(l, level, source.module, source.file, source.line,
-			  source.func, fmt, ap);
+		rc = vlog_body(l, level, source.module, source.file, source.line,
+			       source.func, fmt, ap, saved);
 		va_end(ap);
 	}
-	(void)logger_scope_end(&scope, rc);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 int logger_log_sync_status(logger_t *l, logger_level_t level,
 			   const char *module, const char *file, int line,
 			   const char *function, const char *fmt, ...)
 {
+	int saved = errno;
 	logger_scope_t scope;
 	int rc = logger_scope_begin(&scope);
+
 	if (rc)
-		return rc;
+		goto out;
 	if (!l || !fmt || (unsigned)level >= LOGGER_OFF)
 		rc = -EINVAL;
 	else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
@@ -893,10 +932,11 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 		logger_message_t msg = { .level = level };
 		prepare_record_metadata(l, &msg, module, file, line, function);
 		if (clock_gettime(CLOCK_REALTIME, &msg.ts))
-			rc = -errno;
+			rc = -(errno ? errno : EIO);
 		else {
 			va_list ap;
 			va_start(ap, fmt);
+			errno = saved;
 			int n = logger_libc_vsnprintf(
 				msg.text, sizeof(msg.text), fmt, ap);
 			va_end(ap);
@@ -908,7 +948,10 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 				rc = logger_emit_status(l, &msg, 1);
 		}
 	}
-	return logger_scope_end(&scope, rc);
+	rc = logger_scope_end(&scope, rc);
+out:
+	errno = saved;
+	return rc;
 }
 
 int logger_reopen(logger_t *l)
@@ -1114,27 +1157,39 @@ void logger_set_instance_level(logger_t *l, logger_level_t v)
 	if (l)
 		atomic_store_explicit(&l->level, v, memory_order_relaxed);
 }
-uint64_t logger_dropped(const logger_t *l)
+int logger_dropped(const logger_t *l, uint64_t *out)
 {
-	if (reject_access())
-		return 0;
-	if (!l)
-		return 0;
+	int saved = errno;
+	int rc = -EINVAL;
 	uint64_t n = 0;
+
+	if (reject_access()) {
+		rc = -errno;
+		goto done;
+	}
+	if (!l || !out)
+		goto done;
 	for (unsigned i = 0; i < 6; i++)
 		n += atomic_load_explicit(&l->dropped_by_level[i],
 					  memory_order_relaxed);
-	return n;
+	*out = n;
+	rc = 0;
+done:
+	errno = saved;
+	return rc;
 }
-void logger_get_metrics(const logger_t *l, logger_metrics_t *out)
+int logger_get_metrics(const logger_t *l, logger_metrics_t *out)
 {
-	if (!out)
-		return;
+	int saved = errno;
+	int rc = -EINVAL;
+
+	if (reject_access()) {
+		rc = -errno;
+		goto done;
+	}
+	if (!l || !out)
+		goto done;
 	memset(out, 0, sizeof(*out));
-	if (reject_access())
-		return;
-	if (!l)
-		return;
 	for (unsigned i = 0; i < 6; i++)
 		out->dropped[i] = atomic_load_explicit(&l->dropped_by_level[i],
 						       memory_order_relaxed);
@@ -1148,17 +1203,24 @@ void logger_get_metrics(const logger_t *l, logger_metrics_t *out)
 						     memory_order_relaxed);
 	out->consumer_records = atomic_load_explicit(&l->consumer_records,
 						     memory_order_relaxed);
+	rc = 0;
+done:
+	errno = saved;
+	return rc;
 }
 
-void logger_get_io_metrics(const logger_t *l, logger_io_metrics_t *out)
+int logger_get_io_metrics(const logger_t *l, logger_io_metrics_t *out)
 {
-	if (!out)
-		return;
+	int saved = errno;
+	int rc = -EINVAL;
+
+	if (reject_access()) {
+		rc = -errno;
+		goto done;
+	}
+	if (!l || !out)
+		goto done;
 	memset(out, 0, sizeof(*out));
-	if (reject_access())
-		return;
-	if (!l)
-		return;
 	out->async_completed =
 		atomic_load_explicit(&l->async_completed, memory_order_acquire);
 	out->sync_completed =
@@ -1169,15 +1231,24 @@ void logger_get_io_metrics(const logger_t *l, logger_io_metrics_t *out)
 		atomic_load_explicit(&l->failed_records, memory_order_relaxed);
 	out->first_error =
 		atomic_load_explicit(&l->first_error, memory_order_acquire);
+	rc = 0;
+done:
+	errno = saved;
+	return rc;
 }
 
-void logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
+int logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
 {
-	if (!out)
-		return;
+	int saved = errno;
+	int rc = -EINVAL;
+
+	if (reject_access()) {
+		rc = -errno;
+		goto done;
+	}
+	if (!l || !out)
+		goto done;
 	memset(out, 0, sizeof(*out));
-	if (reject_access() || !l)
-		return;
 
 	out->state = atomic_load_explicit(&l->state, memory_order_acquire);
 	out->level = atomic_load_explicit(&l->level, memory_order_relaxed);
@@ -1251,6 +1322,10 @@ void logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
 	if (out->async_mode && out->state == LOGGER_STATE_RUNNING &&
 	    !out->worker_running)
 		out->observation_flags |= LOGGER_DIAG_WORKER_STOPPED;
+	rc = 0;
+done:
+	errno = saved;
+	return rc;
 }
 
 int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
@@ -1281,19 +1356,33 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 
 int logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
-	int rc = logger_file_metrics_snapshot(l, out);
-	return logger_scope_end(&scope, rc) ? -1 : 0;
+	logger_file_metrics_t snapshot;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto done;
+	rc = !out ? -EINVAL : logger_file_metrics_snapshot(l, &snapshot);
+	rc = logger_scope_end(&scope, rc);
+	/* 取消恢复可能失败或运行调用者清理；此后只发布局部值。 */
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
 int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 {
+	int saved = errno;
 	logger_scope_t scope;
-	if (logger_scope_begin(&scope))
-		return -1;
-	int rc = !l || !out ? -EINVAL : 0;
+	logger_syslog_metrics_t snapshot;
+	int rc = logger_scope_begin(&scope);
+
+	if (rc)
+		goto done;
+	rc = !l || !out ? -EINVAL : 0;
 	if (!rc && !(l->outputs & LOGGER_OUT_SYSLOG))
 		rc = -ENOTSUP;
 	if (!rc) {
@@ -1306,18 +1395,21 @@ int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 		ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 		rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
 		if (!rc) {
-			logger_syslog_metrics_t snapshot = l->syslog_backend.metrics;
+			snapshot = l->syslog_backend.metrics;
 			int unlock_rc = RELEASE_ERR(pthread_mutex_emit,
 						    &emit_guard);
 			if (unlock_rc) {
 				logger_note_synchronization_error(l, unlock_rc);
 				rc = unlock_rc;
-			} else {
-				*out = snapshot;
 			}
 		}
 	}
-	return logger_scope_end(&scope, rc) ? -1 : 0;
+	rc = logger_scope_end(&scope, rc);
+	if (!rc)
+		*out = snapshot;
+done:
+	errno = saved;
+	return rc;
 }
 
 void logger_context_reset_child(void)

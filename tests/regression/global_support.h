@@ -57,10 +57,16 @@ static inline enum operation parse_operation(const char *name)
 
 static inline void invoke(call_result_t *r)
 {
-	errno = 0;
+	r->rc = 0;
+	r->value = UINT64_C(777);
+	memset(&r->metrics, 0xa5, sizeof(r->metrics));
+	memset(&r->io, 0xa5, sizeof(r->io));
+	memset(&r->diagnostics, 0xa5, sizeof(r->diagnostics));
+	memset(&r->file_metrics, 0xa5, sizeof(r->file_metrics));
+	errno = EDOM;
 	switch (r->op) {
 	case OP_WRITE:
-		LOG_INFO("delayed-record");
+		r->rc = LOG_INFO("delayed-record");
 		break;
 	case OP_FLUSH:
 		r->rc = logger_default_flush();
@@ -75,16 +81,16 @@ static inline void invoke(call_result_t *r)
 		logger_set_level(LOGGER_OFF);
 		break;
 	case OP_DROPPED:
-		r->value = logger_global_dropped();
+		r->rc = logger_global_dropped(&r->value);
 		break;
 	case OP_METRICS:
-		logger_get_global_metrics(&r->metrics);
+		r->rc = logger_get_global_metrics(&r->metrics);
 		break;
 	case OP_IO:
-		logger_get_global_io_metrics(&r->io);
+		r->rc = logger_get_global_io_metrics(&r->io);
 		break;
 	case OP_DIAGNOSTICS:
-		logger_get_global_diagnostics(&r->diagnostics);
+		r->rc = logger_get_global_diagnostics(&r->diagnostics);
 		break;
 	case OP_FILE_METRICS:
 		r->rc = logger_get_global_file_metrics(&r->file_metrics);
@@ -96,33 +102,31 @@ static inline void invoke(call_result_t *r)
 	atomic_store(&r->done, 1);
 }
 
+static inline void expect_query_sentinel(const void *out, size_t size)
+{
+	const unsigned char *bytes = out;
+	for (size_t i = 0; i < size; ++i)
+		CHECK(bytes[i] == 0xa5);
+}
+
 static inline void expect_rejection(const call_result_t *r, int error)
 {
-	if (r->op == OP_FLUSH || r->op == OP_FLUSH_VOID || r->op == OP_REOPEN) {
-		CHECK(r->rc == -error && r->error == 0);
+	/* 级别设置在本阶段保留旧 errno 合同；其他入口实际检查返回状态。 */
+	if (r->op == OP_LEVEL) {
+		CHECK(r->error == error);
 		return;
 	}
-	CHECK(r->error == error);
-	if (r->op == OP_FILE_METRICS)
-		CHECK(r->rc == -1);
+	CHECK(r->rc == -error && r->error == EDOM);
 	if (r->op == OP_DROPPED)
-		CHECK(r->value == 0);
-	if (r->op == OP_METRICS) {
-		CHECK(!r->metrics.enqueued && !r->metrics.sync_fallbacks &&
-		      !r->metrics.consumer_records &&
-		      !r->metrics.queue_high_watermark);
-		for (int i = 0; i < 6; ++i)
-			CHECK(!r->metrics.dropped[i]);
-	}
+		CHECK(r->value == UINT64_C(777));
+	if (r->op == OP_METRICS)
+		expect_query_sentinel(&r->metrics, sizeof(r->metrics));
 	if (r->op == OP_IO)
-		CHECK(!r->io.async_completed && !r->io.sync_completed &&
-		      !r->io.emitted_records && !r->io.failed_records &&
-		      !r->io.first_error);
+		expect_query_sentinel(&r->io, sizeof(r->io));
 	if (r->op == OP_DIAGNOSTICS)
-		CHECK(!r->diagnostics.enqueued &&
-		      !r->diagnostics.queue_capacity &&
-		      !r->diagnostics.observation_flags &&
-		      !r->diagnostics.first_error);
+		expect_query_sentinel(&r->diagnostics, sizeof(r->diagnostics));
+	if (r->op == OP_FILE_METRICS)
+		expect_query_sentinel(&r->file_metrics, sizeof(r->file_metrics));
 }
 
 static inline void fixture_reset(void)

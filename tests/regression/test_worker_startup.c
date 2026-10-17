@@ -155,14 +155,15 @@ static void assert_clean_failure(void)
 
 static void test_healthy(logger_t *l)
 {
+	logger_state_t state;
 	CHECK(l != NULL);
-	CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
 	logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "healthy-output");
 	CHECK(logger_flush(l) == 0);
 
 	logger_diagnostics_t d;
 
-	logger_get_diagnostics(l, &d);
+	CHECK(logger_get_diagnostics(l, &d) == 0);
 	CHECK(d.emitted_records == 1 && d.failed_records == 0);
 	CHECK(d.first_error == 0);
 	CHECK(d.enqueued == (selected == SYNC ? 0u : 1u));
@@ -177,23 +178,26 @@ static void test_healthy(logger_t *l)
 
 static void test_late_failure(logger_t *l)
 {
+	logger_state_t state;
 	CHECK(l != NULL);
-	CHECK(logger_get_state(l) == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
 	atomic_store_explicit(&allow_start, 1, memory_order_release);
 	wait_flag(&worker_returned);
-	CHECK(logger_get_state(l) == LOGGER_STATE_STOPPING);
+	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_STOPPING);
 	CHECK(atomic_load_explicit(&l->lifecycle_error,
 				   memory_order_acquire) == EIO);
 
 	/* 只测试失败后进入的调用。进行中的刷新见 #124。 */
-	errno = 0;
-	logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "rejected");
-	CHECK(errno == ESHUTDOWN);
+	errno = EDOM;
+	CHECK(logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "rejected") ==
+	      -ESHUTDOWN);
+	CHECK(errno == EDOM);
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "startup", NULL, 0,
 				     NULL, "rejected") == -ESHUTDOWN);
+	CHECK(errno == EDOM);
 	logger_diagnostics_t d;
 
-	logger_get_diagnostics(l, &d);
+	CHECK(logger_get_diagnostics(l, &d) == 0);
 	CHECK(!d.worker_running && d.enqueued == 0 && d.emitted_records == 0);
 	CHECK(file_size("out.log") == 0);
 	errno = 0;

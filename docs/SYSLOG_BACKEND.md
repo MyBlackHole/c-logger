@@ -103,9 +103,10 @@ flush/销毁不重连，不重放历史；关闭只清理已有资源。
 
 ## 可观测性
 
-新增 `int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *)`。
-0 成功；-1 + errno 失败。无 Syslog 为 ENOTSUP，NULL 参数为 EINVAL，子进程为
-ECHILD；失败不修改输出。正常调用在 emit_mu 下取一致快照，不发 I/O、不重连。
+`int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *)` 返回
+0/-errno，所有正常返回保留入口errno。无Syslog为-ENOTSUP，NULL参数为-EINVAL，
+未重建子方先于参数检查返回-ECHILD；所有失败保持完整输出槽，包括取消恢复
+失败。正常调用在emit_mu下取一致快照，最终收尾成功才发布，不发I/O、不重连。
 指标读取与刷新一样不能和裸指针销毁并发。
 
 - submitted_records = sent_records + failed_records（快照时）；未计入过滤/入队丢弃。

@@ -157,10 +157,10 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 		pause_console_flush_lock = 1;
 	return result;
 }
-void __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
+int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
 				 const char *, int, const char *, const char *,
 				 va_list);
-void __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
+int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 				 const char *f, int line, const char *fn,
 				 const char *fmt, va_list a)
 {
@@ -170,7 +170,7 @@ void __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 		atomic_store(&entered, 1);
 		wait_flag(&release_pause);
 	}
-	__real_logger_vlog_internal(l, v, m, f, line, fn, fmt, a);
+	return __real_logger_vlog_internal(l, v, m, f, line, fn, fmt, a);
 }
 
 /* 子进程断言中不使用 CHECK、stdio 或 malloc。 */
@@ -195,6 +195,15 @@ void __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 			_exit(code);                    \
 	} while (0)
 
+static int child_query_unchanged(const void *out, size_t size)
+{
+	const unsigned char *bytes = out;
+	for (size_t i = 0; i < size; ++i)
+		if (bytes[i] != 0xa5)
+			return 0;
+	return 1;
+}
+
 static void child_guard_matrix(void)
 {
 	strict_child = 1;
@@ -204,33 +213,36 @@ static void child_guard_matrix(void)
 	errno = 0;
 	if (logger_create(&cfg, &(logger_t *){ NULL }) != -ECHILD)
 		_exit(11);
-	CHILD_VOID(LOG_INFO("INHERITED_FORBIDDEN"), 14);
+	CHILD_STATUS(LOG_INFO("INHERITED_FORBIDDEN"), 14);
 	CHILD_STATUS(logger_default_flush(), 15);
 	CHILD_STATUS(logger_default_reopen(), 16);
 	CHILD_VOID(logger_set_level(LOGGER_DEBUG), 17);
 	if (logger_default_set(NULL, NULL) != -ECHILD)
 		_exit(18);
-	logger_metrics_t m = { .enqueued = 777 };
-	logger_io_metrics_t io = { .emitted_records = 777 };
-	CHILD_VOID(logger_get_global_metrics(&m), 19);
-	CHILD_VOID(logger_get_global_io_metrics(&io), 20);
-	if (m.enqueued || io.emitted_records)
+	logger_metrics_t m;
+	logger_io_metrics_t io;
+	memset(&m, 0xa5, sizeof(m));
+	memset(&io, 0xa5, sizeof(io));
+	CHILD_STATUS(logger_get_global_metrics(&m), 19);
+	CHILD_STATUS(logger_get_global_io_metrics(&io), 20);
+	if (!child_query_unchanged(&m, sizeof(m)) ||
+	    !child_query_unchanged(&io, sizeof(io)))
 		_exit(21);
-	errno = 0;
-	if (logger_global_dropped() != 0 || errno != ECHILD)
+	uint64_t dropped = UINT64_C(777);
+	CHILD_STATUS(logger_global_dropped(&dropped), 22);
+	if (dropped != UINT64_C(777))
 		_exit(22);
 
 	/* 仅检查来源的情形中，此毒化指针检查在任何解引用前拒绝。
 	 * 显式实例情形使用真实继承的已分配实例。
 	 */
 	logger_t *l = instance ? instance : (logger_t *)(uintptr_t)1;
-	CHILD_VOID(LOGGER_INFO(l, "fork", "INHERITED_FORBIDDEN"), 23);
-	CHILD_VOID(logger_log_source(l, LOGGER_INFO, (logger_source_t){ 0 },
+	CHILD_STATUS(LOGGER_INFO(l, "fork", "INHERITED_FORBIDDEN"), 23);
+	CHILD_STATUS(logger_log_source(l, LOGGER_INFO, (logger_source_t){ 0 },
 				     "forbidden"),
 		   24);
-	if (logger_log_sync_status(l, LOGGER_INFO, "fork", NULL, 0, NULL,
-				   "forbidden") != -ECHILD)
-		_exit(25);
+	CHILD_STATUS(logger_log_sync_status(l, LOGGER_INFO, "fork", NULL, 0,
+					   NULL, "forbidden"), 25);
 	CHILD_STATUS(logger_flush(l), 26);
 	errno = EDOM;
 	(void)logger_flush(l);
@@ -238,15 +250,17 @@ static void child_guard_matrix(void)
 		_exit(27);
 	CHILD_STATUS(logger_reopen(l), 28);
 	CHILD_VOID(logger_set_instance_level(l, LOGGER_ERROR), 31);
-	CHILD_VOID(logger_get_metrics(l, &m), 32);
-	CHILD_VOID(logger_get_io_metrics(l, &io), 33);
-	if (m.enqueued || io.emitted_records)
+	CHILD_STATUS(logger_get_metrics(l, &m), 32);
+	CHILD_STATUS(logger_get_io_metrics(l, &io), 33);
+	if (!child_query_unchanged(&m, sizeof(m)) ||
+	    !child_query_unchanged(&io, sizeof(io)))
 		_exit(34);
-	errno = 0;
-	if (logger_get_state(l) != LOGGER_STATE_STOPPED || errno != ECHILD)
+	logger_state_t state = LOGGER_STATE_RUNNING;
+	CHILD_STATUS(logger_get_state(l, &state), 35);
+	if (state != LOGGER_STATE_RUNNING)
 		_exit(35);
-	errno = 0;
-	if (logger_dropped(l) != 0 || errno != ECHILD)
+	CHILD_STATUS(logger_dropped(l, &dropped), 36);
+	if (dropped != UINT64_C(777))
 		_exit(36);
 	logger_t *old = l;
 	errno = EDOM;

@@ -20,7 +20,7 @@ return logger_destroy(&owner);
 
 `LOGGER_DEFAULT_CONFIG`、`CONSOLE_DEFAULT_CONFIG`、源位置值以及
 `logger_redact`/`logger_mask_secret` 是不依赖运行域的辅助能力，无需初始化。
-既有针对 NULL 输出参数的无操作规则不被转换为可观察的状态接口。
+状态和指标查询已迁移为状态加输出槽；准入成功后 NULL 输出参数为 -EINVAL。
 
 ## 状态与线性化
 
@@ -44,15 +44,15 @@ return logger_destroy(&owner);
 
 ## 错误与取消
 
-`logger_process_init`、`logger_create`、`logger_destroy` 使用 0/-errno，
-所有正常返回保留调用方 errno。其他公开接口仍遵守其当前约定，例如 Global 和
-Console 全部接口现返回0/-errno并保留errno；拒绝不修改TTY输出槽。
-本增量不冒称全部 API 的返回风格已统一。
+进程初始化、创建/销毁、默认绑定、刷新/重开、四个记录、十二个状态/指标查询
+及全部Console接口均使用0/-errno，所有正常返回保留调用方errno；查询失败
+不修改输出槽。级别设置、TLS上下文和脱敏辅助函数仍遵守各自当前约定。
 
 进程准入先于读取配置、拥有者槽和实例字段，因而未初始化时 `create(NULL,NULL)`
 与 `destroy(NULL)` 先报告 ENODEV。已就绪时仍执行原有 EINVAL/EBUSY/空槽合同。
 拒绝不发布或消费拥有者，不格式化消息，不获取运行域锁，不改变线程取消策略。
-指标入口按原规则清零有效输出缓冲，但不访问未发布或继承的实例。
+状态和指标查询拒绝时保持输出槽原值，不访问未发布或继承的实例；本增量明确
+替换旧指标的失败清零规则，具体见[查询合同](QUERY_API.md)。
 
 初始化在取得票据前禁用取消，构造/注册完成并发布结果后恢复策略。取消恢复失败
 可能报告错误但域已经就绪；后续显式调用的 -EALREADY 与普通准入结果反映已发布

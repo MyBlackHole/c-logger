@@ -14,7 +14,10 @@ static _Thread_local int block_read, block_control, block_write;
 static _Thread_local int control_error, writer_error, read_error;
 static _Thread_local int rw_unlock_error, mu_unlock_error, restore_error;
 static _Thread_local int reenter;
-static int read_errno, setter_rc, setter_errno;
+static int read_rc;
+static int read_errno;
+static int setter_rc;
+static int setter_errno;
 static int cancel_setter;
 static uintptr_t tracked;
 static _Atomic int frees;
@@ -26,7 +29,7 @@ int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
 int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
 int __real_pthread_setcancelstate(int, int *);
 int __real_logger_runtime_free(void *);
-void __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
+int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
 				 const char *, int, const char *, const char *,
 				 va_list);
 
@@ -114,7 +117,7 @@ int __wrap_logger_runtime_free(void *p)
 	return rc;
 }
 
-void __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
+int __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
 				 const char *module, const char *file, int line,
 				 const char *func, const char *fmt, va_list ap)
 {
@@ -128,8 +131,8 @@ void __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
 		CHECK(logger_default_set(a, NULL) == -EDEADLK);
 		CHECK(errno == ERANGE);
 	}
-	__real_logger_vlog_internal(l, level, module, file, line, func, fmt,
-				    ap);
+	return __real_logger_vlog_internal(l, level, module, file, line, func,
+					  fmt, ap);
 }
 
 static logger_t *create(const char *path)
@@ -150,8 +153,8 @@ static void *reader(void *arg)
 		block_read = 1;
 	else
 		block_write = 1;
-	errno = 0;
-	LOG_INFO("DELAYED_A");
+	errno = EDOM;
+	read_rc = LOG_INFO("DELAYED_A");
 	read_errno = errno;
 	return NULL;
 }
@@ -207,9 +210,9 @@ static void race_case(const char *mode)
 		CHECK(!atomic_load(&setter_done));
 		CHECK(logger_destroy(&a) == -EBUSY && a);
 		int touched = 42;
-		errno = 0;
-		LOG_INFO("GATE%n", &touched);
-		CHECK(errno == EAGAIN && touched == 42);
+		errno = EDOM;
+		CHECK(LOG_INFO("GATE%n", &touched) == -EAGAIN);
+		CHECK(errno == EDOM && touched == 42);
 		if (cancel_setter)
 			CHECK(pthread_cancel(control) == 0);
 	}
@@ -218,12 +221,12 @@ static void race_case(const char *mode)
 	if (stale)
 		CHECK(setter_rc == -ESTALE);
 	else if (delayed)
-		CHECK(read_errno == ESHUTDOWN);
+		CHECK(read_rc == -ESHUTDOWN && read_errno == EDOM);
 	else {
 		void *result;
 		CHECK(pthread_join(control, &result) == 0);
 		CHECK(setter_rc == 0 && setter_errno == EDOM);
-		CHECK(read_errno == 0);
+		CHECK(read_rc == 0 && read_errno == EDOM);
 		if (cancel_setter)
 			CHECK(result == PTHREAD_CANCELED &&
 			      atomic_load(&cancel_cleaned) && !b);
@@ -293,8 +296,9 @@ int main(int argc, char **argv)
 			writer_error = 1;
 		else if (!strcmp(mode, "read-error")) {
 			read_error = 1;
-			LOG_INFO("NOT_WRITTEN");
-			CHECK(errno == EAGAIN);
+			errno = EDOM;
+			CHECK(LOG_INFO("NOT_WRITTEN") == -EAGAIN);
+			CHECK(errno == EDOM);
 		} else if (!strcmp(mode, "reentry")) {
 			reenter = 1;
 			LOG_INFO("REENTRY_CHECKED");

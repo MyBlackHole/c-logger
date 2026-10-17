@@ -33,7 +33,12 @@ int main(void)
 	for (int i = 0; i < 4; i++)
 		pthread_join(t[i], NULL);
 	LOG_ERROR("example high-severity message");
-	printf("dropped=%llu\n", (unsigned long long)logger_global_dropped());
+	uint64_t dropped;
+	if (logger_global_dropped(&dropped)) {
+		fixture_default_destroy(&default_owner);
+		return 2;
+	}
+	printf("dropped=%llu\n", (unsigned long long)dropped);
 	fixture_default_destroy(&default_owner);
 	return 0;
 }

@@ -30,35 +30,43 @@ int main(void)
 		logger_destroy(&a);
 		return 2;
 	}
+	int rc = 0;
 	for (unsigned i = 0; i < 16; ++i) {
-		LOGGER_INFO(a, "host-a", "record=%u", i);
-		LOGGER_INFO(b, "host-b", "record=%u", i);
+		int record_rc = LOGGER_INFO(a, "host-a", "record=%u", i);
+		if (record_rc && !rc)
+			rc = record_rc;
+		record_rc = LOGGER_INFO(b, "host-b", "record=%u", i);
+		if (record_rc && !rc)
+			rc = record_rc;
 	}
-	int rc = logger_flush(a);
+	int flush_rc = logger_flush(a);
+	if (!rc)
+		rc = flush_rc;
 	logger_io_metrics_t io;
-	logger_get_io_metrics(a, &io);
+	int io_rc = logger_get_io_metrics(a, &io);
 	logger_diagnostics_t diagnostics;
-	logger_get_diagnostics(a, &diagnostics);
+	int diagnostics_rc = logger_get_diagnostics(a, &diagnostics);
 	logger_file_metrics_t file_metrics;
-	if (logger_get_file_metrics(a, &file_metrics))
-		rc = -1;
-	if (io.emitted_records != 16 || io.failed_records ||
+	int file_rc = logger_get_file_metrics(a, &file_metrics);
+	if (io_rc || diagnostics_rc || file_rc) {
+		if (!rc)
+			rc = io_rc ? io_rc : diagnostics_rc ? diagnostics_rc : file_rc;
+	} else if (io.emitted_records != 16 || io.failed_records ||
 	    diagnostics.state != LOGGER_STATE_RUNNING ||
 	    !diagnostics.async_mode || diagnostics.emitted_records != 16 ||
 	    diagnostics.failed_records || diagnostics.queue_depth ||
 	    diagnostics.completion_backlog || !file_metrics.write_operations ||
 	    file_metrics.failed_write_operations || !file_metrics.bytes_written ||
 	    !file_metrics.data_sync_attempts || file_metrics.last_error)
-		rc = -1;
+		rc = -EIO;
 	int close_b = logger_destroy(&b);
 	int close_a = logger_destroy(&a);
-	if (close_b || close_a) {
-		errno = close_b ? -close_b : -close_a;
-		rc = -1;
-	}
+	if (!rc && (close_b || close_a))
+		rc = close_b ? close_b : close_a;
 	if (a || b)
-		rc = -1;
+		rc = -EIO;
 	if (rc) {
+		errno = -rc;
 		perror("logger drain");
 		return 3;
 	}

@@ -37,21 +37,26 @@ int main(void)
 	CHECK(l != NULL);
 	int rc = 0;
 	unsigned tries = 0;
+	errno = EDOM;
 	do {
 		rc = logger_log_sync_status(l, LOGGER_INFO, "fill", NULL, 0,
 					    NULL, "fill");
+		CHECK(errno == EDOM);
 		CHECK(++tries < 10000);
 	} while (!rc);
 	CHECK(rc == -EAGAIN);
 	atomic_store(&hold_worker, 1);
-	LOGGER_INFO(l, "q", "held");
+	CHECK(LOGGER_INFO(l, "q", "held") == 0 && errno == EDOM);
 	wait_flag(&entered);
-	LOGGER_INFO(l, "q", "queue-a");
-	LOGGER_INFO(l, "q", "queue-b");
-	LOGGER_INFO(l, "q", "sync-fallback");
+	errno = EDOM;
+	CHECK(LOGGER_INFO(l, "q", "queue-a") == 0 && errno == EDOM);
+	CHECK(LOGGER_INFO(l, "q", "queue-b") == 0 && errno == EDOM);
+	CHECK(LOGGER_INFO(l, "q", "sync-fallback") == -EAGAIN && errno == EDOM);
 	logger_metrics_t m;
-	logger_get_metrics(l, &m);
-	CHECK(m.enqueued == 3 && m.sync_fallbacks == 1 && !logger_dropped(l));
+	CHECK(logger_get_metrics(l, &m) == 0);
+	uint64_t dropped;
+	CHECK(logger_dropped(l, &dropped) == 0 && dropped == 0);
+	CHECK(m.enqueued == 3 && m.sync_fallbacks == 1);
 	logger_syslog_metrics_t io;
 	CHECK(!logger_get_syslog_metrics(l, &io));
 	CHECK(io.failed_records == 2);
@@ -60,7 +65,7 @@ int main(void)
 	CHECK(!logger_get_syslog_metrics(l, &io));
 	CHECK(io.failed_records == 5 && io.backpressure_records == 5);
 	logger_io_metrics_t all;
-	logger_get_io_metrics(l, &all);
+	CHECK(logger_get_io_metrics(l, &all) == 0);
 	CHECK(all.async_completed == 3);
 	CHECK(logger_destroy(&l) == -EAGAIN);
 	CHECK(!close(fd));
