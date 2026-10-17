@@ -269,9 +269,9 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 		flags |= O_CREAT;
 	if (exclusive)
 		flags |= O_EXCL;
+	int candidate = logger_fork_openat(f->dir_fd, f->name, flags, f->mode);
 	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
-		logger_fd_own(logger_fork_openat(f->dir_fd, f->name, flags,
-					     f->mode));
+		logger_fd_own(candidate);
 	if (!logger_fd_valid(&fd))
 		return -errno;
 	rc = check_named_fd(f->dir_fd, f->name,

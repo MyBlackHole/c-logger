@@ -127,8 +127,8 @@ static void close_reuse(int error)
 
 static void directory_transfer(int fail, int retry)
 {
-	int raw = logger_fork_open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC,
-				   0);
+	int flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
+	int raw = logger_fork_open(".", flags, 0);
 	DIR *directory;
 
 	CHECK(raw >= 0);
