@@ -17,7 +17,7 @@ def audit(readme, issue106, issue107, delta, symbols):
             errors.append(title + ": missing heading")
     for item in range(1, 7):
         token = "D" + str(item)
-        if not re.search(r"^\\| " + token + r"\\s", delta, re.MULTILINE):
+        if not re.search(r"^\| " + token + r"\s", delta, re.MULTILINE):
             errors.append("missing decision " + token)
     rows106 = re.findall(r"^\| (?:T[1-7]|S[1-8]|C(?:10|[1-9])|F(?:1[0-2]|[1-9])|A[1-7]) \|", issue106, re.MULTILINE)
     rows107 = re.findall(r"^\| (?:W[1-9]|U[1-5]|Z[1-4]|F[1-8]|P[1-6]|C[1-7]|B[1-9]|A[1-9]) \|", issue107, re.MULTILINE)
