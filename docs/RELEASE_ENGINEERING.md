@@ -22,7 +22,7 @@ main
 2.0 的设计权威位于 `docs/v2/`；现有根目录和 `docs/` 下的 v1 架构/ABI文档继续作为生产版 v1 历史与维护依据。
 
 已发布生产版 v1 为 **1.0.0**，历史 ABI 为 SONAME 1 / `LOGGER_1.0`、62符号。
-当前 main 的版本身份为 VERSION 2.0.0、SONAME 2 / `LOGGER_2.0`、47符号；XPack 标题与
+当前 main 的版本身份为 VERSION 2.0.0、SONAME 2 / `LOGGER_2.0`、43符号；XPack 标题与
 pkg-config描述均标识中性的 `ABI 2`，不代表已验收或已发布；不能作为已发布 v1 的兼容替代。
 
 ## 构建权威
@@ -72,7 +72,7 @@ Xmake 在配置阶段校验根 `VERSION` 的格式，并要求导出的版本与
 
 `tests/packaging/current_abi_contract.c` 按 C11/C++11 检查当前 Logger/Console 的结构布局、
 数值常量、配置默认值与精确 C 函数类型；现有断言完整保留。当前 ELF 门禁使用
-`abi/logger-2.0.symbols` 的47符号、SONAME 2与 `LOGGER_2.0`，两个门禁互相独立。
+`abi/logger-2.0.symbols` 的43符号、SONAME 2与 `LOGGER_2.0`，两个门禁互相独立。
 `abi/LOGGER_1_0_CONTRACT.md` 与 `abi/logger-1.0.symbols` 仅保留历史记录，旧快照不再
 进入当前CI。语义 ABI 门禁独立于软件包版本身份与正式标签/发布授权。
 
@@ -264,7 +264,8 @@ flush/关闭语义，以及既有 ABI、安装消费、生产隔离和声明的�
 8. 发布后重新下载远端四个资产，并再次执行数量、SHA-256、发布类别/标题校验。
 
 `workflow_dispatch` 是已获授权发布的幂等恢复入口：完整发布不会重复发布，不完整
-发布从既有标签的源码重建并修复。当前已补齐[2.0.0 发布说明](RELEASE_NOTES_2.0.0.md)，
+发布从既有标签的源码重建并修复。当前已补齐[2.0.0 发布说明](RELEASE_NOTES_2.0.0.md)及
+[发布前决策与证据清单](v2/RELEASE_PREFLIGHT.md)，
 仍处于待审准备状态；不得为验证门禁创建正式标签、发起发布手动触发或试发布。
 正式发布仍需合同确认、精确源码全部适用门禁和单独批准；不能把同一标签改指向另一份源码。
 

@@ -536,7 +536,10 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 及子方存活时的锁寿命。`xmake test -g fork-fd -j1` 执行私有快照十五场景和七项
 词法门禁检查；静态配置对真实生产归档和支持归档分别执行。高 fd 两项在系统硬
 限额不足32769时明确输出 `FORK_FD_SKIP`，不得从聚合成功推导这些用例已经通过。
-详见 [fork 描述符隔离](docs/v2/FORK_FD_SNAPSHOT.md)。本阶段仍不能重建子方运行域。
+详见 [fork 描述符隔离](docs/v2/FORK_FD_SNAPSHOT.md)。这组测试单独只证明
+描述符边界；可信普通libc fork后的子方运行域重建另由生产公开父子
+输出、`fork-runtime`矩阵和最低内核验证覆盖，见
+[运行域合同](docs/v2/FORK_RUNTIME.md)。
 
 ## 新生命周期接口与拥有者槽
 
