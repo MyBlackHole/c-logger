@@ -207,7 +207,8 @@ static void check_truncation(const char *path)
 	CHECK(!strict_record(l, "after-truncation"));
 	check_record(path, &before, NULL, "after-truncation");
 	logger_state_t state;
-	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	CHECK(!logger_destroy(&l));
 	free(oversized);
 }
@@ -326,7 +327,8 @@ int main(int argc, char **argv)
 		}
 	}
 	logger_state_t state;
-	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 
 	/* 健康的下一秒能恢复，即使缓存来自格式畸形但成功的转换。 */
 	fault = NONE;

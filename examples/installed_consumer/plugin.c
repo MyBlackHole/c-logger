@@ -18,8 +18,9 @@ int plugin_run(void)
 	int create_rc = logger_create(&cfg, &p);
 	if (create_rc)
 		return 1;
-	int record_rc = LOGGER_INFO(p, "plugin",
-				   "SDK owns local logger and destroys before dlclose");
+	int record_rc = LOGGER_INFO(
+		p, "plugin",
+		"SDK owns local logger and destroys before dlclose");
 	int destroy_rc = logger_destroy(&p);
 	return record_rc || destroy_rc ? 2 : 0;
 }

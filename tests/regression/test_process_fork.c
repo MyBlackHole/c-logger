@@ -158,11 +158,11 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 	return result;
 }
 int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
-				 const char *, int, const char *, const char *,
-				 va_list);
+				const char *, int, const char *, const char *,
+				va_list);
 int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
-				 const char *f, int line, const char *fn,
-				 const char *fmt, va_list a)
+				const char *f, int line, const char *fn,
+				const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
@@ -239,10 +239,11 @@ static void child_guard_matrix(void)
 	logger_t *l = instance ? instance : (logger_t *)(uintptr_t)1;
 	CHILD_STATUS(LOGGER_INFO(l, "fork", "INHERITED_FORBIDDEN"), 23);
 	CHILD_STATUS(logger_log_source(l, LOGGER_INFO, (logger_source_t){ 0 },
-				     "forbidden"),
-		   24);
+				       "forbidden"),
+		     24);
 	CHILD_STATUS(logger_log_sync_status(l, LOGGER_INFO, "fork", NULL, 0,
-					   NULL, "forbidden"), 25);
+					    NULL, "forbidden"),
+		     25);
 	CHILD_STATUS(logger_flush(l), 26);
 	errno = EDOM;
 	(void)logger_flush(l);

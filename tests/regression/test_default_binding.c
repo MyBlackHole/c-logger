@@ -30,8 +30,8 @@ int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
 int __real_pthread_setcancelstate(int, int *);
 int __real_logger_runtime_free(void *);
 int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
-				 const char *, int, const char *, const char *,
-				 va_list);
+				const char *, int, const char *, const char *,
+				va_list);
 
 static void pause_call(void)
 {
@@ -118,8 +118,8 @@ int __wrap_logger_runtime_free(void *p)
 }
 
 int __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
-				 const char *module, const char *file, int line,
-				 const char *func, const char *fmt, va_list ap)
+				const char *module, const char *file, int line,
+				const char *func, const char *fmt, va_list ap)
 {
 	if (block_write) {
 		block_write = 0;
@@ -132,7 +132,7 @@ int __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
 		CHECK(errno == ERANGE);
 	}
 	return __real_logger_vlog_internal(l, level, module, file, line, func,
-					  fmt, ap);
+					   fmt, ap);
 }
 
 static logger_t *create(const char *path)

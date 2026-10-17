@@ -59,8 +59,9 @@ int main(int argc, char **argv)
 	if (bootstrap) {
 		int touched = 7;
 		errno = EDOM;
-		CHECK(logger_global_write(LOGGER_INFO, "sigpipe", __FILE__, __LINE__,
-					  __func__, "unbound%n", &touched) == -ENODEV);
+		CHECK(logger_global_write(LOGGER_INFO, "sigpipe", __FILE__,
+					  __LINE__, __func__, "unbound%n",
+					  &touched) == -ENODEV);
 		CHECK(errno == EDOM && touched == 7);
 		check_sigpipe_state(preblocked, pending);
 		if (healthy) {

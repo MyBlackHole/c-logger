@@ -31,13 +31,16 @@ int main(void)
 	}
 
 	int record_rc = LOGGER_INFO(network, "network", "connected fd=%d", 42);
-	int next_rc = LOGGER_DEBUG(network, "network", "received bytes=%zu", (size_t)4096);
+	int next_rc = LOGGER_DEBUG(network, "network", "received bytes=%zu",
+				   (size_t)4096);
 	if (!record_rc)
 		record_rc = next_rc;
-	next_rc = LOGGER_INFO(storage, "storage", "volume opened id=%s", "vol-1");
+	next_rc =
+		LOGGER_INFO(storage, "storage", "volume opened id=%s", "vol-1");
 	if (!record_rc)
 		record_rc = next_rc;
-	next_rc = LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
+	next_rc =
+		LOGGER_ERROR(storage, "storage", "write failed errno=%d", EIO);
 	if (!record_rc)
 		record_rc = next_rc;
 	if (record_rc) {

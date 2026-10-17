@@ -232,8 +232,8 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 				logger_note_lifecycle_error(l, -wake_rc);
 				wait_error = logger_queue_wait_error(&l->q);
 				if (wait_error)
-					logger_note_synchronization_error(l,
-								  wait_error);
+					logger_note_synchronization_error(
+						l, wait_error);
 			}
 		}
 		return push_rc;
@@ -264,8 +264,8 @@ int logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
 		 LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	else
-		rc = vlog_body(l, level, module, file, line, function, fmt, args,
-			       saved);
+		rc = vlog_body(l, level, module, file, line, function, fmt,
+			       args, saved);
 	rc = logger_scope_end(&scope, rc);
 out:
 	errno = saved;
@@ -886,8 +886,8 @@ out:
 	errno = saved;
 	return rc;
 }
-int logger_log_source(logger_t *l, logger_level_t level,
-		      logger_source_t source, const char *fmt, ...)
+int logger_log_source(logger_t *l, logger_level_t level, logger_source_t source,
+		      const char *fmt, ...)
 {
 	int saved = errno;
 	logger_scope_t scope;
@@ -902,8 +902,8 @@ int logger_log_source(logger_t *l, logger_level_t level,
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);
-		rc = vlog_body(l, level, source.module, source.file, source.line,
-			       source.func, fmt, ap, saved);
+		rc = vlog_body(l, level, source.module, source.file,
+			       source.line, source.func, fmt, ap, saved);
 		va_end(ap);
 	}
 	rc = logger_scope_end(&scope, rc);

@@ -129,9 +129,11 @@ static void spill_policy(void)
 	CHECK(logger_queue_depth(&instance->q) < instance->q.cap);
 
 	CHECK(LOGGER_INFO(instance, "io", "spill-drop-%s", long_message) ==
-	      -EAGAIN && errno == EDOM);
+		      -EAGAIN &&
+	      errno == EDOM);
 	CHECK(LOGGER_ERROR(instance, "io", "spill-fallback-%s", long_message) ==
-	      0 && errno == EDOM);
+		      0 &&
+	      errno == EDOM);
 
 	logger_metrics_t metrics;
 	CHECK(logger_get_metrics(instance, &metrics) == 0);
@@ -177,8 +179,10 @@ static void full_queue(const char *mode)
 	CHECK(LOGGER_INFO(instance, "io", "worker-held") == 0 && errno == EDOM);
 	wait_flag(&format_entered);
 	errno = EDOM;
-	CHECK(LOGGER_INFO(instance, "io", "queue-slot-1") == 0 && errno == EDOM);
-	CHECK(LOGGER_INFO(instance, "io", "queue-slot-2") == 0 && errno == EDOM);
+	CHECK(LOGGER_INFO(instance, "io", "queue-slot-1") == 0 &&
+	      errno == EDOM);
+	CHECK(LOGGER_INFO(instance, "io", "queue-slot-2") == 0 &&
+	      errno == EDOM);
 	if (failure)
 		atomic_store(&fault, WRITE_ERROR);
 	if (fallback)

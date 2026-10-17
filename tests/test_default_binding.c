@@ -56,7 +56,8 @@ static void healthy(int async)
 	CHECK(logger_default_set(a, a) == 0);
 	CHECK(logger_default_set(a, b) == 0);
 	logger_state_t state;
-	CHECK(logger_get_state(a, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(a, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	CHECK(logger_destroy(&a) == 0 && a == NULL);
 	CHECK(lines("a.log") == 2);
 	CHECK(file_contains("a.log", "A_DEFAULT"));
@@ -65,7 +66,8 @@ static void healthy(int async)
 	CHECK(logger_default_set(b, NULL) == 0);
 	absent();
 	LOGGER_INFO(b, "explicit", "B_STILL_OWNED");
-	CHECK(logger_get_state(b, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(b, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	CHECK(logger_destroy(&b) == 0 && !b);
 	CHECK(lines("b.log") == 2);
 }

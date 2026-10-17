@@ -32,7 +32,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int rc = LOGGER_INFO(log, "example", "host-owned file and Syslog output");
+	int rc = LOGGER_INFO(log, "example",
+			     "host-owned file and Syslog output");
 	int error = -rc;
 	rc = logger_flush(log);
 	if (rc && !error)

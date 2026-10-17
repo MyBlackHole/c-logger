@@ -102,7 +102,7 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 
 /* 加固生产调用点必须实际命中，保留检查标志和对象大小，不关闭 FORTIFY。 */
 int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t size,
-			  const char *fmt, va_list args)
+			   const char *fmt, va_list args)
 {
 	if (reject_format())
 		return -1;
@@ -250,7 +250,8 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	if (defer_worker || gate_wait_return) {
 		worker_function = function;
 		worker_argument = argument;
-		return __real_pthread_create(thread, attr, controlled_worker, NULL);
+		return __real_pthread_create(thread, attr, controlled_worker,
+					     NULL);
 	}
 	return __real_pthread_create(thread, attr, function, argument);
 }
@@ -264,8 +265,8 @@ static int record(const char *fmt, const char *text)
 
 	switch (api) {
 	case RECORD_LOG:
-		return logger_log(owner, LOGGER_INFO, "record", __FILE__, __LINE__,
-				  __func__, fmt, text);
+		return logger_log(owner, LOGGER_INFO, "record", __FILE__,
+				  __LINE__, __func__, fmt, text);
 	case RECORD_SOURCE:
 		return logger_log_source(owner, LOGGER_INFO, source, fmt, text);
 	case RECORD_DEFAULT:
@@ -273,7 +274,8 @@ static int record(const char *fmt, const char *text)
 					   __LINE__, __func__, fmt, text);
 	case RECORD_SYNC:
 		return logger_log_sync_status(owner, LOGGER_INFO, "record",
-					     __FILE__, __LINE__, __func__, fmt, text);
+					      __FILE__, __LINE__, __func__, fmt,
+					      text);
 	}
 	CHECK(0);
 	return -EINVAL;
@@ -377,7 +379,8 @@ static void queue_case(const char *mode)
 	atomic_store_explicit(&release_worker, 1, memory_order_release);
 	CHECK(logger_flush(owner) == (fallback ? -ENOSPC : 0));
 	expect_records(body, accepted, spill ? "short-after-spill" : NULL);
-	CHECK(atomic_load(&owner->emitted_records) == accepted + (unsigned)spill);
+	CHECK(atomic_load(&owner->emitted_records) ==
+	      accepted + (unsigned)spill);
 	CHECK(atomic_load(&owner->failed_records) == (unsigned)fallback);
 	cleanup(fallback ? ENOSPC : 0);
 }
@@ -444,7 +447,8 @@ static int simple_case(const char *mode)
 		CHECK(fail_setup_number == 1 || api == RECORD_DEFAULT);
 		expected = EAGAIN;
 	} else if (!strcmp(mode, "restore") || !strcmp(mode, "inner-restore")) {
-		fail_restore_number = !strcmp(mode, "restore") ? outer_restore : 1;
+		fail_restore_number = !strcmp(mode, "restore") ? outer_restore :
+								 1;
 		CHECK(strcmp(mode, "inner-restore") || api == RECORD_DEFAULT);
 		expected = EIO;
 		records = 1;
@@ -483,18 +487,18 @@ static int simple_case(const char *mode)
 	char expected_body[256];
 	const char *body = "probe";
 	if (contaminate_errno) {
-		int n = snprintf(expected_body, sizeof(expected_body), "probe errno=%s",
-				 strerror(EDOM));
+		int n = snprintf(expected_body, sizeof(expected_body),
+				 "probe errno=%s", strerror(EDOM));
 		CHECK(n > 0 && (size_t)n < sizeof(expected_body));
 		body = expected_body;
 	}
 	CHECK(call(contaminate_errno ? "%s errno=%m" : "%s", "probe") ==
 	      -expected);
 	CHECK(injected == expected_injections);
-	CHECK(!clock_error && !format_error && !write_error && !emit_lock_error &&
-	      !emit_unlock_error && !format_lock_error && !format_unlock_error &&
-	      !read_lock_error && !read_unlock_error && !fail_setup_number &&
-	      !fail_restore_number);
+	CHECK(!clock_error && !format_error && !write_error &&
+	      !emit_lock_error && !emit_unlock_error && !format_lock_error &&
+	      !format_unlock_error && !read_lock_error && !read_unlock_error &&
+	      !fail_setup_number && !fail_restore_number);
 	if (!strcmp(mode, "setup") || !strcmp(mode, "inner-setup") ||
 	    !strcmp(mode, "read-lock"))
 		CHECK(clock_calls == 0 && format_calls == 0);
@@ -508,10 +512,11 @@ static int simple_case(const char *mode)
 	if (retain) {
 		/* 已报告的解锁证明失败按合同保留，不能强制重置后伪造健康清理。 */
 		if (!strcmp(mode, "emit-unlock"))
-			CHECK(atomic_load(&owner->synchronization_error) == EPERM);
-		else if (!strcmp(mode, "format-unlock"))
-			CHECK(atomic_load(&logger_runtime_current()->resource_error) ==
+			CHECK(atomic_load(&owner->synchronization_error) ==
 			      EPERM);
+		else if (!strcmp(mode, "format-unlock"))
+			CHECK(atomic_load(&logger_runtime_current()
+						   ->resource_error) == EPERM);
 		else
 			CHECK(atomic_load(&owner->default_borrowed) == 1);
 		return 1;
@@ -534,9 +539,11 @@ int main(int argc, char **argv)
 	CHECK(index < 4);
 	api = (enum record_api)index;
 	const char *mode = argv[2];
-	int queue = !strcmp(mode, "queue-drop") || !strcmp(mode, "spill-drop") ||
+	int queue = !strcmp(mode, "queue-drop") ||
+		    !strcmp(mode, "spill-drop") ||
 		    !strcmp(mode, "fallback-error");
-	int notify = !strcmp(mode, "notify-lock") || !strcmp(mode, "notify-signal");
+	int notify = !strcmp(mode, "notify-lock") ||
+		     !strcmp(mode, "notify-signal");
 	CHECK(!(queue || notify) || api != RECORD_SYNC);
 	defer_worker = queue;
 	gate_wait_return = notify;
@@ -553,7 +560,8 @@ int main(int argc, char **argv)
 	cfg.async_mode = queue || notify;
 	cfg.queue_capacity = !strcmp(mode, "spill-drop") ? 2048 : 8;
 	cfg.overflow[LOGGER_INFO] = !strcmp(mode, "fallback-error") ?
-					 LOGGER_OVERFLOW_SYNC : LOGGER_OVERFLOW_DROP;
+					    LOGGER_OVERFLOW_SYNC :
+					    LOGGER_OVERFLOW_DROP;
 	CHECK(logger_create(&cfg, &owner) == 0);
 	if (api == RECORD_DEFAULT)
 		CHECK(logger_default_set(NULL, owner) == 0);
@@ -570,6 +578,7 @@ int main(int argc, char **argv)
 		CHECK(chdir("/") == 0);
 	else
 		leave_temp(directory);
-	printf("RECORD_ERROR_PASS=%s/%s injections=%u\n", argv[1], mode, injected);
+	printf("RECORD_ERROR_PASS=%s/%s injections=%u\n", argv[1], mode,
+	       injected);
 	return 0;
 }

@@ -125,8 +125,10 @@ static void normal(const char *mode)
 			 * 绝不测试“再次使用被释放指针可以可靠诊断”。
 			 */
 			errno = EDOM;
-			child_check(LOGGER_INFO(parent, "old", "MUST_NOT_APPEAR") ==
-					    -ECHILD && errno == EDOM, 23);
+			child_check(LOGGER_INFO(parent, "old",
+						"MUST_NOT_APPEAR") == -ECHILD &&
+					    errno == EDOM,
+				    23);
 			child_run(async, global, i, !shut);
 		}
 		wait_ok(pid);

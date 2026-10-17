@@ -126,7 +126,8 @@ static inline void expect_rejection(const call_result_t *r, int error)
 	if (r->op == OP_DIAGNOSTICS)
 		expect_query_sentinel(&r->diagnostics, sizeof(r->diagnostics));
 	if (r->op == OP_FILE_METRICS)
-		expect_query_sentinel(&r->file_metrics, sizeof(r->file_metrics));
+		expect_query_sentinel(&r->file_metrics,
+				      sizeof(r->file_metrics));
 }
 
 static inline void fixture_reset(void)

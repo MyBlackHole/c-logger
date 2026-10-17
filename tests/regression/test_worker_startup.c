@@ -157,7 +157,8 @@ static void test_healthy(logger_t *l)
 {
 	logger_state_t state;
 	CHECK(l != NULL);
-	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "healthy-output");
 	CHECK(logger_flush(l) == 0);
 
@@ -180,17 +181,19 @@ static void test_late_failure(logger_t *l)
 {
 	logger_state_t state;
 	CHECK(l != NULL);
-	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(l, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	atomic_store_explicit(&allow_start, 1, memory_order_release);
 	wait_flag(&worker_returned);
-	CHECK(logger_get_state(l, &state) == 0 && state == LOGGER_STATE_STOPPING);
+	CHECK(logger_get_state(l, &state) == 0 &&
+	      state == LOGGER_STATE_STOPPING);
 	CHECK(atomic_load_explicit(&l->lifecycle_error,
 				   memory_order_acquire) == EIO);
 
 	/* 只测试失败后进入的调用。进行中的刷新见 #124。 */
 	errno = EDOM;
-	CHECK(logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL, "rejected") ==
-	      -ESHUTDOWN);
+	CHECK(logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL,
+			 "rejected") == -ESHUTDOWN);
 	CHECK(errno == EDOM);
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "startup", NULL, 0,
 				     NULL, "rejected") == -ESHUTDOWN);

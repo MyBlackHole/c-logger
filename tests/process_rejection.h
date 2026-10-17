@@ -33,7 +33,8 @@ static void check_process_rejection(int error)
 				"forbidden%n", &formatted) == -error);
 	CHECK(errno == EDOM && formatted == -1);
 	CHECK(logger_global_write(LOGGER_INFO, "init", __FILE__, __LINE__,
-				  __func__, "forbidden%n", &formatted) == -error);
+				  __func__, "forbidden%n",
+				  &formatted) == -error);
 	CHECK(errno == EDOM && formatted == -1);
 	CHECK(logger_log_sync_status(NULL, LOGGER_INFO, "init", __FILE__,
 				     __LINE__, __func__, "forbidden%n",
@@ -74,10 +75,12 @@ static void check_process_rejection(int error)
 	memcpy(&diagnostics_before, &diagnostics, sizeof(diagnostics));
 	CHECK(logger_get_diagnostics(NULL, &diagnostics) == -error &&
 	      errno == EDOM);
-	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) == 0);
+	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) ==
+	      0);
 	CHECK(logger_get_global_diagnostics(&diagnostics) == -error &&
 	      errno == EDOM);
-	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) == 0);
+	CHECK(memcmp(&diagnostics, &diagnostics_before, sizeof(diagnostics)) ==
+	      0);
 	logger_file_metrics_t file;
 	logger_file_metrics_t file_before;
 	memset(&file, 0xa5, sizeof(file));
@@ -90,7 +93,8 @@ static void check_process_rejection(int error)
 	logger_syslog_metrics_t syslog_before;
 	memset(&syslog, 0xa5, sizeof(syslog));
 	memcpy(&syslog_before, &syslog, sizeof(syslog));
-	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error && errno == EDOM);
+	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error &&
+	      errno == EDOM);
 	CHECK(memcmp(&syslog, &syslog_before, sizeof(syslog)) == 0);
 	logger_context_set(&(logger_context_t){ .request_id = "forbidden" });
 	CHECK(errno == error);

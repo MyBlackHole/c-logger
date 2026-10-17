@@ -8,14 +8,14 @@ enum record_api { RECORD_LOG, RECORD_SOURCE, RECORD_DEFAULT, RECORD_SYNC };
 
 static FILE *report;
 #undef CHECK
-#define CHECK(expr)                                                          \
-	do {                                                                 \
-		if (!(expr)) {                                               \
-			fprintf(report ? report : stderr,                    \
+#define CHECK(expr)                                                           \
+	do {                                                                  \
+		if (!(expr)) {                                                \
+			fprintf(report ? report : stderr,                     \
 				"%s:%d: %s (errno=%d)\n", __FILE__, __LINE__, \
-				#expr, errno);                               \
-			exit(1);                                             \
-		}                                                            \
+				#expr, errno);                                \
+			exit(1);                                              \
+		}                                                             \
 	} while (0)
 
 static int record(enum record_api api, logger_t *owner, logger_level_t level,
@@ -31,13 +31,15 @@ static int record(enum record_api api, logger_t *owner, logger_level_t level,
 		return logger_log(owner, level, "record", __FILE__, __LINE__,
 				  __func__, fmt, text, count);
 	case RECORD_SOURCE:
-		return logger_log_source(owner, level, source, fmt, text, count);
+		return logger_log_source(owner, level, source, fmt, text,
+					 count);
 	case RECORD_DEFAULT:
 		return logger_global_write(level, "record", __FILE__, __LINE__,
 					   __func__, fmt, text, count);
 	case RECORD_SYNC:
 		return logger_log_sync_status(owner, level, "record", __FILE__,
-					     __LINE__, __func__, fmt, text, count);
+					      __LINE__, __func__, fmt, text,
+					      count);
 	}
 	CHECK(0);
 	return -EINVAL;
@@ -56,14 +58,16 @@ static void cold(void)
 	for (unsigned api = 0; api < 4; ++api) {
 		errno = EDOM;
 		result(record(api, poison, LOGGER_INFO, "%s%n", "forbidden",
-			      &count), ENODEV);
+			      &count),
+		       ENODEV);
 		CHECK(count == -1);
 	}
 	/* 冷调用不能隐式建域，随后第一次显式初始化仍必须成功。 */
 	CHECK(logger_process_init() == 0);
 	errno = EDOM;
 	result(record(RECORD_DEFAULT, NULL, LOGGER_INFO, "%s%n", "empty",
-		      &count), ENODEV);
+		      &count),
+	       ENODEV);
 	CHECK(count == -1);
 }
 
@@ -96,9 +100,8 @@ static void ready(int asynchronous)
 	CHECK(logger_default_set(NULL, owner) == 0);
 	FILE *file = fopen("out.log", "rb");
 	CHECK(file);
-	static const char *const bodies[] = {
-		"instance", "source", "default", "strict"
-	};
+	static const char *const bodies[] = { "instance", "source", "default",
+					      "strict" };
 
 	for (unsigned api = 0; api < 4; ++api) {
 		int count = -1;
@@ -106,19 +109,24 @@ static void ready(int asynchronous)
 		errno = EDOM;
 		if (api != RECORD_DEFAULT) {
 			result(record(api, NULL, LOGGER_INFO, "%s%n", "invalid",
-				      &count), EINVAL);
+				      &count),
+			       EINVAL);
 			CHECK(count == -1);
 		}
 		result(record(api, owner, LOGGER_INFO, NULL, "invalid", &count),
 		       EINVAL);
 		result(record(api, owner, (logger_level_t)-1, "%s%n", "invalid",
-			      &count), EINVAL);
-		result(record(api, owner, LOGGER_OFF, "%s%n", "invalid", &count),
+			      &count),
 		       EINVAL);
-		result(record(api, owner, LOGGER_DEBUG, "%s%n", "filtered", &count),
+		result(record(api, owner, LOGGER_OFF, "%s%n", "invalid",
+			      &count),
+		       EINVAL);
+		result(record(api, owner, LOGGER_DEBUG, "%s%n", "filtered",
+			      &count),
 		       0);
 		CHECK(count == -1);
-		result(record(api, owner, LOGGER_INFO, "%s%n", bodies[api], &count),
+		result(record(api, owner, LOGGER_INFO, "%s%n", bodies[api],
+			      &count),
 		       0);
 		CHECK(count == (int)strlen(bodies[api]));
 		result(logger_flush(owner), 0);
@@ -131,7 +139,8 @@ static void ready(int asynchronous)
 	int count = -1;
 	errno = EDOM;
 	result(record(RECORD_SYNC, owner, LOGGER_INFO, "%s%n", oversized,
-		      &count), EOVERFLOW);
+		      &count),
+	       EOVERFLOW);
 	CHECK(count == (int)strlen(oversized));
 	clearerr(file);
 	CHECK(fgetc(file) == EOF && !ferror(file));
@@ -142,7 +151,8 @@ static void ready(int asynchronous)
 	       sizeof(marker));
 	for (unsigned api = 0; api < 3; ++api) {
 		errno = EDOM;
-		result(record(api, owner, LOGGER_INFO, "%s%n", oversized, &count),
+		result(record(api, owner, LOGGER_INFO, "%s%n", oversized,
+			      &count),
 		       0);
 		result(logger_flush(owner), 0);
 		expect_line(file, retained);
@@ -180,7 +190,8 @@ static void stderr_error(void)
 		int count = -1;
 		errno = EDOM;
 		result(record(api, owner, LOGGER_INFO, "%s%n", "closed-pipe",
-			      &count), EPIPE);
+			      &count),
+		       EPIPE);
 		CHECK(count == (int)strlen("closed-pipe"));
 	}
 	CHECK(dup2(saved, STDERR_FILENO) == STDERR_FILENO);

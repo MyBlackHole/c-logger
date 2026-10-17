@@ -159,8 +159,8 @@ static int test_emit_unlock_failure(void)
 	int destroy_error = -destroy_rc;
 	leave_temp(dir);
 
-	if (!captured_mutex || !unlock_failed || lock_failed || invalid_unlock ||
-	    rc != -EAGAIN || error != EDOM || bytes <= 0 ||
+	if (!captured_mutex || !unlock_failed || lock_failed ||
+	    invalid_unlock || rc != -EAGAIN || error != EDOM || bytes <= 0 ||
 	    metrics.emitted_records != 0 || metrics.failed_records != 1 ||
 	    metrics.first_error != EAGAIN || destroy_rc != -EAGAIN ||
 	    destroy_error != EAGAIN) {

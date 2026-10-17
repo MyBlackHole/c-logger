@@ -140,7 +140,8 @@ int main(int argc, char **argv)
 	errno = EDOM;
 	if (!strcmp(mode, "global") || !strcmp(mode, "bootstrap"))
 		CHECK(logger_global_write(LOGGER_INFO, "truncation", NULL, 0,
-					  NULL, "%lc", (wint_t)0xd800) == -EILSEQ);
+					  NULL, "%lc",
+					  (wint_t)0xd800) == -EILSEQ);
 	else if (!strcmp(mode, "status"))
 		CHECK(logger_log_sync_status(log, LOGGER_INFO, "truncation", NULL,
 					    0, NULL, "%lc", (wint_t)0xd800) == -EILSEQ);

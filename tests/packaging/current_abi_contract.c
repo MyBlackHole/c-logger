@@ -293,21 +293,33 @@ static int record_query_contract(logger_t *owner, int cold)
 	int (*source_record)(logger_t *, logger_level_t, logger_source_t,
 			     const char *, ...) = logger_log_source;
 	int (*global_record)(logger_level_t, const char *, const char *, int,
-			     const char *, const char *, ...) = logger_global_write;
-	int (*strict_record)(logger_t *, logger_level_t, const char *, const char *,
-			     int, const char *, const char *, ...) = logger_log_sync_status;
-	int (*state_query)(const logger_t *, logger_state_t *) = logger_get_state;
+			     const char *, const char *,
+			     ...) = logger_global_write;
+	int (*strict_record)(logger_t *, logger_level_t, const char *,
+			     const char *, int, const char *, const char *,
+			     ...) = logger_log_sync_status;
+	int (*state_query)(const logger_t *, logger_state_t *) =
+		logger_get_state;
 	int (*dropped_query)(const logger_t *, uint64_t *) = logger_dropped;
 	int (*global_dropped_query)(uint64_t *) = logger_global_dropped;
-	int (*metrics_query)(const logger_t *, logger_metrics_t *) = logger_get_metrics;
-	int (*io_query)(const logger_t *, logger_io_metrics_t *) = logger_get_io_metrics;
-	int (*diagnostics_query)(const logger_t *, logger_diagnostics_t *) = logger_get_diagnostics;
-	int (*global_metrics_query)(logger_metrics_t *) = logger_get_global_metrics;
-	int (*global_io_query)(logger_io_metrics_t *) = logger_get_global_io_metrics;
-	int (*global_diagnostics_query)(logger_diagnostics_t *) = logger_get_global_diagnostics;
-	int (*file_query)(logger_t *, logger_file_metrics_t *) = logger_get_file_metrics;
-	int (*global_file_query)(logger_file_metrics_t *) = logger_get_global_file_metrics;
-	int (*syslog_query)(logger_t *, logger_syslog_metrics_t *) = logger_get_syslog_metrics;
+	int (*metrics_query)(const logger_t *, logger_metrics_t *) =
+		logger_get_metrics;
+	int (*io_query)(const logger_t *, logger_io_metrics_t *) =
+		logger_get_io_metrics;
+	int (*diagnostics_query)(const logger_t *, logger_diagnostics_t *) =
+		logger_get_diagnostics;
+	int (*global_metrics_query)(logger_metrics_t *) =
+		logger_get_global_metrics;
+	int (*global_io_query)(logger_io_metrics_t *) =
+		logger_get_global_io_metrics;
+	int (*global_diagnostics_query)(logger_diagnostics_t *) =
+		logger_get_global_diagnostics;
+	int (*file_query)(logger_t *, logger_file_metrics_t *) =
+		logger_get_file_metrics;
+	int (*global_file_query)(logger_file_metrics_t *) =
+		logger_get_global_file_metrics;
+	int (*syslog_query)(logger_t *, logger_syslog_metrics_t *) =
+		logger_get_syslog_metrics;
 	logger_source_t source = LOGGER_SOURCE();
 	int expected = cold ? -ENODEV : 0;
 	int backend_error = cold ? -ENODEV : -ENOTSUP;
@@ -320,13 +332,16 @@ static int record_query_contract(logger_t *owner, int cold)
 	logger_syslog_metrics_t syslog;
 
 	errno = EDOM;
-	if (record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "record") != expected ||
+	if (record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "record") !=
+		    expected ||
 	    errno != EDOM ||
 	    source_record(owner, LOGGER_INFO, source, "source") != expected ||
 	    errno != EDOM ||
-	    global_record(LOGGER_INFO, "abi", NULL, 0, NULL, "default") != expected ||
+	    global_record(LOGGER_INFO, "abi", NULL, 0, NULL, "default") !=
+		    expected ||
 	    errno != EDOM ||
-	    strict_record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "strict") != expected ||
+	    strict_record(owner, LOGGER_INFO, "abi", NULL, 0, NULL, "strict") !=
+		    expected ||
 	    errno != EDOM)
 		return 1;
 	if (state_query(owner, &state) != expected || errno != EDOM ||
@@ -354,10 +369,12 @@ static int record_query_contract(logger_t *owner, int cold)
 		    io.emitted_records != 4 || io.failed_records != 0))
 		return 5;
 	memset(&diagnostics, 0xa5, sizeof(diagnostics));
-	if (diagnostics_query(owner, &diagnostics) != expected || errno != EDOM ||
+	if (diagnostics_query(owner, &diagnostics) != expected ||
+	    errno != EDOM ||
 	    (cold ? !query_sentinel(&diagnostics, sizeof(diagnostics)) :
 		    diagnostics.state != LOGGER_STATE_RUNNING) ||
-	    global_diagnostics_query(&diagnostics) != expected || errno != EDOM ||
+	    global_diagnostics_query(&diagnostics) != expected ||
+	    errno != EDOM ||
 	    (cold ? !query_sentinel(&diagnostics, sizeof(diagnostics)) :
 		    diagnostics.state != LOGGER_STATE_RUNNING))
 		return 6;
@@ -368,8 +385,8 @@ static int record_query_contract(logger_t *owner, int cold)
 	    !query_sentinel(&file, sizeof(file)))
 		return 7;
 	memset(&syslog, 0xa5, sizeof(syslog));
-	if (syslog_query(owner, &syslog) != backend_error ||
-	    errno != EDOM || !query_sentinel(&syslog, sizeof(syslog)))
+	if (syslog_query(owner, &syslog) != backend_error || errno != EDOM ||
+	    !query_sentinel(&syslog, sizeof(syslog)))
 		return 8;
 	return 0;
 }

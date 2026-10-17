@@ -34,8 +34,8 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 }
 
 int logger_global_write(logger_level_t level, const char *module,
-			 const char *file, int line, const char *function,
-			 const char *format, ...)
+			const char *file, int line, const char *function,
+			const char *format, ...)
 {
 	(void)level;
 	(void)module;

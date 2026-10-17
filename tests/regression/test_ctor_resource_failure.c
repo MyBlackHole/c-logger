@@ -189,7 +189,8 @@ int main(int argc, char **argv)
 	CHECK(logger_create(&cfg, &logger) == 0);
 	CHECK(logger != NULL);
 	logger_state_t state;
-	CHECK(logger_get_state(logger, &state) == 0 && state == LOGGER_STATE_RUNNING);
+	CHECK(logger_get_state(logger, &state) == 0 &&
+	      state == LOGGER_STATE_RUNNING);
 	CHECK(created_workers == before_workers + 1);
 	CHECK(logger_flush(logger) == 0);
 	CHECK(logger_destroy(&logger) == 0);

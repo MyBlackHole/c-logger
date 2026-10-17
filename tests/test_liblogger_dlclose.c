@@ -25,8 +25,8 @@ int main(int argc, char **argv)
 		int (*initialize_fn)(void);
 		int (*create_fn)(const logger_config_t *, logger_t **);
 		int (*log_fn)(logger_t *, logger_level_t, const char *,
-			       const char *, int, const char *, const char *,
-			       ...);
+			      const char *, int, const char *, const char *,
+			      ...);
 		int (*destroy_fn)(logger_t **);
 #define GET(function, symbol)                                   \
 	do {                                                    \
@@ -61,8 +61,9 @@ int main(int argc, char **argv)
 		CHECK(l != NULL);
 		for (int j = 0; j < 10; ++j) {
 			errno = EDOM;
-			CHECK(log_fn(l, LOGGER_INFO, "dlclose", __FILE__, __LINE__,
-				     __func__, "n=%d j=%d", n, j) == 0);
+			CHECK(log_fn(l, LOGGER_INFO, "dlclose", __FILE__,
+				     __LINE__, __func__, "n=%d j=%d", n,
+				     j) == 0);
 			CHECK(errno == EDOM);
 		}
 		CHECK(destroy_fn(&l) == 0); /* dlclose 前不再有调用或工作线程 */

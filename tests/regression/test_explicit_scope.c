@@ -112,7 +112,8 @@ static void nested_call(void)
 		expect_query_sentinel(&io, sizeof(io));
 	} else if (!strcmp(nested, "diagnostics")) {
 		memset(&diagnostics, 0xa5, sizeof(diagnostics));
-		CHECK(logger_get_diagnostics(log_instance, &diagnostics) == -EDEADLK);
+		CHECK(logger_get_diagnostics(log_instance, &diagnostics) ==
+		      -EDEADLK);
 		expect_query_sentinel(&diagnostics, sizeof(diagnostics));
 	} else if (!strcmp(nested, "file-metrics")) {
 		memset(&file_metrics, 0xa5, sizeof(file_metrics));
@@ -121,7 +122,8 @@ static void nested_call(void)
 		expect_query_sentinel(&file_metrics, sizeof(file_metrics));
 	} else if (!strcmp(nested, "syslog")) {
 		memset(&sys, 0xa5, sizeof(sys));
-		CHECK(logger_get_syslog_metrics(log_instance, &sys) == -EDEADLK);
+		CHECK(logger_get_syslog_metrics(log_instance, &sys) ==
+		      -EDEADLK);
 		expect_query_sentinel(&sys, sizeof(sys));
 	} else if (!strcmp(nested, "context-set"))
 		logger_context_set(&ctx);
@@ -151,8 +153,10 @@ static void nested_call(void)
 		CHECK(LOG_INFO("nested global") == -EDEADLK);
 	else
 		CHECK(!"unknown nested API");
-	CHECK(errno == ((!strcmp(nested, "level") ||
-			 !strncmp(nested, "context-", 8)) ? EDEADLK : EDOM));
+	CHECK(errno ==
+	      ((!strcmp(nested, "level") || !strncmp(nested, "context-", 8)) ?
+		       EDEADLK :
+		       EDOM));
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
 static void probe(enum point p)
