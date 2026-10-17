@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "host_support.h"
 #include "logger_internal.h"
+#include "logger_fork_fd.h"
 #include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
