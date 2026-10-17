@@ -114,7 +114,8 @@ int __wrap_close(int fd)
 		CHECK(!__real_close(fd));
 		if (phase == 0) {
 			/* close 已真实消费 fd，再由宿主立即复用旧整数。 */
-			int replacement = open("/dev/null", O_RDONLY | O_CLOEXEC);
+			int flags = O_RDONLY | O_CLOEXEC;
+			int replacement = open("/dev/null", flags);
 
 			CHECK(replacement >= 0);
 			if (replacement != fd) {
@@ -799,8 +800,7 @@ static void file_close_owned_reuse(const char *scenario)
 	closing_fds[2] = f.dir_fd;
 	closing_primary_error =
 		!strcmp(scenario, "close-owned-first-eintr") ? EINTR : EIO;
-	closing_secondary_error =
-		closing_primary_error == EINTR ? EIO : EINTR;
+	closing_secondary_error = closing_primary_error == EINTR ? EIO : EINTR;
 	closing_file = &f;
 
 	CHECK(logger_file_close_status(&f) == -closing_primary_error);
