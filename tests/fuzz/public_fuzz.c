@@ -36,8 +36,9 @@ static void mask_property(const uint8_t *data, size_t size)
 	unsigned char result[144];
 	memset(result, 0xa5, sizeof(result));
 	char *out = (char *)&result[8];
-	errno = 0;
+	errno = EDOM;
 	int rc = logger_mask_secret(value, out, cap, pre, suf);
+	REQUIRE(errno == EDOM);
 	size_t expected_length;
 	char expected[128];
 	if (!value) {
@@ -60,9 +61,9 @@ static void mask_property(const uint8_t *data, size_t size)
 		expected[expected_length - 1] = '\0';
 	}
 	if (!cap) {
-		REQUIRE(rc == -1 && errno == EINVAL);
+		REQUIRE(rc == -EINVAL);
 	} else if (cap < expected_length) {
-		REQUIRE(rc == -1 && errno == ENOSPC);
+		REQUIRE(rc == -ENOSPC);
 	} else {
 		REQUIRE(rc == 0);
 		REQUIRE(!memcmp(out, expected, expected_length));
@@ -70,8 +71,26 @@ static void mask_property(const uint8_t *data, size_t size)
 	}
 	for (size_t i = 0; i < 8; ++i)
 		REQUIRE(result[i] == 0xa5);
-	for (size_t i = 8 + cap; i < sizeof(result); ++i)
+	/* 失败全槽保持，成功也不能写结果终止符之后的可用容量。 */
+	size_t written = rc ? 0 : expected_length;
+	for (size_t i = 8 + written; i < sizeof(result); ++i)
 		REQUIRE(result[i] == 0xa5);
+
+	/* 同一输入再验证左右偏移与原地重叠，比较整个存储区。 */
+	unsigned char arena[384], before[384];
+	size_t offset = 80u + data[0] % 161u;
+	memset(arena, 0xa5, sizeof(arena));
+	if (value)
+		memcpy(arena + 160, secret, n + 1);
+	memcpy(before, arena, sizeof(before));
+	if (!rc)
+		memcpy(before + offset, expected, expected_length);
+	errno = EDOM;
+	int overlap = logger_mask_secret(value ? (char *)arena + 160 : NULL,
+					 (char *)arena + offset, cap,
+					 data[2], data[3]);
+	REQUIRE(overlap == rc && errno == EDOM);
+	REQUIRE(!memcmp(arena, before, sizeof(arena)));
 }
 
 static void config_property(const uint8_t *data, size_t size)
