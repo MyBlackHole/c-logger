@@ -607,7 +607,8 @@ static void rotation_candidate_reuse(const char *scenario)
 	logger_file_metrics_t metrics;
 	CHECK(logger_get_file_metrics(l, &metrics) == 0);
 	CHECK(metrics.rotation_attempts == 1 && metrics.rotation_failures == 1);
-	CHECK(!metrics.rotation_successes && metrics.last_rotation_error == EIO);
+	CHECK(!metrics.rotation_successes);
+	CHECK(metrics.last_rotation_error == EIO);
 	CHECK(metrics.last_write_error == EIO && metrics.last_error == EIO);
 
 	const char *archive = "out.20231114T221320.000000Z.log";
