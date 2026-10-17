@@ -77,10 +77,16 @@ int logger_file_close_status(logger_file_t *f)
 	 * 只关闭此所有者的引用。
 	 */
 	for (unsigned i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
-		int fd = *fds[i];
+		/* 字段先失效，再由唯一栈上拥有者消费 fork 位图登记。
+		 * 一处 close 失败不能中断其余资源的最终释放。
+		 */
+		struct logger_owned_fd retiring = logger_fd_own(*fds[i]);
+
 		*fds[i] = -1;
-		if (fd >= 0 && logger_fork_close(fd) < 0 && !error)
-			error = errno;
+		int rc = logger_fd_close_status(&retiring);
+
+		if (rc && !error)
+			error = -rc;
 	}
 	return error ? -error : 0;
 }
