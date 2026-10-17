@@ -107,7 +107,9 @@ int main(int argc, char **argv)
 		fail_mutex_destroy = 1;
 	if (!strcmp(argv[1], "close-error") ||
 	    !strcmp(argv[1], "close-eintr")) {
-		selected_fd = l->file_backend.fd;
+		struct logger_borrowed_fd view =
+			logger_fd_borrow(&l->file_backend.fd);
+		selected_fd = logger_fd_number(view);
 		fail_close = !strcmp(argv[1], "close-eintr") ? EINTR : EIO;
 	}
 	int lifecycle_error = fail_join || fail_cond_destroy || fail_mutex_destroy;

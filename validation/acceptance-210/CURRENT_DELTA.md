@@ -106,3 +106,15 @@ Logger 2.0 的范围。
 这只是 D1/T1 的一个补齐候选，需以**本 PR 精确 head 的全部适用 CI**为准；
 不签署 D1 其他单位类型、D2 跨函数分析或 A–F/D1–D6 全部决策，
 不创建 `v2.0.0` 标签或 Release。
+
+## 候选增量：三个文件长期 fd 的有限类型化（待精确 head 验收）
+
+`src/logger_file.h` 数据、锁和目录三个长期 fd 改为私有
+`logger_owned_fd`；POSIX I/O 只借用整数，关闭直接消费字段，
+reopen/rotate 显式移出旧活动字段并保留原顺序。新增编译正反例，
+现有 fd0、EINTR/EIO 数字复用、轮转故障和 fork 位图运行回归
+必须在准确 PR head 上重新执行，详见
+[长期文件描述符范围](../../docs/v2/FILE_LONG_LIVED_FD.md)。
+
+此阶段仅覆盖 D1/T1 的有限子集，不签署其余类型、D2–D6、
+TSan 31 项跳过或宿主外部 fork 风险，不创建 v2.0.0 标签或 Release。

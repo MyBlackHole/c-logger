@@ -241,7 +241,9 @@ int main(int argc, char **argv)
 	}
 	CHECK(logger_create(&c, &instance) == 0);
 	CHECK(instance != NULL);
-	output_fd = instance->file_backend.fd;
+	struct logger_borrowed_fd view =
+		logger_fd_borrow(&instance->file_backend.fd);
+	output_fd = logger_fd_number(view);
 	if (!strcmp(argv[1], "spill-policy")) {
 		spill_policy();
 	} else if (!strcmp(argv[1], "drop") || !strcmp(argv[1], "fallback") ||
@@ -329,7 +331,7 @@ int main(int argc, char **argv)
 		atomic_store(&fault, FILE_SYNC_ERROR);
 		LOGGER_INFO(instance, "io", "must-not-rotate-after-sync-error");
 		CHECK(logger_flush(instance) == -EIO);
-		CHECK(instance->file_backend.fd >= 0);
+		CHECK(logger_fd_valid(&instance->file_backend.fd));
 		check_terminal(2, 0, 1, 1);
 		logger_file_metrics_t file = file_metrics();
 		CHECK(file.rotation_attempts == 1);
