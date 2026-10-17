@@ -198,3 +198,22 @@ close 后立即被宿主 `/dev/null` 复用并合成不同错误，第二个锁 
 
 本阶段不等于完整 C 线性类型、D2 AST/跨函数生命周期分析、正式
 `v2.0.0` 发布或安全审计测试的完成。
+
+## 10. Syslog 长期描述符拥有者类型化（2.0 发布收敛）
+
+Syslog 最后的长期裸 `int fd` 改为**私有** `struct logger_owned_fd`。候选连接成功后
+`logger_fd_move` 直接把唯一拥有者移交给私有后端字段，不再经裸整数取出后重新包装；
+真正 POSIX `connect/send` 边界始终仅取借用视图。关闭路径通过
+`logger_fd_close_status(&s->fd)` 在系统关闭前失效该字段，且仍向最终销毁传播首次
+关闭错误。失败连接保留原错误优先级与 `close_failures` 指标；复用整数不可二次关闭。
+
+运行时回归继续复用真实 Syslog 连接、fd=0、EINTR/EIO 关闭后数字复用、断线重连和
+最终 `logger_destroy` 的生产及故障测试。`test_fd_types.py` 增加 borrowed/raw 无法隐式
+赋入长期拥有者、拥有者无法隐式传入 POSIX 整数 API、borrowed 无法作为 move 源的
+编译正反例。
+
+`logger_syslog_t` 与 `logger_t` 仅在不安装的私有头文件中定义，公开头文件与
+ABI 2/SONAME/导出符号不变；不添加独立资源管理框架、分配或新锁。C 同型复制、
+非法显式 `own(raw)`、直接字段访问、跨函数别名与宿主并发销毁仍无法由此静态阻止。
+**本改动仅收敛 D1/T1 中 Syslog 长期 fd 一项**，不构成 D1–D6、TSan fork 跳过、
+宿主风险或发布签收已完成。
