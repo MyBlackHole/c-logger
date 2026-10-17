@@ -257,8 +257,9 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 			rc = check_owner(f);
 		if (!rc) {
 			int locked;
+			int lockfd = file_lock_fd(f);
 			do {
-				locked = flock(file_lock_fd(f), LOCK_EX | LOCK_NB);
+				locked = flock(lockfd, LOCK_EX | LOCK_NB);
 			} while (locked && errno == EINTR);
 			if (locked)
 				rc = errno == EAGAIN || errno == EWOULDBLOCK ?
@@ -426,9 +427,11 @@ static int check_active(logger_file_t *f)
 {
 	struct stat st;
 	int rc = check_owner(f);
-	if (!rc)
-		rc = check_named_fd(file_dir_fd(f), f->name,
-			    file_data_fd(f), &st);
+	if (!rc) {
+		int dirfd = file_dir_fd(f);
+		int datafd = file_data_fd(f);
+		rc = check_named_fd(dirfd, f->name, datafd, &st);
+	}
 	if (!rc && (st.st_dev != f->device || st.st_ino != f->inode))
 		rc = -ESTALE;
 	if (!rc)
