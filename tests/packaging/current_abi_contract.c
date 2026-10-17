@@ -397,11 +397,8 @@ static int context_contract(int cold)
 	int (*set)(const logger_context_t *) = logger_context_set;
 	int (*clear)(void) = logger_context_clear;
 	int (*get)(logger_context_t *) = logger_context_get;
-	logger_context_t input = { .request_id = "installed-context",
-				   .session_id = "installed-session" };
-	logger_context_t output = { .request_id = "unchanged",
-				    .session_id = "unchanged",
-				    .trace_id = "unchanged" };
+	logger_context_t input = { "installed-context", "installed-session", NULL };
+	logger_context_t output = { "unchanged", "unchanged", "unchanged" };
 	logger_context_t before = output;
 	errno = EDOM;
 	if (cold) {
