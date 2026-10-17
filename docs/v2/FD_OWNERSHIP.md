@@ -114,3 +114,22 @@ pthread 取消、longjmp、信号安全、并发回收或异步关闭。Linux cl
 跨函数 AST 所有权证明、线程/取消生命周期或长期 fd 类型迁移；#210 的 D1–D6
 决策和正式发布验收仍独立。是否满足 CI 由 PR 精确提交的原始执行结果确认，
 不能把草稿提交视为已验证通过。
+
+## 6. Syslog 长期 fd 退役回执收敛（#241）
+
+长期 `logger_syslog_t.fd` 保持私有裸整数布局；不因内部所有权分析而引入泛化
+资源管理框架。原先断开连接时的 `logger_syslog_close` 与 `logger.c` 最终销毁
+中的独立裸关闭统一通过私有 `logger_syslog_close_status`：
+
+1. 仍要求实例 `emit_mu`/生命周期已证明独占；先置 `s->fd=-1` 和
+   `metrics.connected=0`，再由词法拥有者消费唯一的已登记资源。
+2. 经 `logger_fd_close_status` 注销位图并仅关闭一次，返回 0/-errno；失败时
+   更新 `close_failures` 和 `last_close_error`，二次调用不再触发系统 close。
+3. 原 `logger_syslog_close` 作为忽略错误回执的内部入口，继续供发送故障与构造
+   回滚使用；最终销毁则传播关闭错误，同时保留已有主错误优先级和释放次序。
+4. `retire-status-eintr/eio`、`retire-destroy-eintr/eio` 分别对私有退役与真正
+   `logger_destroy` 验证 close 实际消费后数字即时复用、不重试、指标、最终错误、
+   指针消费及 fork 位图拒绝误关宿主描述符，分别在生产静态库与回归支持库验证。
+
+本阶段不是已确认生产损坏的缺陷修复，亦非 C 线性类型或 D2 全程序 AST 证明。
+不改变公开 API/ABI、文件轮转及 Syslog 重连协议，也不新增 Audit/断电测试。

@@ -240,6 +240,47 @@ static void candidate_ownership(const char *mode)
 	CHECK(fcntl(stale_fd, F_GETFD) == -1 && errno == EBADF);
 }
 
+/* 两条长期 fd 退役路径必须先失效并只注销一次 fork 登记。 */
+static void retire_ownership(const char *mode)
+{
+	logger_config_t c = config();
+	int error = strstr(mode, "eintr") ? EINTR : EIO;
+	unsigned before = closes;
+	inject_close = error;
+	reuse_during_close = 1;
+	int raw;
+
+	if (!strncmp(mode, "retire-status-", 14)) {
+		logger_syslog_t syslog;
+		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
+		raw = syslog.fd;
+		CHECK(raw >= 0 && syslog.metrics.connected);
+		CHECK(logger_syslog_close_status(&syslog) == -error);
+		CHECK(syslog.fd == -1 && !syslog.metrics.connected);
+		CHECK(syslog.metrics.close_failures == 1 &&
+		      syslog.metrics.last_close_error == error);
+		CHECK(logger_syslog_close_status(&syslog) == 0);
+		CHECK(syslog.metrics.close_failures == 1);
+	} else {
+		logger_t *owner = NULL;
+
+		CHECK(logger_create(&c, &owner) == 0 && owner);
+		raw = owner->syslog_backend.fd;
+		CHECK(raw >= 0);
+		/* 真实最终释放：错误可回报，已消费的指针不可重试。 */
+		CHECK(logger_destroy(&owner) == -error && owner == NULL);
+	}
+	CHECK(reused_fd == raw && closes == before + 1);
+	CHECK(fcntl(raw, F_GETFD) >= 0);
+	/* 位图已注销；宿主重用该数字绝不能被旧所有者第二次关闭。 */
+	CHECK(logger_fork_close(raw) == -1 && errno == EBADF);
+	CHECK(fcntl(raw, F_GETFD) >= 0);
+	CHECK(!__real_close(raw));
+	reused_fd = -1;
+	inject_close = 0;
+	reuse_during_close = 0;
+}
+
 static void run(const char *mode, int fd)
 {
 	logger_config_t c = config();
@@ -248,6 +289,13 @@ static void run(const char *mode, int fd)
 	    !strcmp(mode, "candidate-eintr-reuse") ||
 	    !strcmp(mode, "candidate-eio-reuse")) {
 		candidate_ownership(mode);
+		return;
+	}
+	if (!strcmp(mode, "retire-status-eintr") ||
+	    !strcmp(mode, "retire-status-eio") ||
+	    !strcmp(mode, "retire-destroy-eintr") ||
+	    !strcmp(mode, "retire-destroy-eio")) {
+		retire_ownership(mode);
 		return;
 	}
 	if (!strncmp(mode, "socket-", 7)) {

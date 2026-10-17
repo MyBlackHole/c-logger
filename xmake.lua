@@ -1569,6 +1569,8 @@ if has_config("build_regression_tests") then
             "send-refused", "send-io", "eintr-then-success", "zero-send",
             "short-send", "clock-disconnect", "close-disconnect",
             "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse",
+            "retire-status-eintr", "retire-status-eio",
+            "retire-destroy-eintr", "retire-destroy-eio",
             "reconnect-failure", "oversize", "max-packet"
         }) do
             add_tests("syslog_fault_" .. scenario,
@@ -1576,7 +1578,7 @@ if has_config("build_regression_tests") then
         end
     target_end()
 
-    -- 新候选所有权场景也链接真正的生产静态归档，而非仅靠回归支持库。
+    -- 候选和长期退役所有权场景均链接生产静态归档，不只依赖回归支持库。
     if not has_config("build_shared") then
         target("syslog_candidate_production")
             set_kind("binary")
@@ -1590,7 +1592,9 @@ if has_config("build_regression_tests") then
                 add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
             end
             for _, scenario in ipairs({
-                "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse"
+                "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse",
+                "retire-status-eintr", "retire-status-eio",
+                "retire-destroy-eintr", "retire-destroy-eio"
             }) do
                 add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
             end

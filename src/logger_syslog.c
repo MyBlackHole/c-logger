@@ -67,25 +67,29 @@ static int broken_association(int error)
 	       error == EDESTADDRREQ || error == EIO;
 }
 
-static void close_fd(logger_syslog_t *s, int fd)
+/* 长期 fd 的唯一退役入口。调用方持有后端独占访问权。
+ * 先使字段失效，再消费 fork 位图并完成一次 Linux close；
+ * 即使 close 报 EINTR，也绝不能重试原 fd 整数。
+ */
+int logger_syslog_close_status(logger_syslog_t *s)
 {
-	/* Linux close 即使遇到 EINTR 也会释放 fd。重试可能关闭已复用的 fd。 */
-	if (logger_fork_close(fd) != 0) {
+	if (!s || s->fd < 0)
+		return 0;
+	struct logger_owned_fd retiring = logger_fd_own(s->fd);
+	s->fd = -1;
+	s->metrics.connected = 0;
+	int rc = logger_fd_close_status(&retiring);
+
+	if (rc) {
 		++s->metrics.close_failures;
-		s->metrics.last_close_error = errno ? errno : EIO;
+		s->metrics.last_close_error = -rc;
 	}
+	return rc;
 }
 
 void logger_syslog_close(logger_syslog_t *s)
 {
-	if (!s)
-		return;
-	if (s->fd >= 0) {
-		int fd = s->fd;
-		s->fd = -1;
-		s->metrics.connected = 0;
-		close_fd(s, fd);
-	}
+	(void)logger_syslog_close_status(s);
 }
 
 static int copy_path(logger_syslog_t *s, const char *path)
