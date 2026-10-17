@@ -26,7 +26,9 @@ def violations(source: str) -> list[str]:
 
 class SnapshotPolicy(unittest.TestCase):
     def test_no_direct_owned_calls_outside_registry(self):
-        for path in sorted((ROOT / "src").glob("*.c")):
+        paths = list((ROOT / "src").glob("*.c"))
+        paths.append(ROOT / "src/logger_fd.h")
+        for path in sorted(paths):
             if path.name == "logger_fork_fd.c":
                 continue
             with self.subTest(path=path.name):
@@ -37,7 +39,9 @@ class SnapshotPolicy(unittest.TestCase):
             rows = list(csv.DictReader(stream, delimiter="\t"))
         expected = Counter((r["file"], r["api"], r["arguments"]) for r in rows)
         observed = Counter()
-        for path in sorted((ROOT / "src").glob("*.c")):
+        paths = list((ROOT / "src").glob("*.c"))
+        paths.append(ROOT / "src/logger_fd.h")
+        for path in sorted(paths):
             if path.name == "logger_fork_fd.c":
                 continue
             source = path.read_text()

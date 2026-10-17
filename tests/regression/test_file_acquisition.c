@@ -121,7 +121,7 @@ DIR *__wrap_fdopendir(int fd)
 	if (selected == FAULT_FDOPENDIR && !failed) {
 		++failed;
 		errno = ENOMEM;
-		return NULL; /* 未接管 fd，原属主的 __free(close_fd) 回收。 */
+		return NULL; /* 未接管 fd，原属主的 logger_fd_cleanup 回收。 */
 	}
 	return __real_fdopendir(fd);
 }
