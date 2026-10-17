@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 PREAMBLE = '''#define _GNU_SOURCE
 #include "logger_fd.h"
+#include "logger_syslog.h"
 int probe(struct logger_owned_fd *owner, struct logger_borrowed_fd borrowed,
           int raw)
 {
@@ -44,6 +45,27 @@ CASES = {
                          "return logger_fd_take(&copy);"),
     "borrowed_cleanup": ("logger_fd_cleanup(&borrowed);\nreturn 0;",
                          "logger_fd_cleanup(owner);\nreturn 0;"),
+    "borrowed_move": ("struct logger_owned_fd newfd = logger_fd_move(&borrowed);\n"
+                      "return logger_fd_valid(&newfd);",
+                      "struct logger_owned_fd newfd = logger_fd_move(owner);\n"
+                      "return logger_fd_valid(&newfd);"),
+    "syslog_borrowed_assign": ("logger_syslog_t syslog = {0};\n"
+                               "syslog.fd = borrowed;\nreturn 0;",
+                               "logger_syslog_t syslog = {0};\n"
+                               "syslog.fd = logger_fd_move(owner);\n"
+                               "return logger_fd_valid(&syslog.fd);"),
+    "syslog_raw_assign": ("logger_syslog_t syslog = {0};\n"
+                          "syslog.fd = raw;\nreturn 0;",
+                          "logger_syslog_t syslog = {0};\n"
+                          "syslog.fd = logger_fd_own(raw);\n"
+                          "return logger_fd_valid(&syslog.fd);"),
+    "syslog_owner_as_int": ("logger_syslog_t syslog = {0};\n"
+                            "syslog.fd = logger_fd_own(raw);\n"
+                            "return close(syslog.fd);",
+                            "logger_syslog_t syslog = {0};\n"
+                            "syslog.fd = logger_fd_own(raw);\n"
+                            "return close(logger_fd_number("
+                            "logger_fd_borrow(&syslog.fd)));"),
 }
 
 
@@ -66,7 +88,8 @@ class FdTypeContract(unittest.TestCase):
             path.write_text(PREAMBLE + source + "\n}\n", encoding="utf-8")
             command = self.compiler + [
                 "-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
-                "-fsyntax-only", "-I" + str(ROOT / "src"), str(path),
+                "-fsyntax-only", "-I" + str(ROOT / "src"),
+                "-I" + str(ROOT / "include"), str(path),
             ]
             return subprocess.run(command, capture_output=True, text=True,
                                   timeout=20, env=self.env)

@@ -292,8 +292,10 @@ static void run(const char *mode)
 		CHECK(!close(fd));
 		return;
 	} else if (!strcmp(mode, "flags")) {
-		CHECK(fcntl(l->syslog_backend.fd, F_GETFL) & O_NONBLOCK);
-		CHECK(fcntl(l->syslog_backend.fd, F_GETFD) & FD_CLOEXEC);
+		struct logger_borrowed_fd view =
+			logger_fd_borrow(&l->syslog_backend.fd);
+		CHECK(fcntl(logger_fd_number(view), F_GETFL) & O_NONBLOCK);
+		CHECK(fcntl(logger_fd_number(view), F_GETFD) & FD_CLOEXEC);
 		CHECK(metrics(l).connect_attempts == 1);
 	} else if (!strcmp(mode, "wire")) {
 		const unsigned pri[] = { 7, 7, 6, 4, 3, 2 };

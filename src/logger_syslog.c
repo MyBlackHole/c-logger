@@ -73,12 +73,11 @@ static int broken_association(int error)
  */
 int logger_syslog_close_status(logger_syslog_t *s)
 {
-	if (!s || s->fd < 0)
+	if (!s || !logger_fd_valid(&s->fd))
 		return 0;
-	struct logger_owned_fd retiring = logger_fd_own(s->fd);
-	s->fd = -1;
 	s->metrics.connected = 0;
-	int rc = logger_fd_close_status(&retiring);
+	/* close 在真正关闭前失效长期拥有者，保留原首错回执。 */
+	int rc = logger_fd_close_status(&s->fd);
 
 	if (rc) {
 		++s->metrics.close_failures;
@@ -153,7 +152,7 @@ static int connect_once(logger_syslog_t *s, int *deferable)
 		errno = error;
 		goto failed;
 	}
-	s->fd = logger_fd_take(&candidate);
+	s->fd = logger_fd_move(&candidate);
 	s->metrics.connected = 1;
 	s->connection_error = 0;
 	if (s->metrics.connect_attempts > 1)
@@ -176,7 +175,7 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	if (!s || !config)
 		return fail(EINVAL);
 	memset(s, 0, sizeof(*s));
-	s->fd = -1;
+	s->fd = logger_fd_own(-1);
 	if ((config->facility & 7u) != 0 || config->facility > 23u * 8u ||
 	    (unsigned)config->startup > LOGGER_SYSLOG_START_DEFERRED ||
 	    config->reconnect_interval_ms > 60000u)
@@ -261,7 +260,7 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 	memcpy(packet + prefix, line, n);
 	size_t size = (size_t)prefix + n;
 
-	if (s->fd < 0) {
+	if (!logger_fd_valid(&s->fd)) {
 		uint64_t now;
 		if (monotonic_ms(&now) != 0)
 			return record_failure(s, errno);
@@ -284,11 +283,12 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 			return record_failure(s, errno);
 	}
 
+	int fd = logger_fd_number(logger_fd_borrow(&s->fd));
 	int error = EINTR;
 	for (unsigned i = 0; i < SYSLOG_SEND_ATTEMPTS; ++i) {
 		++s->metrics.send_attempts;
 		ssize_t sent =
-			send(s->fd, packet, size, MSG_NOSIGNAL | MSG_DONTWAIT);
+			send(fd, packet, size, MSG_NOSIGNAL | MSG_DONTWAIT);
 		if (sent == (ssize_t)size) {
 			++s->metrics.sent_records;
 			s->metrics.last_error = 0;

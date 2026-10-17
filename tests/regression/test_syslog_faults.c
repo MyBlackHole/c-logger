@@ -167,6 +167,11 @@ static int parse_error(const char *s)
 	CHECK(!"bad test error");
 	return 0;
 }
+static int syslog_fd(const logger_syslog_t *s)
+{
+	return logger_fd_number(logger_fd_borrow(&s->fd));
+}
+
 /* 检查真实 Syslog 候选的所有权交接，不绕开生产 fork 资源登记。 */
 static void candidate_ownership(const char *mode)
 {
@@ -181,11 +186,13 @@ static void candidate_ownership(const char *mode)
 
 		logger_syslog_t syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
-		CHECK(syslog.fd == STDIN_FILENO && syslog.metrics.connected);
+		CHECK(syslog_fd(&syslog) == STDIN_FILENO &&
+		      syslog.metrics.connected);
 		CHECK(sockets == 1 && connects == 1 && closes == 0);
 		logger_syslog_close(&syslog);
 		logger_syslog_close(&syslog);
-		CHECK(syslog.fd == -1 && !syslog.metrics.connected);
+		CHECK(!logger_fd_valid(&syslog.fd) &&
+		      !syslog.metrics.connected);
 		CHECK(closes == 1);
 		CHECK(fcntl(STDIN_FILENO, F_GETFD) == -1 && errno == EBADF);
 		if (saved_stdin >= 0) {
@@ -206,7 +213,7 @@ static void candidate_ownership(const char *mode)
 	logger_syslog_t failed;
 	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
 	      errno == primary_error);
-	CHECK(failed.fd == -1 && !failed.metrics.connected);
+	CHECK(!logger_fd_valid(&failed.fd) && !failed.metrics.connected);
 	CHECK(failed.connection_error == primary_error);
 	CHECK(failed.metrics.connect_attempts == 1 &&
 	      failed.metrics.connect_failures == 1);
@@ -233,9 +240,9 @@ static void candidate_ownership(const char *mode)
 	/* 再由真正生产入口取得原整数，必须可以重新登记并正常关闭。 */
 	logger_syslog_t next;
 	CHECK(!logger_syslog_init(&next, "app", &c.syslog));
-	CHECK(next.fd == stale_fd && next.metrics.connected);
+	CHECK(syslog_fd(&next) == stale_fd && next.metrics.connected);
 	logger_syslog_close(&next);
-	CHECK(next.fd == -1 && !next.metrics.connected);
+	CHECK(!logger_fd_valid(&next.fd) && !next.metrics.connected);
 	CHECK(sockets == 2 && connects == 2 && closes == 2);
 	CHECK(fcntl(stale_fd, F_GETFD) == -1 && errno == EBADF);
 }
@@ -253,10 +260,11 @@ static void retire_ownership(const char *mode)
 	if (!strncmp(mode, "retire-status-", 14)) {
 		logger_syslog_t syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
-		raw = syslog.fd;
+		raw = syslog_fd(&syslog);
 		CHECK(raw >= 0 && syslog.metrics.connected);
 		CHECK(logger_syslog_close_status(&syslog) == -error);
-		CHECK(syslog.fd == -1 && !syslog.metrics.connected);
+		CHECK(!logger_fd_valid(&syslog.fd) &&
+		      !syslog.metrics.connected);
 		CHECK(syslog.metrics.close_failures == 1 &&
 		      syslog.metrics.last_close_error == error);
 		CHECK(logger_syslog_close_status(&syslog) == 0);
@@ -265,7 +273,7 @@ static void retire_ownership(const char *mode)
 		logger_t *owner = NULL;
 
 		CHECK(logger_create(&c, &owner) == 0 && owner);
-		raw = owner->syslog_backend.fd;
+		raw = syslog_fd(&owner->syslog_backend);
 		CHECK(raw >= 0);
 		/* 真实最终释放：错误可回报，已消费的指针不可重试。 */
 		CHECK(logger_destroy(&owner) == -error && owner == NULL);
