@@ -506,9 +506,14 @@ static void mapping_case(int grow, int fail)
 	if (fail) {
 		CHECK(fd == -1 && errno == ENOMEM);
 		CHECK(closed_flags[descriptor_count - 1]);
+		if (grow)
+			CHECK(!atomic_load(&fail_remap) &&
+			      !atomic_load(&high_open));
 		fd = owned_null();
 	}
 	CHECK(fd >= 0);
+	if (grow && !fail)
+		CHECK(fd >= 32768 && !atomic_load(&high_open));
 	fork_probe();
 	CHECK(!logger_fork_close(fd));
 	if (first >= 0)
