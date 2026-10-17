@@ -135,3 +135,51 @@ jobs:
           path: asan-runtime-evidence/
           retention-days: 30
           if-no-files-found: error
+
+  fork-coverage-accounting:
+    name: 核对 TSan fork 31项跳过与同源ASan实际执行
+    needs: full-static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sanitizer-evidence-*
+          path: fork-coverage-input
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tsan-fork-model
+          path: fork-coverage-input/tsan-fork-model
+      - name: 严格复核判定器正反例
+        run: python3 tests/scripts/test_audit_fork_tsan_coverage.py -v
+      - name: 交叉核验31项真实跳过、ASan执行与检测器负例
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fork-coverage-proof
+          git rev-parse HEAD > fork-coverage-proof/source-commit.txt
+          git rev-parse 'HEAD^{tree}' > fork-coverage-proof/source-tree.txt
+          sha256sum fork-coverage-input/sanitizer-evidence-thread/xmake-tests.log \
+            fork-coverage-input/sanitizer-evidence-address-undefined/xmake-tests.log \
+            fork-coverage-input/tsan-fork-model/results.json \
+            > fork-coverage-proof/input-sha256.txt
+          python3 scripts/audit_fork_tsan_coverage.py \
+            --tsan-dir fork-coverage-input/sanitizer-evidence-thread \
+            --asan-dir fork-coverage-input/sanitizer-evidence-address-undefined \
+            --model-dir fork-coverage-input/tsan-fork-model \
+            --expected-source "$(git rev-parse HEAD)" \
+            --out fork-coverage-proof/summary \
+            2>&1 | tee fork-coverage-proof/audit.log
+          grep -q '^FORK_TSAN_COVERAGE_AUDIT_OK ' fork-coverage-proof/audit.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tsan-fork-coverage-accounting
+          path: fork-coverage-proof/
+          retention-days: 30
+          if-no-files-found: warn
