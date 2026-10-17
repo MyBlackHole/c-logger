@@ -1,0 +1,154 @@
+name: fork-worker-stress-validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fork-worker-stress-validation.yml"
+      - "tests/regression/test_fork_worker_stress.c"
+      - "scripts/run_fork_worker_stress.py"
+      - "tests/scripts/test_run_fork_worker_stress.py"
+      - "xmake.lua"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fork-worker-stress-validation.yml"
+      - "tests/regression/test_fork_worker_stress.c"
+      - "scripts/run_fork_worker_stress.py"
+      - "tests/scripts/test_run_fork_worker_stress.py"
+      - "xmake.lua"
+
+permissions:
+  contents: read
+
+jobs:
+  fork-worker:
+    name: "fork后真实worker（${{ matrix.linkage }} / ${{ matrix.runtime }}）"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        linkage: [static, shared]
+        runtime: [plain, address-undefined]
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+
+      - name: 校准已修复的 Clang ASan/UBSan 运行库
+        if: matrix.runtime == 'address-undefined'
+        uses: ./.github/actions/setup-asan-runtime
+
+      - name: 归档准确源代码与环境
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse 'HEAD^{tree}' > evidence/source-tree.txt
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(cat evidence/source-commit.txt)" = "$expected"
+          git diff --exit-code HEAD
+          xmake --version > evidence/xmake.txt
+          gcc --version > evidence/gcc.txt
+          clang --version > evidence/clang.txt
+          getconf GNU_LIBC_VERSION > evidence/glibc.txt
+          uname -a > evidence/kernel.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - name: 独立判定器正反例必须成功
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/scripts/test_run_fork_worker_stress.py -v \
+            2>&1 | tee evidence/runner-selftests.log
+
+      - name: 构建真实生产静态/共享库与非默认压力程序
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.linkage }}" = shared ]; then
+            shared=y
+          else
+            shared=n
+          fi
+          toolchain=(--toolchain=gcc)
+          policy=()
+          if [ "${{ matrix.runtime }}" = address-undefined ]; then
+            toolchain=(--toolchain=clang --cc="$CC" --cxx="$CXX" \
+                       --ld="$CXX" --sh="$CXX")
+            policy=(--policies=build.sanitizer.address,build.sanitizer.undefined)
+            if [ "$shared" = y ]; then
+              # 保留共享库 --no-undefined：Clang 必须显式链接共享
+              # ASan/UBSan 运行库；测试程序与 DSO 使用同一种运行库。
+              policy+=(--shflags=-shared-libsan --ldflags=-shared-libsan)
+            fi
+          fi
+          xmake f -P . -y -m debug -o stress-build \
+            "${toolchain[@]}" "${policy[@]}" \
+            --build_shared="$shared" --build_tests=n \
+            --build_private_tests=n --build_regression_tests=n
+          xmake -rvD -j2 fork_worker_stress > evidence/build.log 2>&1 || {
+            tail -150 evidence/build.log
+            exit 1
+          }
+          if [ "${{ matrix.runtime }}" = address-undefined ]; then
+            grep -q -- '-fsanitize=address' evidence/build.log
+          fi
+          binary="$(find stress-build -type f -name fork_worker_stress -perm -111 -print -quit)"
+          if [ "$shared" = y ]; then
+            lib="$(find stress-build -type f -name "liblogger.so.$LOGGER_PROJECT_VERSION" -print -quit)"
+          else
+            lib="$(find stress-build -type f -name liblogger.a -print -quit)"
+          fi
+          test -n "$binary" && test -x "$binary" && test -n "$lib"
+          python3 scripts/check_production_artifact.py "$lib"
+          sha256sum "$binary" "$lib" > evidence/build-sha256.txt
+          runtime_dir=""
+          if [ "$shared" = y ] &&
+             [ "${{ matrix.runtime }}" = address-undefined ]; then
+            runtime="$("$CC" -print-file-name=libclang_rt.asan-x86_64.so)"
+            test -f "$runtime"
+            runtime_dir="$(dirname "$runtime")"
+            printf '%s\n' "$runtime" > evidence/shared-sanitizer-runtime.txt
+            readelf -d "$lib" > evidence/shared-dynamic.txt
+            grep -q 'libclang_rt.asan' evidence/shared-dynamic.txt
+            grep -q -- '-shared-libsan' evidence/build.log
+          fi
+          export LD_LIBRARY_PATH="$(dirname "$lib"):${runtime_dir:+$runtime_dir:}${LD_LIBRARY_PATH:-}"
+          ldd "$binary" > evidence/dependencies.txt
+          if [ "$shared" = y ]; then
+            grep -q 'liblogger.so.2' evidence/dependencies.txt
+          fi
+          if grep -q 'not found' evidence/dependencies.txt; then
+            cat evidence/dependencies.txt
+            exit 1
+          fi
+          echo "FORK_WORKER_BIN=$binary" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+
+      - name: 父方并发写入时重复 fork，并让子方创建真实异步worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/run_fork_worker_stress.py \
+            --binary "$FORK_WORKER_BIN" \
+            --out evidence/observations --repeats 3 \
+            2>&1 | tee evidence/proof.log
+          grep -qx 'FORK_STRESS_EVIDENCE_OK samples=6' \
+            <(tail -n 1 evidence/proof.log)
+
+      - name: 无论成功失败均保留原始退出状态与完整源身份
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-worker-stress-${{ matrix.linkage }}-${{ matrix.runtime }}
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: warn
