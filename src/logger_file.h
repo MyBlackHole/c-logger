@@ -30,9 +30,8 @@ typedef struct {
 	int archive_time_valid, iov_max;
 	logger_file_metrics_t metrics;
 } logger_file_t;
-#define LOGGER_FILE_EMPTY                                               \
-	((logger_file_t){ .fd = { .value = -1 }, .dir_fd = { .value = -1 }, \
-			   .lock_fd = { .value = -1 } })
+#define LOGGER_FILE_EMPTY \
+	((logger_file_t){ .fd = { -1 }, .dir_fd = { -1 }, .lock_fd = { -1 } })
 int logger_file_init(logger_file_t *, const char *, logger_rotation_config_t,
 		     mode_t);
 int logger_file_close_status(logger_file_t *); /* 0 / -errno；释放全部 fd */
