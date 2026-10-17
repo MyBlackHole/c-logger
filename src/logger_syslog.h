@@ -21,6 +21,7 @@ typedef struct {
 } logger_syslog_t;
 int logger_syslog_init(logger_syslog_t *, const char *,
 		       const logger_syslog_config_t *);
+int logger_syslog_close_status(logger_syslog_t *); /* 0 / -errno；单次消费 fd */
 void logger_syslog_close(logger_syslog_t *);
 int logger_syslog_write(logger_syslog_t *, logger_level_t, const char *,
 			size_t);

@@ -764,12 +764,9 @@ static int dispose_body(logger_t *l, int *released)
 	int close_rc = logger_file_close_status(&l->file_backend);
 	if (!rc)
 		rc = close_rc;
-	if (l->syslog_backend.fd >= 0) {
-		int fd = l->syslog_backend.fd;
-		l->syslog_backend.fd = -1;
-		if (logger_fork_close(fd) < 0 && !rc)
-			rc = -errno;
-	}
+	int syslog_close_rc = logger_syslog_close_status(&l->syslog_backend);
+	if (!rc)
+		rc = syslog_close_rc;
 
 	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPED,
 			      memory_order_release);
