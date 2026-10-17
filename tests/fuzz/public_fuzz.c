@@ -74,8 +74,26 @@ static void mask_property(const uint8_t *data, size_t size)
 			REQUIRE(result[i] == 0xa5);
 	for (size_t i = 0; i < 8; ++i)
 		REQUIRE(result[i] == 0xa5);
-	for (size_t i = 8 + cap; i < sizeof(result); ++i)
+	/* 成功只允许写结果及 NUL，不能修改余下的可用容量。 */
+	size_t written = rc ? 0 : expected_length;
+	for (size_t i = 8 + written; i < sizeof(result); ++i)
 		REQUIRE(result[i] == 0xa5);
+
+	/* 同一输入再验证左右偏移与原地重叠，比较整个存储区。 */
+	unsigned char arena[384], before[384];
+	size_t offset = 80u + data[0] % 161u;
+	memset(arena, 0xa5, sizeof(arena));
+	if (value)
+		memcpy(arena + 160, secret, n + 1);
+	memcpy(before, arena, sizeof(before));
+	if (!rc)
+		memcpy(before + offset, expected, expected_length);
+	errno = EDOM;
+	const char *source = value ? (const char *)arena + 160 : NULL;
+	char *target = (char *)arena + offset;
+	int overlap = logger_mask_secret(source, target, cap, data[2], data[3]);
+	REQUIRE(overlap == rc && errno == EDOM);
+	REQUIRE(!memcmp(arena, before, sizeof(arena)));
 }
 
 static void config_property(const uint8_t *data, size_t size)
