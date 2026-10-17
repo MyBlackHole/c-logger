@@ -281,9 +281,7 @@ int main(int argc, char **argv)
 					start_setter(&threads[i], &levels[i]);
 				for (int i = 0; i < 2; ++i)
 					CHECK(!pthread_join(threads[i], NULL));
-				int rc = logger_set_instance_level(owner, LOGGER_INFO);
-				CHECK(rc == 0);
-				expect_level(LOGGER_INFO);
+				check_instance_range();
 			} else if (!strcmp(scenario, "global")) {
 				check_global_ready();
 			} else if (!strcmp(scenario, "disabled")) {
