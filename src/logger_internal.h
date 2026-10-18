@@ -131,23 +131,25 @@ static inline int logger_state_try_publish(_Atomic logger_state_t *state,
 
 /* GCC 9 尚无枚举转换诊断，使用其已有的枚举比较诊断保留调用点类别。
  * 比较结果恒为 int，sizeof 不执行比较或实参；实际值只向内联函数传一次。
+ * 检查放在调用前，保留旧 Clang 对直接枚举常量实参的转换诊断。
  * 括号函数名避免再次展开同名宏，指针约束仍由普通函数参数检查。
  */
-#define logger_enum_value(type, value) \
-	((void)sizeof((value) == (type)0), (value))
-#define logger_level_init(level, value) \
-	(logger_level_init)((level), logger_enum_value(logger_level_t, value))
-#define logger_state_init(state, value) \
-	(logger_state_init)((state), logger_enum_value(logger_state_t, value))
-#define logger_level_store_relaxed(level, value) \
-	(logger_level_store_relaxed)((level),    \
-				     logger_enum_value(logger_level_t, value))
-#define logger_state_store_release(state, value) \
-	(logger_state_store_release)((state),    \
-				     logger_enum_value(logger_state_t, value))
+#define logger_enum_check(type, value) ((void)sizeof((value) == (type)0))
+#define logger_level_init(level, value)            \
+	(logger_enum_check(logger_level_t, value), \
+	 (logger_level_init)((level), (value)))
+#define logger_state_init(state, value)            \
+	(logger_enum_check(logger_state_t, value), \
+	 (logger_state_init)((state), (value)))
+#define logger_level_store_relaxed(level, value)   \
+	(logger_enum_check(logger_level_t, value), \
+	 (logger_level_store_relaxed)((level), (value)))
+#define logger_state_store_release(state, value)   \
+	(logger_enum_check(logger_state_t, value), \
+	 (logger_state_store_release)((state), (value)))
 #define logger_state_try_publish(state, expected, desired) \
-	(logger_state_try_publish)((state), (expected),    \
-				   logger_enum_value(logger_state_t, desired))
+	(logger_enum_check(logger_state_t, desired),       \
+	 (logger_state_try_publish)((state), (expected), (desired)))
 
 /* 内部完整拆除：调用者必须拥有独占所有权，返回 0 / -errno。
  * 普通 I/O 拆除错误仍完成最终释放；若线程回收、同步对象或存活对象计数

@@ -168,6 +168,9 @@ class EnumAtomicTypeContract(unittest.TestCase):
         # GCC 可在宏定义处报错，再以 note 指向调用；Clang 通常直接报调用处。
         # 只接纳同一主错误的展开链，并精确关联此实参/调用行、helper 和目标类型。
         # GCC 的匿名枚举常量未必打印来源 typedef，不能用别处错误冒充拒绝。
+        # 旧 Clang 对直接常量实参报转换诊断；值检查只接纳这两类枚举诊断。
+        categories = (("enum-compare", "enum-conversion")
+                      if category == "enum-compare" else (category,))
         source_path = Path(rejected.args[-1])
         header_path = ROOT / "src/logger_internal.h"
         macro_note = (r"(?:expanded from|in (?:expansion|definition) of) macro ['‘]" +
@@ -178,7 +181,8 @@ class EnumAtomicTypeContract(unittest.TestCase):
         matching = []
         for index, diagnostic in enumerate(diagnostics):
             path = Path(diagnostic.group(1))
-            if path not in (source_path, header_path) or category not in diagnostic.group(3):
+            if path not in (source_path, header_path) or not any(
+                    item in diagnostic.group(3) for item in categories):
                 continue
             end = (diagnostics[index + 1].start()
                    if index + 1 < len(diagnostics) else len(rejected.stderr))
