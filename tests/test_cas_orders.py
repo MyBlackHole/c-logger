@@ -100,6 +100,20 @@ class CasOrderTests(unittest.TestCase):
                     _, errors = gate.scan(root)
                     self.assertEqual(not errors, f"{success}/{failure}" in allowed, errors)
 
+    def test_state_publication_helper_order_regression_is_rejected(self):
+        root = self.fixture()
+        # 构造发布 CAS 移入私有头后，仍须检查真实操作的失败 acquire。
+        path = root / "src/logger_internal.h"
+        source = path.read_text()
+        pattern = (r"state,\s*expected,\s*desired,\s*"
+                   r"(?P<order>memory_order_acq_rel),\s*memory_order_acquire")
+        matches = list(re.finditer(pattern, source))
+        self.assertEqual(len(matches), 1)
+        self.run_gate(root, 0, "处已评审调用通过")
+        start, end = matches[0].span("order")
+        path.write_text(source[:start] + "memory_order_release" + source[end:])
+        self.run_gate(root, 1, "未获准的 C11 内存序组合 release/acquire")
+
     def test_legal_but_unreviewed_order_change(self):
         root = self.fixture()
         self.replace(root, "memory_order_release, memory_order_relaxed);",

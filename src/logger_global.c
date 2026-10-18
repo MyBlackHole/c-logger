@@ -366,8 +366,7 @@ int logger_set_level(logger_level_t level)
 	rc = (unsigned)level <= LOGGER_OFF ? pin(&scope) : -EINVAL;
 	if (!rc) {
 		/* 生命周期读侧已固定默认代次；不要重复进入公开实例作用域。 */
-		atomic_store_explicit(&g_logger->level, level,
-				      memory_order_relaxed);
+		logger_level_store_relaxed(&g_logger->level, level);
 	}
 	/* 更新已提交后，取消恢复或解锁证明仍可能返回错误。 */
 	rc = finish_result(&scope, rc);

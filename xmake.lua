@@ -1975,6 +1975,35 @@ if has_config("build_regression_tests") then
     target_end()
 end
 
+if has_config("build_regression_tests") then
+    target("enum_atomic_regression")
+        set_kind("binary")
+        set_default(false)
+        add_files("tests/regression/test_enum_atomic.c")
+        add_includedirs("include", "src")
+        add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
+        add_tests("writeback", {group = "enum-atomic", timeout = 10})
+    target_end()
+
+    -- 使用实际目标编译器，验证私有枚举参数和真实生产写入位置。
+    target("enum_atomic_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("enum_atomic_regression")
+        add_tests("enum_write_compile", {group = "enum-atomic", timeout = 90})
+        on_test(function (target, opt)
+            local cc = assert(target:dep("enum_atomic_regression"):tool("cc"))
+            local script = path.join(os.projectdir(), "tests", "scripts", "test_enum_atomic_types.py")
+            local code, errors = os.execv("python3", {script, "-v"}, {
+                try = true,
+                envs = {LOGGER_TEST_CC = cc},
+                timeout = opt.run_timeout or 90000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+end
+
 -- 专项检测器模型反例不能并入“返回零即通过”的普通测试循环。
 -- 由 check_tsan_fork_model.py 同时检查正例、故意错误、原始诊断和退出码。
 if not has_config("build_shared") then
