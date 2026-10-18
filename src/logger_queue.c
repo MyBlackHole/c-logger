@@ -1,5 +1,6 @@
 #include "logger_runtime.h"
 #include "logger_queue.h"
+#include "logger_queue_size.h"
 #include "logger_cleanup.h"
 #include <errno.h>
 #include <stdint.h>
@@ -8,15 +9,16 @@
 
 static _Thread_local unsigned spill_probe_cursor;
 
-static int queue_capacity(size_t requested, size_t *capacity)
+static int queue_capacity(struct logger_queue_records requested,
+			  struct logger_queue_records *capacity)
 {
 	size_t n = 2;
-	if (requested < 2)
-		requested = 2;
+	if (requested.value < 2)
+		requested.value = 2;
 	/* 位置差值使用 unsigned 模运算。队列不能占用一半及以上的位置
 	 * 空间，同时必须避免分配大小溢出。
 	 */
-	while (n < requested) {
+	while (n < requested.value) {
 		if (n > SIZE_MAX / 2) {
 			errno = EOVERFLOW;
 			return -1;
@@ -27,26 +29,34 @@ static int queue_capacity(size_t requested, size_t *capacity)
 		errno = EOVERFLOW;
 		return -1;
 	}
-	*capacity = n;
+	capacity->value = n;
 	return 0;
 }
 
-static size_t queue_spill_capacity(size_t queue_cap)
+static struct logger_queue_records
+queue_spill_capacity(struct logger_queue_records queue_cap)
 {
-	return queue_cap < LOGGER_QUEUE_SPILL_LIMIT ?
-		       queue_cap :
-		       LOGGER_QUEUE_SPILL_LIMIT;
+	return (struct logger_queue_records){
+		queue_cap.value < LOGGER_QUEUE_SPILL_LIMIT ?
+			queue_cap.value :
+			LOGGER_QUEUE_SPILL_LIMIT
+	};
 }
 
-static int queue_storage_size(size_t queue_cap, size_t spill_cap,
-			      size_t *total)
+static int queue_storage_size(struct logger_queue_records queue_cap,
+			      struct logger_queue_records spill_cap,
+			      struct logger_queue_bytes *total)
 {
-	if (spill_cap > SIZE_MAX / sizeof(logger_queue_spill_t))
+	if (spill_cap.value > SIZE_MAX / sizeof(logger_queue_spill_t))
 		return -EOVERFLOW;
-	size_t spill_bytes = spill_cap * sizeof(logger_queue_spill_t);
-	if (queue_cap > (SIZE_MAX - spill_bytes) / sizeof(logger_queue_slot_t))
+	struct logger_queue_bytes spill_bytes = {
+		spill_cap.value * sizeof(logger_queue_spill_t)
+	};
+	if (queue_cap.value >
+	    (SIZE_MAX - spill_bytes.value) / sizeof(logger_queue_slot_t))
 		return -EOVERFLOW;
-	*total = queue_cap * sizeof(logger_queue_slot_t) + spill_bytes;
+	total->value = queue_cap.value * sizeof(logger_queue_slot_t) +
+		       spill_bytes.value;
 	return 0;
 }
 
@@ -232,21 +242,28 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	memset(q, 0, sizeof(*q));
 	/* 即使提前失败，构造函数也可以检查回滚证明。 */
 	atomic_init(&q->wait_mu_error, 0);
-	if (queue_capacity(requested, &q->cap) != 0)
+	struct logger_queue_records capacity;
+	if (queue_capacity((struct logger_queue_records){ requested },
+			   &capacity) != 0)
 		return -1;
+	q->cap = capacity.value;
 	q->mask = q->cap - 1;
-	q->spill_cap = queue_spill_capacity(q->cap);
-	if (queue_storage_size(q->cap, q->spill_cap, &q->storage_bytes) != 0) {
+	struct logger_queue_records spill_capacity =
+		queue_spill_capacity(capacity);
+	q->spill_cap = spill_capacity.value;
+	struct logger_queue_bytes storage_bytes;
+	if (queue_storage_size(capacity, spill_capacity, &storage_bytes) != 0) {
 		errno = EOVERFLOW;
 		return -1;
 	}
+	q->storage_bytes = storage_bytes.value;
 
 	logger_queue_slot_t *slots __free(runtime_free) =
-		logger_runtime_calloc(q->cap, sizeof(*slots));
+		logger_runtime_calloc(capacity.value, sizeof(*slots));
 	if (!slots)
 		return -1;
 	logger_queue_spill_t *spills __free(runtime_free) =
-		logger_runtime_calloc(q->spill_cap, sizeof(*spills));
+		logger_runtime_calloc(spill_capacity.value, sizeof(*spills));
 	if (!spills)
 		return -1;
 

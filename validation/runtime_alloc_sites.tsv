@@ -1,7 +1,7 @@
 file	api	arguments	count	owner	failure_test	coverage	rationale
 src/logger.c	logger_runtime_calloc	1,sizeof(*l)	1	创建者暂持有 logger_t，成功后宿主拥有	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
-src/logger_queue.c	logger_runtime_calloc	q->cap,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
-src/logger_queue.c	logger_runtime_calloc	q->spill_cap,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
+src/logger_queue.c	logger_runtime_calloc	capacity.value,sizeof(*slots)	1	logger_queue_t 拥有有界主槽位数组	tests/regression/test_ctor_resource_failure.c	direct	构造计算以记录数类型传递，向原分配器显式取值；原逻辑分配序号、构造失败与实际释放回归保持，另由 test_queue_size.c 核对参数和边界
+src/logger_queue.c	logger_runtime_calloc	spill_capacity.value,sizeof(*spills)	1	logger_queue_t 拥有有界溢出块数组	tests/regression/test_ctor_resource_failure.c	direct	构造计算以记录数类型传递，向原分配器显式取值；原逻辑分配序号、构造失败与实际释放回归保持，另由 test_queue_size.c 核对参数和边界
 src/logger_worker.c	logger_runtime_calloc	1,sizeof(*workspace)	1	logger_t 拥有 worker workspace，线程仅借用	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
 src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*batch)	1	worker workspace 拥有批处理消息存储	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
 src/logger_worker.c	logger_runtime_calloc	capacity,sizeof(*copy)	1	worker workspace 拥有批处理 iovec 拷贝	tests/regression/test_ctor_resource_failure.c	direct	迁移到独立映射；保留原逻辑分配序号，定向拒绝与实际释放由已迁移的构造测试验证
