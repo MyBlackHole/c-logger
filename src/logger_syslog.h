@@ -2,6 +2,7 @@
 #define LOGGER_SYSLOG_H
 #include "logger.h"
 #include "logger_fd.h"
+#include "logger_time.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/un.h>
@@ -14,8 +15,8 @@ typedef struct {
 	char ident[128];
 	char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
 	unsigned facility;
-	uint32_t reconnect_interval_ms;
-	uint64_t retry_from_ms;
+	struct logger_duration_ms reconnect_interval_ms;
+	struct logger_monotonic_ms retry_from_ms;
 	int retry_clock_pending;
 	int connection_error;
 	logger_syslog_metrics_t metrics;

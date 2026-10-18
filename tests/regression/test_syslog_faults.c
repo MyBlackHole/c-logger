@@ -15,6 +15,8 @@ static unsigned send_interrupts, sends, connects, sockets, closes;
 static int send_partial, watch, reuse_during_close;
 static int reused_fd = -1;
 static uint64_t now_ms = 10000;
+static int raw_clock;
+static struct timespec raw_now;
 static char endpoint[108], temp[] = "/tmp/lg-sys-fault-XXXXXX";
 
 int __real_socket(int, int, int);
@@ -78,6 +80,10 @@ int __wrap_clock_gettime(clockid_t id, struct timespec *out)
 		if (inject_clock) {
 			errno = inject_clock;
 			return -1;
+		}
+		if (raw_clock) {
+			*out = raw_now;
+			return 0;
 		}
 		out->tv_sec = (time_t)(now_ms / 1000);
 		out->tv_nsec = (long)(now_ms % 1000) * 1000000L;
@@ -289,10 +295,178 @@ static void retire_ownership(const char *mode)
 	reuse_during_close = 0;
 }
 
+static void clock_at(time_t seconds, long nanoseconds)
+{
+	raw_now.tv_sec = seconds;
+	raw_now.tv_nsec = nanoseconds;
+	raw_clock = 1;
+}
+
+static void clock_at_ms(uint64_t value)
+{
+	/* 上界用例属于当前 64 位支持矩阵；不允许截断输入或跳过后计作通过。 */
+	CHECK(sizeof(time_t) >= sizeof(int64_t));
+	time_t seconds = (time_t)(value / 1000u);
+	CHECK(seconds >= 0 && (uint64_t)seconds == value / 1000u);
+	clock_at(seconds, (long)(value % 1000u) * 1000000L);
+}
+
+static void rejected_clock(int error)
+{
+	logger_config_t c = config();
+	logger_t *l = NULL;
+	errno = EDOM;
+	CHECK(logger_create(&c, &l) == -error && !l && errno == EDOM);
+	CHECK(!sockets && !connects && !sends && !closes);
+
+	logger_syslog_t failed;
+	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
+	      errno == error);
+	CHECK(failed.retry_from_ms.value == 0);
+	CHECK(!logger_fd_valid(&failed.fd) && !failed.metrics.connected);
+	CHECK(!failed.metrics.connect_attempts &&
+	      !failed.metrics.connect_failures && !failed.metrics.last_error);
+	CHECK(!sockets && !connects && !sends && !closes);
+
+	/* 同样的坏读数也不能改写存活实例的起点，或越过冷却期发起连接。 */
+	raw_clock = 0;
+	c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
+	inject_connect = ENOENT;
+	CHECK(!logger_create(&c, &l) && l);
+	CHECK(l->syslog_backend.retry_from_ms.value == now_ms);
+	CHECK(sockets == 1 && connects == 1 && closes == 1);
+	raw_clock = 1;
+	errno = EDOM;
+	CHECK(output(l) == -error && errno == EDOM);
+	CHECK(l->syslog_backend.retry_from_ms.value == now_ms);
+	CHECK(l->syslog_backend.connection_error == ENOENT &&
+	      !l->syslog_backend.retry_clock_pending);
+	logger_syslog_metrics_t m = metrics(l);
+	CHECK(m.submitted_records == 1 && m.failed_records == 1 &&
+	      !m.sent_records && !m.cooldown_records && !m.send_attempts);
+	CHECK(m.connect_attempts == 1 && m.connect_failures == 1 &&
+	      !m.reconnect_successes && !m.connected && m.last_error == error);
+	CHECK(sockets == 1 && connects == 1 && closes == 1 && !sends);
+
+	raw_clock = 0;
+	inject_connect = 0;
+	now_ms += 100;
+	CHECK(!output(l));
+	CHECK(l->syslog_backend.retry_from_ms.value == now_ms);
+	m = metrics(l);
+	CHECK(m.submitted_records == 2 && m.failed_records == 1 &&
+	      m.sent_records == 1 && !m.cooldown_records);
+	CHECK(m.connect_attempts == 2 && m.connect_failures == 1 &&
+	      m.reconnect_successes == 1 && m.connected && !m.last_error);
+	CHECK(sockets == 2 && connects == 2 && sends == 1);
+	/* 重连清除最近错误，创建时留下的首错仍由 flush/destroy 回报。 */
+	CHECK(logger_flush(l) == -ENOENT);
+	CHECK(logger_destroy(&l) == -ENOENT && !l);
+	CHECK(closes == 2);
+}
+
+static void clock_boundaries(const char *mode)
+{
+	if (!strcmp(mode, "clock-negative-seconds")) {
+		clock_at(-1, 0);
+		rejected_clock(EIO);
+		return;
+	}
+	if (!strcmp(mode, "clock-negative-nanoseconds")) {
+		clock_at(10, -1);
+		rejected_clock(EIO);
+		return;
+	}
+	if (!strcmp(mode, "clock-large-nanoseconds")) {
+		clock_at(10, 1000000000L);
+		rejected_clock(EIO);
+		return;
+	}
+	if (!strcmp(mode, "clock-millisecond-overflow")) {
+		clock_at_ms(UINT64_MAX);
+		raw_now.tv_nsec += 1000000L;
+		rejected_clock(EOVERFLOW);
+		return;
+	}
+
+	logger_config_t c = config();
+	logger_t *l = NULL;
+	if (!strcmp(mode, "clock-max-milliseconds")) {
+		clock_at_ms(UINT64_MAX);
+		raw_now.tv_nsec += 999999L;
+		CHECK(!logger_create(&c, &l) && l);
+		CHECK(l->syslog_backend.retry_from_ms.value == UINT64_MAX);
+		CHECK(l->syslog_backend.reconnect_interval_ms.value == 100);
+		CHECK(!output(l));
+		logger_syslog_metrics_t m = metrics(l);
+		CHECK(m.connect_attempts == 1 && !m.connect_failures &&
+		      m.submitted_records == 1 && m.sent_records == 1 &&
+		      !m.failed_records && m.connected && !m.last_error);
+		CHECK(sockets == 1 && connects == 1 && sends == 1);
+		CHECK(!logger_flush(l));
+		CHECK(!logger_destroy(&l) && !l);
+		CHECK(closes == 1);
+		return;
+	}
+
+	uint64_t start = now_ms;
+	if (!strcmp(mode, "clock-limit-cooldown")) {
+		start = UINT64_MAX - 100u;
+		clock_at_ms(start);
+	} else if (!strcmp(mode, "clock-wide-elapsed")) {
+		clock_at_ms(start);
+	} else if (!strcmp(mode, "clock-fractional-cooldown")) {
+		clock_at(10, 999999L);
+	} else {
+		CHECK(!"unknown clock mode");
+	}
+	c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
+	inject_connect = ENOENT;
+	CHECK(!logger_create(&c, &l) && l);
+	CHECK(l->syslog_backend.retry_from_ms.value == start);
+	CHECK(l->syslog_backend.reconnect_interval_ms.value == 100);
+	CHECK(sockets == 1 && connects == 1 && closes == 1);
+	inject_connect = 0;
+	clock_at_ms(start + 99u);
+	if (!strcmp(mode, "clock-fractional-cooldown"))
+		raw_now.tv_nsec += 999999L;
+	CHECK(output(l) == -ENOENT);
+	CHECK(l->syslog_backend.retry_from_ms.value == start);
+	CHECK(sockets == 1 && connects == 1 && !sends);
+	logger_syslog_metrics_t m = metrics(l);
+	CHECK(m.submitted_records == 1 && m.failed_records == 1 &&
+	      m.cooldown_records == 1 && !m.sent_records && !m.connected);
+	CHECK(m.connect_attempts == 1 && m.connect_failures == 1 &&
+	      m.last_error == ENOENT);
+
+	uint64_t retry = start + 100u;
+	if (!strcmp(mode, "clock-wide-elapsed"))
+		retry = start + (uint64_t)UINT32_MAX + 1u;
+	/* 亚毫秒起点仍向下取整；到第 100 个整数毫秒即允许重连。 */
+	clock_at_ms(retry);
+	CHECK(!output(l));
+	CHECK(l->syslog_backend.retry_from_ms.value == retry);
+	CHECK(sockets == 2 && connects == 2 && sends == 1);
+	m = metrics(l);
+	CHECK(m.submitted_records == 2 && m.failed_records == 1 &&
+	      m.cooldown_records == 1 && m.sent_records == 1 &&
+	      m.send_attempts == 1);
+	CHECK(m.connect_attempts == 2 && m.connect_failures == 1 &&
+	      m.reconnect_successes == 1 && m.connected && !m.last_error);
+	CHECK(logger_flush(l) == -ENOENT);
+	CHECK(logger_destroy(&l) == -ENOENT && !l);
+	CHECK(closes == 2);
+}
+
 static void run(const char *mode, int fd)
 {
 	logger_config_t c = config();
 	watch = 1;
+	if (!strncmp(mode, "clock-", 6) && strcmp(mode, "clock-init") &&
+	    strcmp(mode, "clock-disconnect")) {
+		clock_boundaries(mode);
+		return;
+	}
 	if (!strcmp(mode, "candidate-fd-zero") ||
 	    !strcmp(mode, "candidate-eintr-reuse") ||
 	    !strcmp(mode, "candidate-eio-reuse")) {
