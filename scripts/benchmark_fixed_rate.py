@@ -2,6 +2,7 @@
 """固定到达率公开 API 基准：受限运行、原始样本、计数与文件内容核验。"""
 import array
 import datetime
+import errno
 import gzip
 import hashlib
 import json
@@ -21,6 +22,7 @@ from tool_i18n import parser_for
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 1024 ** 3
+RAW_MAGIC = b"CLFR\x02\x00\x00\x00"
 RECORD = re.compile(rb"FR phase=([01]) seq=(\d+) payload=(x+)\n$")
 
 
@@ -46,28 +48,42 @@ def compress(source, target):
 def read_raw(path):
     phases = {}
     with open(path, "rb") as stream:
+        if stream.read(len(RAW_MAGIC)) != RAW_MAGIC:
+            raise ValueError("raw_schema_mismatch")
         while header := stream.read(16):
             if len(header) != 16:
                 raise ValueError("truncated_raw_header")
             values = array.array("Q")
             values.frombytes(header)
             number, count = values
-            if number not in (0, 1) or number in phases or count > 2000000:
+            if number not in (0, 1) or number in phases or not 1 <= count <= 2000000:
                 raise ValueError("invalid_raw_header")
-            calls, late = array.array("Q"), array.array("Q")
-            calls.fromfile(stream, count)
-            late.fromfile(stream, count)
-            phases[number] = (calls, late)
+            if count + sum(len(value[0]) for value in phases.values()) > 2000000:
+                raise ValueError("raw_slot_budget_exceeded")
+            calls, late, status = array.array("Q"), array.array("Q"), array.array("q")
+            try:
+                calls.fromfile(stream, count)
+                late.fromfile(stream, count)
+                status.fromfile(stream, count)
+            except EOFError as exc:
+                raise ValueError("truncated_raw_arrays") from exc
+            phases[number] = (calls, late, status)
+    if not phases:
+        raise ValueError("missing_raw_phases")
     return phases
 
 
 def verify_raw(phases, rows):
     """原始槽位数据独立重算分位；未发出槽位不得作为零延迟。"""
     summaries = {}
-    if set(phases) != {row["phase"] for row in rows}:
+    if len(rows) != len(phases) or set(phases) != {row["phase"] for row in rows}:
         raise ValueError("raw_phase_mismatch")
     for row in rows:
-        calls, late = phases[row["phase"]]
+        calls, late, status = phases[row["phase"]]
+        if row["raw_schema"] != 2 or len(calls) != len(late) or len(calls) != len(status):
+            raise ValueError("raw_schema_or_length_mismatch")
+        if any(not calls[i] and (late[i] or status[i]) for i in range(len(calls))):
+            raise ValueError("raw_unattempted_slot_has_data")
         if (row["scheduled"] != row["attempted"] + row["generator_missed"] or
                 row["attempted"] != row["enqueued"] + row["sync_fallbacks"] + row["dropped"] or
                 row["emitted"] + row["failed"] != row["enqueued"] + row["sync_fallbacks"]):
@@ -75,17 +91,32 @@ def verify_raw(phases, rows):
         indices = [i for i, value in enumerate(calls) if value]
         if len(calls) != row["scheduled"] or len(indices) != row["attempted"]:
             raise ValueError("raw_count_mismatch")
-        for key, values in (("api_ns", calls), ("arrival_late_ns", late)):
-            ordered = sorted(values[i] for i in indices)
+        success = [i for i in indices if status[i] == 0]
+        eagain = sum(status[i] == -errno.EAGAIN for i in indices)
+        other = len(indices) - len(success) - eagain
+        if (row["api_success"] != len(success) or row["api_eagain"] != eagain or
+                row["api_other_errors"] != other or other or
+                len(success) != row["enqueued"] + row["sync_fallbacks"] or eagain != row["dropped"]):
+            raise ValueError("raw_status_accounting_mismatch")
+        for key, values, selected in (("api_ns", calls, indices),
+                                      ("arrival_late_ns", late, indices),
+                                      ("api_success_ns", calls, success)):
+            ordered = sorted(values[i] for i in selected)
             n = len(ordered)
             expected = {f"p{pct}": ordered[(n * pct + 99) // 100 - 1] if n else 0
                         for pct in (50, 95, 99)}
             expected["max"] = ordered[-1] if n else 0
+            if key == "api_success_ns":
+                if not n:
+                    expected = dict.fromkeys(expected)
+                expected["count"] = n
             if expected != row[key]:
                 raise ValueError("raw_percentile_mismatch")
         if sum(late[i] > 1000000 for i in indices) != row["late_over_1ms"]:
             raise ValueError("raw_lateness_mismatch")
-        summaries[row["phase"]] = {"scheduled": len(calls), "attempted": len(indices)}
+        summaries[row["phase"]] = {"scheduled": len(calls), "attempted": len(indices),
+                                    "api_success": len(success), "api_eagain": eagain,
+                                    "api_other_errors": other}
     return summaries
 
 
@@ -104,6 +135,8 @@ def verify_file(path, phases, rows, payload_bytes):
                 raise ValueError("file_record_duplicate_or_out_of_range")
             if not phases[phase][0][seq]:
                 raise ValueError("file_record_not_attempted")
+            if phases[phase][2][seq] != 0:
+                raise ValueError("file_record_not_successful")
             seen[phase][seq] = 1
             counts[phase] += 1
     for row in rows:
@@ -139,7 +172,7 @@ def run_sample(binary, output, case, timeout, temp_root):
         args = [str(binary), str(case["threads"]), str(case["rate"]),
                 str(case["seconds"]), str(case["warmup"]),
                 str(case["payload_bytes"]), str(path), str(raw)]
-        required = case["rate"] * (case["seconds"] + case["warmup"]) * (case["payload_bytes"] + 528)
+        required = case["rate"] * (case["seconds"] + case["warmup"]) * (case["payload_bytes"] + 536)
         # 临时原件与最坏压缩输出可能同时存在；同盘时保留两份预算。
         for directory in (temp, output):
             if shutil.disk_usage(directory).free < 2 * required + 256 * 1024 ** 2:
@@ -185,11 +218,21 @@ def run_sample(binary, output, case, timeout, temp_root):
                   "verification_valid": False}
         try:
             parsed = [json.loads(line) for line in (output / "stdout.jsonl").read_text().splitlines()]
+            if not parsed or any(not isinstance(row, dict) for row in parsed):
+                raise ValueError("invalid_result_rows")
             rows = [row for row in parsed if "phase" in row]
             expected_phases = [0, 1] if case["warmup"] else [1]
             if [row["phase"] for row in rows] != expected_phases:
                 raise ValueError("missing_phase_results")
-            if process.returncode or timed_out or runner_error or not all(row["valid"] for row in rows):
+            result["phases"] = rows
+            if (process.returncode or timed_out or runner_error or
+                    (output / "stderr.log").stat().st_size or
+                    not all(row["valid"] is True for row in rows)):
+                raise ValueError("child_run_invalid")
+            expected_close = 0 if case["backend"] == "file" else -errno.EINVAL
+            if (len(parsed) != len(expected_phases) + 2 or
+                    parsed[-1].get("close_rc") not in (0, expected_close) or
+                    parsed[-1].get("close_errno") != -parsed[-1]["close_rc"]):
                 raise ValueError("child_run_invalid")
             phases = read_raw(raw)
             result["raw_verification"] = verify_raw(phases, rows)
@@ -199,7 +242,7 @@ def run_sample(binary, output, case, timeout, temp_root):
             if case["backend"] == "file":
                 result["file_verification"] = verify_file(path, phases, rows, case["payload_bytes"])
             result["verification_valid"] = True
-        except (ValueError, OSError, EOFError, KeyError) as exc:
+        except (ValueError, OSError, EOFError, KeyError, TypeError, IndexError) as exc:
             result["verification_error"] = str(exc)
         # 成功与失败均保留已生成的原始证据；只删除本 runner 自建临时目录。
         for source, name in ((raw, "latency.bin.gz"), (path, "output.log.gz")):
@@ -260,7 +303,8 @@ def main():
                     for pattern in ("src/*.c", "src/*.h", "include/*.h", "tests/bench_fixed_rate.c",
                                     "scripts/benchmark_fixed_rate.py", "xmake.lua")
                     for p in ROOT.glob(pattern)},
-                "raw_format": "native endian uint64: phase,count,calls[count],late[count]; repeated phases",
+                "raw_schema": 2,
+                "raw_format": "CLFR 02 00 00 00; native uint64 phase,count,calls[count],late[count]; int64 status[count]; repeated phases",
                 "byteorder": sys.byteorder, "platform": platform.platform(),
                 "cpu_affinity": sorted(os.sched_getaffinity(0)),
                 "source": command("git", "rev-parse", "HEAD"),

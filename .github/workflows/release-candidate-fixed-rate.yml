@@ -130,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tests/scripts/test_fixed_rate_benchmark.py -v \
+          CC=gcc python3 tests/scripts/test_fixed_rate_benchmark.py -v \
             > "$EVIDENCE_DIR/checker-tests.log" 2>&1 || {
             cat "$EVIDENCE_DIR/checker-tests.log"
             exit 1
@@ -163,8 +163,10 @@ jobs:
               raise SystemExit("fixed_rate_evidence_invalid_or_incomplete")
           keys = ["repeat", "threads", "rate", "payload_bytes", "backend",
                   "scheduled", "attempted", "generator_missed", "enqueued",
-                  "emitted", "dropped", "sync_fallbacks", "api_p50_ns",
-                  "api_p95_ns", "api_p99_ns", "arrival_late_p99_ns", "flush_ns"]
+                  "emitted", "dropped", "sync_fallbacks",
+                  "api_success", "api_eagain", "api_other_errors", "api_p50_ns",
+                  "api_p95_ns", "api_p99_ns", "api_success_p50_ns",
+                  "api_success_p95_ns", "api_success_p99_ns", "arrival_late_p99_ns", "flush_ns"]
           with (root / "summary.csv").open("w", newline="") as stream:
               writer = csv.DictWriter(stream, fieldnames=keys)
               writer.writeheader()
@@ -176,10 +178,13 @@ jobs:
                   row.update({k: phase[k] for k in ("scheduled", "attempted",
                                                    "generator_missed", "enqueued",
                                                    "emitted", "dropped",
-                                                   "sync_fallbacks", "flush_ns")})
+                                                   "sync_fallbacks", "api_success", "api_eagain",
+                                                   "api_other_errors", "flush_ns")})
                   row["api_p50_ns"] = phase["api_ns"]["p50"]
                   row["api_p95_ns"] = phase["api_ns"]["p95"]
                   row["api_p99_ns"] = phase["api_ns"]["p99"]
+                  for pct in (50, 95, 99):
+                      row[f"api_success_p{pct}_ns"] = phase["api_success_ns"][f"p{pct}"]
                   row["arrival_late_p99_ns"] = phase["arrival_late_ns"]["p99"]
                   writer.writerow(row)
           print("原始采样与每种链接形态32个样本已逐项校验；无业务SLO通过声明。")
