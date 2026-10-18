@@ -935,6 +935,8 @@ if has_config("build_regression_tests") then
 
     local regression_targets = {
         {"queue_mpsc_regression", "tests/regression/test_queue_mpsc.c"},
+        {"queue_size_regression", "tests/regression/test_queue_size.c",
+            {"logger_runtime_calloc", "logger_runtime_free"}},
         {"queue_model_properties", "tests/regression/test_queue_properties.c"},
         {"queue_wakeup_litmus", "tests/regression/test_queue_wakeup_litmus.c"},
         {"lockdep_regression", "tests/regression/test_lockdep.c"},
@@ -1069,6 +1071,51 @@ if has_config("build_regression_tests") then
             add_tests("queue_model_seed_" .. seed,
                       {runargs = seed, timeout = 30})
         end
+    target_end()
+
+    local queue_size_scenarios = {
+        "minimum", "round-up", "spill-limit", "spill-capped", "max-capacity",
+        "capacity-overflow", "first-allocation-failure", "second-allocation-failure"
+    }
+    target("queue_size_regression")
+        for _, scenario in ipairs(queue_size_scenarios) do
+            add_tests(scenario, {runargs = scenario, group = "queue-size", timeout = 15})
+        end
+    target_end()
+
+    if not has_config("build_shared") then
+        target("queue_size_production")
+            set_kind("binary")
+            set_default(false)
+            add_files("tests/regression/test_queue_size.c")
+            add_deps("logger")
+            add_includedirs("src")
+            add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                       {force = true})
+            for _, symbol in ipairs({"logger_runtime_calloc", "logger_runtime_free"}) do
+                add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
+            end
+            for _, scenario in ipairs(queue_size_scenarios) do
+                add_tests(scenario, {runargs = scenario, group = "queue-size", timeout = 15})
+            end
+        target_end()
+    end
+
+    target("queue_size_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("queue_size_regression")
+        add_tests("records_bytes_compile", {group = "queue-size", timeout = 60})
+        on_test(function (target, opt)
+            local cc = assert(target:dep("queue_size_regression"):tool("cc"))
+            local script = path.join(os.projectdir(), "tests", "scripts", "test_queue_size_types.py")
+            local code, errors = os.execv("python3", {script, "-v"}, {
+                try = true,
+                envs = {LOGGER_TEST_CC = cc},
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
     target_end()
 
     -- test_lockdep.c 必须与链接的回归支持库使用相同的调试契约；否则
