@@ -61,6 +61,22 @@ release-validation 继续单独检查未插桩的真实交付产物。
 并保存输入语料、SOURCE_COMMIT、库与驱动的哈希、覆盖回调符号
 及原始 fuzzer 日志。
 
+`public-fuzz` 在任务级统一设置 `ASAN_OPTIONS=detect_leaks=1` 和
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`，使实际 Logger
+模糊驱动与检测器自检使用同一运行时策略。
+[Clang 的 UBSan 默认会在多数诊断后继续执行](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#usage)，
+因此仅有日志和进程零退出不足以保证本轮未出现未定义行为。
+每轮正式模糊运行前，`tests/regression/run_fuzz_sanitizer_exit.sh`
+使用同一 Clang 与 `-fsanitize=fuzzer,address,undefined` 编译独立探针，
+分别回放健康输入和刻意触发有符号整数溢出的输入。
+健康输入必须零退出且有成功标记；溢出输入必须以 1 退出、包含
+UBSan 的溢出诊断，并且没有继续执行标记。编译失败、超时或其他
+运行错误均不能充当有效的错误检出结果。
+探针源码、编译器、命令、输入、产物哈希、退出码及原始日志随
+`public-fuzz-evidence/sanitizer-exit/` 一并留存，包括验收失败的运行。
+该探针不链接 Logger；两次固定输入回放只验收检测器的退出策略，
+独立于生产模糊驱动的 3000 次运行，也不等于当前 Logger 发现了溢出。
+
 有限 `-runs` 和固定种子只是可复现的**有界持续集成烟测**，
 不是长期覆盖率引导的模糊测试服务，更不能推导输入空间全覆盖。
 若出现崩溃，必须保存触发的最小种子并转为稳定回归，
