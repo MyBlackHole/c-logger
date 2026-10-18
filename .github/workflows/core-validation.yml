@@ -251,6 +251,10 @@ jobs:
 
   public-fuzz:
     runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - uses: actions/checkout@v5
       - name: 导出与其他生产构建相同的单一版本身份
@@ -288,11 +292,14 @@ jobs:
           cp tests/fuzz/corpus/* fuzz-evidence/corpus/
           git rev-parse HEAD > fuzz-evidence/SOURCE_COMMIT
           sha256sum "${libraries[0]}" fuzz-public | tee fuzz-evidence/sha256.txt
+      - name: 验证同一运行时设置下健康输入成功且 UBSan 溢出立即失败
+        shell: bash
+        run: bash tests/regression/run_fuzz_sanitizer_exit.sh fuzz-evidence/sanitizer-exit
       - name: 执行固定种子的有界真实 libFuzzer 与 ASan/UBSan
         shell: bash
         run: |
           set -euo pipefail
-          ASAN_OPTIONS=detect_leaks=1 timeout 120s ./fuzz-public \
+          timeout 120s ./fuzz-public \
             -seed=107 -runs=3000 -max_len=128 -timeout=10 \
             -artifact_prefix="$PWD/fuzz-evidence/" \
             fuzz-evidence/corpus 2>&1 | tee fuzz-evidence/libfuzzer.log
