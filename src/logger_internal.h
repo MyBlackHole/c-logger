@@ -6,6 +6,7 @@
 #include "logger_queue.h"
 #include "logger_file.h"
 #include "logger_syslog.h"
+#include <stdatomic.h>
 #include <sys/types.h>
 #include <time.h>
 #include <stdarg.h>
@@ -90,6 +91,64 @@ struct logger {
 	_Atomic uint64_t enqueued, sync_fallbacks, queue_high_watermark;
 	_Atomic uint64_t consumer_batches, consumer_records;
 };
+
+/* 原子内建可能在诊断前转换枚举实参；普通参数边界保留跨枚举警告。
+ * 这些窄接口固定当前实例协议的内存序；值域和状态转换前提仍由调用方保证。
+ */
+static inline void logger_level_init(_Atomic logger_level_t *level,
+				     logger_level_t value)
+{
+	atomic_init(level, value);
+}
+
+static inline void logger_state_init(_Atomic logger_state_t *state,
+				     logger_state_t value)
+{
+	atomic_init(state, value);
+}
+
+static inline void logger_level_store_relaxed(_Atomic logger_level_t *level,
+					      logger_level_t value)
+{
+	atomic_store_explicit(level, value, memory_order_relaxed);
+}
+
+static inline void logger_state_store_release(_Atomic logger_state_t *state,
+					      logger_state_t value)
+{
+	atomic_store_explicit(state, value, memory_order_release);
+}
+
+static inline int logger_state_try_publish(_Atomic logger_state_t *state,
+					   logger_state_t *expected,
+					   logger_state_t desired)
+{
+	/* 直接转传期望值指针，失败时必须写回调用方观察到的实际状态。 */
+	return atomic_compare_exchange_strong_explicit(state, expected, desired,
+						       memory_order_acq_rel,
+						       memory_order_acquire);
+}
+
+/* GCC 9 尚无枚举转换诊断，使用其已有的枚举比较诊断保留调用点类别。
+ * 比较结果恒为 int，sizeof 不执行比较或实参；实际值只向内联函数传一次。
+ * 括号函数名避免再次展开同名宏，指针约束仍由普通函数参数检查。
+ */
+#define logger_enum_value(type, value) \
+	((void)sizeof((value) == (type)0), (value))
+#define logger_level_init(level, value) \
+	(logger_level_init)((level), logger_enum_value(logger_level_t, value))
+#define logger_state_init(state, value) \
+	(logger_state_init)((state), logger_enum_value(logger_state_t, value))
+#define logger_level_store_relaxed(level, value) \
+	(logger_level_store_relaxed)((level),    \
+				     logger_enum_value(logger_level_t, value))
+#define logger_state_store_release(state, value) \
+	(logger_state_store_release)((state),    \
+				     logger_enum_value(logger_state_t, value))
+#define logger_state_try_publish(state, expected, desired) \
+	(logger_state_try_publish)((state), (expected),    \
+				   logger_enum_value(logger_state_t, desired))
+
 /* 内部完整拆除：调用者必须拥有独占所有权，返回 0 / -errno。
  * 普通 I/O 拆除错误仍完成最终释放；若线程回收、同步对象或存活对象计数
  * 无法证明已静止，则故意保留退役分配，绝不继续释放而造成释放后使用。

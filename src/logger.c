@@ -360,8 +360,7 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 	if (!l)
 		return logger_process_object_release();
 
-	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
-			      memory_order_release);
+	logger_state_store_release(&l->state, LOGGER_STATE_STOPPING);
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
 					      memory_order_acquire);
 	if (!sync_error && state->queue_ready)
@@ -466,8 +465,8 @@ static logger_t *create_logger(const logger_config_t *input)
 	}
 	l->file_backend = LOGGER_FILE_EMPTY;
 	l->syslog_backend.fd = logger_fd_own(-1);
-	atomic_init(&l->level, cfg.level);
-	atomic_init(&l->state, LOGGER_STATE_CREATED);
+	logger_level_init(&l->level, cfg.level);
+	logger_state_init(&l->state, LOGGER_STATE_CREATED);
 	atomic_init(&l->default_borrowed, 0);
 	atomic_init(&l->running, 0);
 	atomic_init(&l->enqueued, 0);
@@ -565,9 +564,8 @@ static logger_t *create_logger(const logger_config_t *input)
 	 * 失败时的 acquire 会观察先前的 lifecycle_error 发布；
 	 * 回滚仍会停止并回收每个成功创建的工作线程。
 	 */
-	if (!atomic_compare_exchange_strong_explicit(
-		    &l->state, &expected, LOGGER_STATE_RUNNING,
-		    memory_order_acq_rel, memory_order_acquire)) {
+	if (!logger_state_try_publish(&l->state, &expected,
+				      LOGGER_STATE_RUNNING)) {
 		rc = atomic_load_explicit(&l->lifecycle_error,
 					  memory_order_acquire);
 		if (!rc)
@@ -675,8 +673,7 @@ static int dispose_body(logger_t *l, int *released)
 	 * pthread_*_destroy 成功返回不能代替静默期证明。
 	 * 不变量检查失败时保留半退役对象，避免释放后使用。
 	 */
-	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
-			      memory_order_release);
+	logger_state_store_release(&l->state, LOGGER_STATE_STOPPING);
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
 					      memory_order_acquire);
 	if (!sync_error && l->async_mode)
@@ -768,8 +765,7 @@ static int dispose_body(logger_t *l, int *released)
 	if (!rc)
 		rc = syslog_close_rc;
 
-	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPED,
-			      memory_order_release);
+	logger_state_store_release(&l->state, LOGGER_STATE_STOPPED);
 
 	/* 进程级存活对象计数是不变量门禁。不得通过释放对象并假装没有运行时
 	 * 来掩盖计数下溢。
@@ -1026,8 +1022,7 @@ void logger_note_lifecycle_error(logger_t *l, int error)
 	(void)atomic_compare_exchange_strong_explicit(
 		&l->lifecycle_error, &expected, error, memory_order_release,
 		memory_order_relaxed);
-	atomic_store_explicit(&l->state, LOGGER_STATE_STOPPING,
-			      memory_order_release);
+	logger_state_store_release(&l->state, LOGGER_STATE_STOPPING);
 	atomic_store_explicit(&l->running, 0, memory_order_release);
 }
 
@@ -1172,7 +1167,7 @@ int logger_set_instance_level(logger_t *l, logger_level_t v)
 	}
 	rc = !l || (unsigned)v > LOGGER_OFF ? -EINVAL : 0;
 	if (!rc)
-		atomic_store_explicit(&l->level, v, memory_order_relaxed);
+		logger_level_store_relaxed(&l->level, v);
 out:
 	errno = saved;
 	return rc;

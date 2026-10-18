@@ -47,6 +47,7 @@
 - [FUZZ_PROPERTY_POLICY.md](FUZZ_PROPERTY_POLICY.md)：当前公开配置/脱敏有界模糊测试与 FIFO/溢出池属性模型（#107）。
 - [RELEASE_PREFLIGHT.md](RELEASE_PREFLIGHT.md)：最终发布前源码身份、现有 CI 证据与尚待维护者签收的边界，不是发布授权。
 - [FD_OWNERSHIP.md](FD_OWNERSHIP.md)：文件候选 fd 的拥有/借用类型及 fork 资源位图合同，非完整 D1/D2 结项。
+- [ENUM_ATOMIC_TYPES.md](ENUM_ATOMIC_TYPES.md)：实例状态和日志级别十处原子写入的私有参数约束、编译对照与 CAS 写回边界。
 - [QUEUE_WAKEUP_PROOF.md](QUEUE_WAKEUP_PROOF.md)：队列唤醒的 C11 证明。
 - [LOCKLESS_PROOF_TEMPLATE.md](LOCKLESS_PROOF_TEMPLATE.md)：新增无锁访问协议的审查模板。
 - [WORKER_STARTUP.md](WORKER_STARTUP.md) / [WORKER_FAILURE.md](WORKER_FAILURE.md)：工作线程启动与失败退出合同。

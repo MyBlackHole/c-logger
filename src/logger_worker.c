@@ -382,9 +382,9 @@ void *logger_worker_main(void *p)
 					(void)atomic_compare_exchange_strong_explicit(
 						&l->lifecycle_error, &expected, wait_rc,
 						memory_order_release, memory_order_relaxed);
-					atomic_store_explicit(&l->state,
-							      LOGGER_STATE_STOPPING,
-							      memory_order_release);
+					logger_state_store_release(
+						&l->state,
+						LOGGER_STATE_STOPPING);
 					atomic_store_explicit(&l->running, 0,
 							      memory_order_release);
 					break;
