@@ -1,0 +1,93 @@
+name: owned-copy-validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'scripts/check_owned_fd_copies.py'
+      - 'scripts/tool_i18n.py'
+      - 'tests/scripts/test_owned_fd_copies.py'
+      - 'xmake.lua'
+      - 'xmake-owned-copy.lua'
+      - '.github/workflows/owned-copy-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'scripts/check_owned_fd_copies.py'
+      - 'scripts/tool_i18n.py'
+      - 'tests/scripts/test_owned_fd_copies.py'
+      - 'xmake.lua'
+      - 'xmake-owned-copy.lua'
+      - '.github/workflows/owned-copy-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clang-ast:
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:${{ matrix.ubuntu }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['20.04', '24.04']
+        shared: ['n', 'y']
+    env:
+      XMAKE_ROOT: 'y'
+    steps:
+      - name: 安装编译工具
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential clang ca-certificates curl git python3 binutils
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 固定源码及工具身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse 'HEAD^{tree}' > evidence/source-tree.txt
+          clang --version > evidence/compiler.txt
+          getconf GNU_LIBC_VERSION > evidence/libc.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+          echo "LOGGER_OWNED_COPY_EVIDENCE=$GITHUB_WORKSPACE/evidence" >> "$GITHUB_ENV"
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+      - name: 构建真实目标并检查全部配置的拥有者复制
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake --version > evidence/xmake.txt
+          xmake f -F xmake-owned-copy.lua -y -m debug -o owned-build \
+            --toolchain=clang --build_shared=${{ matrix.shared }} \
+            --build_tests=n --build_private_tests=y --build_regression_tests=y
+          xmake test -F xmake-owned-copy.lua -g owned-copy -j1 -v \
+            2>&1 | tee evidence/owned-copy.log
+          mapfile -t libraries < <(find owned-build -type f \
+            \( -name liblogger.a -o -name "liblogger.so.$LOGGER_PROJECT_VERSION" \))
+          test "${#libraries[@]}" -eq 1
+          python3 scripts/check_production_artifact.py "${libraries[0]}" \
+            > evidence/production-isolation.json
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-copy-${{ matrix.ubuntu }}-${{ matrix.shared }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
