@@ -21,6 +21,7 @@ struct phase {
 	pthread_cond_t cond;
 	int ready;
 	uint64_t *calls, *late;
+	int64_t *status;
 };
 
 struct producer {
@@ -72,13 +73,15 @@ static void *produce(void *opaque)
 		if (before >= p->end)
 			break;
 		uint64_t late = before > due ? before - due : 0;
-		logger_log(p->logger, LOGGER_INFO, "fixed_rate", __FILE__,
-			   __LINE__, __func__,
-			   "FR phase=%u seq=%" PRIu64 " payload=%s", p->number,
-			   i, p->payload);
+		int status = logger_log(p->logger, LOGGER_INFO, "fixed_rate",
+					__FILE__, __LINE__, __func__,
+					"FR phase=%u seq=%" PRIu64
+					" payload=%s",
+					p->number, i, p->payload);
 		/* 此耗时包含时钟读取的测量开销。
 		 * 调用包含格式化/入队/可能回退，不代表输出或落盘。 */
 		p->calls[i] = now_ns() - before;
+		p->status[i] = status;
 		p->late[i] = late;
 		if (!p->calls[i])
 			p->calls[i] = 1;
@@ -97,6 +100,31 @@ static int compare_u64(const void *left, const void *right)
 static uint64_t percentile(const uint64_t *values, uint64_t n, unsigned pct)
 {
 	return n ? values[(n * pct + 99) / 100 - 1] : 0;
+}
+
+struct latency {
+	uint64_t p50, p95, p99, max;
+};
+
+static struct latency summarize(uint64_t *values, uint64_t n)
+{
+	qsort(values, (size_t)n, sizeof(*values), compare_u64);
+	return (struct latency){ percentile(values, n, 50),
+				 percentile(values, n, 95),
+				 percentile(values, n, 99),
+				 n ? values[n - 1] : 0 };
+}
+
+static void print_success_latency(struct latency values, uint64_t n)
+{
+	if (!n) {
+		printf("{\"count\":0,\"p50\":null,\"p95\":null,"
+		       "\"p99\":null,\"max\":null}");
+		return;
+	}
+	printf("{\"count\":%" PRIu64 ",\"p50\":%" PRIu64 ",\"p95\":%" PRIu64
+	       ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "}",
+	       n, values.p50, values.p95, values.p99, values.max);
 }
 
 static uint64_t drops(const logger_metrics_t *m)
@@ -149,7 +177,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 
 	p.calls = calloc((size_t)p.count, sizeof(*p.calls));
 	p.late = calloc((size_t)p.count, sizeof(*p.late));
-	if (!p.calls || !p.late) {
+	p.status = calloc((size_t)p.count, sizeof(*p.status));
+	if (!p.calls || !p.late || !p.status) {
 		failed = 1;
 		goto cleanup;
 	}
@@ -157,6 +186,7 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	for (uint64_t i = 0; i < p.count; i++) {
 		((volatile uint64_t *)p.calls)[i] = 0;
 		((volatile uint64_t *)p.late)[i] = 0;
+		((volatile int64_t *)p.status)[i] = 0;
 	}
 	if (logger_get_metrics(logger, &before) ||
 	    logger_get_io_metrics(logger, &io_before)) {
@@ -208,9 +238,24 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 		io_after.async_completed - io_before.async_completed;
 	uint64_t sync_completed =
 		io_after.sync_completed - io_before.sync_completed;
-	int accounting = attempted == enqueued + fallback + dropped &&
-			 completed == enqueued && sync_completed == fallback &&
-			 emitted + io_failed == completed + sync_completed;
+	uint64_t api_success = 0, api_eagain = 0, api_other_errors = 0;
+	for (uint64_t i = 0; i < p.count; i++) {
+		if (!p.calls[i])
+			continue;
+		if (!p.status[i])
+			api_success++;
+		else if (p.status[i] == -EAGAIN)
+			api_eagain++;
+		else
+			api_other_errors++;
+	}
+	/* 本负载不进行级别过滤；负返回可能已输出，不能据此重试。
+	 * 其他错误使样本失败，仍保留原始返回值和计数供调查。 */
+	int accounting =
+		attempted == api_success + api_eagain + api_other_errors &&
+		api_success == enqueued + fallback && api_eagain == dropped &&
+		completed == enqueued && sync_completed == fallback &&
+		emitted + io_failed == completed + sync_completed;
 	/* 原始数组按计划槽位保留；calls==0 表示未发出。机器本地字节序，
 	 * 由 runner 连同平台信息存档，不能把缺失槽位作为零延迟。 */
 	uint64_t header[2] = { number, p.count };
@@ -219,6 +264,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 			     p.count &&
 		     fwrite(p.late, sizeof(*p.late), (size_t)p.count, raw) ==
 			     p.count &&
+		     fwrite(p.status, sizeof(*p.status), (size_t)p.count,
+			    raw) == p.count &&
 		     fflush(raw) == 0;
 	uint64_t n = 0;
 	uint64_t late_over_1ms = 0;
@@ -227,15 +274,32 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 			continue;
 		if (p.late[i] > 1000000ull)
 			late_over_1ms++;
-		p.calls[n] = p.calls[i];
 		p.late[n++] = p.late[i];
 	}
+	struct latency late_values = summarize(p.late, n);
+	/* 原件已写出；复用迟到数组计算成功调用分位，不新增发压分配。 */
+	uint64_t success_n = 0;
+	for (uint64_t i = 0; i < p.count; i++) {
+		if (p.calls[i] && !p.status[i])
+			p.late[success_n++] = p.calls[i];
+	}
+	struct latency success_values = summarize(p.late, success_n);
+	n = 0;
+	for (uint64_t i = 0; i < p.count; i++) {
+		if (p.calls[i])
+			p.calls[n++] = p.calls[i];
+	}
 	qsort(p.calls, (size_t)n, sizeof(*p.calls), compare_u64);
-	qsort(p.late, (size_t)n, sizeof(*p.late), compare_u64);
 	failed = generator_error || started != threads || output_rc ||
 		 flush_rc || !accounting || io_failed || io_after.first_error ||
-		 n != attempted || !raw_ok;
-	printf("{\"phase\":%u,\"rate\":%" PRIu64 ",\"seconds\":%u,"
+		 n != attempted || success_n != api_success ||
+		 api_other_errors || !raw_ok;
+	printf("{\"raw_schema\":2,\"api_success\":%" PRIu64
+	       ",\"api_eagain\":%" PRIu64 ",\"api_other_errors\":%" PRIu64
+	       ",\"api_success_ns\":",
+	       api_success, api_eagain, api_other_errors);
+	print_success_latency(success_values, success_n);
+	printf(",\"phase\":%u,\"rate\":%" PRIu64 ",\"seconds\":%u,"
 	       "\"start_monotonic_ns\":%" PRIu64
 	       ",\"end_monotonic_ns\":%" PRIu64 ","
 	       "\"threads\":%u,\"scheduled\":%" PRIu64 ",\"attempted\":%" PRIu64
@@ -259,9 +323,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	       attempted, generator_error, p.count - attempted, late_over_1ms,
 	       percentile(p.calls, n, 50), percentile(p.calls, n, 95),
 	       percentile(p.calls, n, 99), n ? p.calls[n - 1] : 0,
-	       percentile(p.late, n, 50), percentile(p.late, n, 95),
-	       percentile(p.late, n, 99), n ? p.late[n - 1] : 0, enqueued,
-	       dropped, fallback, emitted, io_failed,
+	       late_values.p50, late_values.p95, late_values.p99,
+	       late_values.max, enqueued, dropped, fallback, emitted, io_failed,
 	       after.queue_high_watermark,
 	       producer_end > p.start ? (producer_end - p.start) / 1e9 : 0,
 	       output_end > p.start ? (output_end - p.start) / 1e9 : 0,
@@ -271,6 +334,7 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 cleanup:
 	free(p.calls);
 	free(p.late);
+	free(p.status);
 	pthread_cond_destroy(&p.cond);
 	pthread_mutex_destroy(&p.mutex);
 	return failed;
@@ -309,6 +373,12 @@ int main(int argc, char **argv)
 	FILE *raw = fopen(argv[7], "wbx");
 	if (!raw)
 		return 3;
+	/* 固定八字节版本头，拒绝把旧的双数组原件按三数组解释。 */
+	static const unsigned char magic[8] = { 'C', 'L', 'F', 'R', 2, 0, 0, 0 };
+	if (fwrite(magic, 1, sizeof(magic), raw) != sizeof(magic)) {
+		fclose(raw);
+		return 3;
+	}
 	/* 时钟对的控制样本仅描述测量下限，不从 API 分位中相减。 */
 	uint64_t clock_pairs[1000];
 	for (size_t i = 0; i < 1000; i++) {
@@ -325,6 +395,7 @@ int main(int argc, char **argv)
 	payload[size] = '\0';
 	logger_config_t config = LOGGER_DEFAULT_CONFIG();
 	config.outputs = LOGGER_OUT_FILE;
+	config.level = LOGGER_INFO;
 	config.file_path = argv[6];
 	config.async_mode = 1;
 	config.queue_capacity = 65536;

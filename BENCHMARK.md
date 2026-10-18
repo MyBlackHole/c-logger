@@ -107,12 +107,18 @@ python3 scripts/benchmark_fixed_rate.py \
 指标口径：
 
 - `api_ns`：每次公开异步日志调用从调用前至返回的 P50/P95/P99/最大耗时，包含时钟测量成本。
-  包括被 DROP 的调用，公开 void API 不提供逐条接收结果。数组预触不在测量窗口内。
+  包括被 DROP 或返回其他错误的调用；保持原字段口径，不把它改名为成功调用分位。
+  `api_success_ns` 另按逐条返回 0 的槽位计算，包含样本数；没有成功调用时分位为 null，
+  不是 0ns。这里显式设 INFO 级别且没有过滤，仍不代表输出或持久化确认。
+  `api_success`、`api_eagain`、`api_other_errors` 保留 0、-EAGAIN 和其余返回的计数。
+  状态数组预触不在测量窗口内，状态写入位于末次时钟读取之后；测量仍会扰动发压。
   `clock_pair_ns` 为 1000 次连续时钟对控制值，不能直接从分位相减。
 - `arrival_late_ns`：实际调用开始相对原计划时刻的迟到分位，未发出槽位不纳入延迟分位。
   `scheduled = attempted + generator_missed`，发生器能力不足不能归为 Logger 丢弃。
-- `attempted = enqueued + sync_fallbacks + dropped`；输出停止后还检查完成计数和
-  `emitted + failed` 守恒。`valid` 只证明驱动/计数与 I/O 检查，不表示零丢弃、速率达标或业务 SLO。
+- 有效样本要求 `api_success = enqueued + sync_fallbacks`、`api_eagain = dropped`、
+  `api_other_errors = 0`，并独立重算 `attempted` 及输出完成计数守恒。其余返回使样本失败，
+  但仍保存原件；负返回可能已发布或输出，不能据此重试或推断“绝未输出”。
+  `valid` 只证明驱动/计数与 I/O 检查，不表示零丢弃、速率达标或业务 SLO。
 - `output_observed_seconds`/`output_drain_observed_ns`：停止生产后以公开 I/O 完成计数
   轮询观测排空。1ms 轮询和调度误差使其成为观测上界；不是逐条输出延迟分位。
 - `flush_ns`：排空之后调用一次真实文件 `logger_flush()` 的整批 fsync
@@ -123,10 +129,15 @@ python3 scripts/benchmark_fixed_rate.py \
   内存还包含测量数组，不能称为纯 Logger 内存。文件解析/压缩由父进程在测量之后执行。
 
 原始数据：每次保留 stdout/stderr、退出状态、绝对 UTC 起止、计数/分位、文件系统类型、
-资源数据、压缩后的完整日志及逐槽位延迟数组。`latency.bin.gz` 解压后为本机字节序 uint64：
-每阶段两个值 phase/count，随后 count 个 API 纳秒值，再 count 个迟到纳秒值；重复各阶段。
-API 值 0 表示该槽位未发出。runner 独立重算分位，并逐条验证真实文件的 phase/seq、
-填充长度、无重复、无越界、必须属于尝试槽位、条数等于 emitted；删除/损坏/重复均失败。
+资源数据、压缩后的完整日志及逐槽位数组。当前原始格式为 schema 2：文件开头八字节
+`43 4c 46 52 02 00 00 00`，之后重复各阶段的本机字节序 uint64 `phase/count`、
+count 个 uint64 API 纳秒、count 个 uint64 迟到纳秒、count 个 int64 返回状态。
+API 值 0 表示未发出，对应迟到和状态必须也为0；不能将其当作成功或零延迟样本。
+runner 从原件独立重算全部／成功调用分位和三类状态计数，再逐条核对文件的 phase/seq、
+填充长度、无重复、无越界、属于返回0的已尝试槽位、条数等于emitted。
+所以用一条丢弃槽位的记录替换成功记录，即使总数不变也会失败。
+旧的无版本双数组原件由原提交的工具及身份解释；新工具明确拒绝，不能混算或猜格式。
+新增状态数组为每个计划槽位8字节（最多16MB），原始数组总计每槽24字节；不算纯库内存。
 机器信息、原始格式字节序、精确 SHA/tree/dirty diff、关键源码哈希、可执行文件与库哈希、
 构建日志一并保存。共享/容器文件系统的 fsync 结果不等于专用物理磁盘吞吐。
 
@@ -157,8 +168,8 @@ API 分位、整批 flush、资源和轮次范围；这是可重现的受限负�
 精确源码 Git 提交/tree、实际编译链接日志、库/驱动 SHA-256、
 完整 stdout/stderr、逐槽位原始数组、文件数据摘要和结构化汇总表。
 工作流及每个静态/共享配置的结果必须按 GitHub Actions 实际完成状态记录。
-摘要列出 attempted、emitted、dropped、generator_missed、P50/P95/P99、
-迟到 P99 和批量 fsync 延迟；没有业务明确指标就**不设置拍脑袋的成功吞吐
+摘要列出 attempted、emitted、dropped、generator_missed、三类返回计数、
+全部调用及成功调用P50/P95/P99、迟到P99和批量fsync延迟；没有业务明确指标就**不设置拍脑袋的成功吞吐
 或 P99 阈值**。成功只表示样本计数/输出/原始校验有效，
 并不自动说明零丢弃、长期容量、真实磁盘尾延迟或物理掉电安全。
 
@@ -209,3 +220,13 @@ spill 耗尽、队列固定存储量、通知次数、进程 RSS 与 CPU。
 没有成功工作流与原始文件前不得将此节视为已完成测量或“无退化”声明。
 现行 queue-benchmark.yml 继续用于历史趋势和内存基线，
 不参与本次直接配对比值。
+
+## 固定到达率状态采样回归
+
+复用 `tests/scripts/test_fixed_rate_benchmark.py` 与现有 `fixed-rate-verifier` Xmake 分组。
+验收器正反例覆盖成功分位／计数篡改、丢弃槽位替换、其他错误、空成功集、旧格式、
+截断及重复阶段。另以实际 `CC` 编译当前驱动的生产者循环，替换调用的返回序列为
+0/-EAGAIN/-EIO；健康记录和故意丢失状态的临时变体必须分别通过和失败。
+未使用的驱动函数经独立节回收，未链接或复制生产库源码清单；这只检查采样器，不是
+真实后端回归或性能数据。固定到达率工作流仍以根Xmake构建真实静态／共享生产库，
+执行原有32样本矩阵验证完整原始记录链；不因这些测试批准任何业务SLO。
