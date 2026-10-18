@@ -74,9 +74,10 @@ static void *produce(void *opaque)
 			break;
 		uint64_t late = before > due ? before - due : 0;
 		int status = logger_log(p->logger, LOGGER_INFO, "fixed_rate",
-				       __FILE__, __LINE__, __func__,
-				       "FR phase=%u seq=%" PRIu64 " payload=%s",
-				       p->number, i, p->payload);
+					__FILE__, __LINE__, __func__,
+					"FR phase=%u seq=%" PRIu64
+					" payload=%s",
+					p->number, i, p->payload);
 		/* 此耗时包含时钟读取的测量开销。
 		 * 调用包含格式化/入队/可能回退，不代表输出或落盘。 */
 		p->calls[i] = now_ns() - before;
@@ -121,9 +122,8 @@ static void print_success_latency(struct latency values, uint64_t n)
 		       "\"p99\":null,\"max\":null}");
 		return;
 	}
-	printf("{\"count\":%" PRIu64 ",\"p50\":%" PRIu64
-	       ",\"p95\":%" PRIu64 ",\"p99\":%" PRIu64
-	       ",\"max\":%" PRIu64 "}",
+	printf("{\"count\":%" PRIu64 ",\"p50\":%" PRIu64 ",\"p95\":%" PRIu64
+	       ",\"p99\":%" PRIu64 ",\"max\":%" PRIu64 "}",
 	       n, values.p50, values.p95, values.p99, values.max);
 }
 
@@ -251,12 +251,11 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	}
 	/* 本负载不进行级别过滤；负返回可能已输出，不能据此重试。
 	 * 其他错误使样本失败，仍保留原始返回值和计数供调查。 */
-	int accounting = attempted ==
-				 api_success + api_eagain + api_other_errors &&
-			 api_success == enqueued + fallback &&
-			 api_eagain == dropped &&
-			 completed == enqueued && sync_completed == fallback &&
-			 emitted + io_failed == completed + sync_completed;
+	int accounting =
+		attempted == api_success + api_eagain + api_other_errors &&
+		api_success == enqueued + fallback && api_eagain == dropped &&
+		completed == enqueued && sync_completed == fallback &&
+		emitted + io_failed == completed + sync_completed;
 	/* 原始数组按计划槽位保留；calls==0 表示未发出。机器本地字节序，
 	 * 由 runner 连同平台信息存档，不能把缺失槽位作为零延迟。 */
 	uint64_t header[2] = { number, p.count };
@@ -265,8 +264,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 			     p.count &&
 		     fwrite(p.late, sizeof(*p.late), (size_t)p.count, raw) ==
 			     p.count &&
-		     fwrite(p.status, sizeof(*p.status), (size_t)p.count, raw) ==
-			     p.count &&
+		     fwrite(p.status, sizeof(*p.status), (size_t)p.count,
+			    raw) == p.count &&
 		     fflush(raw) == 0;
 	uint64_t n = 0;
 	uint64_t late_over_1ms = 0;
@@ -293,8 +292,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	qsort(p.calls, (size_t)n, sizeof(*p.calls), compare_u64);
 	failed = generator_error || started != threads || output_rc ||
 		 flush_rc || !accounting || io_failed || io_after.first_error ||
-		 n != attempted || success_n != api_success || api_other_errors ||
-		 !raw_ok;
+		 n != attempted || success_n != api_success ||
+		 api_other_errors || !raw_ok;
 	printf("{\"raw_schema\":2,\"api_success\":%" PRIu64
 	       ",\"api_eagain\":%" PRIu64 ",\"api_other_errors\":%" PRIu64
 	       ",\"api_success_ns\":",
@@ -324,8 +323,8 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	       attempted, generator_error, p.count - attempted, late_over_1ms,
 	       percentile(p.calls, n, 50), percentile(p.calls, n, 95),
 	       percentile(p.calls, n, 99), n ? p.calls[n - 1] : 0,
-	       late_values.p50, late_values.p95, late_values.p99, late_values.max,
-	       enqueued, dropped, fallback, emitted, io_failed,
+	       late_values.p50, late_values.p95, late_values.p99,
+	       late_values.max, enqueued, dropped, fallback, emitted, io_failed,
 	       after.queue_high_watermark,
 	       producer_end > p.start ? (producer_end - p.start) / 1e9 : 0,
 	       output_end > p.start ? (output_end - p.start) / 1e9 : 0,
