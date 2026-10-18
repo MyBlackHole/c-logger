@@ -253,6 +253,115 @@ static void *failing_setter(void *arg)
 	return NULL;
 }
 
+/* 以下边界场景没有并发调用者或工作线程，可以直接检查默认槽。
+ * 期望编码独立于生产 helper：低 3 位为阶段，其余 61 位为代次。
+ */
+static void check_generation_binding(uint64_t ticket, uint64_t generation,
+				     uint64_t phase, logger_t *bound)
+{
+	struct logger_runtime *runtime = logger_runtime_current();
+	uint64_t observed = atomic_load(&runtime->global_ticket);
+
+	CHECK(observed == ticket);
+	CHECK((observed >> 3) == generation);
+	CHECK((observed & UINT64_C(7)) == phase);
+	CHECK(runtime->global_logger == bound);
+	CHECK(atomic_load(&a->default_borrowed) == (bound == a));
+	CHECK(atomic_load(&b->default_borrowed) == (bound == b));
+	CHECK(!atomic_load(&runtime->global_lock_error));
+	CHECK(!atomic_load(&frees));
+}
+
+static void high_generation(void)
+{
+	const uint64_t generation = UINT64_C(1) << 60;
+	const uint64_t high = UINT64_C(1) << 63;
+	struct logger_runtime *runtime = logger_runtime_current();
+
+	check_generation_binding(UINT64_C(9), 1, 1, a);
+	/* 把代次的 bit 60 放入票据的 bit 63，暴露窄化或有符号移位。 */
+	atomic_store(&runtime->global_ticket, high | UINT64_C(1));
+	check_generation_binding(high | UINT64_C(1), generation, 1, a);
+	errno = EDOM;
+	CHECK(LOG_INFO("HIGH_GENERATION_A") == 0);
+	CHECK(errno == EDOM);
+	check_generation_binding(high | UINT64_C(1), generation, 1, a);
+
+	errno = ERANGE;
+	CHECK(logger_default_set(a, b) == 0);
+	CHECK(errno == ERANGE);
+	check_generation_binding(high | UINT64_C(9), generation + 1, 1, b);
+	errno = E2BIG;
+	CHECK(LOG_INFO("HIGH_GENERATION_B") == 0);
+	CHECK(errno == E2BIG);
+	errno = ENOSPC;
+	CHECK(logger_default_flush() == 0);
+	CHECK(errno == ENOSPC);
+	check_generation_binding(high | UINT64_C(9), generation + 1, 1, b);
+
+	errno = EDOM;
+	CHECK(logger_default_set(b, NULL) == 0);
+	CHECK(errno == EDOM);
+	check_generation_binding(high | UINT64_C(16), generation + 2, 0, NULL);
+	errno = EILSEQ;
+	CHECK(LOG_INFO("HIGH_GENERATION_UNBOUND") == -ENODEV);
+	CHECK(errno == EILSEQ);
+	check_generation_binding(high | UINT64_C(16), generation + 2, 0, NULL);
+	CHECK(file_contains("a.log", "HIGH_GENERATION_A"));
+	CHECK(!file_contains("a.log", "HIGH_GENERATION_B"));
+	CHECK(file_contains("b.log", "HIGH_GENERATION_B"));
+	CHECK(!file_contains("b.log", "HIGH_GENERATION_A"));
+	CHECK(!file_contains("a.log", "HIGH_GENERATION_UNBOUND"));
+	CHECK(!file_contains("b.log", "HIGH_GENERATION_UNBOUND"));
+}
+
+static void last_generation(void)
+{
+	const uint64_t maximum = UINT64_MAX >> 3;
+	const uint64_t idle = UINT64_MAX & ~UINT64_C(7);
+	const uint64_t running = idle - UINT64_C(8) + UINT64_C(1);
+	struct logger_runtime *runtime = logger_runtime_current();
+
+	check_generation_binding(UINT64_C(9), 1, 1, a);
+	atomic_store(&runtime->global_ticket, running);
+	check_generation_binding(running, maximum - 1, 1, a);
+	errno = EDOM;
+	CHECK(LOG_INFO("LAST_GENERATION_A") == 0);
+	CHECK(errno == EDOM);
+	check_generation_binding(running, maximum - 1, 1, a);
+
+	errno = ERANGE;
+	CHECK(logger_default_set(a, NULL) == 0);
+	CHECK(errno == ERANGE);
+	check_generation_binding(idle, maximum, 0, NULL);
+	errno = E2BIG;
+	CHECK(logger_default_set(NULL, NULL) == 0);
+	CHECK(errno == E2BIG);
+	check_generation_binding(idle, maximum, 0, NULL);
+	errno = ENOSPC;
+	CHECK(logger_default_set(NULL, b) == -EOVERFLOW);
+	CHECK(errno == ENOSPC);
+	check_generation_binding(idle, maximum, 0, NULL);
+	errno = EILSEQ;
+	CHECK(LOG_INFO("LAST_GENERATION_UNBOUND") == -ENODEV);
+	CHECK(errno == EILSEQ);
+	check_generation_binding(idle, maximum, 0, NULL);
+
+	/* 默认代次耗尽不影响宿主实例；保留最终票据，直接正常处置 owner。 */
+	errno = EDOM;
+	CHECK(LOGGER_INFO(a, "host", "LAST_GENERATION_OWNER_A") == 0);
+	CHECK(errno == EDOM);
+	errno = ERANGE;
+	CHECK(LOGGER_INFO(b, "host", "LAST_GENERATION_OWNER_B") == 0);
+	CHECK(errno == ERANGE);
+	check_generation_binding(idle, maximum, 0, NULL);
+	CHECK(file_contains("a.log", "LAST_GENERATION_A"));
+	CHECK(file_contains("a.log", "LAST_GENERATION_OWNER_A"));
+	CHECK(file_contains("b.log", "LAST_GENERATION_OWNER_B"));
+	CHECK(!file_contains("a.log", "LAST_GENERATION_UNBOUND"));
+	CHECK(!file_contains("b.log", "LAST_GENERATION_UNBOUND"));
+}
+
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
@@ -269,6 +378,10 @@ int main(int argc, char **argv)
 	    !strcmp(mode, "stale-control") || !strcmp(mode, "aba") ||
 	    !strcmp(mode, "cancel")) {
 		race_case(mode);
+	} else if (!strcmp(mode, "high-generation")) {
+		high_generation();
+	} else if (!strcmp(mode, "last-generation")) {
+		last_generation();
 	} else if (!strcmp(mode, "lifetime-unlock") ||
 		   !strcmp(mode, "control-unlock")) {
 		pthread_t thread;
@@ -312,11 +425,28 @@ int main(int argc, char **argv)
 		} else if (!strcmp(mode, "overflow")) {
 			uint64_t old = atomic_load(
 				&logger_runtime_current()->global_ticket);
+			uint64_t exhausted = (UINT64_MAX & ~UINT64_C(7)) |
+					     (old & UINT64_C(7));
+			check_generation_binding(old, old >> 3, 1, a);
 			atomic_store(&logger_runtime_current()->global_ticket,
-				     (UINT64_MAX & ~UINT64_C(7)) | (old & 7));
+				     exhausted);
+			check_generation_binding(exhausted, UINT64_MAX >> 3, 1,
+						 a);
+			errno = ERANGE;
 			CHECK(logger_default_set(a, b) == -EOVERFLOW);
+			CHECK(errno == ERANGE);
+			check_generation_binding(exhausted, UINT64_MAX >> 3, 1,
+						 a);
+			errno = E2BIG;
+			CHECK(LOG_INFO("OVERFLOW_RETAINS_A") == 0);
+			CHECK(errno == E2BIG);
+			check_generation_binding(exhausted, UINT64_MAX >> 3, 1,
+						 a);
+			CHECK(file_contains("a.log", "OVERFLOW_RETAINS_A"));
+			/* 旧场景保留恢复动作，继续验证普通替换与解绑清理。 */
 			atomic_store(&logger_runtime_current()->global_ticket,
 				     old);
+			check_generation_binding(old, old >> 3, 1, a);
 		} else {
 			CHECK(0);
 		}

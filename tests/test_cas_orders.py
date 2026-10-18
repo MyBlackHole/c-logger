@@ -50,9 +50,9 @@ class CasOrderTests(unittest.TestCase):
 
     def test_each_global_lifecycle_regression_is_rejected(self):
         calls = {
-            "close-admission": "&g_ticket, &current, updating,",
-            "publish-binding": "&g_ticket, &updating, next,",
-            "poison-binding": "&g_ticket, &ticket, with_phase(ticket, G_BROKEN),",
+            "close-admission": "&g_ticket, &current.value, updating.value,",
+            "publish-binding": "&g_ticket, &updating.value, next.value,",
+            "poison-binding": "&g_ticket, &ticket.value, with_phase(ticket, G_BROKEN).value,",
         }
         for name, args in calls.items():
             for layout in ("原始", "单行", "逐词换行"):
@@ -165,7 +165,8 @@ class CasOrderTests(unittest.TestCase):
             stream.write('\n/* atomic_compare_exchange_strong(&a, &e, 1); */\n'
                          '// atomic_compare_exchange_strong(&a, &e, 1);\n'
                          'const char *s = "atomic_compare_exchange_strong(&a, &e, 1)";\n')
-        self.replace(root, "&g_ticket, &current, updating,", "&g_ticket, /* review */ &current,\n updating,")
+        self.replace(root, "&g_ticket, &current.value, updating.value,",
+                     "&g_ticket, /* review */ &current.value,\n updating.value,")
         self.run_gate(root, 0)
 
     def test_nested_call_arguments(self):

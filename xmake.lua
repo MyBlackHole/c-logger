@@ -1926,7 +1926,8 @@ if has_config("build_tests") then
             end
             for _, mode in ipairs({"held-reader", "stale-reader", "stale-control", "aba", "cancel",
                                     "lifetime-unlock", "control-unlock", "control-error", "writer-error",
-                                    "read-error", "reentry", "restore-error", "stopped", "overflow"}) do
+                                    "read-error", "reentry", "restore-error", "stopped", "overflow",
+                                    "high-generation", "last-generation"}) do
                 add_tests(mode, {runargs = mode, group = "default-binding", timeout = 25})
             end
         target_end()
@@ -1949,9 +1950,28 @@ if has_config("build_regression_tests") then
         end
         for _, mode in ipairs({"held-reader", "stale-reader", "stale-control", "aba", "cancel",
                                 "lifetime-unlock", "control-unlock", "control-error", "writer-error",
-                                "read-error", "reentry", "restore-error", "stopped", "overflow"}) do
+                                "read-error", "reentry", "restore-error", "stopped", "overflow",
+                                "high-generation", "last-generation"}) do
             add_tests(mode, {runargs = mode, group = "default-binding", timeout = 25})
         end
+    target_end()
+
+    -- 直接编译默认绑定实现，约束完整票据和提取后的代次不能隐式互换。
+    target("global_ticket_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("default_binding_whitebox")
+        add_tests("ticket_generation_compile", {group = "default-binding", timeout = 60})
+        on_test(function (target, opt)
+            local cc = assert(target:dep("default_binding_whitebox"):tool("cc"))
+            local script = path.join(os.projectdir(), "tests", "scripts", "test_global_ticket_types.py")
+            local code, errors = os.execv("python3", {script, "-v"}, {
+                try = true,
+                envs = {LOGGER_TEST_CC = cc},
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
     target_end()
 end
 
