@@ -44,6 +44,22 @@ def owning_types(ast):
         elif node.get("kind") == "TypedefDecl":
             aliases[node["name"]] = value_type(node.get("type", {}))
 
+    # Clang不一定为匿名内嵌字段单独输出RecordType；其声明紧邻所属字段。
+    # 仅关联拥有定义的同一声明起点，不把指向匿名记录的指针变成拥有者。
+    for parent in nodes:
+        anonymous = {}
+        for child in parent.get("inner", []):
+            if child.get("kind") == "RecordDecl" and child.get("completeDefinition") \
+                    and not child.get("name"):
+                begin = child.get("range", {}).get("begin", {}).get("offset")
+                if begin is not None:
+                    anonymous[begin] = child["id"]
+            if child.get("kind") in ("FieldDecl", "VarDecl"):
+                name = value_type(child.get("type", {}))
+                begin = child.get("range", {}).get("begin", {}).get("offset")
+                if name and begin in anonymous and ("(anonymous" in name or "(unnamed" in name):
+                    names.setdefault(name, anonymous[begin])
+
     def record(info):
         name = value_type(info)
         visited = set()

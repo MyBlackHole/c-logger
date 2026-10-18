@@ -94,6 +94,19 @@ class OwnedCopies(unittest.TestCase):
                             v["function"] == "probe" and v["range"]
                             for v in rejected["violations"]))
 
+    def test_anonymous_embedded_owners_and_pointer_boundary(self):
+        for declaration in [
+            "union { struct logger_owned_fd fd; int n; };",
+            "struct { struct logger_owned_fd fd; } member;",
+        ]:
+            source = '#include "logger_fd.h"\nstruct wrap { %s };\n' % declaration
+            source += 'void probe(struct wrap *d, struct wrap *s) { *d = *s; }'
+            self.assertTrue(self.analyze(source, full=True)["violations"])
+        source = '#include "logger_fd.h"\n'
+        source += 'struct wrap { struct { struct logger_owned_fd fd; } *borrow; };\n'
+        source += 'void probe(struct wrap *d, struct wrap *s) { *d = *s; }'
+        self.assertEqual([], self.analyze(source, full=True)["violations"])
+
     def test_real_file_handoff_mutants(self):
         source = (ROOT / "src/logger_file.c").read_text()
         self.assertEqual([], self.analyze(source, full=True)["violations"])
