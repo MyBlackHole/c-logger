@@ -54,6 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           mkdir -p evidence
           git rev-parse HEAD > evidence/source-commit.txt
           git rev-parse HEAD^{tree} > evidence/source-tree.txt
