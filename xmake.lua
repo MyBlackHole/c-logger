@@ -1158,6 +1158,24 @@ if has_config("build_regression_tests") then
         end)
     target_end()
 
+    -- 同样由实际回归目标提供编译器，验证单调时刻与时长不能隐式互换。
+    target("syslog_time_type_contract")
+        set_kind("phony")
+        set_default(false)
+        add_deps("syslog_fault_regression")
+        add_tests("monotonic_duration_compile", {group = "syslog-time", timeout = 60})
+        on_test(function (target, opt)
+            local cc = assert(target:dep("syslog_fault_regression"):tool("cc"))
+            local script = path.join(os.projectdir(), "tests", "scripts", "test_syslog_time_types.py")
+            local code, errors = os.execv("python3", {script, "-v"}, {
+                try = true,
+                envs = {LOGGER_TEST_CC = cc},
+                timeout = opt.run_timeout or 60000
+            })
+            return code == 0, errors
+        end)
+    target_end()
+
     target("fd_ownership_regression")
         for _, scenario in ipairs({"close", "take", "cleanup-error",
             "close-eintr-reuse", "close-eio-reuse", "directory-success",
@@ -1580,17 +1598,23 @@ if has_config("build_regression_tests") then
         target_end()
     end
 
+    local syslog_time_scenarios = {
+        "clock-init", "deferred-cooldown", "backwards-clock", "clock-disconnect",
+        "clock-negative-seconds", "clock-negative-nanoseconds",
+        "clock-large-nanoseconds", "clock-max-milliseconds",
+        "clock-millisecond-overflow", "clock-limit-cooldown",
+        "clock-wide-elapsed", "clock-fractional-cooldown"
+    }
     target("syslog_fault_regression")
         for _, scenario in ipairs({
             "socket-emfile", "socket-enfile", "socket-enomem", "socket-eintr",
             "connect-eacces", "connect-eperm", "connect-enoent",
             "connect-refused", "connect-inprogress", "connect-eintr",
             "connect-again", "connect-prototype", "deferred-permission",
-            "deferred-cooldown", "backwards-clock", "clock-init",
             "send-again", "send-nobufs", "send-enomem", "send-msgsize",
             "send-eintr", "send-pipe", "send-reset", "send-notconn",
             "send-refused", "send-io", "eintr-then-success", "zero-send",
-            "short-send", "clock-disconnect", "close-disconnect",
+            "short-send", "close-disconnect",
             "candidate-fd-zero", "candidate-eintr-reuse", "candidate-eio-reuse",
             "retire-status-eintr", "retire-status-eio",
             "retire-destroy-eintr", "retire-destroy-eio",
@@ -1599,9 +1623,13 @@ if has_config("build_regression_tests") then
             add_tests("syslog_fault_" .. scenario,
                       {runargs = scenario, timeout = 15})
         end
+        for _, scenario in ipairs(syslog_time_scenarios) do
+            add_tests("syslog_fault_" .. scenario,
+                      {runargs = scenario, group = "syslog-time", timeout = 15})
+        end
     target_end()
 
-    -- 候选和长期退役所有权场景均链接生产静态归档，不只依赖回归支持库。
+    -- 所有权与时间边界复用同一驱动，并分别链接真实生产静态归档验收。
     if not has_config("build_shared") then
         target("syslog_candidate_production")
             set_kind("binary")
@@ -1620,6 +1648,9 @@ if has_config("build_regression_tests") then
                 "retire-destroy-eintr", "retire-destroy-eio"
             }) do
                 add_tests(scenario, {runargs = scenario, group = "fd-ownership", timeout = 15})
+            end
+            for _, scenario in ipairs(syslog_time_scenarios) do
+                add_tests(scenario, {runargs = scenario, group = "syslog-time", timeout = 15})
             end
         target_end()
     end

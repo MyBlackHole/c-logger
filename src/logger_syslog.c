@@ -33,7 +33,7 @@ static int fail(int error)
 	return -1;
 }
 
-static int monotonic_ms(uint64_t *out)
+static int monotonic_ms(struct logger_monotonic_ms *out)
 {
 	struct timespec ts;
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
@@ -43,7 +43,7 @@ static int monotonic_ms(uint64_t *out)
 	uint64_t sub = (uint64_t)ts.tv_nsec / 1000000u;
 	if ((uint64_t)ts.tv_sec > (UINT64_MAX - sub) / 1000u)
 		return fail(EOVERFLOW);
-	*out = (uint64_t)ts.tv_sec * 1000u + sub;
+	out->value = (uint64_t)ts.tv_sec * 1000u + sub;
 	return 0;
 }
 
@@ -181,9 +181,11 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	    config->reconnect_interval_ms > 60000u)
 		return fail(EINVAL);
 	s->facility = config->facility;
-	s->reconnect_interval_ms = config->reconnect_interval_ms ?
-					   config->reconnect_interval_ms :
-					   1000u;
+	s->reconnect_interval_ms = (struct logger_duration_ms){
+		.value = config->reconnect_interval_ms ?
+				 config->reconnect_interval_ms :
+				 1000u,
+	};
 	if (!ident || !*ident)
 		ident = "app";
 	size_t n = strnlen(ident, sizeof(s->ident));
@@ -261,17 +263,19 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 	size_t size = (size_t)prefix + n;
 
 	if (!logger_fd_valid(&s->fd)) {
-		uint64_t now;
+		struct logger_monotonic_ms now;
 		if (monotonic_ms(&now) != 0)
 			return record_failure(s, errno);
-		if (s->retry_clock_pending || now < s->retry_from_ms) {
+		if (s->retry_clock_pending ||
+		    logger_monotonic_ms_before(now, s->retry_from_ms)) {
 			/* 断开连接时发生时钟失败，或读数异常倒退：
 			 * 重新设置冷却期，避免引发重连风暴。
 			 */
 			s->retry_from_ms = now;
 			s->retry_clock_pending = 0;
 		}
-		if (now - s->retry_from_ms < s->reconnect_interval_ms) {
+		if (!logger_monotonic_ms_elapsed(now, s->retry_from_ms,
+						 s->reconnect_interval_ms)) {
 			++s->metrics.cooldown_records;
 			return record_failure(s, s->connection_error ?
 							 s->connection_error :
