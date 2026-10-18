@@ -48,7 +48,8 @@ run_case() {
 }
 for scenario in held-reader stale-reader stale-control aba cancel control-error \
                 writer-error read-error lifetime-unlock control-unlock \
-                restore-error reentry stopped overflow; do
+                restore-error reentry stopped overflow high-generation \
+                last-generation; do
     run_case "$scenario" "$build/default-borrow-production" "$scenario"
 done
 for scenario in contract closed-gate; do

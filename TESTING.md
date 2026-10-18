@@ -367,7 +367,7 @@ bash tests/regression/run_default_borrow.sh sanitizer-build address,undefined
 bash tests/regression/run_default_borrow.sh sanitizer-build thread
 ```
 
-专项以真实生产静态库验证14个借用故障/并发场景、十类入口的代次隔离、空绑定
+专项以真实生产静态库验证16个借用故障/并发/边界场景、十类入口的代次隔离、空绑定
 合同及关门后不再增加读者。新 `default_publish_whitebox/publish-poison` 精确触发
 最终 CAS 前的真实读者解锁错误；它使用 LOCKDEP=1 断言钩子，不冒称生产归档的
 精确暂停。写锁失败与毒化交接则在真实生产归档和支持归档分别执行。
@@ -637,3 +637,19 @@ GNU `%m` 场景在前置成功操作主动改变errno之后核对真实输出。
 新类型只约束构造计算链，队列字段和并发协议保持原状；原有 MPSC、回绕、
 顺序模型和构造回滚测试独立保留。完整范围见
 [队列容量类型合同](docs/v2/QUEUE_SIZE_TYPES.md)。
+
+## 默认绑定的完整票据与代次
+
+开启 `build_tests=y` 和 `build_regression_tests=y` 后，
+`xmake test -g default-binding -j1` 在静态配置下执行 42 项，在共享配置下
+执行 25 项。新增最高位代次与最后一次合法增长场景，分别链接真实生产
+静态归档和回归支持归档；原耗尽场景增强失败不变断言。共享公开场景
+真实使用 DSO，支持归档的链接包装不冒称拦截 DSO 内部。
+
+编译契约从实际 Xmake 目标取得编译器，针对真实 `logger_global.c` 验证
+完整票据和提取后的代次不能隐式互传，且错误诊断必须命中准确变异行。
+显式 `.value` 与原始原子接口的逃逸正例独立保留。生产静态归档专项
+`bash tests/regression/run_default_borrow.sh <build-dir>` 增至 28 项，
+保留原有默认入口代次、延迟读者／控制者、ABA 和取消验证。
+完整类型范围、数值边界及耗尽后行为见
+[默认票据类型合同](docs/v2/GLOBAL_TICKET_TYPES.md)。

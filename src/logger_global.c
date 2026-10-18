@@ -24,6 +24,17 @@
 #define g_logger (logger_runtime_current()->global_logger)
 
 enum global_phase { G_IDLE, G_RUNNING, G_STOPPING, G_BROKEN };
+/* 票据含有阶段位，代次不含阶段；原子存储仍为 uint64_t。
+ * 显式 .value 保留打包边界，CAS 失败直接写回完整票据的字段。
+ */
+struct global_ticket {
+	uint64_t value;
+};
+
+struct global_generation {
+	uint64_t value;
+};
+
 #define PHASE_BITS 3u
 #define PHASE_MASK UINT64_C(7)
 /* generation 与 phase 放在同一个原子票据中。
@@ -48,19 +59,21 @@ typedef struct {
 	logger_t *release_borrow; /* 所有解锁已确认后，才撤销旧实例的借用标记 */
 } global_scope_t;
 
-static enum global_phase phase_of(uint64_t ticket)
+static enum global_phase phase_of(struct global_ticket ticket)
 {
-	return (enum global_phase)(ticket & PHASE_MASK);
+	return (enum global_phase)(ticket.value & PHASE_MASK);
 }
 
-static uint64_t generation_of(uint64_t ticket)
+static struct global_generation generation_of(struct global_ticket ticket)
 {
-	return ticket >> PHASE_BITS;
+	return (struct global_generation){ ticket.value >> PHASE_BITS };
 }
 
-static uint64_t with_phase(uint64_t ticket, enum global_phase phase)
+static struct global_ticket with_phase(struct global_ticket ticket,
+				       enum global_phase phase)
 {
-	return (ticket & ~PHASE_MASK) | (uint64_t)phase;
+	return (struct global_ticket){ (ticket.value & ~PHASE_MASK) |
+				       (uint64_t)phase };
 }
 
 static int global_lock_error(void)
@@ -79,19 +92,22 @@ static void global_lock_poison(int error)
 	(void)atomic_compare_exchange_strong_explicit(
 		&g_lock_error, &expected, error,
 		memory_order_release, memory_order_relaxed);
-	uint64_t ticket = atomic_load_explicit(&g_ticket, memory_order_acquire);
+	struct global_ticket ticket = { atomic_load_explicit(
+		&g_ticket, memory_order_acquire) };
 	while (phase_of(ticket) != G_BROKEN &&
 	       !atomic_compare_exchange_weak_explicit(
-		       &g_ticket, &ticket, with_phase(ticket, G_BROKEN),
-		       memory_order_acq_rel, memory_order_acquire)) {
+		       &g_ticket, &ticket.value,
+		       with_phase(ticket, G_BROKEN).value, memory_order_acq_rel,
+		       memory_order_acquire)) {
 	}
 }
 
 /* 绑定回滚绝不能撤销另一线程的证明失败。 */
-static void rollback_ticket(uint64_t ticket, enum global_phase phase)
+static void rollback_ticket(struct global_ticket ticket,
+			    enum global_phase phase)
 {
 	(void)atomic_compare_exchange_strong_explicit(
-		&g_ticket, &ticket, with_phase(ticket, phase),
+		&g_ticket, &ticket.value, with_phase(ticket, phase).value,
 		memory_order_release, memory_order_relaxed);
 }
 
@@ -182,7 +198,7 @@ static int lock_control(global_scope_t *scope)
 	return -rc;
 }
 
-static int phase_error(uint64_t ticket)
+static int phase_error(struct global_ticket ticket)
 {
 	switch (phase_of(ticket)) {
 	case G_IDLE:
@@ -200,7 +216,8 @@ static int phase_error(uint64_t ticket)
 
 static int pin(global_scope_t *scope)
 {
-	uint64_t ticket = atomic_load_explicit(&g_ticket, memory_order_acquire);
+	struct global_ticket ticket = { atomic_load_explicit(
+		&g_ticket, memory_order_acquire) };
 	int error = phase_error(ticket);
 	if (error)
 		return -error;
@@ -215,7 +232,8 @@ static int pin(global_scope_t *scope)
 	int poison = global_lock_error();
 	if (poison)
 		return -poison;
-	if (ticket != atomic_load_explicit(&g_ticket, memory_order_acquire))
+	if (ticket.value !=
+	    atomic_load_explicit(&g_ticket, memory_order_acquire))
 		return -ESHUTDOWN;
 	if (phase_of(ticket) == G_RUNNING && !g_logger)
 		return -EIO; /* 内部不变量破坏，不能对空指针取得借用 */
@@ -235,8 +253,8 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 	/* 控制请求也固定进入时的票据，排队后不能改变新一代绑定。
 	 * 同一实例经历解绑、重绑形成的指针 ABA 不会绕过代次复核。
 	 */
-	uint64_t observed =
-		atomic_load_explicit(&g_ticket, memory_order_acquire);
+	struct global_ticket observed = { atomic_load_explicit(
+		&g_ticket, memory_order_acquire) };
 	if (phase_of(observed) == G_STOPPING) {
 		rc = -EAGAIN;
 		goto done;
@@ -244,9 +262,9 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 	rc = lock_control(&scope);
 	if (rc)
 		goto done;
-	uint64_t current =
-		atomic_load_explicit(&g_ticket, memory_order_acquire);
-	if (current != observed || g_logger != expected) {
+	struct global_ticket current = { atomic_load_explicit(
+		&g_ticket, memory_order_acquire) };
+	if (current.value != observed.value || g_logger != expected) {
 		rc = -ESTALE;
 		goto done;
 	}
@@ -265,14 +283,15 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 		rc = -EBUSY;
 		goto done;
 	}
-	if (generation_of(current) == (UINT64_MAX >> PHASE_BITS)) {
+	struct global_generation generation = generation_of(current);
+	if (generation.value == (UINT64_MAX >> PHASE_BITS)) {
 		rc = -EOVERFLOW;
 		goto done;
 	}
-	uint64_t updating = with_phase(current, G_STOPPING);
+	struct global_ticket updating = with_phase(current, G_STOPPING);
 	if (!atomic_compare_exchange_strong_explicit(
-		    &g_ticket, &current, updating, memory_order_acq_rel,
-		    memory_order_acquire)) {
+		    &g_ticket, &current.value, updating.value,
+		    memory_order_acq_rel, memory_order_acquire)) {
 		rc = -(global_lock_error() ? global_lock_error() : EIO);
 		goto done;
 	}
@@ -293,11 +312,11 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 		atomic_store_explicit(&replacement->default_borrowed, 1,
 				      memory_order_release);
 	g_logger = replacement;
-	uint64_t next = ((generation_of(current) + 1u) << PHASE_BITS) |
-			(replacement ? G_RUNNING : G_IDLE);
-	if (!atomic_compare_exchange_strong_explicit(&g_ticket, &updating, next,
-						     memory_order_acq_rel,
-						     memory_order_acquire)) {
+	struct global_ticket next = { ((generation.value + 1u) << PHASE_BITS) |
+				      (replacement ? G_RUNNING : G_IDLE) };
+	if (!atomic_compare_exchange_strong_explicit(
+		    &g_ticket, &updating.value, next.value,
+		    memory_order_acq_rel, memory_order_acquire)) {
 		/* 发布前被延迟读者毒化。无人获准使用 replacement，恢复旧槽；
 		 * 只有后续解锁全部确认才归还 replacement 的临时借用。
 		 */

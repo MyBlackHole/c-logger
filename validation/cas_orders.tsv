@@ -14,7 +14,7 @@ src/logger_queue.c	weak	&q->enqueue_pos	pos+1	relaxed	relaxed	1	只预留唯一�
 src/logger_worker.c	strong	&l->lifecycle_error	wait_rc	release	relaxed	1	发布 worker 等待失败；失败时的期望值不再使用。
 src/logger_process.c	strong	&process_ticket	PROCESS_STARTING	acq_rel	acquire	1	显式取得唯一初始化者；成功注册前不发布 READY，错误票据允许显式重试。
 src/logger_global.c	strong	&g_lock_error	error	release	relaxed	1	先发布默认绑定锁错误再关闭票据，不取得实例所有权。
-src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN)	acq_rel	acquire	1	失败关闭保留并发控制方的最新代次，禁止后继默认借用。
-src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase)	release	relaxed	1	只回滚当前控制方未成功取得写锁的更新，不撤销并发毒化。
-src/logger_global.c	strong	&g_ticket	updating	acq_rel	acquire	1	等待读者前先关闭本代准入，失败时检查并发错误。
-src/logger_global.c	strong	&g_ticket	next	acq_rel	acquire	1	完整新绑定和借用标记就绪后发布下一代，不能覆盖读者的延迟失败。
+src/logger_global.c	weak	&g_ticket	with_phase(ticket,G_BROKEN).value	acq_rel	acquire	1	失败关闭保留并发控制方的最新代次，禁止后继默认借用。
+src/logger_global.c	strong	&g_ticket	with_phase(ticket,phase).value	release	relaxed	1	只回滚当前控制方未成功取得写锁的更新，不撤销并发毒化。
+src/logger_global.c	strong	&g_ticket	updating.value	acq_rel	acquire	1	等待读者前先关闭本代准入，失败时检查并发错误。
+src/logger_global.c	strong	&g_ticket	next.value	acq_rel	acquire	1	完整新绑定和借用标记就绪后发布下一代，不能覆盖读者的延迟失败。
