@@ -41,8 +41,24 @@ def sha256(path):
 
 
 def compress(source, target):
-    with open(source, "rb") as src, gzip.open(target, "wb", compresslevel=1) as dst:
-        shutil.copyfileobj(src, dst, 1024 * 1024)
+    partial = target.with_name(target.name + ".partial")
+    with open(source, "rb") as src, open(partial, "wb") as archive:
+        with gzip.GzipFile(filename=target.name, mode="wb", fileobj=archive, compresslevel=1) as dst:
+            shutil.copyfileobj(src, dst, 1024 * 1024)
+    # 包括 gzip 尾部关闭在内均成功，才以完整归档的名字发布。
+    os.replace(partial, target)
+
+
+def check_evidence_budget(output):
+    used = sum(p.stat().st_size for p in output.rglob("*") if p.is_file())
+    if used <= MAX_BYTES:
+        return None
+    failure = {"verification_valid": False, "error": "evidence_budget_exceeded",
+               "observed_bytes": used, "limit_bytes": MAX_BYTES}
+    # 先输出回执；磁盘已满时，控制台仍有失败原因。
+    print(json.dumps(failure), file=sys.stderr, flush=True)
+    (output / "failure.json").write_text(json.dumps(failure, indent=2) + "\n")
+    return failure
 
 
 def read_raw(path):
@@ -165,8 +181,10 @@ def child_limits():
 def run_sample(binary, output, case, timeout, temp_root):
     output.mkdir()
     start = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with tempfile.TemporaryDirectory(prefix="logger-fixed-rate-", dir=temp_root) as temp:
-        temp = Path(temp)
+    temp = Path(tempfile.mkdtemp(prefix="logger-fixed-rate-", dir=temp_root)).resolve()
+    cleanup_temp = False
+    result = {}
+    try:
         path = temp / "output.log" if case["backend"] == "file" else Path("/dev/null")
         raw = temp / "latency.bin"
         args = [str(binary), str(case["threads"]), str(case["rate"]),
@@ -244,11 +262,27 @@ def run_sample(binary, output, case, timeout, temp_root):
             result["verification_valid"] = True
         except (ValueError, OSError, EOFError, KeyError, TypeError, IndexError) as exc:
             result["verification_error"] = str(exc)
-        # 成功与失败均保留已生成的原始证据；只删除本 runner 自建临时目录。
+        # 归档失败时保留原件；不能因退出临时目录的上下文而删除唯一完整副本。
         for source, name in ((raw, "latency.bin.gz"), (path, "output.log.gz")):
             if source != Path("/dev/null") and source.exists():
-                compress(source, output / name)
-    (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+                try:
+                    compress(source, output / name)
+                except OSError as exc:
+                    result["verification_valid"] = False
+                    result["archive_error"] = {"artifact": name, "errno": exc.errno,
+                                               "message": str(exc)}
+                    result["retained_temp_dir"] = str(temp)
+                    break
+        (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        cleanup_temp = "archive_error" not in result
+    finally:
+        if cleanup_temp or not any(temp.iterdir()):
+            shutil.rmtree(temp)
+        else:
+            # 回执本身写失败或归档中断时，也必须能定位尚未删除的原件。
+            receipt = dict(result, error="sample_evidence_retained",
+                           verification_valid=False, retained_temp_dir=str(temp))
+            print(json.dumps(receipt), file=sys.stderr, flush=True)
     return result
 
 
@@ -324,16 +358,22 @@ def main():
                 raise ValueError("resolved_library_mismatch")
     shutil.copyfile(build_log, args.out / "build.log")
     (args.out / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    if check_evidence_budget(args.out):
+        return 1
     results = []
     for index, case in enumerate(cases):
-        # 压缩后的证据总量也封顶；达上限时保留已完成结果，失败退出。
-        if sum(p.stat().st_size for p in args.out.rglob("*") if p.is_file()) > MAX_BYTES:
-            raise RuntimeError("evidence_budget_exceeded")
-        result = run_sample(binary, args.out / f"sample-{index:03}", case,
-                            args.timeout, args.temp_root)
+        output = args.out / f"sample-{index:03}"
+        result = run_sample(binary, output, case, args.timeout, args.temp_root)
         results.append(result)
         with (args.out / "results.jsonl").open("a") as stream:
             stream.write(json.dumps(result) + "\n")
+        # 包含本轮归档及两份回执；最后一个样本也必须接受总预算判定。
+        if check_evidence_budget(args.out):
+            result["verification_valid"] = False
+            result["evidence_error"] = "evidence_budget_exceeded"
+            (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+            (args.out / "results.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in results))
         print(json.dumps({"sample": index, "case": case,
                           "verification_valid": result["verification_valid"]}), flush=True)
         if not result["verification_valid"]:
