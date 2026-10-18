@@ -190,6 +190,38 @@ jobs:
           print("原始采样与每种链接形态32个样本已逐项校验；无业务SLO通过声明。")
           PY
 
+      - name: 定位本次归档失败时保留的原件
+        if: always()
+        id: retained
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import tempfile
+          log = Path(os.environ["EVIDENCE_DIR"]) / "runner.log"
+          paths = set()
+          for line in log.read_text().splitlines() if log.exists() else []:
+              try:
+                  row = json.loads(line)
+              except ValueError:
+                  continue
+              if not isinstance(row, dict) or row.get("error") != "sample_evidence_retained":
+                  continue
+              path = Path(row["retained_temp_dir"])
+              if (not path.is_absolute() or path.parent != Path(tempfile.gettempdir()).resolve()
+                      or not path.name.startswith("logger-fixed-rate-") or not path.is_dir()):
+                  raise SystemExit("invalid_retained_evidence_directory")
+              paths.add(str(path))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+              print("paths<<FIXED_RATE_RAW_PATHS", file=stream)
+              for path in sorted(paths):
+                  print(path, file=stream)
+              print("FIXED_RATE_RAW_PATHS", file=stream)
+          PY
+
       - name: 上传成功或失败时的原始证据
         if: always()
         uses: actions/upload-artifact@v4
@@ -197,4 +229,13 @@ jobs:
           name: release-fixed-rate-${{ matrix.kind }}
           path: release-fixed-rate-evidence/
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: 上传尚未完整归档的原件
+        if: ${{ always() && steps.retained.outputs.paths != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-fixed-rate-${{ matrix.kind }}-unarchived
+          path: ${{ steps.retained.outputs.paths }}
+          if-no-files-found: error
           retention-days: 30

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """固定速率验收器必须拒绝伪造计数、分位和缺失/重复/损坏输出。"""
 import array
+import contextlib
 import copy
 import errno
+import gzip
+import io
 import json
 import os
 import shlex
@@ -145,36 +148,155 @@ class Verification(unittest.TestCase):
     def test_invalid_child_receipts_are_preserved(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            owned = root / "temporary"
+            owned.mkdir()
             for variant in ("healthy", "diagnostic", "close-error", "api-error", "bad-json"):
-                row = dict(copy.deepcopy(self.row), valid=True)
-                arrays = copy.deepcopy(self.phases[1])
-                close = {"close_rc": 0, "close_errno": 0}
-                diagnostic = "runtime error: synthetic\n" if variant == "diagnostic" else ""
-                if variant == "close-error":
-                    close = {"close_rc": -errno.EIO, "close_errno": errno.EIO}
-                if variant == "api-error":
-                    arrays[2][1] = -errno.EIO
-                    row.update(api_eagain=0, api_other_errors=1)
-                rows = [{"clock_pair_ns": {"p50": 1, "p99": 2}}, row, close]
-                if variant == "bad-json":
-                    rows[0] = []
-                raw = bench.RAW_MAGIC + array.array("Q", [1, 3]).tobytes()
-                raw += b"".join(a.tobytes() for a in arrays)
-                output = "".join(json.dumps(value) + "\n" for value in rows)
-                script = ("#!/usr/bin/env python3\nimport pathlib,sys\n"
-                          f"pathlib.Path(sys.argv[7]).write_bytes(bytes.fromhex({raw.hex()!r}))\n"
-                          "pathlib.Path(sys.argv[6]).write_bytes(b'prefix FR phase=1 seq=0 payload=xxx\\n')\n"
-                          f"sys.stdout.write({output!r})\nsys.stderr.write({diagnostic!r})\n")
-                binary = root / "fixture"
-                binary.write_text(script)
-                binary.chmod(0o755)
-                case = {"threads": 1, "rate": 3, "seconds": 1, "warmup": 0,
-                        "payload_bytes": 3, "backend": "file", "repeat": 0}
-                result = bench.run_sample(binary, root / variant, case, 2, None)
+                binary, case, originals = self.write_child_fixture(root, variant)
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    result = bench.run_sample(binary, root / variant, case, 2, owned)
                 with self.subTest(variant=variant):
                     self.assertEqual(result["verification_valid"], variant == "healthy", result)
-                    self.assertTrue((root / variant / "latency.bin.gz").exists())
-                    self.assertTrue((root / variant / "output.log.gz").exists())
+                    for name, contents in originals.items():
+                        archive = root / variant / (name + ".gz")
+                        self.assertEqual(gzip.decompress(archive.read_bytes()), contents)
+                        self.assertFalse(archive.with_name(archive.name + ".partial").exists())
+                    self.assertEqual(list(owned.iterdir()), [])
+                    self.assertEqual(stderr.getvalue(), "")
+
+    def write_child_fixture(self, root, variant="healthy"):
+        row = dict(copy.deepcopy(self.row), valid=True)
+        arrays = copy.deepcopy(self.phases[1])
+        close = {"close_rc": 0, "close_errno": 0}
+        diagnostic = "runtime error: synthetic\n" if variant == "diagnostic" else ""
+        if variant == "close-error":
+            close = {"close_rc": -errno.EIO, "close_errno": errno.EIO}
+        if variant == "api-error":
+            arrays[2][1] = -errno.EIO
+            row.update(api_eagain=0, api_other_errors=1)
+        rows = [{"clock_pair_ns": {"p50": 1, "p99": 2}}, row, close]
+        if variant == "bad-json":
+            rows[0] = []
+        raw = bench.RAW_MAGIC + array.array("Q", [1, 3]).tobytes()
+        raw += b"".join(a.tobytes() for a in arrays)
+        log = b"prefix FR phase=1 seq=0 payload=xxx\n"
+        output = "".join(json.dumps(value) + "\n" for value in rows)
+        script = ("#!/usr/bin/env python3\nimport pathlib,sys\n"
+                  f"pathlib.Path(sys.argv[7]).write_bytes(bytes.fromhex({raw.hex()!r}))\n"
+                  f"pathlib.Path(sys.argv[6]).write_bytes({log!r})\n"
+                  f"sys.stdout.write({output!r})\nsys.stderr.write({diagnostic!r})\n")
+        binary = root / "fixture"
+        binary.write_text(script)
+        binary.chmod(0o755)
+        case = {"threads": 1, "rate": 3, "seconds": 1, "warmup": 0,
+                "payload_bytes": 3, "backend": "file", "repeat": 0}
+        return binary, case, {"latency.bin": raw, "output.log": log}
+
+    def test_archive_failures_preserve_complete_originals(self):
+        cases = (("latency.bin", "write", "healthy"),
+                 ("output.log", "write", "healthy"),
+                 ("output.log", "write", "diagnostic"),
+                 ("latency.bin", "close", "healthy"))
+        for source_name, stage, variant in cases:
+            with self.subTest(source=source_name, stage=stage, variant=variant), \
+                    tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                binary, case, originals = self.write_child_fixture(root, variant)
+                output, owned = root / "result", root / "temporary"
+                owned.mkdir()
+                artifact = source_name + ".gz"
+                real_copy, real_close = bench.shutil.copyfileobj, bench.gzip.GzipFile.close
+
+                def fail_copy(src, dst, *args):
+                    if stage == "write" and Path(src.name).name == source_name:
+                        dst.write(src.read(7))
+                        raise OSError(errno.ENOSPC, "controlled_archive_write")
+                    return real_copy(src, dst, *args)
+
+                def fail_close(dst):
+                    fail = (stage == "close" and dst.fileobj is not None and
+                            Path(dst.name).name in (artifact, artifact + ".partial"))
+                    real_close(dst)
+                    if fail:
+                        raise OSError(errno.ENOSPC, "controlled_archive_close")
+
+                stderr = io.StringIO()
+                with mock.patch.object(bench.shutil, "copyfileobj", fail_copy), \
+                        mock.patch.object(bench.gzip.GzipFile, "close", fail_close), \
+                        contextlib.redirect_stderr(stderr):
+                    result = bench.run_sample(binary, output, case, 2, owned)
+                self.assertFalse(result["verification_valid"])
+                self.assertEqual(result["archive_error"]["artifact"], artifact)
+                self.assertEqual(result["archive_error"]["errno"], errno.ENOSPC)
+                self.assertIn("controlled_archive_" + stage, result["archive_error"]["message"])
+                if variant == "diagnostic":
+                    self.assertEqual(result["verification_error"], "child_run_invalid")
+                else:
+                    self.assertNotIn("verification_error", result)
+                retained = Path(result["retained_temp_dir"])
+                self.assertTrue(retained.is_absolute())
+                self.assertEqual(retained.parent, owned.resolve())
+                self.assertEqual(list(owned.iterdir()), [retained])
+                for name, contents in originals.items():
+                    self.assertEqual((retained / name).read_bytes(), contents)
+                self.assertFalse((output / artifact).exists())
+                self.assertTrue((output / (artifact + ".partial")).is_file())
+                if source_name == "output.log":
+                    self.assertEqual(gzip.decompress((output / "latency.bin.gz").read_bytes()),
+                                     originals["latency.bin"])
+                self.assertEqual(json.loads((output / "result.json").read_text()),
+                                 json.loads(json.dumps(result)))
+                receipts = [json.loads(line) for line in stderr.getvalue().splitlines()]
+                self.assertTrue(any(row.get("retained_temp_dir") == str(retained) for row in receipts))
+
+    def test_result_write_failure_reports_and_preserves_originals(self):
+        for variant in ("healthy", "diagnostic"):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                binary, case, originals = self.write_child_fixture(root, variant)
+                output, owned = root / "result", root / "temporary"
+                owned.mkdir()
+                real_write, real_compress = Path.write_text, bench.compress
+
+                def fail_result(path, *args, **kwargs):
+                    if path == output / "result.json":
+                        raise OSError(errno.ENOSPC, "controlled_result_write")
+                    return real_write(path, *args, **kwargs)
+
+                def archive(src, target):
+                    if variant == "diagnostic":
+                        raise OSError(errno.ENOSPC, "controlled_archive_write")
+                    return real_compress(src, target)
+
+                stderr = io.StringIO()
+                with mock.patch.object(Path, "write_text", fail_result), \
+                        mock.patch.object(bench, "compress", archive), \
+                        contextlib.redirect_stderr(stderr), self.assertRaises(OSError) as raised:
+                    bench.run_sample(binary, output, case, 2, owned)
+                self.assertEqual(raised.exception.errno, errno.ENOSPC)
+                receipts = [json.loads(line) for line in stderr.getvalue().splitlines()]
+                retained_rows = [row for row in receipts if "retained_temp_dir" in row]
+                self.assertEqual(len(retained_rows), 1)
+                receipt = retained_rows[0]
+                self.assertFalse(receipt["verification_valid"])
+                self.assertEqual(receipt["case"], case)
+                self.assertEqual(receipt["returncode"], 0)
+                if variant == "diagnostic":
+                    self.assertEqual(receipt["verification_error"], "child_run_invalid")
+                    self.assertEqual(receipt["archive_error"]["artifact"], "latency.bin.gz")
+                    self.assertEqual(receipt["archive_error"]["errno"], errno.ENOSPC)
+                    self.assertIn("controlled_archive_write", receipt["archive_error"]["message"])
+                retained = Path(receipt["retained_temp_dir"])
+                self.assertTrue(retained.is_absolute())
+                self.assertEqual(retained.parent, owned.resolve())
+                self.assertEqual(list(owned.iterdir()), [retained])
+                for name, contents in originals.items():
+                    self.assertEqual((retained / name).read_bytes(), contents)
+                    if variant == "healthy":
+                        self.assertEqual(gzip.decompress((output / (name + ".gz")).read_bytes()), contents)
+                self.assertFalse((output / "result.json").exists())
+                self.assertTrue((output / "stdout.jsonl").is_file())
+                self.assertTrue((output / "stderr.log").is_file())
 
     def test_timeout_cleans_own_directory(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -216,6 +338,109 @@ class Verification(unittest.TestCase):
             self.assertEqual(list(owned.iterdir()), [])
             with self.assertRaises(ProcessLookupError):
                 bench.os.kill(calls[0], 0)
+
+
+class EvidenceBudget(unittest.TestCase):
+    def run_case(self, placement, repeats=1):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root, limit = Path(temporary.name), 16384
+        binary, library, build_log = [root / name for name in ("binary", "library", "build.log")]
+        for path in (binary, library, build_log):
+            path.write_bytes(b"fixture\n")
+        if placement == "metadata":
+            build_log.write_bytes(b"x" * limit)
+        output, completed = root / "evidence", []
+        real_read = Path.read_text
+
+        def small_environment(path, *args, **kwargs):
+            if str(path) in ("/proc/cpuinfo", "/proc/mounts"):
+                return "controlled_environment\n"
+            return real_read(path, *args, **kwargs)
+
+        def directory_bytes():
+            return sum(path.stat().st_size for path in output.rglob("*") if path.is_file())
+
+        def sample(binary, sample_out, case, timeout, temp_root):
+            # 只构造证据目录边界；不以缩小子进程 RLIMIT 来制造失败样本。
+            sample_out.mkdir()
+            result = {"case": case, "verification_valid": True}
+            (sample_out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+            line_bytes = len((json.dumps(result) + "\n").encode())
+            target = limit + (1 if placement == "sample" else 0)
+            if placement == "exact":
+                target -= line_bytes
+            padding = target - directory_bytes()
+            self.assertGreater(padding, 0)
+            (sample_out / "controlled.bin").write_bytes(b"x" * padding)
+            completed.append({"before_summary": directory_bytes(), "summary_bytes": line_bytes})
+            return result
+
+        argv = ["benchmark_fixed_rate.py", "--binary", str(binary), "--library", str(library),
+                "--build-log", str(build_log), "--out", str(output), "--threads", "1",
+                "--rates", "1", "--payload-bytes", "1", "--backends", "null",
+                "--seconds", "1", "--warmup", "0", "--repeats", str(repeats)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(bench, "MAX_BYTES", limit), mock.patch.object(bench, "ROOT", root), \
+                mock.patch.object(bench, "command", return_value={"returncode": 0, "stdout": "", "stderr": ""}), \
+                mock.patch.object(bench, "run_sample", side_effect=sample) as runner, \
+                mock.patch.object(Path, "read_text", small_environment), \
+                mock.patch.object(bench.signal, "signal"), mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = bench.main()
+        return output, rc, runner.call_count, completed, limit
+
+    def check_sample_failure(self, placement, repeats=1):
+        output, rc, calls, completed, limit = self.run_case(placement, repeats)
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, 1)
+        self.assertFalse((output / "sample-001").exists())
+        failure = json.loads((output / "failure.json").read_text())
+        self.assertFalse(failure["verification_valid"])
+        self.assertEqual(failure["error"], "evidence_budget_exceeded")
+        self.assertEqual(failure["limit_bytes"], limit)
+        self.assertEqual(failure["observed_bytes"],
+                         completed[0]["before_summary"] + completed[0]["summary_bytes"])
+        self.assertGreater(failure["observed_bytes"], limit)
+        result = json.loads((output / "sample-000/result.json").read_text())
+        rows = [json.loads(line) for line in (output / "results.jsonl").read_text().splitlines()]
+        self.assertEqual(rows, [result])
+        self.assertFalse(result["verification_valid"])
+        self.assertEqual(result["evidence_error"], "evidence_budget_exceeded")
+
+    def test_last_sample_exceeding_budget_is_invalid(self):
+        self.check_sample_failure("sample")
+
+    def test_summary_line_can_exceed_budget(self):
+        self.check_sample_failure("summary")
+
+    def test_budget_failure_stops_later_samples(self):
+        self.check_sample_failure("sample", repeats=2)
+
+    def test_metadata_exceeding_budget_starts_no_samples(self):
+        output, rc, calls, completed, limit = self.run_case("metadata")
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, 0)
+        self.assertEqual(completed, [])
+        self.assertFalse((output / "results.jsonl").exists())
+        self.assertFalse((output / "sample-000").exists())
+        failure = json.loads((output / "failure.json").read_text())
+        self.assertEqual(failure["error"], "evidence_budget_exceeded")
+        self.assertFalse(failure["verification_valid"])
+        self.assertEqual(failure["limit_bytes"], limit)
+        self.assertGreater(failure["observed_bytes"], limit)
+
+    def test_exact_budget_remains_valid(self):
+        output, rc, calls, completed, limit = self.run_case("exact")
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls, 1)
+        self.assertEqual(completed[0]["before_summary"] + completed[0]["summary_bytes"], limit)
+        self.assertEqual(sum(path.stat().st_size for path in output.rglob("*") if path.is_file()), limit)
+        self.assertFalse((output / "failure.json").exists())
+        result = json.loads((output / "sample-000/result.json").read_text())
+        rows = [json.loads(line) for line in (output / "results.jsonl").read_text().splitlines()]
+        self.assertEqual(rows, [result])
+        self.assertTrue(result["verification_valid"])
 
 
 PRODUCER_FIXTURE = r'''#define main unused_benchmark_main
