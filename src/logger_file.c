@@ -279,9 +279,10 @@ static int logger_file_reserve(logger_file_t *f, const char *path,
 
 /* 不截断任何文件。O_NONBLOCK 使被替换的 FIFO 在验证时失败，
  * 而不是让 logger_fork_open() 挂起。目录祖先必须可信。
+ * out 指向调用方的空拥有者；失败不改变它，成功移交已登记的候选。
  */
-static int open_candidate(logger_file_t *f, int exclusive, int *out,
-			  struct stat *st)
+static int open_candidate(logger_file_t *f, int exclusive,
+			  struct logger_owned_fd *out, struct stat *st)
 {
 	int rc = check_owner(f);
 	if (rc)
@@ -308,7 +309,7 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 	/* 所有权转移：词法作用域候选对象 -> 调用者。调用者要么
 	 * 将其装入 logger_file_t，要么在失败时显式关闭。
 	 */
-	*out = logger_fd_take(&fd);
+	*out = logger_fd_move(&fd);
 	/* 之前不存在的活动文件可能已被创建。即使它原本存在，也保守地
 	 * 同步绑定目录；这绝不依赖当前工作目录。
 	 */
@@ -317,9 +318,11 @@ static int open_candidate(logger_file_t *f, int exclusive, int *out,
 	return 0;
 }
 
-static void install_fd(logger_file_t *f, int fd, const struct stat *st, int day)
+/* 消费已验证的候选；调用方须先移出旧 f->fd，不覆盖存活的拥有者。 */
+static void install_fd(logger_file_t *f, struct logger_owned_fd *fd,
+		       const struct stat *st, int day)
 {
-	f->fd = logger_fd_own(fd);
+	f->fd = logger_fd_move(fd);
 	f->device = st->st_dev;
 	f->inode = st->st_ino;
 	f->current_size = f->managed ? (size_t)st->st_size : 0;
@@ -334,7 +337,9 @@ static int logger_file_open_reserved(logger_file_t *f)
 		errno = EINVAL;
 		return -1;
 	}
-	int day = 0, fd = -1;
+	int day = 0;
+	struct logger_owned_fd fd LOGGER_CLEANUP(logger_fd_cleanup) =
+		logger_fd_own(-1);
 	int rc = wall_day(time(NULL), &day);
 	struct stat st;
 	if (!rc)
@@ -343,7 +348,7 @@ static int logger_file_open_reserved(logger_file_t *f)
 		errno = -rc;
 		return -1;
 	}
-	install_fd(f, fd, &st, day);
+	install_fd(f, &fd, &st, day);
 	return 0;
 }
 
@@ -375,16 +380,16 @@ int logger_file_sync(logger_file_t *f)
 
 static int file_reopen_impl(logger_file_t *f)
 {
-	int day = 0, fd = -1;
+	int day = 0;
 	struct stat st;
-	int rc = wall_day(time(NULL), &day);
-	if (!rc)
-		rc = open_candidate(f, 0, &fd, &st);
 	/* 旧 fd 同步期间，新候选仍由词法拥有者负责清理。
 	 * 只有全部准备成功，才将它移交给长期 f->fd。
 	 */
 	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
-		logger_fd_own(fd);
+		logger_fd_own(-1);
+	int rc = wall_day(time(NULL), &day);
+	if (!rc)
+		rc = open_candidate(f, 0, &candidate, &st);
 	if (!rc && f->managed)
 		rc = sync_data(f, file_data_fd(f));
 	if (!rc && f->dir_dirty)
@@ -394,7 +399,7 @@ static int file_reopen_impl(logger_file_t *f)
 		return -1;
 	}
 	struct logger_owned_fd retiring = logger_fd_move(&f->fd);
-	install_fd(f, logger_fd_take(&candidate), &st, day);
+	install_fd(f, &candidate, &st, day);
 	int close_rc = logger_fd_close_status(&retiring);
 	if (close_rc) {
 		errno = -close_rc;
@@ -612,17 +617,17 @@ static int rotate_impl(logger_file_t *f)
 	rc = sync_directory(f);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_archive_dirsync");
-	int candidate_fd = -1, day = 0;
+	int day = 0;
 	struct stat st;
-	if (!rc)
-		rc = wall_day(t.tv_sec, &day);
-	if (!rc)
-		rc = open_candidate(f, 1, &candidate_fd, &st);
 	/* 已归档的旧 fd 不属于候选；新活动 fd 在安装前独占持有。
 	 * 崩溃切点与数据/目录持久化顺序保持不变。
 	 */
 	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
-		logger_fd_own(candidate_fd);
+		logger_fd_own(-1);
+	if (!rc)
+		rc = wall_day(t.tv_sec, &day);
+	if (!rc)
+		rc = open_candidate(f, 1, &candidate, &st);
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_open");
 	if (!rc) {
@@ -644,7 +649,7 @@ static int rotate_impl(logger_file_t *f)
 		return rc;
 	}
 	struct logger_owned_fd retiring = logger_fd_move(&f->fd);
-	install_fd(f, logger_fd_take(&candidate), &st, day);
+	install_fd(f, &candidate, &st, day);
 	int close_rc = logger_fd_close_status(&retiring);
 	if (close_rc)
 		return close_rc;
