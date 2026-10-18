@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 Clang AST 拒绝 fd 拥有者按值读取；不执行跨函数别名/生命周期证明。"""
+"""用 Clang AST 拒绝 fd 拥有者按值或直接字节复制；不证明跨函数别名/生命周期。"""
 from __future__ import annotations
 
 import hashlib
@@ -13,6 +13,11 @@ import sys
 from tool_i18n import parser_for
 
 ROOT_TYPE = "struct logger_owned_fd"
+MEMORY_COPY_ARITY = {
+    "memcpy": 3, "memmove": 3,
+    "__builtin_memcpy": 3, "__builtin_memmove": 3,
+    "__builtin___memcpy_chk": 4, "__builtin___memmove_chk": 4,
+}
 
 
 def walk(node):
@@ -80,6 +85,47 @@ def owning_types(ast):
     return lambda info: record(info) in owned, bool(owned)
 
 
+def pointee_type(info):
+    name = info.get("desugaredQualType", info.get("qualType", ""))
+    name = re.sub(r"\b(const|volatile|restrict)\b", "", name).strip()
+    # 只解一层指针；指针变量的地址和指针数组仍是借用存储。
+    if name.endswith("*"):
+        return {"qualType": name[:-1].strip()}
+    match = re.fullmatch(r"(.+?)\(\s*\*\s*\)\s*((?:\[[^]]*\]\s*)+)", name)
+    if match:
+        return {"qualType": match[1] + match[2]}
+    return {}
+
+
+def direct_callee(node):
+    while node.get("kind") in ("ParenExpr", "ImplicitCastExpr", "CStyleCastExpr",
+                               "UnaryOperator"):
+        if node["kind"] == "UnaryOperator" and node.get("opcode") not in ("&", "*"):
+            return ""
+        children = node.get("inner", [])
+        if len(children) != 1:
+            raise ValueError("invalid_callee_expression")
+        node = children[0]
+    declaration = node.get("referencedDecl", {}) if node.get("kind") == "DeclRefExpr" else {}
+    return declaration.get("name", "") if declaration.get("kind") == "FunctionDecl" else ""
+
+
+def owned_pointer(node, owns):
+    while True:
+        if owns(pointee_type(node.get("type", {}))):
+            return node
+        kind = node.get("kind")
+        if kind != "ParenExpr" and not (
+                kind in ("ImplicitCastExpr", "CStyleCastExpr") and
+                node.get("castKind") in ("NoOp", "BitCast", "LValueToRValue", "ArrayToPointerDecay")):
+            return None
+        children = node.get("inner", [])
+        if len(children) != 1:
+            raise ValueError("invalid_pointer_expression")
+        # 只回看同一实参的直接指针转换，不追字段基址、取地址对象或变量初值。
+        node = children[0]
+
+
 def inspect_ast(ast):
     if not isinstance(ast, dict) or ast.get("kind") != "TranslationUnitDecl" \
             or not isinstance(ast.get("inner"), list) or not ast["inner"]:
@@ -112,6 +158,24 @@ def inspect_ast(ast):
         if copy:
             violations.append({"rule": "owned_fd_value_copy", "function": function,
                                "type": node["type"], "range": node.get("range", {})})
+        if kind == "CallExpr":
+            if not children:
+                raise ValueError("invalid_call_expression")
+            callee = direct_callee(children[0])
+            if callee in MEMORY_COPY_ARITY:
+                if len(children) != MEMORY_COPY_ARITY[callee] + 1:
+                    raise ValueError("invalid_memory_copy_arguments")
+                arguments = []
+                for index, argument in enumerate(children[1:3]):
+                    pointer = owned_pointer(argument, owns)
+                    if pointer is not None:
+                        arguments.append({"index": index, "type": pointer["type"],
+                                          "range": pointer.get("range", {})})
+                # 调用的写入副作用与返回值是否使用无关；不证明长度或重叠安全性。
+                if arguments:
+                    violations.append({"rule": "owned_fd_memory_copy", "function": function,
+                                       "callee": callee, "arguments": arguments,
+                                       "range": node.get("range", {})})
         if kind == "GenericSelectionExpr":
             # 控制表达式及未选分支不求值；只检查被选关联。
             children = [c for c in children if c.get("selected")]
