@@ -1,0 +1,88 @@
+name: fd-handoff-validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/regression/test_fd_handoff.c'
+      - 'tests/scripts/test_fd_handoff.py'
+      - 'xmake.lua'
+      - 'xmake-fd-handoff.lua'
+      - '.github/workflows/fd-handoff-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/regression/test_fd_handoff.c'
+      - 'tests/scripts/test_fd_handoff.py'
+      - 'xmake.lua'
+      - 'xmake-fd-handoff.lua'
+      - '.github/workflows/fd-handoff-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:20.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      XMAKE_ROOT: 'y'
+    steps:
+      - name: 安装最低工具链
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential clang ca-certificates curl git python3 binutils
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 固定准确源码与工具身份
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > evidence/source-tree.txt
+          test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.31'
+          ${{ matrix.compiler }} --version > evidence/compiler.txt
+          echo "LOGGER_PROJECT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+      - name: 用权威构建定义运行三种移交反例
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmake f -F xmake-fd-handoff.lua -y -m debug -o handoff-build \
+            --toolchain=${{ matrix.compiler }} --build_shared=n \
+            --build_tests=n --build_private_tests=n --build_regression_tests=y
+          xmake test -F xmake-fd-handoff.lua -g fd-handoff -j1 -v \
+            2>&1 | tee evidence/handoff.log
+          xmake -F xmake-fd-handoff.lua -j2 logger
+          mapfile -t archives < <(find handoff-build -type f -name liblogger.a)
+          test "${#archives[@]}" -eq 1
+          python3 scripts/check_production_artifact.py "${archives[0]}" \
+            > evidence/production-isolation.json
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fd-handoff-${{ matrix.compiler }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
