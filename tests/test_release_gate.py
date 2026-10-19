@@ -504,7 +504,7 @@ class ReleaseGateTests(unittest.TestCase):
         transient.unlink()
         fixture.git('add', '-u')
         fixture.git('commit', '-qm', 'Revert unreviewed source change')
-        # The old endpoint-only diff looks clean despite the two bad commits.
+        # 旧实现只比较终态净差异，因此无法发现中途两个违规提交。
         self.assertEqual(
             fixture.git('diff', '--no-renames', '--name-only',
                         fixture.frozen_base, 'HEAD').stdout.strip(),
