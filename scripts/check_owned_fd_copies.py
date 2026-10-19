@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 Clang AST 拒绝 fd 拥有者按值或直接字节复制；不证明跨函数别名/生命周期。"""
+"""用 Clang AST 拒绝 fd 拥有者复制及有限的裸成员修改、借用关闭。"""
 from __future__ import annotations
 
 import hashlib
@@ -18,6 +18,11 @@ MEMORY_COPY_ARITY = {
     "__builtin_memcpy": 3, "__builtin_memmove": 3,
     "__builtin___memcpy_chk": 4, "__builtin___memmove_chk": 4,
 }
+SCALAR_WRITE_ARITY = {
+    "memset": 3, "__builtin_memset": 3, "__builtin___memset_chk": 4,
+}
+# 现有两个私有辅助负责把来源所有者标记为失效，不豁免任何其他写入。
+INVALIDATION_FUNCTIONS = {"logger_fd_take", "logger_fd_fdopendir"}
 
 
 def walk(node):
@@ -85,6 +90,65 @@ def owning_types(ast):
     return lambda info: record(info) in owned, bool(owned)
 
 
+def owned_scalar_fields(ast):
+    """按 Clang FieldDecl 身份识别真实 fd 拥有者的 value，而非同名字段。"""
+    return {field["id"]
+            for node in walk(ast)
+            if node.get("kind") == "RecordDecl"
+            and node.get("completeDefinition")
+            and node.get("name") == "logger_owned_fd"
+            for field in node.get("inner", [])
+            if field.get("kind") == "FieldDecl"
+            and field.get("name") == "value" and "id" in field}
+
+
+def scalar_member(node, fields):
+    while node.get("kind") in ("ParenExpr", "ImplicitCastExpr", "CStyleCastExpr"):
+        children = node.get("inner", [])
+        if len(children) != 1:
+            raise ValueError("invalid_scalar_expression")
+        node = children[0]
+    return (node.get("kind") == "MemberExpr"
+            and node.get("referencedMemberDecl") in fields)
+
+
+def is_minus_one(node):
+    while node.get("kind") in ("ParenExpr", "ImplicitCastExpr"):
+        children = node.get("inner", [])
+        if len(children) != 1:
+            return False
+        node = children[0]
+    if node.get("kind") != "UnaryOperator" or node.get("opcode") != "-":
+        return False
+    children = node.get("inner", [])
+    return (len(children) == 1 and children[0].get("kind") == "IntegerLiteral"
+            and children[0].get("value") == "1")
+
+
+def scalar_address(node, fields):
+    """仅回看直接取地址及保留身份的指针转换；不做变量/整数别名追踪。"""
+    while node.get("kind") in ("ParenExpr", "ImplicitCastExpr", "CStyleCastExpr"):
+        if node.get("kind") != "ParenExpr" and node.get("castKind") not in (
+                "NoOp", "BitCast", "ArrayToPointerDecay"):
+            return False
+        children = node.get("inner", [])
+        if len(children) != 1:
+            raise ValueError("invalid_scalar_pointer")
+        node = children[0]
+    children = node.get("inner", [])
+    return (node.get("kind") == "UnaryOperator"
+            and node.get("opcode") == "&" and len(children) == 1
+            and scalar_member(children[0], fields))
+
+
+def direct_borrow_call(node):
+    """只识别实参内部仍可见的 logger_fd_borrow() 直接调用。"""
+    return any(inner.get("kind") == "CallExpr"
+               and inner.get("inner")
+               and direct_callee(inner["inner"][0]) == "logger_fd_borrow"
+               for inner in walk(node))
+
+
 def pointee_type(info):
     name = info.get("desugaredQualType", info.get("qualType", ""))
     name = re.sub(r"\b(const|volatile|restrict)\b", "", name).strip()
@@ -131,6 +195,7 @@ def inspect_ast(ast):
             or not isinstance(ast.get("inner"), list) or not ast["inner"]:
         raise ValueError("invalid_translation_unit")
     owns, seen = owning_types(ast)
+    scalar_fields = owned_scalar_fields(ast)
     violations = []
 
     def visit(node, function="", used=True, statement_result=False):
@@ -141,6 +206,21 @@ def inspect_ast(ast):
         if kind == "UnaryExprOrTypeTraitExpr":
             return
         children = node.get("inner", [])
+        if kind in ("BinaryOperator", "CompoundAssignOperator", "UnaryOperator"):
+            modifying = (kind == "BinaryOperator" and node.get("opcode") == "="
+                         or kind == "CompoundAssignOperator"
+                         or kind == "UnaryOperator" and node.get("opcode") in (
+                             "++", "--"))
+            if modifying and children and scalar_member(children[0], scalar_fields):
+                # 内部 take/fdopendir 仅允许置 -1；其他原始成员写入拒绝。
+                intentional = (kind == "BinaryOperator"
+                               and function in INVALIDATION_FUNCTIONS
+                               and len(children) == 2 and is_minus_one(children[1]))
+                if not intentional:
+                    violations.append({
+                        "rule": "owned_fd_scalar_write", "function": function,
+                        "opcode": node.get("opcode"), "range": node.get("range", {})
+                    })
         copy = False
         if kind == "ImplicitCastExpr" and node.get("castKind") == "LValueToRValue" \
                 and owns(node.get("type", {})) and used:
@@ -176,6 +256,22 @@ def inspect_ast(ast):
                     violations.append({"rule": "owned_fd_memory_copy", "function": function,
                                        "callee": callee, "arguments": arguments,
                                        "range": node.get("range", {})})
+            if callee in MEMORY_COPY_ARITY or callee in SCALAR_WRITE_ARITY:
+                indices = range(2) if callee in MEMORY_COPY_ARITY else range(1)
+                scalar_args = [index for index in indices
+                               if scalar_address(children[index + 1], scalar_fields)]
+                if scalar_args:
+                    violations.append({
+                        "rule": "owned_fd_scalar_memory", "function": function,
+                        "callee": callee, "arguments": scalar_args,
+                        "range": node.get("range", {})
+                    })
+            if callee in ("close", "logger_fork_close") and len(children) == 2 \
+                    and direct_borrow_call(children[1]):
+                violations.append({
+                    "rule": "owned_fd_borrowed_close", "function": function,
+                    "callee": callee, "range": node.get("range", {})
+                })
         if kind == "GenericSelectionExpr":
             # 控制表达式及未选分支不求值；只检查被选关联。
             children = [c for c in children if c.get("selected")]

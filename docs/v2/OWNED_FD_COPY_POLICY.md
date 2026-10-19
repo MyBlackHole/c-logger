@@ -1,7 +1,7 @@
-# fd 拥有者的有限 AST 复制检查（#106 S5 / #210 D2）
+# fd 拥有者的有限 AST 所有权检查（#106 S5 / #210 D2）
 
-本检查拒绝“裸结构赋值或直接字节复制绕过 move/take”，复用已经完成的
-长期 fd 类型化和跨函数移交合同。没有修改生产源码、公开 ABI、
+本检查拒绝“裸结构赋值、直接字节复制、原始整数成员重写或直接关闭借用 fd
+绕过 move/take/close_status”，复用已经完成的长期 fd 类型化和跨函数移交合同。没有修改生产源码、公开 ABI、
 故障注入或发布签收，也没有因此完成全部 D1/D2。
 
 ## 检查对象与规则
@@ -26,6 +26,29 @@
 部分复制和自复制也保守拒绝。命中不代表已经证明 fd 被复制或发生双重关闭。
 调用本身的副作用与返回值是否使用无关，普通语句和 `(void)` 调用都检查；
 `sizeof` 和 `_Generic` 未求值部分继续跳过。
+
+新增有限规则：
+
+- `owned_fd_scalar_write`：按 `struct logger_owned_fd.value` 的 **FieldDecl 身份**
+  识别对实际拥有者原始 fd 整数的直接赋值、复合赋值、前/后自增自减；
+  拒绝 `owner->value = other->value`、`file->fd.value = -1` 等绕过
+  移交／关闭接口的写入。其他结构即使有同名 `value` 字段也不拒绝。
+  当前内部 `logger_fd_take` 与 `logger_fd_fdopendir` 仅允许以 `-1`
+  将来源置为失效；其他表达式仍被拒绝。这个白名单不允许任意字段重写，
+  但尚不保证函数内所有执行路径的来源失效。
+- `owned_fd_scalar_memory`：检查直接 `memcpy/memmove` 及其现有内建／
+  检查版本的参数，识别 `&owner->value` 的显式字节复制；对
+  `memset/__builtin_memset/__builtin___memset_chk` 识别写入目标。
+  覆盖括号与保留身份的直接指针转换，语义上不证明长度或偏移边界。
+- `owned_fd_borrowed_close`：在直接调用 `close/logger_fork_close` 的
+  实参表达式内识别嵌套 `logger_fd_borrow(...)`，拒绝没有先消费来源
+  的直接借用关闭；`logger_fd_close_status(owner)` 及明确的
+  `logger_fork_close(logger_fd_take(owner))` 不属于这条违规模式。
+  通过变量间接传递的原始整数与复杂的跨函数来源追踪不在本规则范围。
+
+原有按值复制及直接字节复制检查继续保留，新增的负例必须经真实 Clang
+成功编译后才算检查器拒绝；生产 `logger_file.c` 和 `logger_syslog.c`
+分别变异已有 move 交接及一次 close 路径来证明规则可证伪。
 
 规则解析 Clang 的 `RecordDecl`、`RecordType`、字段和类型别名，而不是
 搜索源代码中的固定变量名。诊断包含翻译单元、函数、类型与原始源码位置
@@ -55,7 +78,9 @@ xmake test -F xmake-owned-copy.lua -g owned-copy -j1 -v
 
 这是有限复制语法规则，不是 C 线性类型、跨翻译单元数据流或生命周期证明。
 两端都已存入 `void *` 变量的复制、自定义包装函数、函数指针间接调用、
-转成 `char *` 再偏移后的来源回溯、指针经整数转换逃逸、逐个整数成员复制、借用失效后使用、
+转成 `char *` 再偏移后的来源回溯、指针经整数转换逃逸、
+经 `int *` 别名写入／偏移后的成员复制、先将借用 fd 放入整数变量后关闭、
+借用失效后使用、
 把来源资源重新 `logger_fd_own`、向非空目标 move、函数指针的真实被调语义，
 以及本轮三种目标之外的预处理配置均没有获得普遍证明。测试明确保留这些
 未覆盖边界，禁止把正例解释成允许生产使用它们。故意复制的动态变体属于
