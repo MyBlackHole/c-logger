@@ -19,6 +19,7 @@ static _Atomic int reject_lock;
 static _Atomic int reject_unlock;
 static _Atomic int reject_format;
 static _Atomic int reject_archive_format;
+static _Atomic int reject_localtime;
 static _Atomic unsigned format_locks;
 static _Atomic unsigned format_unlocks;
 static _Atomic int fail_line_once;
@@ -27,6 +28,7 @@ static _Atomic int poison_after_lock;
 int __real_pthread_mutex_lock(pthread_mutex_t *);
 int __real_pthread_mutex_unlock(pthread_mutex_t *);
 int __real_vsnprintf(char *, size_t, const char *, va_list);
+struct tm *__real_localtime_r(const time_t *, struct tm *);
 
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
@@ -70,6 +72,16 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 		return -1;
 	}
 	return __real_vsnprintf(out, cap, fmt, args);
+}
+
+/* 返回值仍来自真实 libc；仅此反例注入一次确定性 EILSEQ。 */
+struct tm *__wrap_localtime_r(const time_t *seconds, struct tm *out)
+{
+	if (atomic_exchange(&reject_localtime, 0)) {
+		errno = EILSEQ;
+		return NULL;
+	}
+	return __real_localtime_r(seconds, out);
 }
 
 size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
@@ -240,6 +252,57 @@ static void archive_format_failure(void)
 	CHECK(!rmdir(directory));
 }
 
+
+/* 进程域的格式协调失败不能伪装成时间值超界。
+ * 首次构造和按日期写入使用同一生产函数，均需能恢复。
+ */
+static void calendar_error(int during_init, int lock_failure)
+{
+	char directory[] = "/tmp/logger-calendar-XXXXXX";
+	enter_temp(directory);
+	logger_rotation_config_t rotation = { 0 };
+	rotation.mode = LOGGER_ROTATE_DAILY;
+	logger_file_t backend = LOGGER_FILE_EMPTY;
+	int expected = lock_failure ? EAGAIN : EILSEQ;
+	struct timespec stamp = { .tv_sec = time(NULL), .tv_nsec = 0 };
+
+	if (during_init) {
+		if (lock_failure)
+			atomic_store(&reject_lock, 1);
+		else
+			atomic_store(&reject_localtime, 1);
+		errno = EDOM;
+		CHECK(logger_file_init(&backend, "out.log", rotation, 0600) ==
+		      -1);
+		CHECK(errno == expected);
+		CHECK(!logger_fd_valid(&backend.fd));
+		CHECK(!logger_fd_valid(&backend.dir_fd));
+		CHECK(!logger_fd_valid(&backend.lock_fd));
+	}
+	CHECK(logger_file_init(&backend, "out.log", rotation, 0600) == 0);
+
+	if (!during_init) {
+		if (lock_failure)
+			atomic_store(&reject_lock, 1);
+		else
+			atomic_store(&reject_localtime, 1);
+		CHECK(logger_file_write(&backend, "reject", 6, &stamp, 1) ==
+		      -expected);
+		CHECK(backend.metrics.failed_write_operations == 1);
+		CHECK(backend.metrics.last_write_error == expected);
+		CHECK(!backend.detached && backend.current_size == 0);
+		CHECK(file_size("out.log") == 0);
+	}
+	CHECK(!atomic_load(&reject_lock) && !atomic_load(&reject_localtime));
+	CHECK(logger_file_write(&backend, "recover", 7, &stamp, 1) == 0);
+	CHECK(file_contains("out.log", "recover"));
+	CHECK(logger_file_close_status(&backend) == 0);
+	CHECK(unlink("out.log") == 0);
+	CHECK(unlink("out.log.logger.lock") == 0);
+	CHECK(chdir("/") == 0);
+	CHECK(rmdir(directory) == 0);
+}
+
 static void checked_log(int unlock)
 {
 	char directory[] = "/tmp/logger-libc-check-XXXXXX";
@@ -344,6 +407,14 @@ int main(int argc, char **argv)
 		syslog_prefix_failure(0);
 	else if (!strcmp(argv[1], "archive-format"))
 		archive_format_failure();
+	else if (!strcmp(argv[1], "calendar-init-lock"))
+		calendar_error(1, 1);
+	else if (!strcmp(argv[1], "calendar-init-libc"))
+		calendar_error(1, 0);
+	else if (!strcmp(argv[1], "calendar-write-lock"))
+		calendar_error(0, 1);
+	else if (!strcmp(argv[1], "calendar-write-libc"))
+		calendar_error(0, 0);
 	else if (!strcmp(argv[1], "checked-lock"))
 		checked_log(0);
 	else if (!strcmp(argv[1], "checked-unlock"))
