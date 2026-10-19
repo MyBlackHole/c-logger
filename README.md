@@ -148,7 +148,8 @@ XPack 自动生成 TGZ 与同名 SHA-256；包标题标识中性的 `ABI 2`，�
 
 `logger_create(&cfg, &owner)` 仅向空槽发布成功实例；`logger_destroy(&owner)` 在
 拆除开始前消费拥有者，均返回 0/-errno 并保留 errno。旧签名与 status 销毁
-已移除，详见[生命周期接口](docs/v2/LIFECYCLE_API.md)。其他 API 迁移仍独立进行。
+已移除，详见[生命周期接口](docs/v2/LIFECYCLE_API.md)。公开状态接口迁移已完成，
+最终 ABI 冻结与发布验收仍按[发布前核查](docs/v2/RELEASE_PREFLIGHT.md)独立确认。
 
 ## 刷新与重开
 
