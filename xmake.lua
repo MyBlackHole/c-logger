@@ -877,12 +877,14 @@ if has_config("build_regression_tests") then
         add_includedirs("src")
         add_defines("LOGGER_ENABLE_LOCKDEP=1")
         add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
-        for _, symbol in ipairs({"pthread_mutex_lock", "pthread_mutex_unlock", "vsnprintf", "logger_format_line"}) do
+        for _, symbol in ipairs({"pthread_mutex_lock", "pthread_mutex_unlock", "vsnprintf", "localtime_r", "logger_format_line"}) do
             add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
         end
         for _, scenario in ipairs({"errno-format", "post-lock-poison", "lock", "unlock", "dual", "checked-lock", "checked-unlock",
                                     "output-sync", "output-async", "order-ok", "order-reversed", "order-recursive",
-                                     "syslog-prefix-lock", "syslog-prefix-format", "archive-format"}) do
+                                     "syslog-prefix-lock", "syslog-prefix-format", "archive-format",
+                                     "calendar-init-lock", "calendar-init-libc",
+                                     "calendar-write-lock", "calendar-write-libc"}) do
             add_tests(scenario, {runargs = scenario, group = "libc-coordination", timeout = 15})
         end
     target_end()

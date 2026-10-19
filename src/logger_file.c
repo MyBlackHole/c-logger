@@ -41,8 +41,10 @@ static int internal_rotation(const logger_file_t *f)
 static int wall_day(time_t sec, int *day)
 {
 	struct tm t;
-	if (!logger_libc_localtime_r(&sec, &t) || t.tm_year < -1900 ||
-	    t.tm_year > 8099)
+	/* libc 或格式协调失败与真正的年份越界不是同一错误。 */
+	if (!logger_libc_localtime_r(&sec, &t))
+		return -(errno ? errno : EOVERFLOW);
+	if (t.tm_year < -1900 || t.tm_year > 8099)
 		return -EOVERFLOW;
 	*day = (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
 	return 0;
