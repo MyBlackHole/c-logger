@@ -2,9 +2,14 @@
 #include "host_support.h"
 #include "logger_internal.h"
 #include <fcntl.h>
-static int fail_close, fail_join, fail_cond_destroy, fail_mutex_destroy;
-static int selected_fd = -1;
-static int selected_close_calls;
+static int fail_join, fail_cond_destroy, fail_mutex_destroy;
+enum file_fd_slot { FILE_DATA, FILE_LOCK, FILE_DIRECTORY, FILE_FD_COUNT };
+struct close_probe {
+	int fd;
+	int error;
+	unsigned calls;
+};
+static struct close_probe close_probes[FILE_FD_COUNT];
 static logger_t *subject;
 static int subject_freed;
 
@@ -24,16 +29,21 @@ int __wrap_logger_runtime_free(void *p)
 int __real_close(int);
 int __wrap_close(int fd)
 {
-	int selected = fd == selected_fd && selected_fd >= 0;
-	if (selected)
-		++selected_close_calls;
-	/* 先由内核真正关闭 fd，再返回模拟的 EINTR / EIO。
-	 * Linux close(EINTR) 后 fd 可能已被复用，不可重试此整数。
+	struct close_probe *selected = NULL;
+	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+		if (fd >= 0 && close_probes[i].fd == fd) {
+			selected = &close_probes[i];
+			++selected->calls;
+			break;
+		}
+	}
+	/* 真实内核先消耗 fd，再模拟 close 的 EINTR/EIO/EBADF。
+	 * 第一处关闭失败也不允许重试或跳过其余拥有者。
 	 */
 	int rc = __real_close(fd);
-	if (selected && fail_close) {
-		int error = fail_close;
-		fail_close = 0;
+	if (selected && selected->error) {
+		int error = selected->error;
+		selected->error = 0;
 		errno = error;
 		return -1;
 	}
@@ -76,6 +86,8 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 }
 int main(int argc, char **argv)
 {
+	for (unsigned i = 0; i < FILE_FD_COUNT; ++i)
+		close_probes[i].fd = -1;
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	unlink("dispose.log");
@@ -105,23 +117,49 @@ int main(int argc, char **argv)
 		fail_cond_destroy = 1;
 	else if (!strcmp(argv[1], "mutex-destroy-error"))
 		fail_mutex_destroy = 1;
-	if (!strcmp(argv[1], "close-error") ||
-	    !strcmp(argv[1], "close-eintr")) {
-		struct logger_borrowed_fd view =
-			logger_fd_borrow(&l->file_backend.fd);
-		selected_fd = logger_fd_number(view);
-		fail_close = !strcmp(argv[1], "close-eintr") ? EINTR : EIO;
+	const struct logger_owned_fd *fds[FILE_FD_COUNT];
+	fds[FILE_DATA] = &l->file_backend.fd;
+	fds[FILE_LOCK] = &l->file_backend.lock_fd;
+	fds[FILE_DIRECTORY] = &l->file_backend.dir_fd;
+	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+		if (logger_fd_valid(fds[i]))
+			close_probes[i].fd =
+				logger_fd_number(logger_fd_borrow(fds[i]));
+	}
+	if (!io_error) {
+		for (unsigned i = 0; i < FILE_FD_COUNT; ++i)
+			CHECK(close_probes[i].fd >= 0);
+	}
+	if (!strcmp(argv[1], "close-error"))
+		close_probes[FILE_DATA].error = EIO;
+	else if (!strcmp(argv[1], "close-eintr"))
+		close_probes[FILE_DATA].error = EINTR;
+	else if (!strcmp(argv[1], "close-lock-eio"))
+		close_probes[FILE_LOCK].error = EIO;
+	else if (!strcmp(argv[1], "close-dir-eintr"))
+		close_probes[FILE_DIRECTORY].error = EINTR;
+	else if (!strcmp(argv[1], "close-lock-dir-errors")) {
+		close_probes[FILE_LOCK].error = EIO;
+		close_probes[FILE_DIRECTORY].error = EINTR;
+	} else if (!strcmp(argv[1], "close-all-errors")) {
+		close_probes[FILE_DATA].error = EIO;
+		close_probes[FILE_LOCK].error = EINTR;
+		close_probes[FILE_DIRECTORY].error = EBADF;
 	}
 	int lifecycle_error = fail_join || fail_cond_destroy || fail_mutex_destroy;
 	int expected = 0;
 	if (io_error)
 		expected = ENOSPC;
-	else if (fail_close)
-		expected = fail_close;
 	else if (fail_join)
 		expected = EDEADLK;
 	else if (fail_cond_destroy || fail_mutex_destroy)
 		expected = EBUSY;
+	else {
+		for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+			if (!expected)
+				expected = close_probes[i].error;
+		}
+	}
 	for (int i = 0; i < (io_error ? 1 : 1000); ++i)
 		LOGGER_INFO(l, "test", "record=%d", i);
 	errno = EDOM;
@@ -138,9 +176,17 @@ int main(int argc, char **argv)
 	}
 	CHECK(subject_freed == 1);
 	CHECK(logger_process_object_count() == 0);
-	if (selected_fd >= 0) {
-		CHECK(selected_close_calls == 1);
-		CHECK(fcntl(selected_fd, F_GETFD) == -1 && errno == EBADF);
+	/* 即使第一个 close 返回错误，三个 fd 都必须被内核消费一次。
+	 * 检查完成后撤销探针，避免下一实例重用 fd 数字造成假阳性。
+	 */
+	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+		if (close_probes[i].fd >= 0) {
+			CHECK(close_probes[i].calls == 1);
+			CHECK(fcntl(close_probes[i].fd, F_GETFD) == -1 &&
+			      errno == EBADF);
+		}
+		CHECK(close_probes[i].error == 0);
+		close_probes[i].fd = -1;
 	}
 	if (!io_error)
 		CHECK(log_contains("dispose.log", "record=999"));

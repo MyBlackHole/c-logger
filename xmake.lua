@@ -1299,7 +1299,9 @@ if has_config("build_regression_tests") then
     target("destroy_status_regression")
         for _, scenario in ipairs({
             "null", "drain", "io-error", "close-error", "close-eintr",
-            "join-error", "cond-destroy-error", "mutex-destroy-error"
+            "close-lock-eio", "close-dir-eintr", "close-lock-dir-errors",
+            "close-all-errors", "join-error", "cond-destroy-error",
+            "mutex-destroy-error"
         }) do
             add_tests("destroy_status_" .. scenario,
                       {runargs = scenario, timeout = 15})
