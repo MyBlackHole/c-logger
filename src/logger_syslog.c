@@ -253,7 +253,12 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 		packet, sizeof(packet),
 		"<%u>%s[%ld]: ", s->facility | priority(level), s->ident,
 		(long)getpid());
-	if (prefix < 0 || (size_t)prefix >= sizeof(packet))
+	/* 格式化/锁错误须保留原 errno；只有确定的容量溢出
+	 * 才能报告 EOVERFLOW，避免污染真实失败指标。
+	 */
+	if (prefix < 0)
+		return record_failure(s, errno ? errno : EILSEQ);
+	if ((size_t)prefix >= sizeof(packet))
 		return record_failure(s, EOVERFLOW);
 	if (n && line[n - 1] == '\n')
 		--n;

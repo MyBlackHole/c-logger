@@ -5,7 +5,12 @@
 #include "logger_libc.h"
 #include "logger_lockdep.h"
 #include "logger_fork_fd.h"
+#include "logger_file.h"
+#include "logger_syslog.h"
+#include <dirent.h>
 #include <signal.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 
 /* 对象身份先固定，再注入；绝不依赖“第一个 mutex 就是目标锁”。 */
@@ -13,6 +18,7 @@ static pthread_mutex_t *format_mutex;
 static _Atomic int reject_lock;
 static _Atomic int reject_unlock;
 static _Atomic int reject_format;
+static _Atomic int reject_archive_format;
 static _Atomic unsigned format_locks;
 static _Atomic unsigned format_unlocks;
 static _Atomic int fail_line_once;
@@ -53,6 +59,11 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 
 int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 {
+	int archive = strstr(fmt, "%06ldZ") != NULL;
+	if (archive && atomic_exchange(&reject_archive_format, 0)) {
+		errno = EILSEQ;
+		return -1;
+	}
 	if (reject_format) {
 		reject_format = 0;
 		errno = EILSEQ;
@@ -130,6 +141,103 @@ static void exercise_failure(const char *mode)
 					   "forbidden") == -1);
 		CHECK(errno == EIO && format_locks == 1 && format_unlocks == 1);
 	}
+}
+
+/* 两个后端只有在 snprintf 成功且确实溢出时才能报告容量错误。
+ * libc 封装因锁或格式失败返回 -1 时，其真实 errno 必须穿过后端。
+ */
+static void syslog_prefix_failure(int lock_failure)
+{
+	char directory[] = "/tmp/logger-prefix-XXXXXX";
+	enter_temp(directory);
+	int type = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+	int sink = socket(AF_UNIX, type, 0);
+	CHECK(sink >= 0);
+	struct sockaddr_un address = { .sun_family = AF_UNIX };
+	const char name[] = "sink.sock";
+	memcpy(address.sun_path, name, sizeof(name));
+	size_t length = offsetof(struct sockaddr_un, sun_path) + sizeof(name);
+	CHECK(bind(sink, (struct sockaddr *)&address, (socklen_t)length) == 0);
+
+	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+	cfg.syslog.path = name;
+	logger_syslog_t backend;
+	CHECK(logger_syslog_init(&backend, "unit", &cfg.syslog) == 0);
+
+	if (lock_failure)
+		atomic_store(&reject_lock, 1);
+	else
+		atomic_store(&reject_format, 1);
+	int expected = lock_failure ? EAGAIN : EILSEQ;
+	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "reject\n", 7) == -1);
+	CHECK(errno == expected);
+	CHECK(!atomic_load(&reject_lock) && !atomic_load(&reject_format));
+	CHECK(backend.metrics.submitted_records == 1 &&
+	      backend.metrics.failed_records == 1 &&
+	      backend.metrics.sent_records == 0 &&
+	      backend.metrics.last_error == expected &&
+	      backend.metrics.send_attempts == 0);
+	CHECK(backend.metrics.backpressure_records == (unsigned)lock_failure);
+	char packet[512];
+	CHECK(recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT) == -1);
+	CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
+
+	/* 失败没有提交半条报文；后续调用可以独立成功。 */
+	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "recover\n", 8) == 0);
+	ssize_t n = recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT);
+	CHECK(n > 0 && (size_t)n < sizeof(packet));
+	packet[n] = 0;
+	CHECK(strstr(packet, "recover") != NULL);
+	CHECK(backend.metrics.sent_records == 1 &&
+	      backend.metrics.failed_records == 1 &&
+	      backend.metrics.last_error == 0);
+	CHECK(logger_syslog_close_status(&backend) == 0);
+	CHECK(close(sink) == 0);
+	CHECK(unlink(name) == 0);
+	CHECK(chdir("/") == 0);
+	CHECK(rmdir(directory) == 0);
+}
+
+static void archive_format_failure(void)
+{
+	char directory[] = "/tmp/logger-archive-format-XXXXXX";
+	enter_temp(directory);
+	logger_rotation_config_t rotation = { 0 };
+	rotation.mode = LOGGER_ROTATE_SIZE;
+	rotation.max_file_size = 1;
+	logger_file_t backend = LOGGER_FILE_EMPTY;
+	CHECK(logger_file_init(&backend, "out.log", rotation, 0600) == 0);
+	struct timespec stamp = { 1700000000, 0 };
+	CHECK(logger_file_write(&backend, "a", 1, &stamp, 1) == 0);
+	atomic_store(&reject_archive_format, 1);
+	CHECK(logger_file_write(&backend, "b", 1, &stamp, 1) == -EILSEQ);
+	CHECK(!atomic_load(&reject_archive_format));
+	CHECK(backend.metrics.rotation_attempts == 1);
+	CHECK(backend.metrics.rotation_failures == 1);
+	CHECK(backend.metrics.last_rotation_error == EILSEQ);
+	CHECK(backend.metrics.last_write_error == EILSEQ);
+	CHECK(!backend.detached && backend.current_size == 1);
+	CHECK(file_size("out.log") == 1);
+	CHECK(file_contains("out.log", "a"));
+
+	/* 归档命名失败没有改名，也没有破坏仍可用的旧 fd。 */
+	CHECK(logger_file_write(&backend, "c", 1, &stamp, 1) == 0);
+	CHECK(backend.metrics.rotation_successes == 1);
+	CHECK(file_size("out.log") == 1);
+	CHECK(file_contains("out.log", "c"));
+	CHECK(logger_file_close_status(&backend) == 0);
+
+	DIR *stream = opendir(".");
+	CHECK(stream);
+	struct dirent *entry;
+	while ((entry = readdir(stream))) {
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+			continue;
+		CHECK(unlink(entry->d_name) == 0);
+	}
+	CHECK(!closedir(stream));
+	CHECK(!chdir("/"));
+	CHECK(!rmdir(directory));
 }
 
 static void checked_log(int unlock)
@@ -230,6 +338,12 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "lock") || !strcmp(argv[1], "unlock") ||
 		   !strcmp(argv[1], "dual"))
 		exercise_failure(argv[1]);
+	else if (!strcmp(argv[1], "syslog-prefix-lock"))
+		syslog_prefix_failure(1);
+	else if (!strcmp(argv[1], "syslog-prefix-format"))
+		syslog_prefix_failure(0);
+	else if (!strcmp(argv[1], "archive-format"))
+		archive_format_failure();
 	else if (!strcmp(argv[1], "checked-lock"))
 		checked_log(0);
 	else if (!strcmp(argv[1], "checked-unlock"))
