@@ -59,7 +59,8 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 
 int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 {
-	if (strstr(fmt, "%06ldZ") && atomic_exchange(&reject_archive_format, 0)) {
+	int archive = strstr(fmt, "%06ldZ") != NULL;
+	if (archive && atomic_exchange(&reject_archive_format, 0)) {
 		errno = EILSEQ;
 		return -1;
 	}
@@ -142,7 +143,6 @@ static void exercise_failure(const char *mode)
 	}
 }
 
-
 /* 两个后端只有在 snprintf 成功且确实溢出时才能报告容量错误。
  * libc 封装因锁或格式失败返回 -1 时，其真实 errno 必须穿过后端。
  */
@@ -150,14 +150,15 @@ static void syslog_prefix_failure(int lock_failure)
 {
 	char directory[] = "/tmp/logger-prefix-XXXXXX";
 	enter_temp(directory);
-	int sink = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	int type = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+	int sink = socket(AF_UNIX, type, 0);
 	CHECK(sink >= 0);
 	struct sockaddr_un address = { .sun_family = AF_UNIX };
 	const char name[] = "sink.sock";
 	memcpy(address.sun_path, name, sizeof(name));
-	socklen_t length = (socklen_t)(offsetof(struct sockaddr_un, sun_path) +
-				     sizeof(name));
-	CHECK(bind(sink, (struct sockaddr *)&address, length) == 0);
+	size_t length = offsetof(struct sockaddr_un, sun_path) +
+			 sizeof(name);
+	CHECK(bind(sink, (struct sockaddr *)&address, (socklen_t)length) == 0);
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.syslog.path = name;
@@ -169,7 +170,7 @@ static void syslog_prefix_failure(int lock_failure)
 	else
 		atomic_store(&reject_format, 1);
 	int expected = lock_failure ? EAGAIN : EILSEQ;
-	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "reject\\n", 7) == -1);
+	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "reject\n", 7) == -1);
 	CHECK(errno == expected);
 	CHECK(!atomic_load(&reject_lock) && !atomic_load(&reject_format));
 	CHECK(backend.metrics.submitted_records == 1 &&
@@ -183,7 +184,7 @@ static void syslog_prefix_failure(int lock_failure)
 	CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
 
 	/* 失败没有提交半条报文；后续调用可以独立成功。 */
-	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "recover\\n", 8) == 0);
+	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "recover\n", 8) == 0);
 	ssize_t n = recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT);
 	CHECK(n > 0 && (size_t)n < sizeof(packet));
 	packet[n] = 0;
@@ -212,11 +213,11 @@ static void archive_format_failure(void)
 	atomic_store(&reject_archive_format, 1);
 	CHECK(logger_file_write(&backend, "b", 1, &stamp, 1) == -EILSEQ);
 	CHECK(!atomic_load(&reject_archive_format));
-	CHECK(backend.metrics.rotation_attempts == 1 &&
-	      backend.metrics.rotation_failures == 1 &&
-	      backend.metrics.last_rotation_error == EILSEQ &&
-	      backend.metrics.last_write_error == EILSEQ &&
-	      !backend.detached && backend.current_size == 1);
+	CHECK(backend.metrics.rotation_attempts == 1);
+	CHECK(backend.metrics.rotation_failures == 1);
+	CHECK(backend.metrics.last_rotation_error == EILSEQ);
+	CHECK(backend.metrics.last_write_error == EILSEQ);
+	CHECK(!backend.detached && backend.current_size == 1);
 	CHECK(file_size("out.log") == 1);
 	CHECK(file_contains("out.log", "a"));
 
