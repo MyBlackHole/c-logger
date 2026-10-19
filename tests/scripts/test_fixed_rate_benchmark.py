@@ -53,7 +53,8 @@ class Verification(unittest.TestCase):
             def fake_command(*args):
                 return {"command": list(args),
                         "returncode": ldd_exit if args[0] == "ldd" else 0,
-                        "stdout": ldd_stdout.replace("@LIB@", str(library)) if args[0] == "ldd" else "",
+                        "stdout": (ldd_stdout.replace("@LIB_REL@", str(library.relative_to(root)))
+                                   .replace("@LIB@", str(library))) if args[0] == "ldd" else "",
                         "stderr": ""}
             with mock.patch.object(bench, "ROOT", root), \
                     mock.patch.object(bench, "command", side_effect=fake_command), \
@@ -86,6 +87,12 @@ class Verification(unittest.TestCase):
     def test_shared_library_matching_dependency_is_accepted(self):
         rc, error, samples = self.run_library_identity_fixture(
             "liblogger.so.2.0.0", "liblogger.so.2 => @LIB@ (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_shared_library_relative_ldd_path_is_accepted(self):
+        # 与 CLI 的 cwd=ROOT 和相对 LD_LIBRARY_PATH 行为一致。
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "liblogger.so.2 => @LIB_REL@ (0x1234)\n")
         self.assertEqual((rc, error, samples), (0, None, 1))
 
     def test_static_archive_without_dynamic_logger_is_accepted(self):
