@@ -252,7 +252,6 @@ static void archive_format_failure(void)
 	CHECK(!rmdir(directory));
 }
 
-
 /* 进程域的格式协调失败不能伪装成时间值超界。
  * 首次构造和按日期写入使用同一生产函数，均需能恢复。
  */
