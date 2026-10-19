@@ -98,6 +98,30 @@ class WorkerStressRunnerTest(unittest.TestCase):
             self.assertIn("timeout:serial:0",
                           (out / "failure.txt").read_text())
 
+    def test_timeout_with_text_output_preserved(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            binary = directory / "fake-binary"
+            binary.write_bytes(b"fake")
+            out = directory / "observations"
+            expired = subprocess.TimeoutExpired(
+                [str(binary), "serial"], 90,
+                output="中文输出", stderr="失败诊断")
+            with mock.patch.object(
+                    RUN.subprocess, "run", side_effect=expired):
+                with mock.patch(
+                        "sys.argv",
+                        ["run_fork_worker_stress.py", "--binary", str(binary),
+                         "--out", str(out), "--repeats", "1"]):
+                    self.assertEqual(RUN.main(), 1)
+            self.assertEqual(
+                (out / "00-serial.stdout").read_text(), "中文输出")
+            self.assertEqual(
+                (out / "00-serial.stderr").read_text(), "失败诊断")
+            report = json.loads((out / "results.json").read_text())
+            self.assertTrue(report["results"][0]["timed_out"])
+            self.assertNotIn("verified", report["results"][0])
+
     def test_sanitizer_report_rejected(self):
         with self.assertRaisesRegex(ValueError, "sanitizer"):
             RUN.parse_result("serial", 0, sample(),
