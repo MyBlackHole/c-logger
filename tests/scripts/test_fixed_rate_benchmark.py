@@ -43,7 +43,7 @@ class Verification(unittest.TestCase):
             binary, library, build_log = (root / "bench", root / library_name,
                                           root / "build.log")
             for path in (binary, library, build_log):
-                path.write_bytes(b"fixture\\n")
+                path.write_bytes(b"fixture\n")
             argv = ["benchmark_fixed_rate.py", "--binary", str(binary),
                     "--library", str(library), "--build-log", str(build_log),
                     "--out", str(root / "result"), "--threads", "1",
@@ -55,12 +55,12 @@ class Verification(unittest.TestCase):
                         "returncode": ldd_exit if args[0] == "ldd" else 0,
                         "stdout": ldd_stdout if args[0] == "ldd" else "",
                         "stderr": ""}
-            with mock.patch.object(bench, "ROOT", root), \\
-                    mock.patch.object(bench, "command", side_effect=fake_command), \\
+            with mock.patch.object(bench, "ROOT", root), \
+                    mock.patch.object(bench, "command", side_effect=fake_command), \
                     mock.patch.object(bench, "run_sample",
-                                      return_value={"verification_valid": True}) as samples, \\
-                    mock.patch.object(bench.signal, "signal"), \\
-                    mock.patch.object(sys, "argv", argv), \\
+                                      return_value={"verification_valid": True}) as samples, \
+                    mock.patch.object(bench.signal, "signal"), \
+                    mock.patch.object(sys, "argv", argv), \
                     contextlib.redirect_stdout(io.StringIO()):
                 try:
                     rc = bench.main()
@@ -71,7 +71,7 @@ class Verification(unittest.TestCase):
     def test_shared_library_missing_dependency_must_fail_before_sampling(self):
         # -l:liblogger.a 或错误二进制会使 ldd 不含 liblogger.so。
         rc, error, samples = self.run_library_identity_fixture(
-            "liblogger.so.2.0.0", "libc.so.6 => /lib/libc.so.6 (0x1234)\\n")
+            "liblogger.so.2.0.0", "libc.so.6 => /lib/libc.so.6 (0x1234)\n")
         self.assertIsNone(rc)
         self.assertIn("shared_library_not_loaded", error or "")
         self.assertEqual(samples, 0)
