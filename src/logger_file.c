@@ -478,7 +478,10 @@ static int archive_name(logger_file_t *f, const struct timespec *t, char *out,
 		return -EOVERFLOW;
 	int n = logger_libc_snprintf(out, cap, "%s.%s.%06ldZ%s", f->stem, stamp,
 				     t->tv_nsec / 1000, f->ext);
-	return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
+	/* 负返回值是格式化/协调失败，不是名称长度溢出。 */
+	if (n < 0)
+		return -(errno ? errno : EILSEQ);
+	return (size_t)n >= cap ? -ENAMETOOLONG : 0;
 }
 
 static int archive_matches(logger_file_t *f, const char *name)
