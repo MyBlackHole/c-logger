@@ -148,7 +148,7 @@ jobs:
           echo "FORK_WORKER_BIN=$binary" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
-      - name: 父方并发写入时重复 fork，并让子方创建真实异步worker
+      - name: 每次 fork 两侧确认父方写入进度，再让子方创建真实异步worker
         shell: bash
         run: |
           set -euo pipefail

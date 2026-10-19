@@ -12,9 +12,10 @@ RUN = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUN)
 
 
-def sample(mode="serial", children=4, parent=32, child=136):
+def sample(mode="serial", children=4, parent=32, child=136, progress=16):
     return (f"FORK_WORKER_STRESS_PASS={mode} children={children}"
-            f" parent_records={parent} child_records={child}\n")
+            f" parent_records={parent} child_records={child}"
+            f" parent_progress_checks={progress}\n")
 
 
 class WorkerStressRunnerTest(unittest.TestCase):
@@ -55,6 +56,15 @@ class WorkerStressRunnerTest(unittest.TestCase):
     def test_lost_child_records_rejected(self):
         with self.assertRaisesRegex(ValueError, "unexpected"):
             RUN.parse_result("serial", 0, sample(child=135), "")
+
+    def test_missing_progress_proof_rejected(self):
+        without_proof = sample().replace(" parent_progress_checks=16", "")
+        with self.assertRaisesRegex(ValueError, "missing_or_duplicate"):
+            RUN.parse_result("serial", 0, without_proof, "")
+
+    def test_insufficient_progress_proof_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unexpected"):
+            RUN.parse_result("serial", 0, sample(progress=15), "")
 
     def test_sanitizer_report_rejected(self):
         with self.assertRaisesRegex(ValueError, "sanitizer"):

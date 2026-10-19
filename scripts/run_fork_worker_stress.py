@@ -12,7 +12,8 @@ import time
 MODES = ("serial", "parallel")
 MARKER = re.compile(
     r"^FORK_WORKER_STRESS_PASS=(serial|parallel) "
-    r"children=(\d+) parent_records=(\d+) child_records=(\d+)$"
+    r"children=(\d+) parent_records=(\d+) child_records=(\d+) "
+    r"parent_progress_checks=(\d+)$"
 )
 
 
@@ -35,12 +36,13 @@ def parse_result(mode, exit_code, stdout, stderr):
                if "FORK_WORKER_STRESS_PASS=" in line]
     if len(matches) != 1 or matches[0] is None:
         raise ValueError("missing_or_duplicate_complete_marker")
-    found_mode, children, parent, child = matches[0].groups()
+    found_mode, children, parent, child, progress = matches[0].groups()
     if (found_mode != mode or int(children) != 4 or int(parent) < 4
-            or int(child) != 136):
+            or int(child) != 136 or int(progress) != 16):
         raise ValueError("unexpected_fork_worker_counts")
     return {"mode": found_mode, "children": int(children),
-            "parent_records": int(parent), "child_records": int(child)}
+            "parent_records": int(parent), "child_records": int(child),
+            "parent_progress_checks": int(progress)}
 
 
 def main():
