@@ -36,6 +36,53 @@ class Verification(unittest.TestCase):
                     "api_ns": {"p50": 10, "p95": 20, "p99": 20, "max": 20},
                     "arrival_late_ns": {"p50": 0, "p95": 2000000, "p99": 2000000, "max": 2000000}}
 
+    def run_library_identity_fixture(self, library_name, ldd_stdout, ldd_exit=0):
+        # 单独模拟证据收集入口，证明错误库身份在采样开始前被拒绝。
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, library, build_log = (root / "bench", root / library_name,
+                                          root / "build.log")
+            for path in (binary, library, build_log):
+                path.write_bytes(b"fixture\\n")
+            argv = ["benchmark_fixed_rate.py", "--binary", str(binary),
+                    "--library", str(library), "--build-log", str(build_log),
+                    "--out", str(root / "result"), "--threads", "1",
+                    "--rates", "1", "--payload-bytes", "1", "--backends", "null",
+                    "--seconds", "1", "--warmup", "0", "--repeats", "1"]
+
+            def fake_command(*args):
+                return {"command": list(args),
+                        "returncode": ldd_exit if args[0] == "ldd" else 0,
+                        "stdout": ldd_stdout if args[0] == "ldd" else "",
+                        "stderr": ""}
+            with mock.patch.object(bench, "ROOT", root), \\
+                    mock.patch.object(bench, "command", side_effect=fake_command), \\
+                    mock.patch.object(bench, "run_sample",
+                                      return_value={"verification_valid": True}) as samples, \\
+                    mock.patch.object(bench.signal, "signal"), \\
+                    mock.patch.object(sys, "argv", argv), \\
+                    contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = bench.main()
+                except ValueError as error:
+                    return None, str(error), samples.call_count
+                return rc, None, samples.call_count
+
+    def test_shared_library_missing_dependency_must_fail_before_sampling(self):
+        # -l:liblogger.a 或错误二进制会使 ldd 不含 liblogger.so。
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "libc.so.6 => /lib/libc.so.6 (0x1234)\\n")
+        self.assertIsNone(rc)
+        self.assertIn("shared_library_not_loaded", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_failed_ldd_must_fail_before_sampling(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "", ldd_exit=1)
+        self.assertIsNone(rc)
+        self.assertIn("library_dependency_inspection_failed", error or "")
+        self.assertEqual(samples, 0)
+
     def test_wait_status_compatibility(self):
         for code in (0, 1, 42, 255):
             self.assertEqual(bench.wait_exit_code(code << 8), code)
