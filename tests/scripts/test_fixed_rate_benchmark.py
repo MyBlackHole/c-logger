@@ -53,7 +53,7 @@ class Verification(unittest.TestCase):
             def fake_command(*args):
                 return {"command": list(args),
                         "returncode": ldd_exit if args[0] == "ldd" else 0,
-                        "stdout": ldd_stdout if args[0] == "ldd" else "",
+                        "stdout": ldd_stdout.replace("@LIB@", str(library)) if args[0] == "ldd" else "",
                         "stderr": ""}
             with mock.patch.object(bench, "ROOT", root), \
                     mock.patch.object(bench, "command", side_effect=fake_command), \
@@ -81,6 +81,43 @@ class Verification(unittest.TestCase):
             "liblogger.so.2.0.0", "", ldd_exit=1)
         self.assertIsNone(rc)
         self.assertIn("library_dependency_inspection_failed", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_matching_dependency_is_accepted(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "liblogger.so.2 => @LIB@ (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_static_archive_without_dynamic_logger_is_accepted(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.a", "libc.so.6 => /lib/libc.so.6 (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_static_archive_with_dynamic_logger_is_rejected(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.a", "liblogger.so.2 => /tmp/other/liblogger.so.2 (0x1234)\n")
+        self.assertIsNone(rc)
+        self.assertIn("unexpected_shared_library_dependency", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_wrong_or_unresolved_dependency_is_rejected(self):
+        for target, reason in (
+            ("/tmp/other/liblogger.so.2.0.0", "resolved_library_mismatch"),
+            ("not found", "library_dependency_unresolved"),
+        ):
+            with self.subTest(target=target):
+                rc, error, samples = self.run_library_identity_fixture(
+                    "liblogger.so.2.0.0",
+                    "liblogger.so.2 => " + target + " (0x1234)\n")
+                self.assertIsNone(rc)
+                self.assertIn(reason, error or "")
+                self.assertEqual(samples, 0)
+
+    def test_unknown_library_type_cannot_claim_logger_provenance(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "arbitrary-binary", "")
+        self.assertIsNone(rc)
+        self.assertIn("unsupported_logger_library_identity", error or "")
         self.assertEqual(samples, 0)
 
     def test_wait_status_compatibility(self):
@@ -353,7 +390,7 @@ class Verification(unittest.TestCase):
             with self.subTest(variant=variant, handled=handled), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 binary, case, originals = self.write_child_fixture(root, variant)
-                library, build_log = root / "library", root / "build.log"
+                library, build_log = root / "liblogger.a", root / "build.log"
                 library.write_bytes(b"controlled_library\n")
                 build_log.write_text("controlled_build\n")
                 output, owned = root / "evidence", root / "temporary"
@@ -562,7 +599,7 @@ class EvidenceBudget(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root, limit = Path(temporary.name), 16384
-        binary, library, build_log = [root / name for name in ("binary", "library", "build.log")]
+        binary, library, build_log = [root / name for name in ("binary", "liblogger.a", "build.log")]
         for path in (binary, library, build_log):
             path.write_bytes(b"fixture\n")
         if placement == "metadata":
