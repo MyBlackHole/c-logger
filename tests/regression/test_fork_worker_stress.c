@@ -18,7 +18,7 @@ enum {
 };
 struct parent_writer {
 	unsigned number;
-	unsigned written;
+	_Atomic unsigned written;
 };
 struct child_writer {
 	logger_t *logger;
@@ -49,7 +49,8 @@ static void *parent_write(void *arg)
 		CHECK(LOGGER_INFO(parent_owner, "fork-stress",
 				  "PARENT_WRITER=%u:%u", writer->number,
 				  i) == 0);
-		++writer->written;
+		atomic_fetch_add_explicit(&writer->written, 1,
+					  memory_order_release);
 		struct timespec delay = { 0, 1000000 };
 		(void)nanosleep(&delay, NULL);
 	}
@@ -70,6 +71,27 @@ static void *child_write(void *arg)
 		}
 	}
 	return NULL;
+}
+
+/* 不是仅检查线程已启动：每次 fork 前后都要求两个业务写者
+ * 确实完成了新日志调用。计数由 release 发布、acquire 观测。
+ */
+static void wait_parent_progress(const struct parent_writer *writers,
+				 const unsigned baseline[PARENT_THREADS])
+{
+	for (unsigned retry = 0; retry < 5000; ++retry) {
+		int advanced = 1;
+		for (unsigned i = 0; i < PARENT_THREADS; ++i) {
+			unsigned value = atomic_load_explicit(
+				&writers[i].written, memory_order_acquire);
+			if (value <= baseline[i])
+				advanced = 0;
+		}
+		if (advanced)
+			return;
+		nap_ms();
+	}
+	CHECK(!"parent_writers_stalled_across_fork");
 }
 
 static void child_expect(int valid, int code)
@@ -175,14 +197,47 @@ int main(int argc, char **argv)
 	CHECK(atomic_load(&ready) == PARENT_THREADS);
 
 	pid_t children[CHILDREN];
+	unsigned progress_checks = 0;
 	int parallel = !strcmp(argv[1], "parallel");
 	for (unsigned i = 0; i < CHILDREN; ++i) {
 		CHECK(atomic_load(&ready) == PARENT_THREADS);
 		CHECK(!atomic_load(&stop_writers));
+		unsigned before[PARENT_THREADS];
+		for (unsigned j = 0; j < PARENT_THREADS; ++j) {
+			before[j] = atomic_load_explicit(
+				&writers[j].written, memory_order_acquire);
+			CHECK(before[j] < PARENT_LIMIT);
+		}
+		/* 此管道属于测试宿主，而非 Logger。子进程在重建域前
+		 * 只做 close/read 等异步信号安全操作；父进程确认真实
+		 * 写入进度后才允许其调用 logger_process_init。
+		 */
+		int gate[2];
+		CHECK(pipe(gate) == 0);
 		children[i] = fork();
 		CHECK(children[i] >= 0);
-		if (!children[i])
+		if (!children[i]) {
+			child_expect(close(gate[1]) == 0, 40);
+			char token = 0;
+			ssize_t n;
+			do {
+				n = read(gate[0], &token, 1);
+			} while (n < 0 && errno == EINTR);
+			child_expect(n == 1 && token == 'G', 41);
+			child_expect(close(gate[0]) == 0, 42);
 			child_run(i);
+		}
+		CHECK(close(gate[0]) == 0);
+		wait_parent_progress(writers, before);
+		progress_checks += PARENT_THREADS;
+		char token = 'G';
+		CHECK(write(gate[1], &token, 1) == 1);
+		CHECK(close(gate[1]) == 0);
+		for (unsigned j = 0; j < PARENT_THREADS; ++j)
+			before[j] = atomic_load_explicit(
+				&writers[j].written, memory_order_acquire);
+		wait_parent_progress(writers, before);
+		progress_checks += PARENT_THREADS;
 		if (!parallel)
 			wait_child(children[i]);
 	}
@@ -198,7 +253,8 @@ int main(int argc, char **argv)
 	CHECK(logger_flush(parent_owner) == 0);
 	uint64_t emitted = 2;
 	for (unsigned i = 0; i < PARENT_THREADS; ++i)
-		emitted += writers[i].written;
+		emitted += atomic_load_explicit(&writers[i].written,
+					memory_order_relaxed);
 	logger_io_metrics_t io;
 	CHECK(logger_get_io_metrics(parent_owner, &io) == 0);
 	CHECK(io.emitted_records == emitted && io.failed_records == 0);
@@ -220,7 +276,8 @@ int main(int argc, char **argv)
 	CHECK(chdir("/") == 0);
 	CHECK(rmdir(directory) == 0);
 	printf("FORK_WORKER_STRESS_PASS=%s children=%u parent_records=%" PRIu64
-	       " child_records=%u\n",
-	       argv[1], CHILDREN, emitted, CHILDREN * (CHILD_RECORDS + 2));
+	       " child_records=%u parent_progress_checks=%u\n",
+	       argv[1], CHILDREN, emitted, CHILDREN * (CHILD_RECORDS + 2),
+	       progress_checks);
 	return 0;
 }
