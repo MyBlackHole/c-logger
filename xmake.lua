@@ -861,6 +861,7 @@ if has_config("build_regression_tests") then
             for _, mode in ipairs({"mapped", "map-error", "advice-error", "mutex-1",
                                    "mutex-2", "mutex-3", "mutex-4", "rwlock-error",
                                    "bitmap-unmap-error", "allocation-errors", "unmap-retain",
+                                   "allocation-unlock-retain",
                                    "earlier-handler", "raw-bypass", "emit-held", "format-held", "directory-held",
                                    "final-unlock", "mapped-sync", "emit-held-sync", "format-held-sync", "directory-held-sync"}) do
                 add_tests(mode, {runargs = mode, group = "fork-runtime", timeout = 30})
