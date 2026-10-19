@@ -183,6 +183,7 @@ def run_sample(binary, output, case, timeout, temp_root):
     start = datetime.datetime.now(datetime.timezone.utc).isoformat()
     temp = Path(tempfile.mkdtemp(prefix="logger-fixed-rate-", dir=temp_root)).resolve()
     cleanup_temp = False
+    result_written = False
     result = {}
     try:
         path = temp / "output.log" if case["backend"] == "file" else Path("/dev/null")
@@ -274,15 +275,37 @@ def run_sample(binary, output, case, timeout, temp_root):
                     result["retained_temp_dir"] = str(temp)
                     break
         (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        result_written = True
         cleanup_temp = "archive_error" not in result
     finally:
-        if cleanup_temp or not any(temp.iterdir()):
-            shutil.rmtree(temp)
-        else:
+        retained = False
+        cleanup_error = None
+        operation = "inspect_temp_dir"
+        try:
+            if cleanup_temp or not any(temp.iterdir()):
+                operation = "remove_temp_dir"
+                shutil.rmtree(temp)
+            else:
+                retained = True
+        except OSError as exc:
+            cleanup_error = {"operation": operation, "errno": exc.errno,
+                             "message": str(exc), "path": str(temp),
+                             "residual_may_be_partial": True}
+            result["verification_valid"] = False
+            result["cleanup_error"] = cleanup_error
+            retained = os.path.isdir(temp)
+        if retained or cleanup_error:
             # 回执本身写失败或归档中断时，也必须能定位尚未删除的原件。
-            receipt = dict(result, error="sample_evidence_retained",
-                           verification_valid=False, retained_temp_dir=str(temp))
+            # 清理可能已经删除部分原件；已完成的归档不会再次改写或删除。
+            if retained:
+                result["retained_temp_dir"] = str(temp)
+            receipt = dict(result, error="sample_evidence_retained" if retained else "sample_cleanup_failed",
+                           verification_valid=False)
             print(json.dumps(receipt), file=sys.stderr, flush=True)
+        if cleanup_error and result_written:
+            # 先输出恢复定位，再更新终态；写失败仍退出，不能掩盖原始异常。
+            # 成功返回主循环后，该失败样本必须进入汇总并阻止后续负载。
+            (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
 
 

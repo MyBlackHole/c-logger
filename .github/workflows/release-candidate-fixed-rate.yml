@@ -190,7 +190,7 @@ jobs:
           print("原始采样与每种链接形态32个样本已逐项校验；无业务SLO通过声明。")
           PY
 
-      - name: 定位本次归档失败时保留的原件
+      - name: 定位本次归档或清理失败留下的临时文件
         if: always()
         id: retained
         shell: bash
@@ -231,7 +231,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: 上传尚未完整归档的原件
+      - name: 上传尚未完整归档的原件或清理残余
         if: ${{ always() && steps.retained.outputs.paths != '' }}
         uses: actions/upload-artifact@v4
         with:
