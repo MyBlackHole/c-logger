@@ -68,6 +68,22 @@ def main():
                         [str(binary), mode], capture_output=True, text=True,
                         check=False, timeout=90)
                 except subprocess.TimeoutExpired as err:
+                    name = f"{round_number:02d}-{mode}"
+                    stdout = err.stdout or b""
+                    stderr = err.stderr or b""
+                    if isinstance(stdout, str):
+                        stdout = stdout.encode("utf-8", errors="replace")
+                    if isinstance(stderr, str):
+                        stderr = stderr.encode("utf-8", errors="replace")
+                    (args.out / (name + ".stdout")).write_bytes(stdout)
+                    (args.out / (name + ".stderr")).write_bytes(stderr)
+                    evidence["results"].append({
+                        "round": round_number, "mode": mode,
+                        "exit_code": None, "timed_out": True,
+                        "elapsed_seconds": time.monotonic() - started,
+                    })
+                    (args.out / "results.json").write_text(
+                        json.dumps(evidence, indent=2) + "\n")
                     raise ValueError(f"timeout:{mode}:{round_number}") from err
                 name = f"{round_number:02d}-{mode}"
                 (args.out / (name + ".stdout")).write_text(result.stdout)
