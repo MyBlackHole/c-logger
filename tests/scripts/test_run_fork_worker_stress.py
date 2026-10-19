@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """压力证据执行器正反例：缺失子日志/跳过/假成功均被拒绝。"""
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import tempfile
+from unittest import mock
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +69,34 @@ class WorkerStressRunnerTest(unittest.TestCase):
     def test_insufficient_progress_proof_rejected(self):
         with self.assertRaisesRegex(ValueError, "unexpected"):
             RUN.parse_result("serial", 0, sample(progress=15), "")
+
+    def test_timeout_preserves_partial_output_and_terminal_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            binary = directory / "fake-binary"
+            binary.write_bytes(b"fake")
+            out = directory / "observations"
+            expired = subprocess.TimeoutExpired(
+                [str(binary), "serial"], 90,
+                output=b"partial stdout", stderr=b"partial stderr")
+            with mock.patch.object(
+                    RUN.subprocess, "run", side_effect=expired):
+                with mock.patch(
+                        "sys.argv",
+                        ["run_fork_worker_stress.py", "--binary", str(binary),
+                         "--out", str(out), "--repeats", "1"]):
+                    self.assertEqual(RUN.main(), 1)
+            self.assertEqual(
+                (out / "00-serial.stdout").read_bytes(), b"partial stdout")
+            self.assertEqual(
+                (out / "00-serial.stderr").read_bytes(), b"partial stderr")
+            report = json.loads((out / "results.json").read_text())
+            self.assertEqual(len(report["results"]), 1)
+            self.assertIsNone(report["results"][0]["exit_code"])
+            self.assertTrue(report["results"][0]["timed_out"])
+            self.assertNotIn("verified", report["results"][0])
+            self.assertIn("timeout:serial:0",
+                          (out / "failure.txt").read_text())
 
     def test_sanitizer_report_rejected(self):
         with self.assertRaisesRegex(ValueError, "sanitizer"):
