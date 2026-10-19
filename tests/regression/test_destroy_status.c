@@ -3,20 +3,13 @@
 #include "logger_internal.h"
 #include <fcntl.h>
 static int fail_join, fail_cond_destroy, fail_mutex_destroy;
-enum file_fd_slot {
-	FILE_DATA,
-	FILE_LOCK,
-	FILE_DIRECTORY,
-	FILE_FD_COUNT
-};
+enum file_fd_slot { FILE_DATA, FILE_LOCK, FILE_DIRECTORY, FILE_FD_COUNT };
 struct close_probe {
 	int fd;
 	int error;
 	unsigned calls;
 };
-static struct close_probe close_probes[FILE_FD_COUNT] = {
-	{ .fd = -1 }, { .fd = -1 }, { .fd = -1 }
-};
+static struct close_probe close_probes[FILE_FD_COUNT];
 static logger_t *subject;
 static int subject_freed;
 
@@ -93,6 +86,8 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 }
 int main(int argc, char **argv)
 {
+	for (unsigned i = 0; i < FILE_FD_COUNT; ++i)
+		close_probes[i].fd = -1;
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	unlink("dispose.log");
@@ -122,11 +117,10 @@ int main(int argc, char **argv)
 		fail_cond_destroy = 1;
 	else if (!strcmp(argv[1], "mutex-destroy-error"))
 		fail_mutex_destroy = 1;
-	const struct logger_owned_fd *fds[FILE_FD_COUNT] = {
-		&l->file_backend.fd,
-		&l->file_backend.lock_fd,
-		&l->file_backend.dir_fd
-	};
+	const struct logger_owned_fd *fds[FILE_FD_COUNT];
+	fds[FILE_DATA] = &l->file_backend.fd;
+	fds[FILE_LOCK] = &l->file_backend.lock_fd;
+	fds[FILE_DIRECTORY] = &l->file_backend.dir_fd;
 	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
 		if (logger_fd_valid(fds[i]))
 			close_probes[i].fd =
