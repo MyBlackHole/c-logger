@@ -156,8 +156,7 @@ static void syslog_prefix_failure(int lock_failure)
 	struct sockaddr_un address = { .sun_family = AF_UNIX };
 	const char name[] = "sink.sock";
 	memcpy(address.sun_path, name, sizeof(name));
-	size_t length = offsetof(struct sockaddr_un, sun_path) +
-			 sizeof(name);
+	size_t length = offsetof(struct sockaddr_un, sun_path) + sizeof(name);
 	CHECK(bind(sink, (struct sockaddr *)&address, (socklen_t)length) == 0);
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
