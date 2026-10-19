@@ -128,8 +128,8 @@ def validate_freeze(root, base):
     changed = git(root, "diff", "--no-renames", "--name-only", base, head)
     if changed.splitlines() != [MANIFEST]:
         raise Refused("changes_after_freeze_not_signoff_only")
-    # A final tree diff alone misses unsafe edits subsequently reverted in Git
-    # history. Include side-branch commits and compare every merge-parent edge.
+    # 只比较冻结基线与最终提交，会漏掉中途修改后又还原的危险提交。
+    # 核对全部新增提交及各条合并父边，不允许出现非签收文件变更。
     history = git(root, "rev-list", "--reverse", "--parents",
                   base + ".." + head)
     for revision in history.splitlines():
