@@ -199,6 +199,9 @@ int main(int argc, char **argv)
 		nap_ms();
 	}
 	CHECK(atomic_load(&ready) == PARENT_THREADS);
+	/* ready 只代表线程已启动；首次 fork 前必须有真实成功写入。 */
+	unsigned initial[PARENT_THREADS] = { 0 };
+	wait_parent_progress(writers, initial);
 
 	pid_t children[CHILDREN];
 	unsigned progress_checks = 0;
@@ -209,7 +212,7 @@ int main(int argc, char **argv)
 		unsigned before[PARENT_THREADS];
 		for (unsigned j = 0; j < PARENT_THREADS; ++j) {
 			before[j] = parent_written(&writers[j]);
-			CHECK(before[j] < PARENT_LIMIT);
+			CHECK(before[j] > 0 && before[j] < PARENT_LIMIT);
 		}
 		/* 此管道属于测试宿主，而非 Logger。子进程在重建域前
 		 * 只做 close/read 等异步信号安全操作；父进程确认真实
