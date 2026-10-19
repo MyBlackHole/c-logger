@@ -298,6 +298,176 @@ class Verification(unittest.TestCase):
                 self.assertTrue((output / "stdout.jsonl").is_file())
                 self.assertTrue((output / "stderr.log").is_file())
 
+    def test_cleanup_failure_is_recorded_in_summary_and_stops(self):
+        # 使用真实子进程生成完整原件，分别模拟部分删除和已有无效样本。
+        for variant, partial, handled in (("healthy", True, False),
+                                          ("diagnostic", False, False),
+                                          ("healthy", False, True)):
+            with self.subTest(variant=variant, handled=handled), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                binary, case, originals = self.write_child_fixture(root, variant)
+                library, build_log = root / "library", root / "build.log"
+                library.write_bytes(b"controlled_library\n")
+                build_log.write_text("controlled_build\n")
+                output, owned = root / "evidence", root / "temporary"
+                owned.mkdir()
+                removals = []
+
+                def fail_cleanup(path):
+                    removals.append(Path(path))
+                    if partial:
+                        (Path(path) / "latency.bin").unlink()
+                    raise OSError(errno.ENOTEMPTY, "controlled_cleanup_failure")
+
+                argv = ["benchmark_fixed_rate.py", "--binary", str(binary),
+                        "--library", str(library), "--build-log", str(build_log),
+                        "--out", str(output), "--threads", "1", "--rates", "3",
+                        "--payload-bytes", "3", "--backends", "file", "--seconds", "1",
+                        "--warmup", "0", "--repeats", "2", "--temp-root", str(owned)]
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with mock.patch.object(bench, "ROOT", root), \
+                        mock.patch.object(bench, "command", return_value={"returncode": 0, "stdout": "", "stderr": ""}), \
+                        mock.patch.object(bench.shutil, "rmtree", fail_cleanup), \
+                        mock.patch.object(bench.signal, "signal"), \
+                        mock.patch.object(sys, "argv", argv), \
+                        contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    if handled:
+                        # 调用方已经处理的异常不属于 run_sample 待传播错误。
+                        try:
+                            raise ValueError("controlled_caller_exception")
+                        except ValueError:
+                            rc = bench.main()
+                    else:
+                        rc = bench.main()
+                self.assertEqual(rc, 1)
+                self.assertEqual(len(removals), 1)
+                self.assertFalse((output / "sample-001").exists())
+                sample = output / "sample-000"
+                result = json.loads((sample / "result.json").read_text())
+                rows = [json.loads(line) for line in (output / "results.jsonl").read_text().splitlines()]
+                self.assertEqual(rows, [result])
+                self.assertFalse(result["verification_valid"])
+                self.assertEqual(result["case"], case)
+                self.assertEqual(result["returncode"], 0)
+                self.assertFalse(result["timed_out"])
+                self.assertEqual(result["cleanup_error"]["errno"], errno.ENOTEMPTY)
+                self.assertIn("controlled_cleanup_failure", result["cleanup_error"]["message"])
+                self.assertEqual(result["cleanup_error"]["path"], str(removals[0]))
+                self.assertEqual(result["retained_temp_dir"], str(removals[0]))
+                self.assertNotIn("archive_error", result)
+                if variant == "diagnostic":
+                    self.assertEqual(result["verification_error"], "child_run_invalid")
+                else:
+                    self.assertNotIn("verification_error", result)
+                for name, contents in originals.items():
+                    self.assertEqual(gzip.decompress((sample / (name + ".gz")).read_bytes()), contents)
+                    if name != "latency.bin" or not partial:
+                        self.assertEqual((removals[0] / name).read_bytes(), contents)
+                self.assertEqual((removals[0] / "latency.bin").exists(), not partial)
+                receipts = [json.loads(line) for line in stderr.getvalue().splitlines()]
+                self.assertEqual(len(receipts), 1)
+                self.assertEqual(receipts[0]["error"], "sample_evidence_retained")
+                self.assertEqual(receipts[0]["cleanup_error"], result["cleanup_error"])
+                self.assertFalse(receipts[0]["verification_valid"])
+                progress = [json.loads(line) for line in stdout.getvalue().splitlines()]
+                self.assertEqual(len(progress), 1)
+                self.assertFalse(progress[0]["verification_valid"])
+
+    def test_cleanup_receipt_write_failure_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, case, originals = self.write_child_fixture(root)
+            output, owned = root / "result", root / "temporary"
+            owned.mkdir()
+            real_write = Path.write_text
+            writes = []
+
+            def fail_rewrite(path, *args, **kwargs):
+                if path == output / "result.json":
+                    writes.append(path)
+                    if len(writes) == 2:
+                        raise OSError(errno.ENOSPC, "controlled_cleanup_receipt_write")
+                return real_write(path, *args, **kwargs)
+
+            stderr = io.StringIO()
+            with mock.patch.object(bench.shutil, "rmtree", side_effect=OSError(errno.ENOTEMPTY, "controlled_cleanup_failure")), \
+                    mock.patch.object(Path, "write_text", fail_rewrite), \
+                    contextlib.redirect_stderr(stderr), self.assertRaises(OSError) as raised:
+                bench.run_sample(binary, output, case, 2, owned)
+            self.assertEqual(raised.exception.errno, errno.ENOSPC)
+            self.assertEqual(len(writes), 2)
+            receipts = [json.loads(line) for line in stderr.getvalue().splitlines()]
+            self.assertEqual(len(receipts), 1)
+            receipt = receipts[0]
+            self.assertFalse(receipt["verification_valid"])
+            self.assertEqual(receipt["cleanup_error"]["errno"], errno.ENOTEMPTY)
+            retained = Path(receipt["retained_temp_dir"])
+            for name, contents in originals.items():
+                self.assertEqual((retained / name).read_bytes(), contents)
+                self.assertEqual(gzip.decompress((output / (name + ".gz")).read_bytes()), contents)
+
+    def test_cleanup_error_without_directory_has_no_retained_locator(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, case, originals = self.write_child_fixture(root)
+            output, owned = root / "result", root / "temporary"
+            owned.mkdir()
+            real_remove = bench.shutil.rmtree
+
+            def removed_elsewhere(path):
+                real_remove(path)
+                raise OSError(errno.ENOENT, "controlled_directory_disappeared")
+
+            stderr = io.StringIO()
+            with mock.patch.object(bench.shutil, "rmtree", removed_elsewhere), \
+                    contextlib.redirect_stderr(stderr):
+                result = bench.run_sample(binary, output, case, 2, owned)
+            self.assertFalse(result["verification_valid"])
+            self.assertEqual(result["cleanup_error"]["errno"], errno.ENOENT)
+            self.assertNotIn("retained_temp_dir", result)
+            self.assertEqual(list(owned.iterdir()), [])
+            receipt = json.loads(stderr.getvalue())
+            self.assertEqual(receipt["error"], "sample_cleanup_failed")
+            self.assertNotIn("retained_temp_dir", receipt)
+            for name, contents in originals.items():
+                self.assertEqual(gzip.decompress((output / (name + ".gz")).read_bytes()), contents)
+
+    def test_cleanup_inspection_error_preserves_pending_receipt_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, case, originals = self.write_child_fixture(root)
+            output, owned = root / "result", root / "temporary"
+            owned.mkdir()
+            real_write, real_iterdir = Path.write_text, Path.iterdir
+            writes = []
+
+            def fail_result(path, *args, **kwargs):
+                if path == output / "result.json":
+                    writes.append(path)
+                    raise OSError(errno.ENOSPC, "controlled_result_write")
+                return real_write(path, *args, **kwargs)
+
+            def fail_inspection(path):
+                if path.parent == owned:
+                    raise OSError(errno.EACCES, "controlled_cleanup_inspection")
+                return real_iterdir(path)
+
+            stderr = io.StringIO()
+            with mock.patch.object(Path, "write_text", fail_result), \
+                    mock.patch.object(Path, "iterdir", fail_inspection), \
+                    contextlib.redirect_stderr(stderr), self.assertRaises(OSError) as raised:
+                bench.run_sample(binary, output, case, 2, owned)
+            self.assertEqual(raised.exception.errno, errno.ENOSPC)
+            self.assertEqual(len(writes), 1)
+            receipt = json.loads(stderr.getvalue())
+            self.assertFalse(receipt["verification_valid"])
+            self.assertEqual(receipt["cleanup_error"]["operation"], "inspect_temp_dir")
+            self.assertEqual(receipt["cleanup_error"]["errno"], errno.EACCES)
+            retained = Path(receipt["retained_temp_dir"])
+            for name, contents in originals.items():
+                self.assertEqual((retained / name).read_bytes(), contents)
+                self.assertEqual(gzip.decompress((output / (name + ".gz")).read_bytes()), contents)
+
     def test_timeout_cleans_own_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
