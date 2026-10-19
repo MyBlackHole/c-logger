@@ -478,6 +478,79 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('git_verification_failed',
                       fixture.signoff_check().stderr)
 
+    def test_signoff_accepts_manifest_only_history_with_merge(self):
+        fixture = self.fixture()
+        fixture.git('checkout', '-qb', 'extra-signoff')
+        document = json.loads(fixture.approval_path.read_text())
+        document['decisions']['C_TSAN']['residual_risk'] += (
+            ' 仅用于本地正向合并测试。')
+        fixture.approval_path.write_text(json.dumps(document, indent=2) + '\n')
+        fixture.git('add', 'validation/release_signoff_v2.json')
+        fixture.git('commit', '-qm', 'Local fixture signoff-only update')
+        fixture.git('checkout', 'main')
+        fixture.git('merge', '--no-ff', '-m', 'Merge local signoff-only branch',
+                    'extra-signoff')
+        result = fixture.signoff_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_signoff_blocks_reverted_source_change_after_freeze(self):
+        fixture = self.fixture()
+        source = fixture.repo / 'src'
+        source.mkdir()
+        transient = source / 'unreviewed.c'
+        transient.write_text('int changed_after_freeze;\n')
+        fixture.git('add', 'src/unreviewed.c')
+        fixture.git('commit', '-qm', 'Unreviewed source change after freeze')
+        transient.unlink()
+        fixture.git('add', '-u')
+        fixture.git('commit', '-qm', 'Revert unreviewed source change')
+        # 旧实现只比较终态净差异，因此无法发现中途两个违规提交。
+        self.assertEqual(
+            fixture.git('diff', '--no-renames', '--name-only',
+                        fixture.frozen_base, 'HEAD').stdout.strip(),
+            'validation/release_signoff_v2.json')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_reverted_abi_change_after_freeze(self):
+        fixture = self.fixture()
+        path = fixture.repo / 'abi/logger-2.0.symbols'
+        original = path.read_text()
+        path.write_text(original + 'logger_unreviewed\n')
+        fixture.git('add', 'abi/logger-2.0.symbols')
+        fixture.git('commit', '-qm', 'Unreviewed ABI change')
+        path.write_text(original)
+        fixture.git('add', 'abi/logger-2.0.symbols')
+        fixture.git('commit', '-qm', 'Revert unreviewed ABI change')
+        self.assertEqual(
+            fixture.git('diff', '--no-renames', '--name-only',
+                        fixture.frozen_base, 'HEAD').stdout.strip(),
+            'validation/release_signoff_v2.json')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
+    def test_signoff_blocks_reverted_side_branch_changes(self):
+        fixture = self.fixture()
+        fixture.git('checkout', '-qb', 'unreviewed-side-branch')
+        source = fixture.repo / 'src'
+        source.mkdir()
+        path = source / 'transient.c'
+        path.write_text('int unreviewed_side_branch;\n')
+        fixture.git('add', 'src/transient.c')
+        fixture.git('commit', '-qm', 'Unreviewed side-branch source change')
+        path.unlink()
+        fixture.git('add', '-u')
+        fixture.git('commit', '-qm', 'Revert side-branch source change')
+        fixture.git('checkout', 'main')
+        fixture.git('merge', '--no-ff', '-m', 'Merge reverted side history',
+                    'unreviewed-side-branch')
+        self.assertEqual(
+            fixture.git('diff', '--no-renames', '--name-only',
+                        fixture.frozen_base, 'HEAD').stdout.strip(),
+            'validation/release_signoff_v2.json')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
     def test_signoff_blocks_source_change_after_freeze(self):
         fixture = self.fixture()
         (fixture.repo / 'src').mkdir()

@@ -128,6 +128,19 @@ def validate_freeze(root, base):
     changed = git(root, "diff", "--no-renames", "--name-only", base, head)
     if changed.splitlines() != [MANIFEST]:
         raise Refused("changes_after_freeze_not_signoff_only")
+    # 只比较冻结基线与最终提交，会漏掉中途修改后又还原的危险提交。
+    # 核对全部新增提交及各条合并父边，不允许出现非签收文件变更。
+    history = git(root, "rev-list", "--reverse", "--parents",
+                  base + ".." + head)
+    for revision in history.splitlines():
+        commit, *parents = revision.split()
+        if not parents:
+            raise Refused("unexpected_root_commit_after_freeze")
+        for parent in parents:
+            changed = git(root, "diff", "--no-renames", "--name-only",
+                          parent, commit)
+            if any(path != MANIFEST for path in changed.splitlines()):
+                raise Refused("changes_after_freeze_not_signoff_only")
     git(root, "ls-files", "--error-unmatch", MANIFEST)
     git(root, "diff", "--quiet", "HEAD", "--", MANIFEST)
     git(root, "diff", "--cached", "--quiet", "--", MANIFEST)
