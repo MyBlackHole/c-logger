@@ -345,8 +345,8 @@ class OwnedCopies(unittest.TestCase):
             "(void)logger_fd_valid(src);",
             "struct logger_borrowed_fd view = logger_fd_borrow(src); "
             "int number = logger_fd_number(view); (void)number;",
-            "struct other { int value; }; "
-            "struct other other = {0}; other.value = 3; (void)other;",
+            "struct plain_record { int value; }; "
+            "struct plain_record plain = {0}; plain.value = 3; (void)plain;",
             "struct logger_borrowed_fd view = logger_fd_borrow(src); "
             "view.value = 2; (void)view;",
         ]:
@@ -373,7 +373,7 @@ class OwnedCopies(unittest.TestCase):
         ]
         for source, callee, indices in cases:
             with self.subTest(callee=callee, source=source):
-                body = "unsigned char bytes[sizeof(*dst)] = {0};\n" + source
+                body = "unsigned char bytes[sizeof(*dst)] = {0}; (void)bytes;\n" + source
                 report = self.analyze(body)
                 self.assertEqual(1, len(report["violations"]), report["violations"])
                 found = report["violations"][0]
