@@ -33,6 +33,7 @@ static int hold_format;
 static int child_async = 1;
 static int fail_final_unlock;
 static int arm_unlock;
+static int fail_allocation_unlock;
 static uintptr_t final_subject;
 static const char *hold_mode;
 static logger_t *parent_logger;
@@ -114,6 +115,11 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *p)
 {
 	int rc = __real_pthread_mutex_unlock(p);
+	if (!rc && fail_allocation_unlock &&
+	    p == &logger_runtime_current()->resource_mu) {
+		fail_allocation_unlock = 0;
+		return EIO;
+	}
 	if (!rc && arm_unlock) {
 		arm_unlock = 0;
 		fail_final_unlock = 0;
@@ -370,6 +376,7 @@ int main(int argc, char **argv)
 #if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
 	if (child_async && strcmp(mode, "allocation-errors") &&
 	    strcmp(mode, "unmap-retain") && strcmp(mode, "final-unlock") &&
+	    strcmp(mode, "allocation-unlock-retain") &&
 	    strcmp(mode, "raw-bypass")) {
 		printf("FORK_RUNTIME_SKIP=tsan-post-fork-worker case=%s\n",
 		       argv[1]);
@@ -415,6 +422,23 @@ int main(int argc, char **argv)
 		CHECK(logger_runtime_current()->allocation_count == 1);
 		CHECK(logger_runtime_malloc(32) == NULL && errno == EIO);
 		/* 故障状态按合同保留映射，不能再假装执行正常回收。 */
+		leave_temp(path);
+		printf("FORK_RUNTIME_PASS=%s retained=1\n", mode);
+		return 0;
+	} else if (!strcmp(mode, "allocation-unlock-retain")) {
+		CHECK(logger_destroy(&parent_logger) == 0);
+		struct logger_runtime *runtime = logger_runtime_current();
+		CHECK(runtime->allocation_count == 0);
+		fail_allocation_unlock = 1;
+		errno = 0;
+		void *p = logger_runtime_malloc(32);
+		CHECK(p == NULL && errno == EIO);
+		CHECK(fail_allocation_unlock == 0);
+		CHECK(runtime->allocation_count == 1);
+		CHECK(atomic_load(&runtime->resource_error) == EIO);
+		errno = 0;
+		CHECK(logger_runtime_malloc(32) == NULL && errno == EIO);
+		CHECK(runtime->allocation_count == 1);
 		leave_temp(path);
 		printf("FORK_RUNTIME_PASS=%s retained=1\n", mode);
 		return 0;
