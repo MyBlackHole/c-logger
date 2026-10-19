@@ -881,7 +881,8 @@ if has_config("build_regression_tests") then
             add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
         end
         for _, scenario in ipairs({"errno-format", "post-lock-poison", "lock", "unlock", "dual", "checked-lock", "checked-unlock",
-                                    "output-sync", "output-async", "order-ok", "order-reversed", "order-recursive"}) do
+                                    "output-sync", "output-async", "order-ok", "order-reversed", "order-recursive",
+                                     "syslog-prefix-lock", "syslog-prefix-format", "archive-format"}) do
             add_tests(scenario, {runargs = scenario, group = "libc-coordination", timeout = 15})
         end
     target_end()
