@@ -63,6 +63,22 @@ def main():
                         [str(binary), mode], capture_output=True, text=True,
                         check=False, timeout=50)
                 except subprocess.TimeoutExpired as exc:
+                    name = f"{repeat:02d}-{mode}"
+                    stdout = exc.stdout or b""
+                    stderr = exc.stderr or b""
+                    if isinstance(stdout, str):
+                        stdout = stdout.encode("utf-8", errors="replace")
+                    if isinstance(stderr, str):
+                        stderr = stderr.encode("utf-8", errors="replace")
+                    (opts.output / (name + ".stdout")).write_bytes(stdout)
+                    (opts.output / (name + ".stderr")).write_bytes(stderr)
+                    report["runs"].append({
+                        "round": repeat, "mode": mode,
+                        "exit_code": None, "timed_out": True,
+                        "seconds": time.monotonic() - started,
+                    })
+                    (opts.output / "results.json").write_text(
+                        json.dumps(report, indent=2) + "\n")
                     raise ValueError(f"timeout:{mode}:{repeat}") from exc
                 name = f"{repeat:02d}-{mode}"
                 (opts.output / (name + ".stdout")).write_text(proc.stdout)

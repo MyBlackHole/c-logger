@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """宿主 FILE 非干扰回执判定器的有限正反例。"""
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import tempfile
+from unittest import mock
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +60,34 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sanitizer_diagnostic"):
             RUNNER.verify("held", 0, output(),
                           "ERROR: AddressSanitizer: use-after-free")
+
+    def test_timeout_preserves_partial_output_and_terminal_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            binary = directory / "fake-binary"
+            binary.write_bytes(b"fake")
+            out = directory / "observations"
+            expired = subprocess.TimeoutExpired(
+                [str(binary), "held"], 50,
+                output=b"partial stdout", stderr=b"partial stderr")
+            with mock.patch.object(
+                    RUNNER.subprocess, "run", side_effect=expired):
+                with mock.patch(
+                        "sys.argv",
+                        ["check_fork_host_file.py", "--binary", str(binary),
+                         "--output", str(out), "--repeats", "1"]):
+                    self.assertEqual(RUNNER.main(), 1)
+            self.assertEqual(
+                (out / "00-held.stdout").read_bytes(), b"partial stdout")
+            self.assertEqual(
+                (out / "00-held.stderr").read_bytes(), b"partial stderr")
+            report = json.loads((out / "results.json").read_text())
+            self.assertEqual(len(report["runs"]), 1)
+            self.assertIsNone(report["runs"][0]["exit_code"])
+            self.assertTrue(report["runs"][0]["timed_out"])
+            self.assertNotIn("verified", report["runs"][0])
+            self.assertIn("timeout:held:0",
+                          (out / "failure.txt").read_text())
 
     def test_nonzero_exit(self):
         with self.assertRaisesRegex(ValueError, "nonzero_or_skipped"):
