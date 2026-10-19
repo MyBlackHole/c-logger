@@ -529,6 +529,28 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('changes_after_freeze_not_signoff_only',
                       fixture.signoff_check().stderr)
 
+    def test_signoff_blocks_reverted_side_branch_changes(self):
+        fixture = self.fixture()
+        fixture.git('checkout', '-qb', 'unreviewed-side-branch')
+        source = fixture.repo / 'src'
+        source.mkdir()
+        path = source / 'transient.c'
+        path.write_text('int unreviewed_side_branch;\n')
+        fixture.git('add', 'src/transient.c')
+        fixture.git('commit', '-qm', 'Unreviewed side-branch source change')
+        path.unlink()
+        fixture.git('add', '-u')
+        fixture.git('commit', '-qm', 'Revert side-branch source change')
+        fixture.git('checkout', 'main')
+        fixture.git('merge', '--no-ff', '-m', 'Merge reverted side history',
+                    'unreviewed-side-branch')
+        self.assertEqual(
+            fixture.git('diff', '--no-renames', '--name-only',
+                        fixture.frozen_base, 'HEAD').stdout.strip(),
+            'validation/release_signoff_v2.json')
+        self.assertIn('changes_after_freeze_not_signoff_only',
+                      fixture.signoff_check().stderr)
+
     def test_signoff_blocks_source_change_after_freeze(self):
         fixture = self.fixture()
         (fixture.repo / 'src').mkdir()
