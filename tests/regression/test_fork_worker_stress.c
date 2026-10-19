@@ -76,14 +76,18 @@ static void *child_write(void *arg)
 /* 不是仅检查线程已启动：每次 fork 前后都要求两个业务写者
  * 确实完成了新日志调用。计数由 release 发布、acquire 观测。
  */
+static unsigned parent_written(const struct parent_writer *writer)
+{
+	return atomic_load_explicit(&writer->written, memory_order_acquire);
+}
+
 static void wait_parent_progress(const struct parent_writer *writers,
 				 const unsigned baseline[PARENT_THREADS])
 {
 	for (unsigned retry = 0; retry < 5000; ++retry) {
 		int advanced = 1;
 		for (unsigned i = 0; i < PARENT_THREADS; ++i) {
-			unsigned value = atomic_load_explicit(
-				&writers[i].written, memory_order_acquire);
+			unsigned value = parent_written(&writers[i]);
 			if (value <= baseline[i])
 				advanced = 0;
 		}
@@ -204,8 +208,7 @@ int main(int argc, char **argv)
 		CHECK(!atomic_load(&stop_writers));
 		unsigned before[PARENT_THREADS];
 		for (unsigned j = 0; j < PARENT_THREADS; ++j) {
-			before[j] = atomic_load_explicit(
-				&writers[j].written, memory_order_acquire);
+			before[j] = parent_written(&writers[j]);
 			CHECK(before[j] < PARENT_LIMIT);
 		}
 		/* 此管道属于测试宿主，而非 Logger。子进程在重建域前
@@ -234,8 +237,7 @@ int main(int argc, char **argv)
 		CHECK(write(gate[1], &token, 1) == 1);
 		CHECK(close(gate[1]) == 0);
 		for (unsigned j = 0; j < PARENT_THREADS; ++j)
-			before[j] = atomic_load_explicit(
-				&writers[j].written, memory_order_acquire);
+			before[j] = parent_written(&writers[j]);
 		wait_parent_progress(writers, before);
 		progress_checks += PARENT_THREADS;
 		if (!parallel)
@@ -248,13 +250,12 @@ int main(int argc, char **argv)
 	atomic_store(&stop_writers, 1);
 	for (unsigned i = 0; i < PARENT_THREADS; ++i)
 		CHECK(!pthread_join(threads[i], NULL));
-	CHECK(writers[0].written && writers[1].written);
+	CHECK(parent_written(&writers[0]) && parent_written(&writers[1]));
 	CHECK(LOGGER_INFO(parent_owner, "parent", "PARENT_END") == 0);
 	CHECK(logger_flush(parent_owner) == 0);
 	uint64_t emitted = 2;
 	for (unsigned i = 0; i < PARENT_THREADS; ++i)
-		emitted += atomic_load_explicit(&writers[i].written,
-					memory_order_relaxed);
+		emitted += parent_written(&writers[i]);
 	logger_io_metrics_t io;
 	CHECK(logger_get_io_metrics(parent_owner, &io) == 0);
 	CHECK(io.emitted_records == emitted && io.failed_records == 0);
