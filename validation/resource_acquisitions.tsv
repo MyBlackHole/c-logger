@@ -10,7 +10,7 @@ src/logger_fork_fd.c	open	path,flags,mode	1	协调区间内先取得 fd 后登�
 src/logger_fork_fd.c	openat	dir,path,flags,mode	1	候选活动/协调/保留 fd 统一取得登记，再由对应后端拥有	tests/regression/test_file_backend.c	direct	原三个逻辑调用站点及47个后端场景保持独立；open-window 在取得后未登记处暂停并验证子方关闭
 src/logger_fork_fd.c	socket	domain,type,protocol	1	Syslog 候选连接描述符在 connect 前已登记	tests/regression/test_syslog_faults.c	direct	34个原故障场景及新增真实 Syslog 父方持续发送场景；子方不继承客户端引用
 src/logger_fork_fd.c	mmap	NULL,bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0	1	私有 fd 位图映射，由登记表拥有，最后引用关闭后 munmap	tests/regression/test_fork_fd.c	direct	map-failure 拒绝映射且真实关闭刚取得的 fd；正常/失败后重试检查映射归还
-src/logger_fork_fd.c	mremap	owned,owned_bytes,bytes,MREMAP_MAYMOVE	1	扩大同一登记映射；失败保留原映射，回滚新 fd	tests/regression/test_fork_fd.c	adjacent	grow/grow-failure 已注册但本地硬限额16384不足32769而跳过；未获得高 fd 动态验收，不写为direct
+src/logger_fork_fd.c	mremap	owned,owned_bytes,bytes,MREMAP_MAYMOVE	1	扩大同一登记映射；失败保留原映射，回滚新 fd	tests/regression/test_fork_fd.c	direct	#272受测合并80c5edf536b1bfffc0f689c67e15c0bb2dcd6c8a的highfd运行39132896051：GCC13.3/Clang18.1、生产静态/支持归档均真实执行grow与grow-failure；后者消费mremap故障标志并返回ENOMEM，核对新fd关闭、旧登记后继可用及最终映射回收；65536限额下无跳过。仅指该获取点指定失败路径，不是全部错误/调度；此次未重新执行
 src/logger_runtime.c	mmap	NULL,sizeof(*runtime),PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0	1	进程引导候选，发布后由进程域拥有	tests/regression/test_fork_runtime.c	direct	map-error 与 advice-error 验证新域未发布且候选映射回滚；本地预检，远端验收未运行
 src/logger_runtime.c	mmap	NULL,bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0	1	实例/队列/工作区私有映射，由域登记最终释放	tests/regression/test_fork_runtime.c	direct	allocation-errors 逐点拒绝10处隔离配置并验证映射归还；unmap-retain 验证失败保留；本地预检，远端验收未运行
 src/logger_runtime.c	pthread_mutex_init	&runtime->resource_mu,NULL	1	进程域拥有资源协调锁	tests/regression/test_fork_runtime.c	direct	mutex-1 注入初始化失败、回滚并显式重试；本地预检，远端验收未运行
