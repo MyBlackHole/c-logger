@@ -59,9 +59,14 @@ def verify_logger_linkage(library, dependencies):
         if not separator:
             raise ValueError("library_dependency_unparsable")
         location = after.split(" (", 1)[0].strip()
-        if not Path(location).is_absolute():
+        if not location or location == "not found":
             raise ValueError("library_dependency_unresolved")
-        loaded.append(Path(location).resolve())
+        resolved = Path(location)
+        # ldd 在 ROOT 内执行，LD_LIBRARY_PATH 可使其报告相对路径。
+        # 相对加载路径须按同一工作目录解析，不能按宿主其他 cwd 猜测。
+        if not resolved.is_absolute():
+            resolved = ROOT / resolved
+        loaded.append(resolved.resolve())
     if shared:
         if not loaded:
             raise ValueError("shared_library_not_loaded")
