@@ -286,8 +286,8 @@ jobs:
 
 
 
-  # Keep the historical job id stable for branch-protection continuity, but
-  # exercise the complete default-static test surface rather than only core tests.
+  # 保留既有作业 ID 与生产归档隔离门禁。完整 Sanitizer 测试由
+  # core-validation（PR 合并结果）和 sanitizer-evidence（PR 头提交）运行。
   sanitizer-core:
     runs-on: ubuntu-24.04
     strategy:
@@ -313,7 +313,7 @@ jobs:
       - name: 验收已修复的 ASan 运行库
         if: matrix.sanitizer == 'address-undefined'
         uses: ./.github/actions/setup-asan-runtime
-      - name: 配置启用运行时检查的静态库测试集
+      - name: 配置启用运行时检查的生产静态库
         shell: bash
         run: |
           set -euo pipefail
@@ -325,35 +325,14 @@ jobs:
             policies="build.sanitizer.thread"
           fi
           xmake f -P . "${toolchain[@]}" -m debug \
-            \
             --build_shared=n \
-            --build_tests=y \
-            --build_private_tests=y \
-            --build_regression_tests=y \
+            --build_tests=n \
+            --build_private_tests=n \
+            --build_regression_tests=n \
             --policies="$policies"
 
-      # CMake uses ctest -j2, but also assigns every case its own working
-      # directory. Until Xmake has the same global isolation, serialize the
-      # complete suite; the concurrency regressions still create real threads.
-      - name: 验证 TSan fork 映射模型及真实错误反例
-        if: matrix.sanitizer == 'thread'
-        shell: bash
-        run: |
-          set -euo pipefail
-          xmake -j2 fork_tsan_model
-          mapfile -t programs < <(find build -type f -name fork_tsan_model)
-          test "${#programs[@]}" -eq 1
-          python3 scripts/check_tsan_fork_model.py --binary "${programs[0]}" --output tsan-fork-model
-      - name: 保留 TSan fork 模型正反例
-        if: always() && matrix.sanitizer == 'thread'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tsan-fork-model
-          path: tsan-fork-model/
-          if-no-files-found: error
-
-      - name: 运行启用运行时检查的静态库测试集
-        run: xmake test -j1
+      - name: 构建启用运行时检查的生产静态库
+        run: xmake -j2 logger
 
       # Sanitizer builds must keep the production archive free of test hooks.
       - name: 验证启用检查器的生产隔离
