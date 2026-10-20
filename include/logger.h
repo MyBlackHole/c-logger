@@ -307,8 +307,10 @@ typedef struct {
  * 子方必须在fork返回后的普通上下文、新业务线程创建前显式调用；
  * 不从任何atfork处理函数调用本接口，不复用继承的实例指针。
  * 无可信快照（原始系统调用、注册窗口等）仍-ECHILD，不能绕过检查。
- * Linux/glibc候选实现，不承诺多线程fork后的POSIX通用安全；宿主libc/
- * 区域设置等外部状态尚需专项验证，见docs/v2/FORK_RUNTIME.md。
+ * 仅限docs/v2/SUPPORT_MATRIX.md中的Linux/glibc基线，不承诺多线程fork后
+ * 的POSIX通用安全。宿主须自行协调外部FILE、locale/时区、动态装载、
+ * 自定义格式化与替换分配器等状态；不保证它们与fork并发时子方可立即
+ * 重建。见docs/v2/FORK_RUNTIME.md。
  */
 LOGGER_API int logger_process_init(void);
 
@@ -468,7 +470,7 @@ LOGGER_API int logger_default_reopen(void);
  * 子方处理函数只关闭库拥有的fd引用、失效根指针，不操作旧锁或队列。
  * 原始系统调用、_Fork/vfork、信号处理函数fork、库内回调重入及不可靠
  * 资源边界不属于重建入口。未初始化子方普通调用仍提前ECHILD拒绝。
- * 本功能的平台与外部libc调用链验收仍未完成，不能视作最终发布批准。
+ * 有限宿主范围见docs/v2/FORK_RUNTIME.md；正式发布风险签收另行完成。
  */
 /* 库绝不调用 fork，也不扫描宿主的线程列表。 */
 
