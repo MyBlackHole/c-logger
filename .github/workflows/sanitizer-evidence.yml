@@ -12,6 +12,7 @@ on:
       - 'xmake.lua'
       - 'VERSION'
       - '.github/workflows/sanitizer-evidence.yml'
+      - '.github/workflows/xmake-parity.yml'
 
 permissions:
   contents: read

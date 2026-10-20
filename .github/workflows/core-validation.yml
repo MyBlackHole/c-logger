@@ -20,6 +20,7 @@ on:
       - "validation/release_signoff_v2.json"
       - "scripts/check_production_artifact.py"
       - ".github/workflows/core-validation.yml"
+      - ".github/workflows/xmake-parity.yml"
       - ".github/workflows/release-publish.yml"
 
 permissions:
