@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 Clang AST 拒绝 fd 拥有者复制及有限的裸成员修改、借用关闭。"""
+"""用 Clang AST 拒绝 fd 拥有者复制、裸成员修改、借用关闭及直接借用重新拥有。"""
 from __future__ import annotations
 
 import hashlib
@@ -266,6 +266,14 @@ def inspect_ast(ast):
                         "callee": callee, "arguments": scalar_args,
                         "range": node.get("range", {})
                     })
+            if callee == "logger_fd_own" and len(children) == 2 \
+                    and direct_borrow_call(children[1]):
+                # borrow/number 不消费源：禁止把同一个 fd 包装成第二拥有者。
+                # 合法路径是 logger_fd_take/move 或经 logger_fork_* 取得新 fd。
+                violations.append({
+                    "rule": "owned_fd_borrowed_reown", "function": function,
+                    "callee": callee, "range": node.get("range", {})
+                })
             if callee in ("close", "logger_fork_close") and len(children) == 2 \
                     and direct_borrow_call(children[1]):
                 violations.append({
