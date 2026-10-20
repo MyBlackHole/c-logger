@@ -36,6 +36,97 @@ class Verification(unittest.TestCase):
                     "api_ns": {"p50": 10, "p95": 20, "p99": 20, "max": 20},
                     "arrival_late_ns": {"p50": 0, "p95": 2000000, "p99": 2000000, "max": 2000000}}
 
+    def run_library_identity_fixture(self, library_name, ldd_stdout, ldd_exit=0):
+        # 单独模拟证据收集入口，证明错误库身份在采样开始前被拒绝。
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, library, build_log = (root / "bench", root / library_name,
+                                          root / "build.log")
+            for path in (binary, library, build_log):
+                path.write_bytes(b"fixture\n")
+            argv = ["benchmark_fixed_rate.py", "--binary", str(binary),
+                    "--library", str(library), "--build-log", str(build_log),
+                    "--out", str(root / "result"), "--threads", "1",
+                    "--rates", "1", "--payload-bytes", "1", "--backends", "null",
+                    "--seconds", "1", "--warmup", "0", "--repeats", "1"]
+
+            def fake_command(*args):
+                return {"command": list(args),
+                        "returncode": ldd_exit if args[0] == "ldd" else 0,
+                        "stdout": (ldd_stdout.replace("@LIB_REL@", str(library.relative_to(root)))
+                                   .replace("@LIB@", str(library))) if args[0] == "ldd" else "",
+                        "stderr": ""}
+            with mock.patch.object(bench, "ROOT", root), \
+                    mock.patch.object(bench, "command", side_effect=fake_command), \
+                    mock.patch.object(bench, "run_sample",
+                                      return_value={"verification_valid": True}) as samples, \
+                    mock.patch.object(bench.signal, "signal"), \
+                    mock.patch.object(sys, "argv", argv), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = bench.main()
+                except ValueError as error:
+                    return None, str(error), samples.call_count
+                return rc, None, samples.call_count
+
+    def test_shared_library_missing_dependency_must_fail_before_sampling(self):
+        # -l:liblogger.a 或错误二进制会使 ldd 不含 liblogger.so。
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "libc.so.6 => /lib/libc.so.6 (0x1234)\n")
+        self.assertIsNone(rc)
+        self.assertIn("shared_library_not_loaded", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_failed_ldd_must_fail_before_sampling(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "", ldd_exit=1)
+        self.assertIsNone(rc)
+        self.assertIn("library_dependency_inspection_failed", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_matching_dependency_is_accepted(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "liblogger.so.2 => @LIB@ (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_shared_library_relative_ldd_path_is_accepted(self):
+        # 与 CLI 的 cwd=ROOT 和相对 LD_LIBRARY_PATH 行为一致。
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.so.2.0.0", "liblogger.so.2 => @LIB_REL@ (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_static_archive_without_dynamic_logger_is_accepted(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.a", "libc.so.6 => /lib/libc.so.6 (0x1234)\n")
+        self.assertEqual((rc, error, samples), (0, None, 1))
+
+    def test_static_archive_with_dynamic_logger_is_rejected(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "liblogger.a", "liblogger.so.2 => /tmp/other/liblogger.so.2 (0x1234)\n")
+        self.assertIsNone(rc)
+        self.assertIn("unexpected_shared_library_dependency", error or "")
+        self.assertEqual(samples, 0)
+
+    def test_shared_library_wrong_or_unresolved_dependency_is_rejected(self):
+        for target, reason in (
+            ("/tmp/other/liblogger.so.2.0.0", "resolved_library_mismatch"),
+            ("not found", "library_dependency_unresolved"),
+        ):
+            with self.subTest(target=target):
+                rc, error, samples = self.run_library_identity_fixture(
+                    "liblogger.so.2.0.0",
+                    "liblogger.so.2 => " + target + " (0x1234)\n")
+                self.assertIsNone(rc)
+                self.assertIn(reason, error or "")
+                self.assertEqual(samples, 0)
+
+    def test_unknown_library_type_cannot_claim_logger_provenance(self):
+        rc, error, samples = self.run_library_identity_fixture(
+            "arbitrary-binary", "")
+        self.assertIsNone(rc)
+        self.assertIn("unsupported_logger_library_identity", error or "")
+        self.assertEqual(samples, 0)
+
     def test_wait_status_compatibility(self):
         for code in (0, 1, 42, 255):
             self.assertEqual(bench.wait_exit_code(code << 8), code)
@@ -306,7 +397,7 @@ class Verification(unittest.TestCase):
             with self.subTest(variant=variant, handled=handled), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 binary, case, originals = self.write_child_fixture(root, variant)
-                library, build_log = root / "library", root / "build.log"
+                library, build_log = root / "liblogger.a", root / "build.log"
                 library.write_bytes(b"controlled_library\n")
                 build_log.write_text("controlled_build\n")
                 output, owned = root / "evidence", root / "temporary"
@@ -515,7 +606,7 @@ class EvidenceBudget(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root, limit = Path(temporary.name), 16384
-        binary, library, build_log = [root / name for name in ("binary", "library", "build.log")]
+        binary, library, build_log = [root / name for name in ("binary", "liblogger.a", "build.log")]
         for path in (binary, library, build_log):
             path.write_bytes(b"fixture\n")
         if placement == "metadata":

@@ -40,6 +40,42 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def verify_logger_linkage(library, dependencies):
+    """采样前核实共享库实际加载路径；静态归档仍依赖构建日志确认来源。"""
+    if dependencies["returncode"] != 0:
+        raise ValueError("library_dependency_inspection_failed")
+    name = library.name
+    shared = name == "liblogger.so" or name.startswith("liblogger.so.")
+    static = name == "liblogger.a"
+    if not (shared or static):
+        raise ValueError("unsupported_logger_library_identity")
+    loaded = []
+    for line in dependencies["stdout"].splitlines():
+        entry = line.strip()
+        soname = entry.split(None, 1)[0] if entry else ""
+        if soname != "liblogger.so" and not soname.startswith("liblogger.so."):
+            continue
+        before, separator, after = entry.partition("=>")
+        if not separator:
+            raise ValueError("library_dependency_unparsable")
+        location = after.split(" (", 1)[0].strip()
+        if not location or location == "not found":
+            raise ValueError("library_dependency_unresolved")
+        resolved = Path(location)
+        # ldd 在 ROOT 内执行，LD_LIBRARY_PATH 可使其报告相对路径。
+        # 相对加载路径须按同一工作目录解析，不能按宿主其他 cwd 猜测。
+        if not resolved.is_absolute():
+            resolved = ROOT / resolved
+        loaded.append(resolved.resolve())
+    if shared:
+        if not loaded:
+            raise ValueError("shared_library_not_loaded")
+        if len(loaded) != 1 or loaded[0] != library.resolve():
+            raise ValueError("resolved_library_mismatch")
+    elif loaded:
+        raise ValueError("unexpected_shared_library_dependency")
+
+
 def compress(source, target):
     partial = target.with_name(target.name + ".partial")
     with open(source, "rb") as src, open(partial, "wb") as archive:
@@ -373,12 +409,8 @@ def main():
                 "compiler": command("cc", "--version"),
                 "resolved_dependencies": command("ldd", str(binary)),
                 "elf_dynamic": command("readelf", "-d", str(binary))}
-    # 共享模式必须核对实际加载路径，而不是只记录使用者给出的库文件。
-    for line in metadata["resolved_dependencies"]["stdout"].splitlines():
-        if "liblogger.so" in line and "=>" in line:
-            resolved = line.split("=>", 1)[1].strip().split(" (", 1)[0]
-            if Path(resolved).resolve() != library:
-                raise ValueError("resolved_library_mismatch")
+    # 共享身份缺失、无法解析或 ldd 本身失败都不能进入采样。
+    verify_logger_linkage(library, metadata["resolved_dependencies"])
     shutil.copyfile(build_log, args.out / "build.log")
     (args.out / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     if check_evidence_budget(args.out):
