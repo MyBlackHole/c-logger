@@ -418,6 +418,51 @@ class OwnedCopies(unittest.TestCase):
                                     and v["function"] == function
                                     for v in report["violations"]), report["violations"])
 
+    def test_borrowed_fd_cannot_be_reowned_directly(self):
+        # 借用只携带 fd 数值，包装成第二拥有者会造成重复关闭风险。
+        # 这些表达式 Clang 都能编译，但静态语义规则必须拒绝。
+        for argument in (
+            "logger_fd_number(logger_fd_borrow(src))",
+            "logger_fd_number(logger_fd_borrow(&file->fd))",
+            "logger_fd_number(logger_fd_borrow(&syslog->fd))",
+        ):
+            with self.subTest(argument=argument):
+                body = ("struct logger_owned_fd duplicate = logger_fd_own("
+                        + argument + "); (void)duplicate;")
+                report = self.analyze(body)
+                self.assertTrue(report["owner_type_seen"])
+                self.assertEqual(1, len(report["violations"]), report["violations"])
+                found = report["violations"][0]
+                self.assertEqual("owned_fd_borrowed_reown", found["rule"])
+                self.assertEqual("logger_fd_own", found["callee"])
+                self.assertEqual("probe", found["function"])
+                self.assertTrue(found["range"].get("begin"))
+
+    def test_valid_ownership_transfer_does_not_look_like_reown(self):
+        # take 消费源，move 移交拥有者；新 fork 获取则创建新 fd。
+        for expression in (
+            "logger_fd_move(src)",
+            "logger_fd_own(logger_fd_take(src))",
+            "logger_fd_own(logger_fork_open(\"/dev/null\", 0, 0))",
+            "logger_fd_own(-1)",
+        ):
+            with self.subTest(expression=expression):
+                body = ("struct logger_owned_fd result = " + expression
+                        + "; (void)result;")
+                self.assertEqual([], self.analyze(body)["violations"])
+
+    def test_real_syslog_borrowed_reown_mutant(self):
+        source = (ROOT / "src/logger_syslog.c").read_text()
+        before = "s->fd = logger_fd_move(&candidate);"
+        after = ("s->fd = logger_fd_own(logger_fd_number("
+                 "logger_fd_borrow(&candidate)));")
+        self.assertEqual(1, source.count(before))
+        self.assertEqual([], self.analyze(source, full=True)["violations"])
+        report = self.analyze(source.replace(before, after), full=True)
+        self.assertTrue(any(v["rule"] == "owned_fd_borrowed_reown"
+                            and v["function"] == "connect_once"
+                            for v in report["violations"]), report["violations"])
+
     def test_real_production_raw_borrowed_close_mutant(self):
         source = (ROOT / "src/logger_file.c").read_text()
         self.assertEqual([], self.analyze(source, full=True)["violations"])
