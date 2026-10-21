@@ -31,16 +31,23 @@ enum {
 typedef struct logger_message {
 	logger_level_t level;
 	struct timespec ts;
-	pid_t pid, tid;
-	const char *file, *func, *module;
+	pid_t pid;
+	pid_t tid;
+	const char *file;
+	const char *func;
+	const char *module;
 	int line;
 	/* 仅供内部使用：告诉异步队列哪些元数据快照真正有语义。 */
 	uint8_t metadata_mask;
-	char request_id[64], session_id[64], trace_id[64];
+	char request_id[64];
+	char session_id[64];
+	char trace_id[64];
 	/* 记录实际存入 text[] 的字节数，不含 NUL；避免异步队列再扫描正文。 */
 	uint16_t text_len;
 	char text[LOGGER_MESSAGE_MAX];
-	char module_storage[128], file_storage[256], function_storage[128];
+	char module_storage[128];
+	char file_storage[256];
+	char function_storage[128];
 } logger_message_t;
 /* 只有队列拥有这些固定大小的快照。同步记录无需保留来源的生命周期。
  * 这种有界复制不会为每条记录增加堆分配。

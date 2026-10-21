@@ -488,8 +488,9 @@ static int archive_name(logger_file_t *f, const struct timespec *t, char *out,
 
 static int archive_matches(logger_file_t *f, const char *name)
 {
-	size_t stem = strlen(f->stem), ext = strlen(f->ext),
-	       length = strlen(name);
+	size_t stem = strlen(f->stem);
+	size_t ext = strlen(f->ext);
+	size_t length = strlen(name);
 	if (length != stem + 24u + ext || memcmp(name, f->stem, stem) ||
 	    name[stem] != '.')
 		return 0;
@@ -527,7 +528,8 @@ static int retention(logger_file_t *f, time_t now)
 	/* fork DIR 租约已持有资源锁且源已失效；必须由同线程
 	 * logger_fork_closedir() 消费租约，不能直接调用 libc closedir。
 	 */
-	int rc = 0, changed = 0;
+	int rc = 0;
+	int changed = 0;
 	uintmax_t seconds = (uintmax_t)f->rotation.retention_days * 86400u;
 	for (;;) {
 		errno = 0;
@@ -687,7 +689,8 @@ static int prepare_write(logger_file_t *f, size_t n, const struct timespec *t)
 		return -(f->switch_error ? f->switch_error : EIO);
 	if (!internal_rotation(f) || !n)
 		return 0;
-	int size = 0, day = 0;
+	int size = 0;
+	int day = 0;
 	if ((f->rotation.mode == LOGGER_ROTATE_SIZE ||
 	     f->rotation.mode == LOGGER_ROTATE_SIZE_DAILY) &&
 	    f->rotation.max_file_size && f->current_size) {
@@ -696,7 +699,8 @@ static int prepare_write(logger_file_t *f, size_t n, const struct timespec *t)
 	}
 	if (f->rotation.mode == LOGGER_ROTATE_DAILY ||
 	    f->rotation.mode == LOGGER_ROTATE_SIZE_DAILY) {
-		int d, rc = wall_day(t->tv_sec, &d);
+		int d;
+		int rc = wall_day(t->tv_sec, &d);
 		if (rc)
 			return rc;
 		day = d != f->current_day && f->current_size != 0;

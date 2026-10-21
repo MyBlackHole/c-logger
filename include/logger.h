@@ -260,11 +260,12 @@ typedef struct {
 	int async_mode;
 	size_t queue_capacity;
 	logger_level_t flush_level;
-	int include_pid, include_tid, include_source;
+	int include_pid;
+	int include_tid;
+	int include_source;
 	const char *ident;
 	logger_overflow_policy_t overflow[6];
-	/* v1 结构的一部分。未来扩展追加在当前结构之后，
-	 * 传给旧版库时必须为零。 */
+	/* 当前 ABI 2 的固定字段；未来扩展追加在当前结构之后。 */
 	logger_syslog_config_t syslog;
 } logger_config_t;
 #define LOGGER_CONFIG_SIZE 144u

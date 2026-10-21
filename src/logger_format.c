@@ -138,7 +138,8 @@ static int format_line(const logger_t *l, const logger_message_t *m,
 		return -EOVERFLOW;
 
 	size_t used = 0;
-	int rc, truncated = 0;
+	int rc;
+	int truncated = 0;
 #define ADD(...) do { \
 	rc = append(out, cap - 1, &used, __VA_ARGS__); \
 		if (rc && (strict || rc != -EOVERFLOW))        \

@@ -17,17 +17,24 @@ typedef struct {
 	char path[LOGGER_PATH_MAX]; /* 仅用于诊断；绑定后绝不重新解析路径 */
 	char name[LOGGER_FILENAME_MAX + 1];
 	char lock_name[LOGGER_FILENAME_MAX + 1];
-	char stem[LOGGER_FILENAME_MAX + 1], ext[LOGGER_FILENAME_MAX + 1];
+	char stem[LOGGER_FILENAME_MAX + 1];
+	char ext[LOGGER_FILENAME_MAX + 1];
 	logger_rotation_config_t rotation;
 	mode_t mode;
-	struct logger_owned_fd fd, dir_fd, lock_fd;
-	int managed, detached, switch_error;
+	struct logger_owned_fd fd;
+	struct logger_owned_fd dir_fd;
+	struct logger_owned_fd lock_fd;
+	int managed;
+	int detached;
+	int switch_error;
 	size_t current_size;
-	int current_day, dir_dirty;
+	int current_day;
+	int dir_dirty;
 	dev_t device;
 	ino_t inode;
 	struct timespec archive_time;
-	int archive_time_valid, iov_max;
+	int archive_time_valid;
+	int iov_max;
 	logger_file_metrics_t metrics;
 } logger_file_t;
 #define LOGGER_FILE_EMPTY \
