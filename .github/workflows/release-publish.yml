@@ -183,6 +183,13 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
+      - name: 仅将当前发布工作区标记为可信 Git 目录
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
+
       - name: 验证固定的发布源码
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
