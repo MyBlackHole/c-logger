@@ -512,6 +512,8 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 
 [模糊测试与属性模型规范](docs/v2/FUZZ_PROPERTY_POLICY.md)明确公开
 配置、脱敏和有界队列当前实际使用的变异范围、预期判定和未覆盖边界。
+[周期 fuzz 运行与故障处理](docs/v2/PERIODIC_FUZZ.md)记录 #212 每周
+有界探索、制品、Issue 登记、受控演练和失败闭环。
 固定种子入口通过 Xmake 运行：
 
 - `public_fuzz_property_test`：以 4 个固定种子各生成 2048 次

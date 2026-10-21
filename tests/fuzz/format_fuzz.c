@@ -12,7 +12,9 @@
  */
 #define LIMIT 8192u
 #define GUARD 16u
+#ifdef LOGGER_FUZZ_STANDALONE
 static unsigned negative_checks;
+#endif
 static int exercise_oracle;
 
 static void fail(const char *condition, int line)
@@ -219,7 +221,9 @@ static void negative_cases(unsigned char *buffer, size_t cap, size_t n,
 	buffer[GUARD + cap] = 0;
 	REQUIRE(!matches(buffer, cap, 0, n, 0, wanted, n));
 	buffer[GUARD + cap] = 0xa5;
+#ifdef LOGGER_FUZZ_STANDALONE
 	negative_checks += 6;
+#endif
 }
 
 static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
