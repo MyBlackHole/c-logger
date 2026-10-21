@@ -1,6 +1,7 @@
 #ifndef LOGGER_REGRESSION_SUPPORT_H
 #define LOGGER_REGRESSION_SUPPORT_H
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -40,6 +41,28 @@ static inline void enter_temp(char *path)
 {
 	CHECK(mkdtemp(path) != NULL);
 	CHECK(chdir(path) == 0);
+}
+
+static inline void enter_temp_workspace(char *path, size_t size,
+					const char *name)
+{
+	char root[PATH_MAX];
+	const char *configured = getenv("TMPDIR");
+	if (!configured || !*configured) {
+		CHECK(getcwd(root, sizeof(root)) != NULL);
+	} else if (configured[0] == '/') {
+		int length = snprintf(root, sizeof(root), "%s", configured);
+		CHECK(length > 0 && (size_t)length < sizeof(root));
+	} else {
+		char cwd[PATH_MAX];
+		CHECK(getcwd(cwd, sizeof(cwd)) != NULL);
+		int length =
+			snprintf(root, sizeof(root), "%s/%s", cwd, configured);
+		CHECK(length > 0 && (size_t)length < sizeof(root));
+	}
+	int length = snprintf(path, size, "%s/%s-XXXXXX", root, name);
+	CHECK(length > 0 && (size_t)length < size);
+	enter_temp(path);
 }
 
 static inline off_t file_size(const char *path)
