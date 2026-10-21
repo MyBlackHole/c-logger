@@ -11,7 +11,7 @@
 以下路径相对源码仓库根目录。安装包只携带安装清单列出的文档，未附带的历史材料应到对应版本的源码树查阅。
 
 - 旧入口快照：`docs/HISTORY_README.md`、`docs/HISTORY_API.md`、`docs/HISTORY_CONTROLLED_FORK_REINIT.md`。其中提到的旧接口或受控 fork helper 不能据此视为当前公开能力。
-- 版本与第一代边界：`docs/RELEASE_NOTES_0.9.1.md` 至 `docs/RELEASE_NOTES_0.9.6.md`。保留各版本原有的发布身份与限制，不用主分支的 ABI 2 状态改写旧结论。
+- 旧版本发布说明已从当前树退役；需要核查时，从对应历史提交读取原始文件。旧版验证范围不能套用于主分支的 ABI 2。
 - 阶段修订：`docs/ROUND1_QUEUE_FLUSH.md` 至 `docs/ROUND5_FORK_ISOLATION.md`，以及 `docs/GLOBAL_LIFECYCLE.md` 中的演进背景。按文中输入、基线和阶段范围理解，现行约束以对应当前入口为准。
 - 已退役 Audit 的设计记录：`docs/v2/AUDIT_FORMAT_FAILURE.md`、`AUDIT_RETIRE_OWNERSHIP.md`、`AUDIT_SEQUENCE_CONTINUITY.md`、`AUDIT_TRANSACTION_SEMANTICS.md`、`AUDIT_TRANSACTION_SUBMISSION.md`。保留其当时语义以供追溯，不恢复已退役功能。
 - 实施计划：`docs/superpowers/plans/`。计划、待办及勾选状态是过程材料，不是完成验证的独立证明。
