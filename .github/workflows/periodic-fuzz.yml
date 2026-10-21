@@ -1,0 +1,230 @@
+name: periodic-fuzz
+
+on:
+  schedule:
+    - cron: "17 2 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "normal 运行两个生产入口；drill 验证受控失败链"
+        type: choice
+        required: true
+        default: normal
+        options: [normal, drill]
+      register_drill_issue:
+        description: "演练 Issue 创建与关闭链"
+        type: boolean
+        required: true
+        default: false
+  pull_request:
+    paths:
+      - ".github/workflows/periodic-fuzz.yml"
+      - "scripts/periodic_fuzz_runner.py"
+      - "scripts/register_periodic_fuzz_failure.py"
+      - "tests/scripts/test_periodic_fuzz_runner.py"
+      - "tests/scripts/test_register_periodic_fuzz_failure.py"
+      - "tests/fuzz/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/periodic-fuzz.yml"
+      - "scripts/periodic_fuzz_runner.py"
+      - "scripts/register_periodic_fuzz_failure.py"
+      - "tests/scripts/test_periodic_fuzz_runner.py"
+      - "tests/scripts/test_register_periodic_fuzz_failure.py"
+      - "tests/fuzz/**"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  runner-contract:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: 验证预算、语料去重和失败最小化结果
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/periodic-fuzz-tmp
+          TMPDIR="$PWD/build/periodic-fuzz-tmp" \
+            python3 tests/scripts/test_periodic_fuzz_runner.py -v
+          TMPDIR="$PWD/build/periodic-fuzz-tmp" \
+            python3 tests/scripts/test_register_periodic_fuzz_failure.py -v
+
+  explore:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'normal')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [public, format]
+    env:
+      TARGET: ${{ matrix.target }}
+      TMPDIR: ${{ github.workspace }}/build/periodic-fuzz-tmp
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: 准备工作区临时目录
+        run: mkdir -p "$TMPDIR" build/periodic-fuzz-meta
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.1.1"
+      - name: 构建同源插桩静态库和现有 fuzz 入口
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LOGGER_PROJECT_VERSION="$(cat VERSION)"
+          export XMAKE_CONFIGDIR="$PWD/build/periodic-fuzz-xmake"
+          mkdir -p "$XMAKE_CONFIGDIR"
+          clang --version > build/periodic-fuzz-meta/compiler.txt
+          xmake --version > build/periodic-fuzz-meta/xmake.txt
+          git rev-parse HEAD > build/periodic-fuzz-meta/SOURCE_COMMIT
+          git rev-parse 'HEAD^{tree}' > build/periodic-fuzz-meta/SOURCE_TREE
+          xmake f -P "$PWD" -m debug -o build/periodic-fuzz-build \
+            --toolchain=clang --build_shared=n --build_tests=n \
+            --build_private_tests=n --build_regression_tests=n \
+            --policies=build.sanitizer.address,build.sanitizer.undefined \
+            --cxflags=-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp
+          xmake build -P "$PWD" -j2 logger
+          mapfile -t libraries < <(find build/periodic-fuzz-build -type f -name liblogger.a -print)
+          test "${#libraries[@]}" -eq 1
+          printf '%s\n' "${libraries[0]}" > build/periodic-fuzz-meta/library-path.txt
+          nm -u "${libraries[0]}" > build/periodic-fuzz-meta/coverage-symbols.txt
+          grep -Fq '__sanitizer_cov_8bit_counters_init' build/periodic-fuzz-meta/coverage-symbols.txt
+          grep -Fq '__sanitizer_cov_pcs_init' build/periodic-fuzz-meta/coverage-symbols.txt
+          extra=()
+          if [ "$TARGET" = format ]; then
+            extra+=(-Isrc)
+          fi
+          clang -std=gnu11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -DLOGGER_STATIC_DEFINE=1 -Iinclude \
+            -Ibuild/periodic-fuzz-build/generated "${extra[@]}" \
+            -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+            "tests/fuzz/${TARGET}_fuzz.c" "${libraries[0]}" -pthread \
+            -o "build/periodic-fuzz-${TARGET}"
+          sha256sum "${libraries[0]}" "build/periodic-fuzz-${TARGET}" \
+            > build/periodic-fuzz-meta/binaries.sha256
+      - name: 有界探索并保存失败样本与重放结果
+        id: fuzz
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          library="$(cat build/periodic-fuzz-meta/library-path.txt)"
+          seed=$(( (GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT) % 4294967295 + 1 ))
+          corpus="tests/fuzz/corpus"
+          if [ "$TARGET" = format ]; then
+            corpus="tests/fuzz/format-corpus"
+          fi
+          python3 scripts/periodic_fuzz_runner.py \
+            --binary "build/periodic-fuzz-${TARGET}" --library "$library" \
+            --seed-corpus "$corpus" \
+            --evidence "build/periodic-fuzz-evidence-${TARGET}" \
+            --seed "$seed" --seconds 120 --max-len 128 \
+            --input-timeout 10 --rss-mb 2048
+      - name: 归档源码、工具链、语料和原始诊断
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="build/periodic-fuzz-evidence-${TARGET}"
+          mkdir -p "$evidence"
+          cp build/periodic-fuzz-meta/* "$evidence/" 2>/dev/null || true
+          printf 'target=%s\nrun=%s/%s/actions/runs/%s/attempts/%s\n' \
+            "$TARGET" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$evidence/run-source.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: periodic-fuzz-${{ matrix.target }}
+          path: build/periodic-fuzz-evidence-${{ matrix.target }}/
+          retention-days: 30
+          if-no-files-found: error
+      - name: 为失败运行登记可追溯议题
+        if: steps.fuzz.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/register_periodic_fuzz_failure.py \
+            --repo "$GITHUB_REPOSITORY" --target "$TARGET" \
+            --evidence "build/periodic-fuzz-evidence-${TARGET}" \
+            --source "$GITHUB_SHA" \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+      - name: 保留失败状态
+        if: steps.fuzz.outcome == 'failure'
+        run: exit 1
+
+  drill:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'drill'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: write
+    env:
+      TMPDIR: ${{ github.workspace }}/build/periodic-fuzz-tmp
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: 验证运行器正反例并准备真实 UBSan 探针
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TMPDIR" build/periodic-fuzz-drill-seeds
+          python3 tests/scripts/test_periodic_fuzz_runner.py -v
+          python3 tests/scripts/test_register_periodic_fuzz_failure.py -v
+          CC=clang bash tests/regression/run_fuzz_sanitizer_exit.sh \
+            build/periodic-fuzz-drill/probe
+          cp build/periodic-fuzz-drill/probe/signed-overflow.input \
+            build/periodic-fuzz-drill-seeds/
+      - name: 捕获、最小化并重放受控失败
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/periodic_fuzz_runner.py \
+            --binary build/periodic-fuzz-drill/probe/fuzz-sanitizer-exit \
+            --seed-corpus build/periodic-fuzz-drill-seeds \
+            --evidence build/periodic-fuzz-drill/result \
+            --seed 212 --seconds 30 --max-len 128 \
+            --input-timeout 10 --rss-mb 2048 \
+            --drill-input build/periodic-fuzz-drill/probe/signed-overflow.input \
+            --expected-diagnostic 'signed integer overflow'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: periodic-fuzz-drill
+          path: build/periodic-fuzz-drill/
+          retention-days: 30
+          if-no-files-found: error
+      - name: 演练议题创建与关闭
+        if: inputs.register_drill_issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/register_periodic_fuzz_failure.py \
+            --repo "$GITHUB_REPOSITORY" --target public --drill \
+            --evidence build/periodic-fuzz-drill/result \
+            --source "$GITHUB_SHA" \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
