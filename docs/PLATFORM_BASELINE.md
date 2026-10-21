@@ -78,7 +78,7 @@ readelf -h -d -V build/liblogger.so
 需求，按具体发行版/向旧版本移植作为独立兼容层级验证，而不是扩大通用支持基线。
 
 最低内核门禁只验证内核相关运行时能力：一个权威共享生产候选产物
-在 Linux 5.10 + glibc 2.31 客户机中执行 getrandom、ext4/XFS 轮转和 Audit 写入/恢复
+在 Linux 5.10 + glibc 2.31 客户机中执行 getrandom 与 ext4/XFS 文件轮转
 冒烟测试。共享/静态打包、完整消费方、process-crash 和 sanitizer 已有独立门禁，
 不在 minimum-kernel 工作流中重复执行。
 

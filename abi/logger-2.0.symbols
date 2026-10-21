@@ -1,4 +1,4 @@
-# ABI 2 稳定发布准备清单：不包含 Audit 符号，禁止通配符；合同待最终验收。
+# ABI 2 正式发布符号清单：不包含 Audit 符号，禁止通配符。
 console_debug
 console_debug_source
 console_error
