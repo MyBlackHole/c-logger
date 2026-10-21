@@ -60,7 +60,9 @@ int logger_internal_include_source(const logger_t *l)
 	return l->include_source;
 }
 static _Thread_local logger_context_t g_ctx;
-static _Thread_local char g_request_id[64], g_session_id[64], g_trace_id[64];
+static _Thread_local char g_request_id[64];
+static _Thread_local char g_session_id[64];
+static _Thread_local char g_trace_id[64];
 static void copy_ctx(char *d, size_t n, const char *s)
 {
 	if (!s) {
@@ -79,7 +81,9 @@ int logger_context_set(const logger_context_t *c)
 	if (rc)
 		goto done;
 	/* 暂存全部字段，允许 set(get()) 以及重叠或交换的 TLS 输入。 */
-	char request[64] = { 0 }, session[64] = { 0 }, trace[64] = { 0 };
+	char request[64] = { 0 };
+	char session[64] = { 0 };
+	char trace[64] = { 0 };
 	copy_ctx(request, sizeof(request), c ? c->request_id : NULL);
 	copy_ctx(session, sizeof(session), c ? c->session_id : NULL);
 	copy_ctx(trace, sizeof(trace), c ? c->trace_id : NULL);
@@ -297,9 +301,10 @@ static int copy_logger_config(const logger_config_t *in,
 		return -1;
 	}
 	_Static_assert(LOGGER_CONFIG_SIZE == sizeof(*out),
-		       "Logger v1 config layout changed");
+		       "Logger config layout changed");
 
-	uint32_t size, version;
+	uint32_t size;
+	uint32_t version;
 	memcpy(&size, (const unsigned char *)in, sizeof(size));
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));

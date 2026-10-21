@@ -51,9 +51,10 @@ int console_init(const console_config_t *c)
 	rc = c ? 0 : -EINVAL;
 	if (!rc) {
 		_Static_assert(CONSOLE_CONFIG_SIZE == sizeof(console_config_t),
-			       "Console v1 config layout changed");
+			       "Console config layout changed");
 		console_config_t config;
-		uint32_t size, version;
+		uint32_t size;
+		uint32_t version;
 		memcpy(&size, (const unsigned char *)c, sizeof(size));
 		memcpy(&version, (const unsigned char *)c + sizeof(size),
 		       sizeof(version));
@@ -257,7 +258,8 @@ int console_debug_source(const char *file, int line, const char *func,
 	if (!rc && (config >> COLOR_BITS) >= CONSOLE_DEBUG) {
 		const char *base = file ? strrchr(file, '/') : NULL;
 		base = base ? base + 1 : (file ? file : "?");
-		char message[3072], merged[4096];
+		char message[3072];
+		char merged[4096];
 		va_list ap;
 		va_start(ap, fmt);
 		int n = logger_libc_vsnprintf(message, sizeof(message), fmt,
@@ -290,7 +292,8 @@ int console_debug_source(const char *file, int line, const char *func,
 			if (!rc) {
 				logger_sigpipe_guard_t sigpipe_guard;
 				rc = logger_sigpipe_begin(&sigpipe_guard);
-				int guarded = !rc, saw_epipe = 0;
+				int guarded = !rc;
+				int saw_epipe = 0;
 				if (guarded) {
 					stdio_error(logger_libc_fprintf(
 							    stderr,

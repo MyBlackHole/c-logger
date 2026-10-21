@@ -49,7 +49,10 @@ struct logger {
 	logger_detail_t detail;
 	unsigned outputs;
 	mode_t file_mode;
-	int async_mode, include_pid, include_tid, include_source;
+	int async_mode;
+	int include_pid;
+	int include_tid;
+	int include_source;
 	logger_level_t flush_level;
 	/* 构造时按 detail/include_* 冻结；生产者不再每条日志重复推导。 */
 	unsigned capture_mask;
@@ -66,8 +69,10 @@ struct logger {
 	pthread_mutex_t progress_mu;
 	pthread_cond_t progress_cv;
 	size_t completed_pos; /* 队列的不包含上界的水位，由 progress_mu 保护 */
-	_Atomic uint64_t async_completed, sync_completed;
-	_Atomic uint64_t emitted_records, failed_records;
+	_Atomic uint64_t async_completed;
+	_Atomic uint64_t sync_completed;
+	_Atomic uint64_t emitted_records;
+	_Atomic uint64_t failed_records;
 	_Atomic int first_error;
 	/* 内部同步或生命周期失败；正 errno，错误状态不会自动清除。
 	 * 与后端 first_error 不同，因为它控制能否安全拆除。
@@ -88,8 +93,11 @@ struct logger {
 	_Atomic int running;
 	logger_overflow_policy_t overflow[6];
 	_Atomic uint64_t dropped_by_level[6];
-	_Atomic uint64_t enqueued, sync_fallbacks, queue_high_watermark;
-	_Atomic uint64_t consumer_batches, consumer_records;
+	_Atomic uint64_t enqueued;
+	_Atomic uint64_t sync_fallbacks;
+	_Atomic uint64_t queue_high_watermark;
+	_Atomic uint64_t consumer_batches;
+	_Atomic uint64_t consumer_records;
 };
 
 /* 原子内建可能在诊断前转换枚举实参；普通参数边界保留跨枚举警告。

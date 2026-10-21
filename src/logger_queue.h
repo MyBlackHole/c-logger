@@ -26,13 +26,20 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2,
 typedef struct {
 	logger_level_t level;
 	struct timespec ts;
-	pid_t pid, tid;
+	pid_t pid;
+	pid_t tid;
 	int line;
-	char request_id[64], session_id[64], trace_id[64];
-	char module_storage[128], file_storage[256], function_storage[128];
+	char request_id[64];
+	char session_id[64];
+	char trace_id[64];
+	char module_storage[128];
+	char file_storage[256];
+	char function_storage[128];
 	uint32_t spill_index;
 	uint16_t text_len;
-	uint8_t module_len, file_len, function_len;
+	uint8_t module_len;
+	uint8_t file_len;
+	uint8_t function_len;
 	char inline_text[LOGGER_QUEUE_INLINE_TEXT + 1u];
 } logger_queue_record_t;
 
@@ -48,7 +55,8 @@ typedef struct {
 typedef struct {
 	/* logger_queue_init() 成功后为 OWNED；由 logger_queue_destroy() 最终释放。 */
 	logger_queue_slot_t *slots;
-	size_t cap, mask;
+	size_t cap;
+	size_t mask;
 
 	/* 长消息溢出池：队列在结构上拥有全部块。
 	 * spill_used 是无锁位图；生产者通过 0->1 CAS 独占块，

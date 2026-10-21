@@ -19,7 +19,8 @@ typedef struct {
 static inline int logger_sigpipe_begin(logger_sigpipe_guard_t *guard)
 {
 	int saved_errno = errno;
-	sigset_t block, pending;
+	sigset_t block;
+	sigset_t pending;
 	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
 		return -(errno ? errno : EINVAL);
 	int rc = pthread_sigmask(SIG_BLOCK, &block, &guard->old_mask);
@@ -45,7 +46,8 @@ static inline void logger_sigpipe_consume_new(int was_pending)
 {
 	if (was_pending)
 		return;
-	sigset_t block, pending;
+	sigset_t block;
+	sigset_t pending;
 	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
 		return;
 	if (sigpending(&pending) != 0 || sigismember(&pending, SIGPIPE) != 1)
