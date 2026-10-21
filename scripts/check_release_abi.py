@@ -99,7 +99,7 @@ def main():
     if not re.fullmatch(r'[0-9]+', a.abi_version):
         p.error(_('--abi-version must be numeric'))
     if not re.fullmatch(r'LOGGER_[0-9]+\.[0-9]+', a.symbol_version):
-        p.error(_('--symbol-version must look like LOGGER_1.0'))
+        p.error(_('--symbol-version must look like LOGGER_2.0'))
     try:
         report = inspect(a.artifact.resolve(strict=True), a.manifest.resolve(strict=True),
                          a.max_glibc, a.machine, a.elf_class,

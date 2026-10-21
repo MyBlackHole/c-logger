@@ -3,7 +3,7 @@
 # 测试
 
 > main 的源码、生产库和未安装支持库均为不含 Audit 的 ABI 2。普通 Logger 的生产链接、故障、锁、
-> 格式、文件崩溃、安装消费与制品隔离独立验收。旧 v1 快照不再是当前门禁。
+> 格式、文件崩溃、安装消费与制品隔离独立验收。旧快照不再是当前门禁。
 
 Xmake 是项目唯一的构建与测试权威。所有测试都由 `xmake.lua` 注册，CI 与本地开发使用同一
 目标/测试定义。下游安装包仍使用真实 CMake 消费方验证 `find_package(Logger ...)`，
@@ -318,7 +318,7 @@ Logger/Console/context场景；原21项的4个Audit入口专属场景退役。�
 | #125 锁获取/释放错误传播 | 已修复 | xmake 中 lock_failure_regression：normal、emit、emit-unlock、queue-notify、queue-signal、force-wake 六项；实际 pthread 包装入口注入后断言未错误执行临界区/解锁及错误可见性 | 不说明有效非健壮 mutex 正常会返回合成的 EAGAIN |
 | #126 锁序在真实阻塞前检查 | 已修复 | lockdep_regression 的 real-recursive、real-abba、real-unlock 和 trylock/rwlock 正反例；错误路径在子进程中预期中止，检查不会等到死锁后才触发 | 跟踪六类已建模锁，不是完整进程中所有 pthread 锁的自动证明 |
 | #127 双 SC 栅栏最小模型 | #195 | N1570 7.17.3(11) 双全序推导及 RMW 完整协议边界 | 最小模型成立不等于旧整个 MPSC 已被证明 |
-| #128 唤醒改动性能成本 | #197 | 两次历史 #116 生产静态库同条件直接前后对照，完整逐轮计数、延迟分位、DROP/回退与二进制 SHA；详见 validation/PR116_DIRECT_PERFORMANCE_20261012.md | 历史 ABI 1 无法代替当前 ABI 2 的硬件性能/业务 SLO |
+| #128 唤醒改动性能成本 | #197 | 两次历史 #116 生产静态库同条件直接前后对照，完整逐轮计数、延迟分位、DROP/回退与二进制 SHA；详见 validation/PR116_DIRECT_PERFORMANCE_20261012.md | 历史源码无法代替当前 ABI 2 的硬件性能/业务 SLO |
 | #129 销毁前静默期与安全释放 | #196 | destroy_status_regression 与 constructor_rollback_regression：正常/失败返回、外部 borrow 责任、worker join、free 拦截及资源保留 | pthread destroy 的成功返回不是外部无使用者证明 |
 
 ### 配置一致性硬门禁

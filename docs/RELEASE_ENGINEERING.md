@@ -1,29 +1,11 @@
 # 发布工程
 
-## 1.x / 2.0 分支模型
+## 2.0 发布分支模型
 
-从 2.0 开发开始，发布与开发职责分离：
-
-```text
-release/1.x
-    生产版 1.x 维护线
-
-main
-    2.0 稳定发布准备主线
-```
-
-- `release/1.x` 从不可变 `v1.0.0` 发布提交建立；1.x 修复只在该维护线演进。
-- `main` 用于 2.0 不兼容重新设计，不承诺 1.x 源码/二进制 ABI 兼容。
-- `v1.0.0` 标签/发布永久保持不可变，不允许把标签改指向新提交。
-- 2.0 不在 `main` 维护双运行时路径或兼容 DSO；需要旧版行为时使用 1.x 分支/发布。
-- 当前[公开 ABI 合同](../abi/LOGGER_2_0_CONTRACT.md)依据现有可执行快照整理，须与最终源码一并验收；不能把准备产物称为已经发布。
-- 根 `VERSION=2.0.0` 与 SONAME 2 / `LOGGER_2.0` 对齐版本身份；版本号迁移不代表最终验收完成或正式发布批准。
-
-2.0 的设计权威位于 `docs/v2/`；现有根目录和 `docs/` 下的 v1 架构/ABI文档继续作为生产版 v1 历史与维护依据。
-
-已发布生产版 v1 为 **1.0.0**，历史 ABI 为 SONAME 1 / `LOGGER_1.0`、62符号。
-当前 main 的版本身份为 VERSION 2.0.0、SONAME 2 / `LOGGER_2.0`、43符号；XPack 标题与
-pkg-config描述均标识中性的 `ABI 2`，不代表已验收或已发布；不能作为已发布 v1 的兼容替代。
+`main` 维护当前 2.0 源码；正式发布使用不可变 `v2.0.0` 标签定位源码和产物。
+当前公开 ABI 合同见 [2.0 合同](../abi/LOGGER_2_0_CONTRACT.md)。
+当前 main 的版本身份为 VERSION 2.0.0、SONAME 2 / LOGGER_2.0、43符号。
+正式发布状态以对应标签、GitHub Release 和签收记录为准。
 
 ## 构建权威
 
@@ -54,11 +36,10 @@ Xmake 在配置阶段校验根 `VERSION` 的格式，并要求导出的版本与
 - 当前 main ELF 符号版本：`LOGGER_2.0`；
 - 当前公开 C ABI 允许列表：`abi/logger-2.0.symbols`（43 项）；
 - 当前安装元数据固定 `LOGGER_ABI_VERSION=2`；
-- 历史 v1 显式启用的 fork 辅助接口不属于当前 main；main 已移除该实现、兼容头文件与构建选项；
+- 已退役的 fork 辅助接口不属于当前公开 ABI；
 - 生产环境默认隐藏可见性，并使用版本脚本 `local: *`；
 - 生产故障注入固定关闭。
 
-`abi/logger-1.0.symbols` 仅保留已发布 v1 的历史符号清单。
 新增/删除公开 API 必须显式重新打开 ABI 评审，并同步更新公开头文件、冻结清单和语义 ABI
 契约。禁止使用 glob 代替显式允许列表。
 
@@ -73,8 +54,7 @@ Xmake 在配置阶段校验根 `VERSION` 的格式，并要求导出的版本与
 `tests/packaging/current_abi_contract.c` 按 C11/C++11 检查当前 Logger/Console 的结构布局、
 数值常量、配置默认值与精确 C 函数类型；现有断言完整保留。当前 ELF 门禁使用
 `abi/logger-2.0.symbols` 的43符号、SONAME 2与 `LOGGER_2.0`，两个门禁互相独立。
-`abi/LOGGER_1_0_CONTRACT.md` 与 `abi/logger-1.0.symbols` 仅保留历史记录，旧快照不再
-进入当前CI。语义 ABI 门禁独立于软件包版本身份与正式标签/发布授权。
+语义 ABI 门禁独立于软件包版本身份与正式标签/发布授权。
 
 <a id="shared-build"></a>
 
@@ -231,8 +211,7 @@ Linux 发行版、内核或 CPU 自动兼容。
 flush/关闭语义，以及既有 ABI、安装消费、生产隔离和声明的平台兼容性。现有 flush/fsync
 契约不变，不增加业务审计、额外丢失保证或物理存储认证要求。
 
-当前 main 保留以下独立证据链，并非每一项都是每次发布的硬门槛
-（历史生产版 v1 合同见 release/1.x）：
+当前 main 保留以下独立证据链，并非每一项都是每次发布的硬门槛：
 
 - `crash-recovery`：8 个普通 Logger 进程 SIGKILL 用例，main/手动共享库/静态库配置各3次；
 - `xmake-parity` Sanitizer：ASan+UBSan 与 TSan 的完整静态库测试集；
@@ -293,11 +272,10 @@ CMake/pkg-config元数据不传播旧辅助函数宏，安装检查持续验证�
 - 真实服务器掉电/重置；
 - RAID/HBA/NVMe/SATA 易失写缓存；
 - 真实目标 ext4/XFS 存储栈的物理掉电语义；
-- v1 明确不支持的网络/分布式文件系统；
+- 网络/分布式文件系统；
 - 任意多线程 fork 后复杂库调用安全；
 - 32 位；
 - 所有内核/glibc 组合；
 - 安全认证、外部可信签名、远端锚点或 WORM 合规。
 
-平台边界见 `docs/PLATFORM_BASELINE.md`、`docs/V1_RELEASE_CRITERIA.md` 与
-`docs/KNOWN_ISSUES.md`。
+平台边界见 `docs/PLATFORM_BASELINE.md` 与 `docs/KNOWN_ISSUES.md`。

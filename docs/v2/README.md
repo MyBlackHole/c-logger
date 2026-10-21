@@ -1,9 +1,8 @@
 # c-logger 2.0 设计权威
 
 本目录是当前不含 Audit 的 ABI 2 的唯一设计入口。根目录专项文档补充普通 Logger 的实现约束；
-旧 Audit/密码学模块设计与已发布 v1 记录不是当前对象模型或验证证据。移除边界见 [AUDIT_REMOVAL.md](AUDIT_REMOVAL.md)。
+旧 Audit/密码学模块设计不是当前对象模型或验证证据。移除边界见 [AUDIT_REMOVAL.md](AUDIT_REMOVAL.md)。
 
-生产版 v1 的已发布行为、ABI 与历史设计仍由现有 v1 文档、`release/1.x` 和 `v1.0.0` 标签定义。2.0 不要求兼容这些内部设计或公开 ABI。
 
 ## 设计顺序
 

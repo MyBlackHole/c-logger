@@ -86,8 +86,8 @@ msgstr "--max-glibc 必须是点分数字版本，例如 2.25"
 msgid "--max-glibc must be a dotted numeric version, e.g. 2.31"
 msgstr "--max-glibc 必须是点分数字版本，例如 2.31"
 
-msgid "--symbol-version must look like LOGGER_1.0"
-msgstr "--symbol-version 格式须类似 LOGGER_1.0"
+msgid "--symbol-version must look like LOGGER_2.0"
+msgstr "--symbol-version 格式须类似 LOGGER_2.0"
 
 msgid "Allow no direct GLIBC only in a shared module whose sole dependency is this separately checked Logger SONAME"
 msgstr "仅当共享模块的唯一依赖是此单独检查的 Logger SONAME 时，允许没有直接 GLIBC 版本需求"
@@ -96,7 +96,7 @@ msgid "Check a production archive, even a Debug/-O0 build, for accidental test h
 msgstr "检查生产归档是否意外包含测试钩子，包括 Debug/-O0 构建。\n接受静态归档或共享 ELF 对象，检查测试钩子及禁止的外部密码学 API 和依赖。\n需要 nm、ar、strings 和 readelf；此检查不证明任意宿主依赖的性质。"
 
 msgid "Check added source lines against the v2 baseline without rewriting legacy code."
-msgstr "对 PR 新增源码行执行 2.0 基线规则，避免一次性重写 v1 遗留代码。"
+msgstr "对 PR 新增源码行执行 2.0 基线规则，避免一次性重写 历史遗留代码。"
 
 msgid "Check final Linux consumer ELFs, including consumers linked to liblogger.a.\n\nAn archive has no final dynamic ABI. This checks direct GLIBC version needs of\nthe final ELF; it does not certify transitive libraries, kernels or arbitrary\nconsumer toolchains. Release CI also builds and runs consumers on the baseline."
 msgstr "检查 Linux 最终消费端 ELF，包括链接 liblogger.a 的消费端。\n\n静态归档没有最终动态 ABI。本工具检查最终 ELF 的直接 GLIBC 版本需求，\n不认证传递依赖库、内核或任意消费端工具链。\n发布 CI 还会在基线环境中构建并运行消费端。"

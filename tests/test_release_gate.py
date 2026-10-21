@@ -288,7 +288,7 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_rejects_invalid_tag_or_branch_input(self):
         fixture = self.fixture()
-        for tag in ('', 'main', 'refs/tags/' + TAG, 'v1.0.0', 'v3.0.0', 'v2.3',
+        for tag in ('', 'main', 'refs/tags/' + TAG, 'v0.9.6', 'v3.0.0', 'v2.3',
                     'v2.03.4', 'v2.3.04', 'v2.3.4-rc1', 'v2.3.4\nx=1',
                     'v2.3.4; touch injected'):
             with self.subTest(tag=tag):
@@ -312,8 +312,8 @@ class ReleaseGateTests(unittest.TestCase):
     def test_rejects_version_and_abi_contract_mismatches(self):
         cases = [dict(version='1.0.0'), dict(version='2.3.5'),
                  dict(abi=ABI.replace('abi_version = "2"', 'abi_version = "1"')),
-                 dict(abi=ABI.replace('LOGGER_2.0', 'LOGGER_1.0')),
-                 dict(abi=ABI.replace('logger-2.0.symbols', 'logger-1.0.symbols')),
+                 dict(abi=ABI.replace('LOGGER_2.0', 'LOGGER_3.0')),
+                 dict(abi=ABI.replace('logger-2.0.symbols', 'logger-0.9.symbols')),
                  dict(manifest=None), dict(manifest=''), dict(manifest='# empty\n')]
         for case in cases:
             with self.subTest(case=case):

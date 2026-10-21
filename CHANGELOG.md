@@ -1,14 +1,14 @@
 # 变更记录
 
-## 2.0.0 — 稳定发布准备，尚未发布
+## 2.0.0 — 正式发布
 
 产品范围收敛为普通 Logger/Console：文件、stderr、本地 Syslog，同步/异步写入、
 轮转、生命周期和可观察错误。Audit/crypto 与旧 fork 重初始化辅助接口已移除，
 生产库和未安装测试支持库均不再包含 Audit。
 
 ABI主版本升级为SONAME `liblogger.so.2` / `LOGGER_2.0`，当前导出43个公开C符号；
-不兼容 v1 二进制，消费方需使用同版公开头重建和验收。当前 C/C++布局、默认值和函数
-类型快照已整理为[2.0合同](abi/LOGGER_2_0_CONTRACT.md)，待最终验收。未发布开发
+消费方需使用同版公开头重建和验收。当前 C/C++布局、默认值和函数
+类型快照已整理为[2.0合同](abi/LOGGER_2_0_CONTRACT.md)，已随正式发布验收。开发
 接口已迁移生命周期、控制、Console、四个记录与十二个状态/指标查询，均为
 0/-errno并保留errno；查询完整成功才写槽，结构布局保持，旧签名不保留。
 
@@ -21,30 +21,8 @@ ABI主版本升级为SONAME `liblogger.so.2` / `LOGGER_2.0`，当前导出43个�
 （#167）、对齐当前设计及完整安装文档（#168），以及工具/Shell的 GNU gettext
 国际化（#187/#182/#188）。发布包沿用 glibc 2.31/GCC 9 基线构建及较新系统同包消费。
 
-本条不表示正式发布或特定业务生产认证；范围、迁移、已验证来源及未验证部署边界见
+本条不表示特定业务生产认证；范围、迁移、已验证来源及未验证部署边界见
 [2.0.0发布说明](docs/RELEASE_NOTES_2.0.0.md)。
-
-## 1.0.0 — 2026-10-06
-
-首个稳定 Production v1。默认 shared ABI 正式冻结为 SONAME `liblogger.so.1` /
-`LOGGER_1.0`，公开 C 符号集收敛为 62 项；`abi/logger-1.0.symbols` 与
-`abi/LOGGER_1_0_CONTRACT.md` 分别冻结 ELF symbol surface 和语义 ABI。
-
-pre-v1 兼容债务不进入稳定 ABI：删除无效的 `audit_config_t.fsync_each_record`、四个误导性
-fork marker，以及 zero/zero/旧 prefix 配置入口。Logger/Audit/Console 配置统一采用 Linux
-UAPI 风格的 size/version + future-zero-tail 规则。
-
-资源生命周期按 quiescent-before-free 收口：worker join、同步对象 teardown、process census
-成为 final release 的生命周期证明；无法证明 quiescent 时禁止继续 free。Audit recovery/
-checkpoint 改为 owned `dirfd + basename`，instance ID entropy 改为 nonblocking fail-fast；
-4096 archive segment 连接由 O(N²) 优化为 O(N log N)。
-
-Production v1 支持范围固定为 Linux/ELF/x86_64、glibc >= 2.31、Linux >= 5.10、本地 ext4/XFS
-以及本地 Unix-domain datagram Syslog。最低内核、real syslogd、glibc runtime、crash/power-cut、
-Sanitizer、4096 archive capacity、installed consumer 与 release packaging 门禁均已建立并通过。
-
-从 0.9.x 升级必须使用 1.0.0 headers 重新构建；SONAME 0 不承诺与稳定 v1 二进制兼容。
-详细迁移与不支持范围见 `docs/RELEASE_NOTES_1.0.0.md`。
 
 ## 0.9.6 — 2026-10-04
 
@@ -304,7 +282,7 @@ static 白盒回归使用同源独立测试库，避免 FORTIFY 改写 libc 调�
 
 ## 0.9.0 — 发布-engineering candidate
 
-Not a final Production v1. Same complete Logger/Console/Audit functionality and
+Not a final production release. Same complete Logger/Console/Audit functionality and
 builtin SHA-256 only; no external crypto dependency or runtime implementation
 changes in this revision.
 

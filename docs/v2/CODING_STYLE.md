@@ -85,7 +85,7 @@ VLA
 
 针对进入 `main` 的 2.0 PR：
 
-- `scripts/check_v2_diff.py` 只检查新增 C/C++ 行，避免为了启用规则而顺手重写 v1 遗留代码；
+- `scripts/check_v2_diff.py` 只检查新增 C/C++ 行，避免为了启用规则而顺手重写 历史遗留代码；
 - 新增代码禁止 `strcpy/strcat/sprintf`；
 - 新增 `strncpy` 默认拒绝；确属固定宽度协议字段时必须在同一行标记 `V2_FIXED_WIDTH_OK` 并由评审者审核；
 - 新增源码直接写 `__attribute__((always_inline))` 被拒绝，统一走编译器抽象层；

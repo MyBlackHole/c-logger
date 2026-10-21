@@ -5,13 +5,13 @@
 > [默认借用合同](docs/v2/DEFAULT_BORROW.md)与[旧测试映射](docs/v2/DEFAULT_MIGRATION.md)区分当前能力和历史场景。
 
 
-本文描述 2.0 稳定发布准备中的普通 Logger/Console 接入；当前 ABI 为 SONAME 2 / `LOGGER_2.0`，
+本文描述 2.0 普通 Logger/Console 接入；当前 ABI 为 SONAME 2 / `LOGGER_2.0`，
 当前43个公开 C 符号，清单见 `abi/logger-2.0.symbols`。
-[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)按已有可执行快照整理，待最终固定源码验收；本文不表示已经发布。
-Audit 不在生产库或安装头文件中；已发布 v1 的62符号合同仅适用于 `release/1.x`。
+[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)与正式发布的 `v2.0.0` 标签配套。
+Audit 不在生产库或安装头文件中。
 `logger_fork_reinit()` 与对应构建选项、兼容头文件已移除。
 
-## 进程初始化与当前候选实现（#218）
+## 进程初始化（#218）
 
 `int logger_process_init(void)` 以 `0/-errno` 返回并保留调用方 errno。初次初始化、
 或普通 libc fork 已取得可靠资源快照的子方重建，成功为0；重复为-EALREADY，
@@ -142,12 +142,12 @@ fork、注册过程或资源状态不可靠时不能进入重建。当前本地�
 Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 `struct_size/version` 合同。当前已知结构必须完整存在；未来更大的结构只有在未知尾部
 全部为 0 时才被旧库接受，未知非零语义返回 `E2BIG`。不支持的版本返回
-`EPROTONOSUPPORT`，过短结构返回 `EINVAL`。v1 之前的双零配置、旧短前缀和历史旧头文件消费方均不进入当前兼容合同。
+`EPROTONOSUPPORT`，过短结构返回 `EINVAL`。旧版双零配置、旧短前缀和历史旧头文件消费方均不进入当前兼容合同。
 
 结构体本身在 init/create 期间复制为内部快照；其中的字符串指针只在该调用期间借用，
 调用者必须保证其有效且不被并发修改。完整规则见 `docs/UAPI.md`。
 
-当前产物使用 SONAME 2 / `LOGGER_2.0`，安装元数据为 `LOGGER_ABI_VERSION=2`；不得冒充 v1 兼容包。
+当前产物使用 SONAME 2 / `LOGGER_2.0`，安装元数据为 `LOGGER_ABI_VERSION=2`。
 
 完整集成示例和关闭顺序见 [HOST_OWNED.md](docs/HOST_OWNED.md)。
 
@@ -168,7 +168,7 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 ## Syslog 非阻塞修订
 
 本地数据报 Syslog 现在使用非阻塞、执行 `exec` 时关闭的套接字；发生背压时会形成明确可见的失败记录，
-绝不会隐式转化为重放队列。`logger_config_t` 的 `syslog` 字段沿用当前已知布局；v1 之前的短前缀不再受支持。未来扩展遵守 `docs/UAPI.md` 的尾部追加与未知零尾规则。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
+绝不会隐式转化为重放队列。`logger_config_t` 的 `syslog` 字段沿用当前已知布局；旧版短前缀不再受支持。未来扩展遵守 `docs/UAPI.md` 的尾部追加与未知零尾规则。`logger_get_syslog_metrics()` 提供一致的、面向该输出端的计数器和当前状态。
 启动策略默认是 REQUIRED；DEFERRED 会显式接受临时端点故障，并记录粘滞错误状态。重连由单调时钟
 冷却周期节流，只由后续日志记录触发，不会由刷新/销毁触发。重连成功也绝不会清除实例历史上的
 `first_error`。
@@ -197,8 +197,8 @@ Logger、Console 的当前顶层配置统一采用 Linux UAPI 风格的
 ## 历史 Audit 与旧 ABI
 
 Audit/crypto 不是当前生产 API，安装库不导出 `audit_*`，也不安装 `audit.h`。
-旧审计合同、SHA-256历史和SONAME 1由 `release/1.x` 与 `v1.0.0` 定义，不能从当前普通日志库获得。
-当前移除边界与未完成事项见 [AUDIT_REMOVAL.md](docs/v2/AUDIT_REMOVAL.md)。
+普通日志库不提供审计合同或哈希链。
+当前移除边界见 [AUDIT_REMOVAL.md](docs/v2/AUDIT_REMOVAL.md)。
 
 ## Console 统一错误与结果
 
