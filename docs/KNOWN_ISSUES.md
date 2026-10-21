@@ -1,12 +1,11 @@
-# 2.0 稳定发布准备与生产验收边界
+# 2.0 生产验收边界
 
-本页针对 main 的不含 Audit 的 ABI 2 稳定发布准备产物，合同待最终验收。旧生产版 v1 验收和限制保存在
-[历史记录](https://github.com/MyBlackHole/c-logger/blob/8326825547a0698de9ed2599659f498f644ea925/docs/V1_KNOWN_ISSUES_HISTORY.md)，不作为当前版本已通过的证据。
+本页针对不含 Audit 的 ABI 2 正式发布产物。
 
-## 尚未完成的发布事项
+## 发布身份与持续验证
 
-- 根 VERSION=2.0.0，与 SONAME 2 / LOGGER_2.0 和安装/打包元数据一致；这是 ABI 2 版本身份，不是已发布状态或 v1 兼容承诺。
-- 2.0 公开 API/ABI 已按当前可执行快照整理为[合同](../abi/LOGGER_2_0_CONTRACT.md)，最终确认与精确源码的完整发布验收尚需完成。发布门禁只接受显式现存 v2 标签；CI 通过不等于正式发布授权。
+- 根 VERSION=2.0.0，与 SONAME 2 / LOGGER_2.0 和安装/打包元数据一致；这是 ABI 2 版本身份。
+- 2.0 公开 API/ABI 合同见[当前合同](../abi/LOGGER_2_0_CONTRACT.md)；正式发布源码与资产以 `v2.0.0` 标签和对应 GitHub Release 为准。后续发布仍须使用显式现存标签并完成验收。
 - Audit/密码学模块源码和专用测试已退役；私有/回归支持库仍用于普通 Logger 故障与锁检测，不能进入安装产物。
 - 每次生产候选须核对 GCC/Clang、共享/静态、ASan/UBSan、TSan、安装消费、制品隔离和声明的平台证据。相关源码与构建输入相同的历史平台证据可按[发布工程](RELEASE_ENGINEERING.md)记录等价承接，保留旧 SHA 并标明未重新执行；不能冒充最终提交或发布包的新运行。
 

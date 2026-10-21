@@ -108,7 +108,7 @@ GCC 和 Clang 在 Ubuntu24.04 宿主（`RLIMIT_NOFILE` 软/硬限额 65536）
 | PR 受测合并身份 | `c213932574bb1de2647693b58b29ce6c04c70c42`，两个父提交分别是前主线与PR head；**tree与以上两者相同** |
 | `VERSION` / SONAME / ELF 版本节点 | `2.0.0` / `liblogger.so.2` / `LOGGER_2.0` |
 | 精确符号清单 | `abi/logger-2.0.symbols`，**43个非注释条目**；名称数量不意味着旧开发期 ABI 函数类型可混用 |
-| 正式身份 | 查无 `refs/tags/v2.0.0`（404），GitHub Releases 中无2.0版本；已发布 v1.0.0 不动 |
+| 正式身份 | 查无 `refs/tags/v2.0.0`（404），GitHub Releases 中无2.0版本 |
 
 `main` 的合并提交与PR head提交号不同但 tree 完全相同；下表
 “PR准确源码执行”的结果据此具备代码/构建输入等价性。**该等价性不会自动扩展到
@@ -269,4 +269,4 @@ Clang ASan/UBSan 4种身份，每身份2模式各3轮；审计必须以**准确
 禁止把本门禁的`RELEASE_SIGNOFF_VALIDATED`当作这些权限检查的替代，
 更不得以单独修改JSON产生的机器绿色回执宣称业务SLO已满足。
 本次不会推送标签、调用`release-publish`或创建正式资产；
-已有`v1.0.0`维护线不受影响。
+当时的历史维护线不在本次 2.0 发布范围。

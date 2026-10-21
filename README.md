@@ -1,24 +1,21 @@
-<a id="c-logger--20-开发主线--production-v1-已发布"></a>
+<a id="c-logger--20-production"></a>
 
 > 默认便利入口现仅借用宿主实例：使用 `logger_default_set(expected, replacement)`。
 > 不再提供配置式 Global 初始化、库内销毁或空槽 stderr 回退。
 > [默认借用合同](docs/v2/DEFAULT_BORROW.md)与[旧测试映射](docs/v2/DEFAULT_MIGRATION.md)区分当前能力和历史场景。
 
 
-# C Logger — 2.0 稳定发布准备
+# C Logger — 2.0
 
-> `main` 正在准备 2.0.0 生产稳定版；现行公开接口已完成状态返回收口，
-> 但发布范围的风险签收、最终标签与正式发布资产仍未获批准。
-> 根 `VERSION=2.0.0`、ABI 2 不表示发布已经完成。已发布 v1 仍由 `release/1.x` 维护。
+> 2.0.0 已正式发布；版本、支持范围和产物以 `v2.0.0` 标签及 GitHub Release 为准。
 
 
 宿主显式拥有 Logger，业务 SDK 借用实例或日志回调；保留文件/标准错误/Syslog、同步/异步和 Console。
 当前源码、生产目标和测试支持库均已移除 Audit/crypto；生产库没有摘要算法依赖。
 当前 ABI 为 **SONAME 2 / `LOGGER_2.0` / 43 个当前公开 C ABI 符号**。
 
-> **版本身份不等于正式发布：** 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
-> 不得用当前 main 替换 SONAME 1 的正式包。2.0 合同待最终验收，参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)、
-> [迁移状态](docs/v2/AUDIT_REMOVAL.md)和[当前限制](docs/KNOWN_ISSUES.md)。
+> 软件包版本、生成头文件、CMake/pkg-config 与 XPack 均使用 `2.0.0`。
+> 参见[当前 ABI 合同](abi/LOGGER_2_0_CONTRACT.md)和[当前限制](docs/KNOWN_ISSUES.md)。
 
 ## 构建与安装
 
@@ -43,7 +40,6 @@ xmake install -o /opt/logger/"$(cat VERSION)"-static logger
 `LOGGER_2.0` ELF 符号版本。
 
 当前 ABI 允许列表由 `abi/logger-2.0.symbols` 维护；变更必须经过 ABI 评审。
-已发布 v1 的允许列表与 `release/1.x` 仅用于历史维护，不能证明当前 ABI 2 产物兼容 v1。
 
 ## 下游接入
 
@@ -216,8 +212,7 @@ glibc 2.31 的既有候选均已有实际 CI 证据；宿主外部时区、区�
 - [已知限制](docs/KNOWN_ISSUES.md)
 - [变更清单](CHANGELOG.md)
 
-普通日志不提供业务审计事务、哈希链或远端持久确认。旧 Audit 用户应继续使用 `release/1.x`，
-或迁移至独立审计组件。历史专用源码和测试已退役，普通 Logger 的失败、锁、格式与生命周期覆盖独立保留。
+普通日志不提供业务审计事务、哈希链或远端持久确认；有此需求的用户应使用独立审计组件。历史专用源码和测试已退役，普通 Logger 的失败、锁、格式与生命周期覆盖独立保留。
 基本 API 验收保留文件后端进程 SIGKILL 故障回归；当前不维护 VM/断电测试，
 其专用测试程序、脚本及 CI 已移除。既有 flush/fsync 契约不变。进程测试不等于任意服务器、RAID/HBA/NVMe/SATA
 易失缓存组合的物理断电认证；有此额外要求的部署需另做存储栈专项验证。

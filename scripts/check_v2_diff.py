@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""对 PR 新增源码行执行 2.0 基线规则，避免一次性重写 v1 遗留代码。"""
+"""对 PR 新增源码行执行 2.0 基线规则，避免一次性重写 历史遗留代码。"""
 
 from __future__ import annotations
 

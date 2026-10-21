@@ -35,7 +35,7 @@ set_allowedplats("linux")
 local project_version = os.getenv("LOGGER_PROJECT_VERSION") or "0.0.0"
 local version_major, version_minor, version_patch =
     project_version:match("^(%d+)%.(%d+)%.(%d+)$")
--- Audit removal is an ABI break. Never reuse the released SONAME 1.
+-- Audit removal changed the public ABI; the current build uses SONAME 2.
 local abi_version = "2"
 local symbol_version = "LOGGER_2.0"
 local abi_manifest = "abi/logger-2.0.symbols"

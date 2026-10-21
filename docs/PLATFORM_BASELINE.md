@@ -1,6 +1,6 @@
 # 目标平台构建基线
 
-> 当前支持权威见 [v2/SUPPORT_MATRIX.md](v2/SUPPORT_MATRIX.md)。下文 v1/Audit 专属测试描述为历史证据；
+> 当前支持权威见 [v2/SUPPORT_MATRIX.md](v2/SUPPORT_MATRIX.md)。下文退役测试描述为历史证据；
 > 当前普通 Logger 的八点进程崩溃合同见 [LOGGER_CRASH_CONTRACT.md](LOGGER_CRASH_CONTRACT.md)。
 
 ## C 语言与编译器方言
@@ -70,15 +70,15 @@ readelf -h -d -V build/liblogger.so
 旧系统 sysroot 来制造“交叉兼容成功”。工具链路径、版本、sysroot 来源和校验和都应进入
 发布证据。
 
-生产版 v1 的最低上游内核基线收敛为 **Linux 5.10 / x86_64**，
+当前最低上游内核基线为 **Linux 5.10 / x86_64**，
 与最低用户态 Ubuntu 20.04 / glibc 2.31 组合做真实 QEMU 运行验证。选择 5.10 的理由不是
 “某个系统调用 最早在哪个版本出现”，而是它仍属于上游长期维护线，并且完整覆盖
 当前运行时已实际依赖的 getrandom、renameat2/RENAME_NOREPLACE
-以及 ext4/XFS 本地文件系统能力。更老的 3.x/4.x 不进入 v1 默认支持合同；若未来存在明确客户
-需求，按具体发行版/向旧版本移植作为独立兼容层级验证，而不是扩大通用 v1 基线。
+以及 ext4/XFS 本地文件系统能力。更老的 3.x/4.x 不进入默认支持合同；若未来存在明确客户
+需求，按具体发行版/向旧版本移植作为独立兼容层级验证，而不是扩大通用支持基线。
 
 最低内核门禁只验证内核相关运行时能力：一个权威共享生产候选产物
-在 Linux 5.10 + glibc 2.31 客户机中执行 getrandom、ext4/XFS 轮转和 Audit 写入/恢复
+在 Linux 5.10 + glibc 2.31 客户机中执行 getrandom 与 ext4/XFS 文件轮转
 冒烟测试。共享/静态打包、完整消费方、process-crash 和 sanitizer 已有独立门禁，
 不在 minimum-kernel 工作流中重复执行。
 

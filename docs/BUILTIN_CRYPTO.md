@@ -71,6 +71,6 @@ python3 scripts/check_production_artifact.py "$artifact"
 仅删除 SM3 专属参数化分支/用例（含该算法的故障场景）；其他文件、Syslog、Console、生命周期、队列、审计失败、
 严格解析/恢复测试保留。新增原 ID/历史的 fail-closed 负向测试和产物扫描。
 
-这是摘要算法范围收敛，不是密码模块认证或 Production v1 发布。无密钥 hash chain
+这是摘要算法范围收敛，不是密码模块认证。无密钥 hash chain
 不能阻止整体重算、截尾或回滚。旧可疑数据不自动修复；平台、真实掉电、安装/ABI
 发布和性能仍按 KNOWN_ISSUES.md 的未验收范围处理。
