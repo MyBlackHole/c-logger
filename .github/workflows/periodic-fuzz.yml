@@ -155,6 +155,41 @@ jobs:
           path: build/periodic-fuzz-evidence-${{ matrix.target }}/
           retention-days: 30
           if-no-files-found: error
+      - name: 在 #212 永久登记成功运行的关键摘要
+        if: steps.fuzz.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          target = os.environ["TARGET"]
+          result = Path(f"build/periodic-fuzz-evidence-{target}/result.json")
+          report = json.loads(result.read_text())
+          if report["status"] != "pass":
+              raise SystemExit("successful step has no passing result")
+          run = (f"{os.environ['GITHUB_SERVER_URL']}/"
+                 f"{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                 f"{os.environ['GITHUB_RUN_ID']}/attempts/"
+                 f"{os.environ['GITHUB_RUN_ATTEMPT']}")
+          body = (f"#212 周期 fuzz 成功运行：`{target}`\n\n"
+                  f"- 源码：`{report['source_commit']}`；tree：`{report['source_tree']}`\n"
+                  f"- 运行及 30 天制品：{run}；`periodic-fuzz-{target}`\n"
+                  f"- 入口 SHA-256：`{report['binary_sha256']}`\n"
+                  f"- 静态库 SHA-256：`{report['library_sha256']}`\n"
+                  f"- seed：`{report['seed']}`；语料去重后：`{len(report['corpus'])}`\n"
+                  f"- 参数：`{report['budget_seconds']}s/{report['max_len']}B/"
+                  f"{report['input_timeout']}s/{report['rss_mb']}MiB`\n"
+                  f"- result.json SHA-256：`{hashlib.sha256(result.read_bytes()).hexdigest()}`\n")
+          Path("build/periodic-fuzz-success.md").write_text(body)
+          PY
+          gh issue comment 212 --repo "$GITHUB_REPOSITORY" \
+            --body-file build/periodic-fuzz-success.md
       - name: 为失败运行登记可追溯议题
         if: steps.fuzz.outcome == 'failure'
         shell: bash
