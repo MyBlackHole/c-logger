@@ -359,8 +359,8 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	(void)alarm(20);
-	char path[] = "/tmp/logger-runtime-test-XXXXXX";
-	enter_temp(path);
+	char path[PATH_MAX];
+	enter_temp_workspace(path, sizeof(path), "logger-runtime-test");
 	char normalized[64];
 	CHECK(strlen(argv[1]) < sizeof(normalized));
 	memcpy(normalized, argv[1], strlen(argv[1]) + 1);

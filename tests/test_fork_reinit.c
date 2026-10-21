@@ -190,8 +190,8 @@ int main(int argc, char **argv)
 		return 77;
 	}
 #endif
-	char path[] = "/tmp/logger-fork-reinit-XXXXXX";
-	enter_temp(path);
+	char path[PATH_MAX];
+	enter_temp_workspace(path, sizeof(path), "logger-fork-reinit");
 	if (!strcmp(argv[1], "nested")) {
 		CHECK(logger_process_init() == 0);
 		pid_t pid = fork();
