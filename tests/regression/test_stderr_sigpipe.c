@@ -17,7 +17,8 @@ static void configure_sigpipe(int blocked)
 	sigset_t set;
 	CHECK(sigemptyset(&set) == 0);
 	CHECK(sigaddset(&set, SIGPIPE) == 0);
-	CHECK(pthread_sigmask(blocked ? SIG_BLOCK : SIG_UNBLOCK, &set, NULL) == 0);
+	CHECK(pthread_sigmask(blocked ? SIG_BLOCK : SIG_UNBLOCK, &set, NULL) ==
+	      0);
 }
 
 static void check_sigpipe_state(int blocked, int was_pending)
@@ -41,7 +42,7 @@ int main(int argc, char **argv)
 	int healthy = !strcmp(argv[1], "bootstrap-format");
 	int pending = !strcmp(argv[1], "bootstrap-pending");
 	int preblocked = !strcmp(argv[1], "preblocked") || pending ||
-		!strcmp(argv[1], "bootstrap-preblocked");
+			 !strcmp(argv[1], "bootstrap-preblocked");
 	CHECK(async_mode || preblocked || !strcmp(argv[1], "sync") ||
 	      !strcmp(argv[1], "bootstrap") || healthy);
 
@@ -88,9 +89,9 @@ int main(int argc, char **argv)
 		CHECK(LOGGER_INFO(l, "sigpipe", "broken stderr") == 0);
 		CHECK(logger_flush(l) == -EPIPE);
 	} else {
-		CHECK(logger_log_sync_status(l, LOGGER_INFO, "sigpipe", __FILE__,
-					     __LINE__, __func__, "broken stderr") ==
-		      -EPIPE);
+		CHECK(logger_log_sync_status(l, LOGGER_INFO, "sigpipe",
+					     __FILE__, __LINE__, __func__,
+					     "broken stderr") == -EPIPE);
 	}
 	CHECK(errno == EDOM);
 	check_sigpipe_state(preblocked, 0);

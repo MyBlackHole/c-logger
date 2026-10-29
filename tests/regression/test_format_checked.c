@@ -7,12 +7,14 @@
 #include <string.h>
 #include <unistd.h>
 
-#define CHECK(test) do { \
-	if (!(test)) { \
-		fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #test); \
-		exit(1); \
-	} \
-} while (0)
+#define CHECK(test)                                                        \
+	do {                                                               \
+		if (!(test)) {                                             \
+			fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, \
+				#test);                                    \
+			exit(1);                                           \
+		}                                                          \
+	} while (0)
 
 static int fail_format;
 int __real_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap);
@@ -30,9 +32,9 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
  * 在不禁用库的 FORTIFY 保护的情况下测试相同失败契约。
  */
 int __real___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
-			  const char *fmt, va_list ap);
+			   const char *fmt, va_list ap);
 int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
-			  const char *fmt, va_list ap)
+			   const char *fmt, va_list ap)
 {
 	if (fail_format) {
 		fail_format = 0;
@@ -73,7 +75,8 @@ int main(void)
 	CHECK(!memcmp(out, expected, valid + 1));
 	for (size_t cap = 0; cap <= valid; ++cap) {
 		length = 999;
-		CHECK(logger_format_line_checked(l, m, out, cap, &length) == -EOVERFLOW);
+		CHECK(logger_format_line_checked(l, m, out, cap, &length) ==
+		      -EOVERFLOW);
 		CHECK(!length && (!cap || !out[0]));
 		CHECK(logger_format_line(l, m, out, cap) < (cap ? cap : 1));
 	}
@@ -81,14 +84,17 @@ int main(void)
 	CHECK(length == valid && !memcmp(out, expected, valid + 1));
 
 	fail_format = 1;
-	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) == -EILSEQ);
+	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) ==
+	      -EILSEQ);
 	CHECK(!fail_format && !length && !out[0]);
 	CHECK(!logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length));
 	m->ts.tv_nsec = -1;
-	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) == -EINVAL);
+	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) ==
+	      -EINVAL);
 	CHECK(!length && !out[0]);
 	m->ts.tv_nsec = 1000000000L;
-	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) == -EINVAL);
+	CHECK(logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length) ==
+	      -EINVAL);
 	CHECK(!length && !out[0]);
 	CHECK(!logger_destroy(&l));
 	free(expected);

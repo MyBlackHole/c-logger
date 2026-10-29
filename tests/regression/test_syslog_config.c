@@ -86,7 +86,6 @@ int main(int argc, char **argv)
 	CHECK(!l && create_rc == -expected);
 	CHECK(connects == (expected == ENOENT ? 1 : 0));
 	CHECK(!munmap(base, allocated));
-	printf("uapi config read passed: %s current=%zu\n",
-	       argv[1], sizeof(c));
+	printf("uapi config read passed: %s current=%zu\n", argv[1], sizeof(c));
 	return 0;
 }

@@ -118,8 +118,7 @@ int main(int argc, char **argv)
 	       ",\"queue_high_watermark\":%" PRIu64
 	       ",\"consumer_records\":%" PRIu64 ",\"consumer_batches\":%" PRIu64
 	       ",\"async_completed\":%" PRIu64 ",\"emitted_records\":%" PRIu64
-	       ",\"failed_records\":%" PRIu64
-	       ",\"queue_slot_bytes\":%zu"
+	       ",\"failed_records\":%" PRIu64 ",\"queue_slot_bytes\":%zu"
 	       ",\"queue_slot_storage_bytes\":%zu"
 	       ",\"queue_spill_capacity\":%zu"
 	       ",\"queue_spill_storage_bytes\":%zu"
@@ -141,8 +140,7 @@ int main(int argc, char **argv)
 	       logger_queue_wait_count(&l->q),
 	       logger_queue_producer_wake_signals(&l->q),
 	       logger_queue_force_wake_signals(&l->q),
-	       logger_queue_storage_bytes(&l->q),
-	       valid ? "true" : "false");
+	       logger_queue_storage_bytes(&l->q), valid ? "true" : "false");
 	logger_destroy(&l);
 	free(threads);
 	free(msg);

@@ -54,7 +54,8 @@ static void *consume(void *arg)
 		pthread_mutex_lock(&queue.wait_mu);
 		while (logger_queue_empty(&queue) && atomic_load(&running)) {
 			logger_queue_wait_arm_recheck(&queue);
-			if (!logger_queue_empty(&queue) || !atomic_load(&running))
+			if (!logger_queue_empty(&queue) ||
+			    !atomic_load(&running))
 				break;
 			atomic_fetch_add_explicit(&queue.wait_count, 1,
 						  memory_order_relaxed);

@@ -151,15 +151,15 @@ static void spill_policy(void)
 	CHECK(diagnostics.spill_capacity == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(diagnostics.spill_in_use == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(diagnostics.spill_exhaustions == 2);
-	CHECK(diagnostics.completion_backlog ==
-	      1u + LOGGER_QUEUE_SPILL_LIMIT);
+	CHECK(diagnostics.completion_backlog == 1u + LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK((diagnostics.observation_flags &
 	       LOGGER_DIAG_SPILL_EXHAUSTIONS_OBSERVED) != 0);
-	CHECK((diagnostics.observation_flags & LOGGER_DIAG_DROPS_OBSERVED) != 0);
+	CHECK((diagnostics.observation_flags & LOGGER_DIAG_DROPS_OBSERVED) !=
+	      0);
 	CHECK((diagnostics.observation_flags &
 	       LOGGER_DIAG_SYNC_FALLBACKS_OBSERVED) != 0);
-	CHECK((diagnostics.observation_flags &
-	       LOGGER_DIAG_QUEUE_SATURATED) == 0);
+	CHECK((diagnostics.observation_flags & LOGGER_DIAG_QUEUE_SATURATED) ==
+	      0);
 	check_terminal(0, 1, 1, 0);
 
 	atomic_store(&release_format, 1);

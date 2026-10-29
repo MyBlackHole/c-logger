@@ -10,7 +10,9 @@
 #define LOGGER_QUEUE_SPILL_LIMIT 1024u
 #define LOGGER_QUEUE_SPILL_NONE UINT32_MAX
 #define LOGGER_QUEUE_SPILL_WORD_BITS 32u
-#define LOGGER_QUEUE_SPILL_WORDS 	((LOGGER_QUEUE_SPILL_LIMIT + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) / 	 LOGGER_QUEUE_SPILL_WORD_BITS)
+#define LOGGER_QUEUE_SPILL_WORDS                                          \
+	((LOGGER_QUEUE_SPILL_LIMIT + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) / \
+	 LOGGER_QUEUE_SPILL_WORD_BITS)
 
 _Static_assert(LOGGER_MESSAGE_MAX - 1u <= UINT16_MAX,
 	       "queue text_len must fit uint16_t");
@@ -101,8 +103,7 @@ static inline void logger_queue_wait_arm_recheck(logger_queue_t *q)
 				       memory_order_acq_rel);
 }
 
-static inline int
-logger_queue_wait_probe_after_publish(logger_queue_t *q)
+static inline int logger_queue_wait_probe_after_publish(logger_queue_t *q)
 {
 	return atomic_fetch_or_explicit(&q->consumer_waiting, 0,
 					memory_order_acq_rel) != 0;

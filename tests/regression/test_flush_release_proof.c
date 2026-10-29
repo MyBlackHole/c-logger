@@ -149,9 +149,11 @@ static void release_failure(int global, int cancel)
 	wait_flag(&at_progress);
 	atomic_store(&fail_emit_unlock, 1);
 	if (global)
-		logger_global_write(LOGGER_INFO, "proof", NULL, 0, NULL, "record");
+		logger_global_write(LOGGER_INFO, "proof", NULL, 0, NULL,
+				    "record");
 	else
-		logger_log(subject, LOGGER_INFO, "proof", NULL, 0, NULL, "record");
+		logger_log(subject, LOGGER_INFO, "proof", NULL, 0, NULL,
+			   "record");
 	wait_flag(&subject->synchronization_error);
 	CHECK(atomic_load(&subject->synchronization_error) == EAGAIN);
 	/* 仅供测试的线程回收证明此精确工作线程已结束。
@@ -203,8 +205,9 @@ static void ordinary_error(int wait_error)
 		expected = EAGAIN;
 	} else {
 		atomic_store(&fail_sync, 1);
-		CHECK(logger_log_sync_status(subject, LOGGER_INFO, "io", NULL, 0,
-					     NULL, "must still be synced") == -EIO);
+		CHECK(logger_log_sync_status(subject, LOGGER_INFO, "io", NULL,
+					     0, NULL,
+					     "must still be synced") == -EIO);
 		expected = EIO;
 	}
 	int before = atomic_load(&sync_calls);

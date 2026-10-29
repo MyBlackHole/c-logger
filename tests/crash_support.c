@@ -12,16 +12,19 @@
 #define TARGET_SEQUENCE BASELINE_RECORDS
 #define RECORD_CAPACITY 512u
 
-static void verify_records(const char *point, unsigned recovered, int baseline_only);
+static void verify_records(const char *point, unsigned recovered,
+			   int baseline_only);
 
 static const char *cut_point;
 static int armed, active_switched;
-static const char *const points[] = {
-	"acknowledged", "before_file_fsync", "after_file_fsync",
-	"rotation_after_file_fsync", "file_after_archive_rename",
-	"file_after_archive_dirsync", "file_after_active_open",
-	"file_after_active_dirsync"
-};
+static const char *const points[] = { "acknowledged",
+				      "before_file_fsync",
+				      "after_file_fsync",
+				      "rotation_after_file_fsync",
+				      "file_after_archive_rename",
+				      "file_after_archive_dirsync",
+				      "file_after_active_open",
+				      "file_after_active_dirsync" };
 
 int crash_fixture_point_valid(const char *point)
 {
@@ -52,11 +55,13 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *value)
 
 static size_t payload(unsigned sequence, char *out, size_t capacity)
 {
-	int n = snprintf(out, capacity,
+	int n = snprintf(
+		out, capacity,
 		"LOGGER_CRASH_V1 seq=%03u payload="
 		"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		"/full-content-must-survive/0123456789abcdefghijklmnopqrstuvwxyz"
-		" end=%03u", sequence, sequence);
+		" end=%03u",
+		sequence, sequence);
 	CHECK(n > 0 && (size_t)n < capacity);
 	return (size_t)n;
 }
@@ -66,7 +71,7 @@ static size_t record_line(unsigned sequence, char *out, size_t capacity)
 	char body[RECORD_CAPACITY];
 	payload(sequence, body, sizeof(body));
 	int n = snprintf(out, capacity,
-		"2023-11-14T22:13:20.123456+0000 INFO  %s\n", body);
+			 "2023-11-14T22:13:20.123456+0000 INFO  %s\n", body);
 	CHECK(n > 0 && (size_t)n < capacity);
 	return (size_t)n;
 }
@@ -101,7 +106,8 @@ int __wrap_fsync(int fd)
 		 * 计为目标记录的数据 fsync。
 		 */
 		match = S_ISREG(data.st_mode) && data.st_nlink == 1 &&
-			data.st_dev == active.st_dev && data.st_ino == active.st_ino &&
+			data.st_dev == active.st_dev &&
+			data.st_ino == active.st_ino &&
 			data.st_size == (off_t)size;
 	}
 	if (match && !strcmp(cut_point, "before_file_fsync"))
@@ -173,8 +179,12 @@ static int archive_name(const char *name)
 		return 0;
 	const char *stamp = name + 6;
 	for (unsigned i = 0; i < 23; ++i) {
-		char delimiter = i == 8 ? 'T' : i == 15 ? '.' : i == 22 ? 'Z' : 0;
-		if (delimiter ? stamp[i] != delimiter : stamp[i] < '0' || stamp[i] > '9')
+		char delimiter = i == 8	 ? 'T' :
+				 i == 15 ? '.' :
+				 i == 22 ? 'Z' :
+					   0;
+		if (delimiter ? stamp[i] != delimiter :
+				stamp[i] < '0' || stamp[i] > '9')
 			return 0;
 	}
 	return 1;
@@ -205,7 +215,8 @@ static size_t read_segment(const char *name, char *out, size_t capacity)
 	return size;
 }
 
-static void verify_records(const char *point, unsigned recovered, int baseline_only)
+static void verify_records(const char *point, unsigned recovered,
+			   int baseline_only)
 {
 	CHECK(crash_fixture_point_valid(point) && recovered <= 2);
 	char bytes[8192], line[RECORD_CAPACITY];
@@ -224,7 +235,8 @@ static void verify_records(const char *point, unsigned recovered, int baseline_o
 		if (!strcmp(entry->d_name, ACTIVE))
 			active_present = 1;
 		else if (strncmp(entry->d_name, "crash.", 6) == 0)
-			CHECK(!strcmp(entry->d_name, LOCK) || archive_name(entry->d_name));
+			CHECK(!strcmp(entry->d_name, LOCK) ||
+			      archive_name(entry->d_name));
 	}
 	CHECK(closedir(directory) == 0);
 	struct dirent **archives;
@@ -248,12 +260,14 @@ static void verify_records(const char *point, unsigned recovered, int baseline_o
 	}
 	free(archives);
 	if (active_present)
-		used += read_segment(ACTIVE, bytes + used, sizeof(bytes) - used);
+		used += read_segment(ACTIVE, bytes + used,
+				     sizeof(bytes) - used);
 	CHECK(!recovered || active_present);
 	size_t offset = 0;
 	for (unsigned i = 0; i < BASELINE_RECORDS; ++i) {
 		length = record_line(i, line, sizeof(line));
-		CHECK(used - offset >= length && !memcmp(bytes + offset, line, length));
+		CHECK(used - offset >= length &&
+		      !memcmp(bytes + offset, line, length));
 		offset += length;
 	}
 	/* 被中断记录未经确认。fsync 前只允许记录缺失或为此精确目标的字节前缀。
@@ -267,16 +281,19 @@ static void verify_records(const char *point, unsigned recovered, int baseline_o
 	if (baseline_only) {
 		CHECK(target_bytes == 0);
 	} else if (!strcmp(point, "before_file_fsync")) {
-		CHECK(target_bytes <= length && !memcmp(bytes + offset, line, target_bytes));
+		CHECK(target_bytes <= length &&
+		      !memcmp(bytes + offset, line, target_bytes));
 	} else if (!strcmp(point, "after_file_fsync") ||
 		   !strcmp(point, "rotation_after_file_fsync")) {
-		CHECK(target_bytes == length && !memcmp(bytes + offset, line, length));
+		CHECK(target_bytes == length &&
+		      !memcmp(bytes + offset, line, length));
 	} else {
 		CHECK(target_bytes == 0);
 	}
 	offset += target_bytes;
 	for (unsigned i = 0; i < recovered; ++i) {
-		length = record_line(BASELINE_RECORDS + 1u + i, line, sizeof(line));
+		length = record_line(BASELINE_RECORDS + 1u + i, line,
+				     sizeof(line));
 		CHECK(!memcmp(bytes + offset, line, length));
 		offset += length;
 	}
@@ -319,7 +336,8 @@ void crash_fixture_cleanup(const char *directory)
 	while ((entry = readdir(dir)))
 		if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
 			CHECK(!strcmp(entry->d_name, ACTIVE) ||
-			      !strcmp(entry->d_name, LOCK) || archive_name(entry->d_name));
+			      !strcmp(entry->d_name, LOCK) ||
+			      archive_name(entry->d_name));
 			CHECK(unlink(entry->d_name) == 0);
 		}
 	CHECK(closedir(dir) == 0 && chdir("/") == 0 && rmdir(directory) == 0);

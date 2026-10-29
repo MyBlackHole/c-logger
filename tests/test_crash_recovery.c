@@ -22,7 +22,8 @@ int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	if (argc == 4 && !strcmp(argv[1], "--verify")) {
-		CHECK(!strcmp(argv[3], "0") || !strcmp(argv[3], "1") || !strcmp(argv[3], "2"));
+		CHECK(!strcmp(argv[3], "0") || !strcmp(argv[3], "1") ||
+		      !strcmp(argv[3], "2"));
 		crash_fixture_verify(argv[2], (unsigned)(argv[3][0] - '0'));
 		return 0;
 	}
@@ -60,8 +61,11 @@ int main(int argc, char **argv)
 		rc = poll(&ready, 1, 10000);
 	} while (rc < 0 && errno == EINTR);
 	char observed[128] = { 0 };
-	ssize_t size = rc > 0 ? read(notification[0], observed, sizeof(observed) - 1) : -1;
-	int reached = size == (ssize_t)strlen(argv[1]) && !strcmp(observed, argv[1]);
+	ssize_t size =
+		rc > 0 ? read(notification[0], observed, sizeof(observed) - 1) :
+			 -1;
+	int reached = size == (ssize_t)strlen(argv[1]) &&
+		      !strcmp(observed, argv[1]);
 	/* 超时、标记缺失或错误都会失败，即使清理会终止子进程。 */
 	CHECK(kill(child, SIGKILL) == 0);
 	int status;

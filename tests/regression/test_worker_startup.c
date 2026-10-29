@@ -36,7 +36,7 @@ static unsigned freed;
 static unsigned destroy_errors;
 
 int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			 void *(*start)(void *), void *arg);
+			  void *(*start)(void *), void *arg);
 int __real_pthread_join(pthread_t thread, void **result);
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
 int __real_pthread_cond_destroy(pthread_cond_t *cv);
@@ -63,7 +63,7 @@ static void *worker_entry(void *unused)
 }
 
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			 void *(*start)(void *), void *arg)
+			  void *(*start)(void *), void *arg)
 {
 	++create_calls;
 	candidate = arg;
@@ -133,8 +133,9 @@ int __wrap_logger_runtime_free(void *ptr)
 static enum scenario scenario_from_name(const char *name)
 {
 	static const char *const names[] = {
-		"normal", "sync", "create-error", "worker-first", "worker-live",
-		"join-error", "destroy-error", "creator-first", "global-worker-first"
+		"normal",	 "sync",	  "create-error",
+		"worker-first",	 "worker-live",	  "join-error",
+		"destroy-error", "creator-first", "global-worker-first"
 	};
 
 	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
@@ -187,16 +188,16 @@ static void test_late_failure(logger_t *l)
 	wait_flag(&worker_returned);
 	CHECK(logger_get_state(l, &state) == 0 &&
 	      state == LOGGER_STATE_STOPPING);
-	CHECK(atomic_load_explicit(&l->lifecycle_error,
-				   memory_order_acquire) == EIO);
+	CHECK(atomic_load_explicit(&l->lifecycle_error, memory_order_acquire) ==
+	      EIO);
 
 	/* 只测试失败后进入的调用。进行中的刷新见 #124。 */
 	errno = EDOM;
 	CHECK(logger_log(l, LOGGER_INFO, "startup", NULL, 0, NULL,
 			 "rejected") == -ESHUTDOWN);
 	CHECK(errno == EDOM);
-	CHECK(logger_log_sync_status(l, LOGGER_INFO, "startup", NULL, 0,
-				     NULL, "rejected") == -ESHUTDOWN);
+	CHECK(logger_log_sync_status(l, LOGGER_INFO, "startup", NULL, 0, NULL,
+				     "rejected") == -ESHUTDOWN);
 	CHECK(errno == EDOM);
 	logger_diagnostics_t d;
 

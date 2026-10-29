@@ -46,8 +46,8 @@ const char *logger_lockdep_class_name(logger_lock_class_t class_id)
 static void violation(const char *what, logger_lock_class_t class_id,
 		      const void *lock)
 {
-	fprintf(stderr, "LOGGER_LOCKDEP: %s: class=%s lock=%p depth=%u\n",
-		what, logger_lockdep_class_name(class_id), lock, state.depth);
+	fprintf(stderr, "LOGGER_LOCKDEP: %s: class=%s lock=%p depth=%u\n", what,
+		logger_lockdep_class_name(class_id), lock, state.depth);
 	abort();
 }
 
@@ -72,8 +72,7 @@ static int allowed_after(logger_lock_class_t held, logger_lock_class_t next)
 		       held == LOGGER_LOCK_INSTANCE_EMIT ||
 		       held == LOGGER_LOCK_CONSOLE;
 	if (held == LOGGER_LOCK_GLOBAL_CONTROL)
-		return next == LOGGER_LOCK_GLOBAL_LIFETIME ||
-		       is_instance(next);
+		return next == LOGGER_LOCK_GLOBAL_LIFETIME || is_instance(next);
 	if (held == LOGGER_LOCK_GLOBAL_LIFETIME)
 		return is_instance(next);
 	return 0;

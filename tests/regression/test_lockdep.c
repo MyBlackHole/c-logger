@@ -46,7 +46,8 @@ int __real_pthread_mutex_unlock(pthread_mutex_t *);
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 {
 	if (unlock_probe_armed && mu == unlock_probe_target)
-		atomic_fetch_add_explicit(unlock_calls, 1, memory_order_relaxed);
+		atomic_fetch_add_explicit(unlock_calls, 1,
+					  memory_order_relaxed);
 	return __real_pthread_mutex_unlock(mu);
 }
 
@@ -131,22 +132,22 @@ static void init_normal_mutex(pthread_mutex_t *mu)
 static void bad_real_recursive_mutex(void)
 {
 	CHECK(__cleanup_lockdep_mutex_lock(&real_mutex,
-						  LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	(void)__cleanup_lockdep_mutex_lock(&real_mutex,
-					  LOGGER_LOCK_INSTANCE_EMIT);
+					   LOGGER_LOCK_INSTANCE_EMIT);
 }
 
 static void bad_real_non_lifo_unlock(void)
 {
 	CHECK(__cleanup_lockdep_mutex_lock(&real_control_mutex,
-						  LOGGER_LOCK_GLOBAL_CONTROL) == 0);
+					   LOGGER_LOCK_GLOBAL_CONTROL) == 0);
 	CHECK(__cleanup_lockdep_mutex_lock(&real_lifetime_mutex,
-						  LOGGER_LOCK_GLOBAL_LIFETIME) == 0);
+					   LOGGER_LOCK_GLOBAL_LIFETIME) == 0);
 	atomic_store_explicit(unlock_calls, 0, memory_order_relaxed);
 	unlock_probe_target = &real_control_mutex;
 	unlock_probe_armed = 1;
 	(void)__cleanup_lockdep_mutex_unlock(&real_control_mutex,
-						     LOGGER_LOCK_GLOBAL_CONTROL);
+					     LOGGER_LOCK_GLOBAL_CONTROL);
 }
 
 static void *real_abba_side(void *arg)
@@ -154,10 +155,11 @@ static void *real_abba_side(void *arg)
 	int left = arg == NULL;
 	pthread_mutex_t *first = left ? &real_abba_a : &real_abba_b;
 	pthread_mutex_t *second = left ? &real_abba_b : &real_abba_a;
-	logger_lock_class_t first_class =
-		left ? LOGGER_LOCK_INSTANCE_EMIT : LOGGER_LOCK_INSTANCE_PROGRESS;
+	logger_lock_class_t first_class = left ? LOGGER_LOCK_INSTANCE_EMIT :
+						 LOGGER_LOCK_INSTANCE_PROGRESS;
 	logger_lock_class_t second_class =
-		left ? LOGGER_LOCK_INSTANCE_PROGRESS : LOGGER_LOCK_INSTANCE_EMIT;
+		left ? LOGGER_LOCK_INSTANCE_PROGRESS :
+		       LOGGER_LOCK_INSTANCE_EMIT;
 	int rc = __cleanup_lockdep_mutex_lock(first, first_class);
 	if (rc)
 		return (void *)(intptr_t)rc;
@@ -188,14 +190,14 @@ static void *hold_progress_for_trylock(void *arg)
 {
 	(void)arg;
 	int rc = __cleanup_lockdep_mutex_lock(&real_trylock_mutex,
-						     LOGGER_LOCK_INSTANCE_PROGRESS);
+					      LOGGER_LOCK_INSTANCE_PROGRESS);
 	if (rc)
 		return (void *)(intptr_t)rc;
 	if (!barrier_wait_ok(&real_trylock_ready) ||
 	    !barrier_wait_ok(&real_trylock_done))
 		return (void *)(intptr_t)EINVAL;
 	rc = __cleanup_lockdep_mutex_unlock(&real_trylock_mutex,
-						    LOGGER_LOCK_INSTANCE_PROGRESS);
+					    LOGGER_LOCK_INSTANCE_PROGRESS);
 	return rc ? (void *)(intptr_t)rc : NULL;
 }
 
@@ -205,18 +207,19 @@ static void test_failed_mutex_trylock(void)
 	void *thread_result;
 	CHECK(pthread_barrier_init(&real_trylock_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&real_trylock_done, NULL, 2) == 0);
-	CHECK(pthread_create(&owner, NULL, hold_progress_for_trylock, NULL) == 0);
+	CHECK(pthread_create(&owner, NULL, hold_progress_for_trylock, NULL) ==
+	      0);
 	CHECK(barrier_wait_ok(&real_trylock_ready));
 	CHECK(__cleanup_lockdep_mutex_lock(&real_abba_a,
-						  LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	int rc = __cleanup_lockdep_mutex_trylock(&real_trylock_mutex,
-							LOGGER_LOCK_INSTANCE_PROGRESS);
+						 LOGGER_LOCK_INSTANCE_PROGRESS);
 	CHECK(rc == EBUSY);
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &real_abba_a);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS,
-					       &real_trylock_mutex);
+				       &real_trylock_mutex);
 	CHECK(__cleanup_lockdep_mutex_unlock(&real_abba_a,
-						     LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					     LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	CHECK(barrier_wait_ok(&real_trylock_done));
 	CHECK(pthread_join(owner, &thread_result) == 0);
 	CHECK(thread_result == NULL);
@@ -227,33 +230,34 @@ static void test_failed_mutex_trylock(void)
 static void test_successful_trylocks(void)
 {
 	CHECK(__cleanup_lockdep_mutex_trylock(&real_mutex,
-						     LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					      LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &real_mutex);
 	CHECK(__cleanup_lockdep_mutex_unlock(&real_mutex,
-						    LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					     LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_EMIT, &real_mutex);
 
 	CHECK(pthread_rwlock_init(&real_rwlock, NULL) == 0);
 	CHECK(__cleanup_lockdep_rwlock_trywrlock(&real_rwlock) == 0);
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
 	CHECK(__cleanup_lockdep_rwlock_unlock(&real_rwlock) == 0);
-	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
+	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME,
+				       &real_rwlock);
 	CHECK(pthread_rwlock_destroy(&real_rwlock) == 0);
 }
 
 static void bad_successful_mutex_trylock_order(void)
 {
 	CHECK(__cleanup_lockdep_mutex_lock(&real_abba_a,
-						  LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	(void)__cleanup_lockdep_mutex_trylock(&real_abba_b,
-						     LOGGER_LOCK_INSTANCE_PROGRESS);
+					      LOGGER_LOCK_INSTANCE_PROGRESS);
 }
 
 static void bad_successful_rwlock_trywrite_order(void)
 {
 	CHECK(pthread_rwlock_init(&real_rwlock, NULL) == 0);
 	CHECK(__cleanup_lockdep_mutex_lock(&real_abba_a,
-						  LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	(void)__cleanup_lockdep_rwlock_trywrlock(&real_rwlock);
 }
 
@@ -263,11 +267,13 @@ static void test_rwlock_transitions(void)
 	CHECK(__cleanup_lockdep_rwlock_rdlock(&real_rwlock) == 0);
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
 	CHECK(__cleanup_lockdep_rwlock_unlock(&real_rwlock) == 0);
-	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
+	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME,
+				       &real_rwlock);
 	CHECK(__cleanup_lockdep_rwlock_wrlock(&real_rwlock) == 0);
 	logger_lockdep_assert_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
 	CHECK(__cleanup_lockdep_rwlock_unlock(&real_rwlock) == 0);
-	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME, &real_rwlock);
+	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME,
+				       &real_rwlock);
 	CHECK(pthread_rwlock_destroy(&real_rwlock) == 0);
 }
 
@@ -291,17 +297,18 @@ static void test_failed_rwlock_trywrite(void)
 	CHECK(pthread_rwlock_init(&real_rwlock, NULL) == 0);
 	CHECK(pthread_barrier_init(&real_rwlock_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&real_rwlock_done, NULL, 2) == 0);
-	CHECK(pthread_create(&reader, NULL, hold_rwlock_for_trywrite, NULL) == 0);
+	CHECK(pthread_create(&reader, NULL, hold_rwlock_for_trywrite, NULL) ==
+	      0);
 	CHECK(barrier_wait_ok(&real_rwlock_ready));
 	CHECK(__cleanup_lockdep_mutex_lock(&real_abba_a,
-						  LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	int rc = __cleanup_lockdep_rwlock_trywrlock(&real_rwlock);
 	CHECK(rc == EBUSY || rc == EAGAIN);
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &real_abba_a);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME,
-					       &real_rwlock);
+				       &real_rwlock);
 	CHECK(__cleanup_lockdep_mutex_unlock(&real_abba_a,
-						     LOGGER_LOCK_INSTANCE_EMIT) == 0);
+					     LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	CHECK(barrier_wait_ok(&real_rwlock_done));
 	CHECK(pthread_join(reader, &thread_result) == 0);
 	CHECK(thread_result == NULL);
@@ -319,17 +326,18 @@ static void *tls_lock_side(void *arg)
 {
 	tls_lock_arg_t *locks = arg;
 	int rc = __cleanup_lockdep_mutex_lock(locks->mu,
-						     LOGGER_LOCK_INSTANCE_PROGRESS);
+					      LOGGER_LOCK_INSTANCE_PROGRESS);
 	if (rc)
 		return (void *)(intptr_t)rc;
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_PROGRESS, locks->mu);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS,
-					       locks->other);
+				       locks->other);
 	if (!barrier_wait_ok(&tls_ready) || !barrier_wait_ok(&tls_done))
 		return (void *)(intptr_t)EINVAL;
 	rc = __cleanup_lockdep_mutex_unlock(locks->mu,
-						   LOGGER_LOCK_INSTANCE_PROGRESS);
-	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS, locks->mu);
+					    LOGGER_LOCK_INSTANCE_PROGRESS);
+	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS,
+				       locks->mu);
 	return rc ? (void *)(intptr_t)rc : NULL;
 }
 
@@ -355,7 +363,7 @@ static void *signal_cond_waiter(void *arg)
 {
 	(void)arg;
 	int rc = __cleanup_lockdep_mutex_lock(&cond_mutex,
-						     LOGGER_LOCK_INSTANCE_PROGRESS);
+					      LOGGER_LOCK_INSTANCE_PROGRESS);
 	if (rc)
 		return (void *)(intptr_t)rc;
 	cond_ready = 1;
@@ -375,14 +383,15 @@ static void test_cond_wait_reacquire_tracking(void)
 	CHECK(pthread_mutex_init(&cond_mutex, NULL) == 0);
 	CHECK(pthread_cond_init(&cond_cv, NULL) == 0);
 	CHECK(__cleanup_lockdep_mutex_lock(&cond_mutex,
-						  LOGGER_LOCK_INSTANCE_PROGRESS) == 0);
+					   LOGGER_LOCK_INSTANCE_PROGRESS) == 0);
 	CHECK(pthread_create(&signaler, NULL, signal_cond_waiter, NULL) == 0);
 	while (!cond_ready)
 		CHECK(pthread_cond_wait(&cond_cv, &cond_mutex) == 0);
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_PROGRESS, &cond_mutex);
-	CHECK(__cleanup_lockdep_mutex_unlock(&cond_mutex,
-						     LOGGER_LOCK_INSTANCE_PROGRESS) == 0);
-	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS, &cond_mutex);
+	CHECK(__cleanup_lockdep_mutex_unlock(
+		      &cond_mutex, LOGGER_LOCK_INSTANCE_PROGRESS) == 0);
+	logger_lockdep_assert_not_held(LOGGER_LOCK_INSTANCE_PROGRESS,
+				       &cond_mutex);
 	CHECK(pthread_join(signaler, &thread_result) == 0);
 	CHECK(pthread_cond_destroy(&cond_cv) == 0);
 	CHECK(pthread_mutex_destroy(&cond_mutex) == 0);

@@ -20,7 +20,8 @@ static char connected_path[108];
  * 仅用 --wrap=connect 无法观察生产 DSO 内部的调用。
  * Linux 是受支持平台；不使用 libdl，转发无关调用。
  */
-int isolation_connect(int, const struct sockaddr *, socklen_t) __asm__("connect");
+int isolation_connect(int, const struct sockaddr *,
+		      socklen_t) __asm__("connect");
 int isolation_connect(int fd, const struct sockaddr *address, socklen_t n)
 {
 	if (!intercept_connect)
@@ -120,7 +121,7 @@ static void scenario(const char *mode)
 		 * 测试支持确实拆分记录，而生产库忽略了它。
 		 */
 		CHECK(TEST_EXPECT_HOOKS ? metrics.write_syscalls > 1 :
-					 metrics.write_syscalls == 1);
+					  metrics.write_syscalls == 1);
 		CHECK(!logger_destroy(&logger));
 		CHECK(file_contains("out.log", "short write complete"));
 	} else {
@@ -173,7 +174,8 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	CHECK(file_fault(argv[1]) || file_crash(argv[1]) ||
-	      !strcmp(argv[1], "short-write") || !strcmp(argv[1], "syslog-path"));
+	      !strcmp(argv[1], "short-write") ||
+	      !strcmp(argv[1], "syslog-path"));
 	char exe[PATH_MAX];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 	CHECK(n > 0 && (size_t)n < sizeof(exe) - 1);

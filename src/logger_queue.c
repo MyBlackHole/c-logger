@@ -76,10 +76,9 @@ static void queue_copy_source(logger_queue_record_t *dst,
 			      const logger_message_t *src)
 {
 	if (src->metadata_mask & LOGGER_RECORD_META_MODULE) {
-		dst->module_len =
-			queue_source_copy(dst->module_storage,
-					  sizeof(dst->module_storage),
-					  src->module ? src->module : "app");
+		dst->module_len = queue_source_copy(
+			dst->module_storage, sizeof(dst->module_storage),
+			src->module ? src->module : "app");
 	} else {
 		dst->module_len = 0;
 		dst->module_storage[0] = '\0';
@@ -88,12 +87,11 @@ static void queue_copy_source(logger_queue_record_t *dst,
 	if (src->metadata_mask & LOGGER_RECORD_META_SOURCE) {
 		const char *file = src->file ? strrchr(src->file, '/') : NULL;
 		file = file ? file + 1 : (src->file ? src->file : "?");
-		dst->file_len = queue_source_copy(dst->file_storage,
-						 sizeof(dst->file_storage), file);
-		dst->function_len =
-			queue_source_copy(dst->function_storage,
-					  sizeof(dst->function_storage),
-					  src->func ? src->func : "?");
+		dst->file_len = queue_source_copy(
+			dst->file_storage, sizeof(dst->file_storage), file);
+		dst->function_len = queue_source_copy(
+			dst->function_storage, sizeof(dst->function_storage),
+			src->func ? src->func : "?");
 	} else {
 		dst->file_len = 0;
 		dst->function_len = 0;
@@ -179,9 +177,8 @@ static unsigned spill_valid_mask(size_t spill_cap, size_t word)
 static int queue_spill_take(logger_queue_t *q, const char *text,
 			    size_t text_len, uint32_t *index)
 {
-	size_t words =
-		(q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
-		LOGGER_QUEUE_SPILL_WORD_BITS;
+	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
+		       LOGGER_QUEUE_SPILL_WORD_BITS;
 	uintptr_t seed = (uintptr_t)&spill_probe_cursor;
 	seed ^= seed >> 17;
 	seed ^= seed >> 9;
@@ -191,7 +188,7 @@ static int queue_spill_take(logger_queue_t *q, const char *text,
 		size_t word = (start + n) % words;
 		unsigned valid = spill_valid_mask(q->spill_cap, word);
 		unsigned used = atomic_load_explicit(&q->spill_used[word],
-						    memory_order_relaxed);
+						     memory_order_relaxed);
 		for (;;) {
 			unsigned available = ~used & valid;
 			if (!available)
@@ -204,8 +201,7 @@ static int queue_spill_take(logger_queue_t *q, const char *text,
 				    memory_order_acq_rel,
 				    memory_order_relaxed)) {
 				uint32_t found =
-					(uint32_t)(word *
-							   LOGGER_QUEUE_SPILL_WORD_BITS +
+					(uint32_t)(word * LOGGER_QUEUE_SPILL_WORD_BITS +
 						   bit);
 				/* 0->1 CAS 后当前生产者独占块。
 				 * 正文 memcpy 不需要共享锁；slot.seq 的 release
@@ -304,8 +300,8 @@ int logger_queue_destroy(logger_queue_t *q)
 {
 	if (!q)
 		return -EINVAL;
-	int wait_error = atomic_load_explicit(&q->wait_mu_error,
-						     memory_order_acquire);
+	int wait_error =
+		atomic_load_explicit(&q->wait_mu_error, memory_order_acquire);
 	if (wait_error)
 		return -wait_error;
 
@@ -362,8 +358,7 @@ int logger_queue_notify_if_waiting(logger_queue_t *q)
 					  memory_order_relaxed);
 	else
 		rc = -rc;
-	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait,
-				    &wait_guard);
+	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait, &wait_guard);
 	if (!rc)
 		rc = unlock_rc;
 	if (unlock_rc)
@@ -388,8 +383,7 @@ int logger_queue_wake_force(logger_queue_t *q)
 					  memory_order_relaxed);
 	else
 		rc = -rc;
-	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait,
-				    &wait_guard);
+	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait, &wait_guard);
 	if (!rc)
 		rc = unlock_rc;
 	if (unlock_rc)
@@ -522,9 +516,8 @@ size_t logger_queue_spill_in_use(const logger_queue_t *q)
 {
 	if (!q)
 		return 0;
-	size_t words =
-		(q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
-		LOGGER_QUEUE_SPILL_WORD_BITS;
+	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
+		       LOGGER_QUEUE_SPILL_WORD_BITS;
 	size_t used = 0;
 	for (size_t word = 0; word < words; ++word) {
 		unsigned value = atomic_load_explicit(&q->spill_used[word],
