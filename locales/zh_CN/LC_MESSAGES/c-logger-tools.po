@@ -12,8 +12,11 @@ msgstr ""
 "Last-Translator: Project maintainers\n"
 "Language-Team: Simplified Chinese\n"
 
-msgid "Check changed C-family lines in committed Git snapshots without modifying files."
-msgstr "检查已提交 Git 快照中的 C 系列修改行，不写回文件。"
+msgid "Check C-family formatting in committed Git snapshots without modifying files."
+msgstr "检查已提交 Git 快照中的 C 系列源码格式，不写回文件。"
+
+msgid "Check every tracked C-family source file in --head"
+msgstr "检查 --head 中全部已跟踪的 C 系列源码文件"
 
 msgid "Check out the --head commit first to use its .clang-format"
 msgstr "请先检出 --head 指定的提交，确保使用该版本的 .clang-format"
@@ -32,11 +35,14 @@ msgstr "人读输出语言（默认：auto）"
 msgid "Invalid --lang value: {value}; expected auto, en or zh_CN"
 msgstr "无效的 --lang 值：{value}；应为 auto、en 或 zh_CN"
 
-msgid "PR target branch SHA/ref; compare from the merge base"
-msgstr "PR 目标分支 SHA/引用；从共同祖先开始比较"
+msgid "PR target branch SHA/ref; check changed lines from the merge base"
+msgstr "PR 目标分支 SHA/引用；从共同祖先开始检查修改行"
 
 msgid "Path to the clang-format executable"
 msgstr "clang-format 可执行文件路径"
+
+msgid "Project .clang-format must be a tracked regular file"
+msgstr "项目 .clang-format 必须是已跟踪的普通文件"
 
 #, python-brace-format
 msgid "Source format check failed: {error}"
@@ -56,6 +62,14 @@ msgstr "要求 clang-format {required}，实际为 {actual}"
 #, python-brace-format
 msgid "clang-format {version}: checked {checked} changed source files, {failures} failed; merge base {base}"
 msgstr "clang-format {version}：检查 {checked} 个修改源码文件，{failures} 个不合格；共同祖先 {base}"
+
+#, python-brace-format
+msgid "clang-format {version}: checked {checked} source files, {failures} failed; commit {head}"
+msgstr "clang-format {version}：检查 {checked} 个源码文件，{failures} 个不合格；提交 {head}"
+
+#, python-brace-format
+msgid "{path!r}: lines need formatting: {lines}"
+msgstr "{path!r}：以下行需要调整格式：{lines}"
 
 #, python-brace-format
 msgid "{path!r}: changed lines need formatting: {lines}"

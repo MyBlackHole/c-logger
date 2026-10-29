@@ -29,6 +29,22 @@ export LOGGER_PROJECT_VERSION="$(cat VERSION)"
 
 ## 本地入口
 
+### 源码格式与工具自测
+
+固定安装 clang-format `18.1.8` 后，完整源码门禁与增量门禁分别运行：
+
+```sh
+python3 scripts/check_source_format.py --all
+python3 scripts/check_source_format.py --base origin/main
+```
+
+两者检查已提交的干净快照，不写回源码；全范围与配置规则见
+[持续格式门禁](docs/v2/CODING_STYLE.md#持续格式门禁)。`scripts/test_source_format.py`
+用独立 Git 仓库验证完整／增量正反例，临时仓库固定放在项目
+`build/source-format-tests/`。可通过 `CLANG_FORMAT` 指向该固定版本的可执行文件。
+运行其他工具语言自测前，将 `TMPDIR`、`TMP`、`TEMP` 指向工作区内已存在的目录；
+工具语言／翻译目录自测仍由现有 `source-format` 工作流执行。
+
 <a id="fast"></a>
 
 ### 快速测试

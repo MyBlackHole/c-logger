@@ -7,15 +7,25 @@ permissions:
   contents: read
 jobs:
   changed-source:
+    # 保留已有 CI 检查身份；同一作业增加完整范围检查。
     name: 新增与修改行格式门禁
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      TMPDIR: ${{ github.workspace }}/build/source-format-tmp
+      TMP: ${{ github.workspace }}/build/source-format-tmp
+      TEMP: ${{ github.workspace }}/build/source-format-tmp
+      XMAKE_TMPDIR: ${{ github.workspace }}/build/source-format-tmp
+      PIP_CACHE_DIR: ${{ github.workspace }}/build/source-format-pip-cache
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: 准备工作区临时与缓存目录
+        run: mkdir -p "$TMPDIR" "$PIP_CACHE_DIR"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -30,6 +40,10 @@ jobs:
           python scripts/test_checker_i18n.py
       - name: 运行门禁正反例自测
         run: python scripts/test_source_format.py
+      - name: 检查完整 Git 源码范围
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/check_source_format.py --all --head "$HEAD_SHA"
       - name: 检查新增和修改的源码行
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

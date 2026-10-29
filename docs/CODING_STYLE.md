@@ -108,3 +108,17 @@ struct logger_worker_workspace *worker_workspace;
 
 如果未来需要英文发布文档，应单独维护英文版本或生成版本，不要把中英文逐句混写到
 核心源码注释中。
+
+## 完整源码格式检查
+
+固定使用 clang-format `18.1.8` 和仓库根目录的 `.clang-format`：
+
+```sh
+python3 scripts/check_source_format.py --all
+```
+
+命令只读检查当前已检出的干净提交，按 Git 树枚举全部自有 C/C++ 文件；
+八种扩展名及大小写规则见 [v2 编码规范](v2/CODING_STYLE.md#持续格式门禁)。
+未跟踪文件不纳入受测源码，子目录配置不覆盖项目根规则。
+需要单独核对修改行时用 `--base <目标引用>`，该增量结果只证明修改行，
+不能代替全仓检查。两种模式互斥，检查前须提交跟踪文件的修改。
