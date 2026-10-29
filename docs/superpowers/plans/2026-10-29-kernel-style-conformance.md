@@ -27,11 +27,27 @@
 范围由 Git 跟踪文件枚举，不手写一个仅覆盖容易通过文件的允许列表：
 
 ```sh
-git ls-files '*.[ch]' '*.cc' '*.cpp' '*.hpp' '*.cxx' '*.hh'
+python3 -B - <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, "scripts")
+from check_source_format import EXTENSIONS
+
+tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+files = [os.fsdecode(path) for path in tracked
+         if path and Path(os.fsdecode(path)).suffix.lower() in EXTENSIONS]
+print(json.dumps(files, ensure_ascii=False, indent=2))
+PY
 ```
 
 起始源码共有 **165 个自有 C/C++ 文件**：`src/` 36、`include/` 3、`tests/` 113、
-`examples/` 11、`tools/` 2。新文件自动进入最终检查范围。
+`examples/` 11、`tools/` 2。复用现有格式检查器的八种扩展名集合，
+包括 `.hxx`，并统一扩展名大小写，新增 `.C` 等文件也进入最终检查范围。
+构建中生成或作为 C/C++ 包含的其他后缀片段还须按实际构建入口审查，不能借扩展名排除。
 生产代码、测试驱动、示例、下游 C/C++ 消费样例和诊断程序均在范围内。
 生成头文件须审查其生成入口；Python/shell 中内嵌的 C 正负例须按用途审查，
 不能为美化示例而删除测试故意制造的错误。
@@ -106,7 +122,7 @@ NEW_TYPEDEFS 57、MACRO_ARG_REUSE 13、MACRO_WITH_FLOW_CONTROL 8、BLOCK_COMMENT
 | 17 bool | 布尔语义清楚，使用 true/false；布局/原子/ABI 场景审慎选择 | 私有纯布尔状态、既有 int 返回和位图须分开 | 逐字段/函数判定、布局不变与同步语义证明；不批量更改 ABI |
 | 18 复用辅助机制 | 不重复制造已存在的数组计数、位图、清理和时间规则 | ARRAY_SIZE 与项目现有 helper 的使用待核对 | 使用点与现有机制对应；不引入仅内核可用头文件 |
 | 19 编辑器标记 | 源码无强迫个人编辑配置的 modeline | 须全量搜索并区分测试字符串 | Git 跟踪源码搜索原件、`.editorconfig` 与工具配置对应 |
-| 20 汇编 | 只在必要时使用，封装/约束正确，不以不必要 volatile 阻碍优化 | 当前自有 C/C++ 搜索无内联汇编，Git 无 .S/.s | 全范围搜索；以后新增汇编必须重新进入审查 |
+| 20 汇编 | 只在必要时使用，封装/约束正确，不以不必要 volatile 阻碍优化 | 完整 C/C++ 搜索仅见 test_fault_isolation.c 的 `__asm__("connect")` 链接符号别名，没有机器指令内联汇编；Git 无 .S/.s | 保留该测试的符号替身语义，区分 asm 标签与指令；以后新增汇编重新进入审查 |
 | 21 条件编译 | 尽量隔离完整函数/头桩；保留可编译性与长块结束说明 | 平台、故障钩子、lockdep、C/C++ 条件须逐个检查 | 条件清单及真实启闭/共享静态/编译器构建；不得用 IS_ENABLED 引用不存在符号 |
 | 22 不崩溃 | 正常错误可返回，不因可预期输入或资源不足崩溃 | 内核 WARN/BUG 不适用；用户态 abort/assert 的实际可达性仍须核对 | 生产输入失败关闭、lockdep 调试失败与测试断言分界、错误回归 |
 
@@ -132,7 +148,10 @@ NEW_TYPEDEFS 57、MACRO_ARG_REUSE 13、MACRO_WITH_FLOW_CONTROL 8、BLOCK_COMMENT
 
 ### KS-003：类型表达与声明
 
-1. 列出 `src/` 私有结构体/枚举/冗余别名和全部使用者；普通结构体改具名 struct。
+1. 枚举 `src/`、`include/`、`tests/`、`examples/`、`tools/` 及新增自有 C/C++ 文件中的
+   全部 typedef 定义和使用者；按普通可访问结构体/枚举、冗余别名、公开兼容接口、
+   真正不透明对象和测试故意违规样例逐项分类，普通内部结构体改具名 struct。
+   测试自有的普通结构体同样处理，不能仅把测试列为生产类型变更的同步使用者。
 2. 同步必要的测试驱动、包装器声明、文档及既有 Clang AST 规则识别身份，
    保持原有禁止拥有者复制/借用重包的能力，不增加范围外 AST 规则。
 3. 原型补参数名，声明/定义属性一致；对裸 `unsigned` 等类型拼写作不改变类型的规范化。
