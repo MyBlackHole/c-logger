@@ -4,7 +4,7 @@
 GNU C11/POSIX/C11 内存模型。说明文字遵循[项目语言约定](../PROJECT_LANGUAGE.md)。
 
 维护者已要求持续收敛到 Linux 编码规范。固定上游版本、完整文件范围、22 节逐条要求、
-起始差异及串行验收见[符合性收敛计划](../superpowers/plans/2026-10-29-kernel-style-conformance.md)。
+起始差异及串行验收见[源码树中的符合性收敛计划](https://github.com/MyBlackHole/c-logger/blob/main/docs/superpowers/plans/2026-10-29-kernel-style-conformance.md)。
 计划建立不表示全仓已经符合；最终结论须以准确主线的全量检查和逐条证据为准。
 
 ## 基本格式
