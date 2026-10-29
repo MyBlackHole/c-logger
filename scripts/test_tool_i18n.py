@@ -62,10 +62,10 @@ class LanguageTests(unittest.TestCase):
     def test_locale_environment_cli(self):
         clean = {key: value for key, value in os.environ.items()
                  if key not in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE", i18n.ENVIRONMENT_VARIABLE)}
-        for env, expected in [({}, "Check changed C-family"),
-                              ({"LANG": "C", "LANGUAGE": "zh_CN"}, "Check changed C-family"),
-                              ({"LANG": "C.UTF-8", "LANGUAGE": "zh_CN"}, "Check changed C-family"),
-                              ({"LANG": "unknown"}, "Check changed C-family"),
+        for env, expected in [({}, "Check C-family"),
+                              ({"LANG": "C", "LANGUAGE": "zh_CN"}, "Check C-family"),
+                              ({"LANG": "C.UTF-8", "LANGUAGE": "zh_CN"}, "Check C-family"),
+                              ({"LANG": "unknown"}, "Check C-family"),
                               ({"LANG": "zh_CN.UTF-8"}, "检查已提交"),
                               ({i18n.ENVIRONMENT_VARIABLE: "zh_CN", "LANG": "C"}, "检查已提交")]:
             with self.subTest(env=env):
@@ -94,7 +94,7 @@ class LanguageTests(unittest.TestCase):
             for name in ("check_source_format.py", "tool_i18n.py"):
                 shutil.copy2(SCRIPT.with_name(name), root / name)
             shutil.copytree(i18n.LOCALE_DIR, root.parent / "locales")
-            for lang, expected in (("en", "Check changed C-family"), ("zh_CN", "检查已提交")):
+            for lang, expected in (("en", "Check C-family"), ("zh_CN", "检查已提交")):
                 result = subprocess.run([sys.executable, str(root / SCRIPT.name), "--lang=" + lang, "--help"], cwd="/", capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(expected, result.stdout)

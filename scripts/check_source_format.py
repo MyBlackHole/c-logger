@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查已提交 Git 快照中的 C 系列修改行，不写回文件。"""
+"""检查已提交 Git 快照中的完整 C 系列源码或修改行，不写回文件。"""
 import bisect
 import difflib
 import os
@@ -44,6 +44,17 @@ def changes(base, head):
             yield status, old, new
 
 
+def sources(head):
+    for path in git("ls-tree", "-r", "--name-only", "-z", head).split(b"\0"):
+        path = os.fsdecode(path)
+        if Path(path).suffix.lower() in EXTENSIONS:
+            yield None, None, path
+
+
+def file_mode(head, path):
+    return git("--literal-pathspecs", "ls-tree", head, "--", path).split(b" ", 1)[0]
+
+
 def changed_lines(old, new):
     result = set()
     for tag, _, _, start, end in difflib.SequenceMatcher(
@@ -67,47 +78,62 @@ def check(base_ref, head_ref, formatter, _=lambda message: message):
     version = run(formatter, "--version").decode().strip()
     if not re.search(r"\bversion " + re.escape(VERSION) + r"(?:\s|$)", version):
         raise ValueError(_("clang-format {required} is required; found {actual}").format(required=VERSION, actual=version))
-    base, head = commit(base_ref), commit(head_ref)
+    head = commit(head_ref)
+    base = commit(base_ref) if base_ref is not None else None
     if commit("HEAD") != head:
         raise ValueError(_("Check out the --head commit first to use its .clang-format"))
     if git("status", "--porcelain", "--untracked-files=no"):
         raise ValueError(_("Tracked files must be clean; commit changes before checking"))
-    base = git("merge-base", base, head).decode().strip()
-    # 即使仅修改文档或差异为空，也要校验格式配置。
-    run(formatter, "--style=file", "--fallback-style=none", "--dump-config")
+    if base is not None:
+        base = git("merge-base", base, head).decode().strip()
+    # 两种模式都固定使用当前提交的根配置，避免未跟踪的子目录配置
+    # 覆盖项目规则；配置缺失时不能由 fallback-style=none 静默跳过。
+    if file_mode(head, ".clang-format") not in (b"100644", b"100755"):
+        raise ValueError(_("Project .clang-format must be a tracked regular file"))
+    style = "--style=file:" + str(Path(".clang-format").absolute())
+    run(formatter, style, "--fallback-style=none", "--dump-config")
     failures = 0
     checked = 0
-    for status, old_path, path in changes(base, head):
-        mode = git("--literal-pathspecs", "ls-tree", head, "--", path).split(b" ", 1)[0]
-        if mode not in (b"100644", b"100755"):
+    entries = sources(head) if base is None else changes(base, head)
+    for status, old_path, path in entries:
+        if file_mode(head, path) not in (b"100644", b"100755"):
             raise ValueError(_("Source must be a regular file: {path!r}").format(path=path))
         new = git("show", f"{head}:{path}")
-        new_source = (status == "A" or status.startswith("C")
-                      or Path(old_path).suffix.lower() not in EXTENSIONS)
-        old = b"" if new_source else git("show", f"{base}:{old_path}")
-        lines = changed_lines(old, new)
-        if not lines:
-            continue
+        if base is not None:
+            new_source = (status == "A" or status.startswith("C")
+                          or Path(old_path).suffix.lower() not in EXTENSIONS)
+            old = b"" if new_source else git("show", f"{base}:{old_path}")
+            lines = changed_lines(old, new)
+            if not lines:
+                continue
         checked += 1
-        xml = ET.fromstring(run(formatter, "--style=file", "--fallback-style=none",
+        xml = ET.fromstring(run(formatter, style, "--fallback-style=none",
                                 "--assume-filename=" + str(Path(path).absolute()),
                                 "--output-replacements-xml", data=new))
         if xml.attrib.get("incomplete_format") == "true":
             raise ValueError(_("Formatting is incomplete: {path!r}").format(path=path))
         bad = set()
         for replacement in xml.findall("replacement"):
-            bad.update(lines.intersection(affected_lines(
-                new, int(replacement.attrib["offset"]), int(replacement.attrib["length"]))))
+            affected = affected_lines(new, int(replacement.attrib["offset"]),
+                                      int(replacement.attrib["length"]))
+            bad.update(affected if base is None else lines.intersection(affected))
         if bad:
             failures += 1
-            print(_("{path!r}: changed lines need formatting: {lines}").format(path=path, lines=','.join(map(str, sorted(bad)))))
-    print(_("clang-format {version}: checked {checked} changed source files, {failures} failed; merge base {base}").format(version=VERSION, checked=checked, failures=failures, base=base))
+            message = (_("{path!r}: lines need formatting: {lines}") if base is None else
+                       _("{path!r}: changed lines need formatting: {lines}"))
+            print(message.format(path=path, lines=','.join(map(str, sorted(bad)))))
+    if base is None:
+        print(_("clang-format {version}: checked {checked} source files, {failures} failed; commit {head}").format(version=VERSION, checked=checked, failures=failures, head=head))
+    else:
+        print(_("clang-format {version}: checked {checked} changed source files, {failures} failed; merge base {base}").format(version=VERSION, checked=checked, failures=failures, base=base))
     return bool(failures)
 
 
 def main():
-    parser, _ = parser_for("Check changed C-family lines in committed Git snapshots without modifying files.")
-    parser.add_argument("--base", required=True, help=_("PR target branch SHA/ref; compare from the merge base"))
+    parser, _ = parser_for("Check C-family formatting in committed Git snapshots without modifying files.")
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--all", action="store_true", help=_("Check every tracked C-family source file in --head"))
+    scope.add_argument("--base", help=_("PR target branch SHA/ref; check changed lines from the merge base"))
     parser.add_argument("--head", default="HEAD", help=_("Commit to check (default: HEAD)"))
     parser.add_argument("--clang-format", default="clang-format", help=_("Path to the clang-format executable"))
     args = parser.parse_args()
