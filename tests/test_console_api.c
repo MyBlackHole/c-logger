@@ -60,7 +60,7 @@ static void config_and_output(void)
 	result(console_info("hidden"), 0);
 	result(console_verbose("hidden"), 0);
 	result(console_debug("hidden"), 0);
-	int (*outputs[])(const char *, ...) = {
+	int (*outputs[])(const char *format, ...) = {
 		console_print, console_info,	console_warn,
 		console_error, console_verbose, console_debug
 	};
@@ -98,8 +98,8 @@ static void tty_query(void)
 	int slave = open(name, O_RDWR | O_NOCTTY | O_CLOEXEC);
 	int file = open("/dev/null", O_WRONLY | O_CLOEXEC);
 	CHECK(slave >= 0 && file >= 0);
-	int (*queries[])(int *) = { console_stdout_is_tty,
-				    console_stderr_is_tty };
+	int (*queries[])(int *out) = { console_stdout_is_tty,
+				       console_stderr_is_tty };
 	for (int index = 0; index < 2; ++index) {
 		int fd = index ? STDERR_FILENO : STDOUT_FILENO;
 		int saved = dup(fd);

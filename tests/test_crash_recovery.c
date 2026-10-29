@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 	if (argc == 4 && !strcmp(argv[1], "--verify")) {
 		CHECK(!strcmp(argv[3], "0") || !strcmp(argv[3], "1") ||
 		      !strcmp(argv[3], "2"));
-		crash_fixture_verify(argv[2], (unsigned)(argv[3][0] - '0'));
+		crash_fixture_verify(argv[2], (unsigned int)(argv[3][0] - '0'));
 		return 0;
 	}
 	if (argc == 4 && !strcmp(argv[1], "--writer")) {

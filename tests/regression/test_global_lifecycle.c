@@ -9,10 +9,10 @@ static _Atomic int writer_waiting, reads, pause_write;
 static logger_t *old_owner, *new_owner;
 static int setter_result;
 
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
-int __real_logger_file_write(logger_file_t *, const char *, size_t,
-			     const struct timespec *, int);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
+int __real_logger_file_write(struct logger_file *f, const char *s, size_t n,
+			     const struct timespec *ts, int sync);
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 {
 	if (count_reads)
@@ -30,7 +30,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 		atomic_store(&writer_waiting, 1);
 	return __real_pthread_rwlock_wrlock(rw);
 }
-int __wrap_logger_file_write(logger_file_t *f, const char *s, size_t n,
+int __wrap_logger_file_write(struct logger_file *f, const char *s, size_t n,
 			     const struct timespec *ts, int sync)
 {
 	if (atomic_exchange(&pause_write, 0)) {
@@ -42,7 +42,7 @@ int __wrap_logger_file_write(logger_file_t *f, const char *s, size_t n,
 static void all_rejected(int error)
 {
 	for (int i = 0; i < OP_COUNT; ++i) {
-		call_result_t r = { .op = (enum operation)i };
+		struct call_result r = { .op = (enum operation)i };
 		invoke(&r);
 		expect_rejection(&r, error);
 	}
@@ -73,7 +73,7 @@ static void generation(enum operation op)
 	make_owners();
 	CHECK(logger_default_set(NULL, old_owner) == 0);
 	LOG_INFO("old-base");
-	call_result_t r = { .op = op };
+	struct call_result r = { .op = op };
 	pthread_t reader;
 	CHECK(pthread_create(&reader, NULL, delayed_call, &r) == 0);
 	wait_flag(&delayed);

@@ -4,16 +4,18 @@
 #include <dlfcn.h>
 #include <string.h>
 
-typedef struct {
+struct example_plugin {
 	void *handle;
-	int (*create)(const example_sdk_options_t *, example_sdk_t **);
-	int (*run)(example_sdk_t *, unsigned);
-	void (*destroy)(example_sdk_t *);
-} example_plugin_t;
+	int (*create)(const struct example_sdk_options *options,
+		      example_sdk_t **out);
+	int (*run)(example_sdk_t *sdk, unsigned int task);
+	void (*destroy)(example_sdk_t *sdk);
+};
 /* POSIX dlsym 提供函数地址。memcpy 避免 ISO C 严格检查下
  * 函数指针与 void * 之间的强制转换。Linux 目标断言其表示形式。
  */
-static inline int example_plugin_open(example_plugin_t *p, const char *path)
+static inline int example_plugin_open(struct example_plugin *p,
+				      const char *path)
 {
 	memset(p, 0, sizeof(*p));
 	p->handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);

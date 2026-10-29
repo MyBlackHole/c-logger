@@ -15,17 +15,17 @@ static int emit_lock_error;
 static int emit_unlock_error;
 static int read_error;
 static int read_unlock_error;
-static unsigned sync_calls;
-static unsigned reopen_calls;
-static unsigned cancel_calls;
+static unsigned int sync_calls;
+static unsigned int reopen_calls;
+static unsigned int cancel_calls;
 
-int __real_fsync(int);
-int __real_logger_file_reopen(logger_file_t *);
-int __real_pthread_setcancelstate(int, int *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
+int __real_fsync(int fd);
+int __real_logger_file_reopen(struct logger_file *file);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *lock);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *lock);
 
 int __wrap_fsync(int fd)
 {
@@ -39,7 +39,7 @@ int __wrap_fsync(int fd)
 	return __real_fsync(fd);
 }
 
-int __wrap_logger_file_reopen(logger_file_t *file)
+int __wrap_logger_file_reopen(struct logger_file *file)
 {
 	if (active) {
 		++reopen_calls;

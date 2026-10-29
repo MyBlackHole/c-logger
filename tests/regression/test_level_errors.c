@@ -9,13 +9,13 @@ static int fail_setup;
 static int fail_restore;
 static int fail_read;
 static int fail_release;
-static unsigned cancel_calls;
-static unsigned read_calls;
-static unsigned release_calls;
+static unsigned int cancel_calls;
+static unsigned int read_calls;
+static unsigned int release_calls;
 
-int __real_pthread_setcancelstate(int, int *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *rw);
 
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
@@ -87,7 +87,7 @@ static void expect_default_level(logger_level_t level)
 static void *concurrent_setter(void *data)
 {
 	logger_level_t level = *(logger_level_t *)data;
-	for (unsigned i = 0; i < 1000; ++i) {
+	for (unsigned int i = 0; i < 1000; ++i) {
 		errno = EDOM;
 		CHECK(logger_set_instance_level(owner, level) == 0);
 		CHECK(errno == EDOM);

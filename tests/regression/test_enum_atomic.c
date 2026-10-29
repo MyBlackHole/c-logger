@@ -5,9 +5,9 @@
 /* 仅验证真实私有头的内联封装及独立原子对象，不链接生产库，
  * 不将单线程值/写回检查当作并发内存序或完整状态机证明。
  */
-static unsigned object_calls;
-static unsigned value_calls;
-static unsigned expected_calls;
+static unsigned int object_calls;
+static unsigned int value_calls;
+static unsigned int expected_calls;
 
 static _Atomic logger_state_t *state_argument(_Atomic logger_state_t *object)
 {
@@ -39,7 +39,7 @@ static logger_state_t *expected_argument(logger_state_t *expected)
 	return expected;
 }
 
-static void check_evaluations(unsigned has_expected)
+static void check_evaluations(unsigned int has_expected)
 {
 	CHECK(object_calls == 1);
 	CHECK(value_calls == 1);

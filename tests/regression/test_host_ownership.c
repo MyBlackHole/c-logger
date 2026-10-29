@@ -9,10 +9,12 @@ static logger_t *default_owner;
 #include <fcntl.h>
 
 static _Atomic int pause_format, format_entered, allow_format;
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	if (atomic_load(&pause_format)) {
 		atomic_store(&format_entered, 1);
@@ -46,21 +48,23 @@ static logger_t *make_logger(const char *path, int async)
 	return l;
 }
 
-static example_sdk_t *make_sdk(example_plugin_t *p, const char *name,
-			       example_log_fn log, void *user)
+static example_sdk_t *
+make_sdk(struct example_plugin *p, const char *name,
+	 void (*log)(void *user, const struct example_log_record *record),
+	 void *user)
 {
-	example_sdk_options_t options = { name, log, user };
+	struct example_sdk_options options = { name, log, user };
 	example_sdk_t *sdk = NULL;
 	CHECK(p->create(&options, &sdk) == 0);
 	CHECK(sdk != NULL);
 	return sdk;
 }
 
-static unsigned count_lines(const char *path)
+static unsigned int count_lines(const char *path)
 {
 	FILE *f = fopen(path, "r");
 	CHECK(f != NULL);
-	unsigned count = 0;
+	unsigned int count = 0;
 	int c;
 	while ((c = fgetc(f)) != EOF)
 		count += c == '\n';
@@ -70,10 +74,10 @@ static unsigned count_lines(const char *path)
 }
 
 struct receiver {
-	unsigned calls;
+	unsigned int calls;
 	char message[128];
 };
-static void custom_log(void *user, const example_log_record_t *r)
+static void custom_log(void *user, const struct example_log_record *r)
 {
 	struct receiver *state = user;
 	CHECK(r->message_len < sizeof(state->message));
@@ -83,13 +87,13 @@ static void custom_log(void *user, const example_log_record_t *r)
 }
 
 struct job {
-	example_plugin_t *plugin;
+	struct example_plugin *plugin;
 	example_sdk_t *sdk;
 };
 static void *run_jobs(void *ptr)
 {
 	struct job *j = ptr;
-	for (unsigned i = 0; i < 100; ++i)
+	for (unsigned int i = 0; i < 100; ++i)
 		CHECK(j->plugin->run(j->sdk, i) == 0);
 	return NULL;
 }
@@ -103,7 +107,7 @@ int main(int argc, char **argv)
 	unlink("shared.log");
 	unlink("global.log");
 	const char *mode = argv[1];
-	example_plugin_t p;
+	struct example_plugin p;
 	CHECK(example_plugin_open(&p, argv[2]) == 0);
 	if (!strcmp(mode, "quiet")) {
 		FILE *capture = tmpfile();
@@ -136,7 +140,7 @@ int main(int argc, char **argv)
 		example_sdk_t *sdk = (example_sdk_t *)1;
 		CHECK(p.create(NULL, &sdk) == -1 && errno == EINVAL &&
 		      sdk == NULL);
-		example_sdk_options_t options = { "valid", NULL, NULL };
+		struct example_sdk_options options = { "valid", NULL, NULL };
 		CHECK(p.create(&options, NULL) == -1 && errno == EINVAL);
 		char name[80];
 		memset(name, 'x', sizeof(name));
@@ -182,16 +186,16 @@ int main(int argc, char **argv)
 		example_sdk_t *a = make_sdk(&p, percent ? "%n%s%%" : "alpha",
 					    example_to_logger, l);
 		example_sdk_t *b = make_sdk(&p, "beta", example_to_logger, l);
-		unsigned expected = 2;
+		unsigned int expected = 2;
 		if (concurrent) {
 			pthread_t threads[8];
 			struct job jobs[8];
-			for (unsigned i = 0; i < 8; ++i) {
+			for (unsigned int i = 0; i < 8; ++i) {
 				jobs[i] = (struct job){ &p, i % 2 ? b : a };
 				CHECK(pthread_create(&threads[i], NULL,
 						     run_jobs, &jobs[i]) == 0);
 			}
-			for (unsigned i = 0; i < 8; ++i)
+			for (unsigned int i = 0; i < 8; ++i)
 				CHECK(pthread_join(threads[i], NULL) == 0);
 			expected = 800;
 		} else {

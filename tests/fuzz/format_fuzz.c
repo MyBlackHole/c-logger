@@ -13,7 +13,7 @@
 #define LIMIT 8192u
 #define GUARD 16u
 #ifdef LOGGER_FUZZ_STANDALONE
-static unsigned negative_checks;
+static unsigned int negative_checks;
 #endif
 static int exercise_oracle;
 
@@ -25,7 +25,7 @@ static void fail(const char *condition, int line)
 #define REQUIRE(c) ((c) ? (void)0 : fail(#c, __LINE__))
 
 struct sample {
-	logger_message_t message;
+	struct logger_message message;
 	logger_config_t config;
 	char module[513], path[520], function[257];
 	char expected[LIMIT];
@@ -33,12 +33,12 @@ struct sample {
 	int invalid_nsec;
 };
 
-static unsigned byte(const uint8_t *data, size_t size, size_t offset)
+static unsigned int byte(const uint8_t *data, size_t size, size_t offset)
 {
 	return offset < size ? data[offset] : 0;
 }
 
-static unsigned word(const uint8_t *data, size_t size, size_t offset)
+static unsigned int word(const uint8_t *data, size_t size, size_t offset)
 {
 	return byte(data, size, offset) | (byte(data, size, offset + 1) << 8);
 }
@@ -66,7 +66,7 @@ static void number(struct sample *s, long value)
 	append(s, part);
 }
 
-static const char *reference_time(unsigned index, time_t *sec)
+static const char *reference_time(unsigned int index, time_t *sec)
 {
 	switch (index) {
 	case 0:
@@ -81,7 +81,7 @@ static const char *reference_time(unsigned index, time_t *sec)
 	}
 }
 
-static const char *reference_level(unsigned level)
+static const char *reference_level(unsigned int level)
 {
 	switch (level) {
 	case 0:
@@ -105,10 +105,10 @@ static const char *reference_level(unsigned level)
 
 static void prepare(struct sample *s, const uint8_t *data, size_t size)
 {
-	unsigned options = byte(data, size, 0);
-	unsigned level = byte(data, size, 1) % 8u;
-	unsigned time_index = byte(data, size, 2) % 3u;
-	logger_message_t *m = &s->message;
+	unsigned int options = byte(data, size, 0);
+	unsigned int level = byte(data, size, 1) % 8u;
+	unsigned int time_index = byte(data, size, 2) % 3u;
+	struct logger_message *m = &s->message;
 	logger_config_t *c = &s->config;
 	*c = LOGGER_DEFAULT_CONFIG();
 	c->outputs = LOGGER_OUT_STDERR;
@@ -131,7 +131,7 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	text(m->request_id, byte(data, size, 12) % 64u, data, size);
 	text(m->session_id, byte(data, size, 13) % 64u, data, size);
 	text(m->trace_id, byte(data, size, 14) % 64u, data, size);
-	unsigned nulls = byte(data, size, 15);
+	unsigned int nulls = byte(data, size, 15);
 	m->module = (nulls & 1u) ? NULL : s->module;
 	m->file = (nulls & 2u) ? NULL : s->path;
 	m->func = (nulls & 4u) ? NULL : s->function;
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
 		REQUIRE(!errno && seed <= UINT32_MAX);
 	}
 	uint32_t state = seed ? (uint32_t)seed : UINT32_C(0x9e3779b9);
-	for (unsigned i = 0; i < 512; ++i) {
+	for (unsigned int i = 0; i < 512; ++i) {
 		uint8_t input[64];
 		for (size_t j = 0; j < sizeof(input); ++j) {
 			state ^= state << 13;

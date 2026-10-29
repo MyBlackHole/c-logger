@@ -251,7 +251,7 @@ Logger 销毁
 
 ```text
 BORROWED logger_t *
-BORROWED logger_queue_t *
+BORROWED struct logger_queue *
 BORROWED worker_workspace *
 ```
 
@@ -277,7 +277,7 @@ pthread_join 成功
 
 ### 队列
 
-`logger_t` 结构性拥有 `logger_queue_t`。队列结构性拥有槽位、溢出块池、等待互斥锁/条件变量。
+`logger_t` 结构性拥有 `struct logger_queue`。队列结构性拥有槽位、溢出块池、等待互斥锁/条件变量。
 
 销毁：
 
@@ -342,12 +342,12 @@ flush 等待预留水位，不能用队列为空、出队或槽位/溢出块可�
 
 ### 文件后端
 
-`logger_file_t` 是所有权可转移的单一所有者资源。
+`struct logger_file` 是所有权可转移的单一所有者资源。
 
 ```text
 AUTO fd 候选资源
     ↓ 验证
-MOVED 至 logger_file_t
+MOVED 至 struct logger_file
 ```
 
 重新打开/轮转：
@@ -371,7 +371,7 @@ MOVED 至 logger_file_t
 
 ### Syslog 后端
 
-`logger_syslog_t` 由 Logger 唯一拥有。套接字替换/重连候选资源失败时丢弃候选资源，不能把失败套接字伪装成有效所有者。
+`struct logger_syslog` 由 Logger 唯一拥有。套接字替换/重连候选资源失败时丢弃候选资源，不能把失败套接字伪装成有效所有者。
 
 后端不独立延长 `logger_t` 生命周期。
 

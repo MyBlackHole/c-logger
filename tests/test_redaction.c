@@ -53,11 +53,11 @@ static void mask_buffer_case(const char *input, size_t pre, size_t suf,
 	CHECK(!memcmp(arena, before, sizeof(arena)));
 }
 
-static unsigned mask_capacities(const char *input, size_t pre, size_t suf)
+static unsigned int mask_capacities(const char *input, size_t pre, size_t suf)
 {
 	const size_t offsets[] = { 16, 56, 60, 63, 64, 65, 68, 72, 96 };
 	size_t count = sizeof(offsets) / sizeof(offsets[0]);
-	unsigned cases = 0;
+	unsigned int cases = 0;
 
 	for (size_t cap = 0; cap <= 16; ++cap) {
 		for (size_t k = 0; k < count; ++k) {
@@ -68,9 +68,9 @@ static unsigned mask_capacities(const char *input, size_t pre, size_t suf)
 	return cases;
 }
 
-static unsigned mask_contract(void)
+static unsigned int mask_contract(void)
 {
-	unsigned cases = 0;
+	unsigned int cases = 0;
 
 	for (size_t n = 0; n <= 8; ++n) {
 		char input[9];
@@ -113,7 +113,7 @@ static unsigned mask_contract(void)
 
 int main(void)
 {
-	unsigned cases = mask_contract();
+	unsigned int cases = mask_contract();
 	const char *secret = "super-secret-token-12345";
 	char b[64];
 	if (strcmp(logger_redact(), "[REDACTED]"))

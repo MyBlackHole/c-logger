@@ -17,11 +17,11 @@ static logger_t *make_logger(const char *path, int async)
 	return owner;
 }
 
-static unsigned lines(const char *path)
+static unsigned int lines(const char *path)
 {
 	FILE *f = fopen(path, "rb");
 	CHECK(f);
-	unsigned result = 0;
+	unsigned int result = 0;
 	int ch;
 	while ((ch = fgetc(f)) != EOF)
 		result += ch == '\n';
@@ -120,14 +120,14 @@ static void fork_case(void)
 	CHECK(!file_contains("b.log", "PARENT_BEFORE"));
 }
 
-static _Atomic unsigned accepted;
+static _Atomic unsigned int accepted;
 static _Atomic int start_readers;
 
 static void *stress_reader(void *unused)
 {
 	(void)unused;
 	wait_flag(&start_readers);
-	for (unsigned i = 0; i < 400; ++i) {
+	for (unsigned int i = 0; i < 400; ++i) {
 		errno = EDOM;
 		int rc = LOG_INFO("CONCURRENT_RECORD_%u", i);
 		CHECK(errno == EDOM);
@@ -147,16 +147,16 @@ static void stress(void)
 	pthread_t readers[3];
 
 	CHECK(logger_default_set(NULL, a) == 0);
-	for (unsigned i = 0; i < 3; ++i)
+	for (unsigned int i = 0; i < 3; ++i)
 		CHECK(pthread_create(&readers[i], NULL, stress_reader, NULL) ==
 		      0);
 	atomic_store(&start_readers, 1);
-	for (unsigned i = 0; i < 200; ++i) {
+	for (unsigned int i = 0; i < 200; ++i) {
 		logger_t *next = active == a ? b : a;
 		CHECK(logger_default_set(active, next) == 0);
 		active = next;
 	}
-	for (unsigned i = 0; i < 3; ++i)
+	for (unsigned int i = 0; i < 3; ++i)
 		CHECK(pthread_join(readers[i], NULL) == 0);
 	CHECK(logger_default_set(active, NULL) == 0);
 	CHECK(logger_destroy(&a) == 0 && logger_destroy(&b) == 0);
@@ -186,7 +186,7 @@ int main(int argc, char **argv)
 		healthy(!strcmp(argv[1], "async"));
 	const char *files[] = { "a.log", "b.log", "a.log.logger.lock",
 				"b.log.logger.lock" };
-	for (unsigned i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
+	for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
 		CHECK(unlink(files[i]) == 0 || errno == ENOENT);
 	CHECK(chdir("/") == 0 && rmdir(path) == 0);
 	printf("DEFAULT_BINDING_PASS=%s\n", argv[1]);

@@ -27,7 +27,7 @@ static uint32_t next_random(uint32_t *state)
 	return *state = n;
 }
 
-static size_t text_length(unsigned choice)
+static size_t text_length(unsigned int choice)
 {
 	switch (choice % 7u) {
 	case 0:
@@ -47,7 +47,7 @@ static size_t text_length(unsigned choice)
 	}
 }
 
-static void write_record(logger_message_t *m, uint32_t *seed, int serial)
+static void write_record(struct logger_message *m, uint32_t *seed, int serial)
 {
 	size_t n = text_length(next_random(seed));
 	memset(m, 0, sizeof(*m));
@@ -64,9 +64,9 @@ static void write_record(logger_message_t *m, uint32_t *seed, int serial)
 	m->text[n] = '\0';
 }
 
-static void verify_pop(logger_queue_t *queue, size_t *front, size_t *count)
+static void verify_pop(struct logger_queue *queue, size_t *front, size_t *count)
 {
-	logger_message_t actual = { 0 };
+	struct logger_message actual = { 0 };
 	int result = logger_queue_try_pop(queue, &actual);
 	if (!*count) {
 		CHECK(result == 0);
@@ -86,17 +86,17 @@ static void verify_pop(logger_queue_t *queue, size_t *front, size_t *count)
 
 static void run_model(uint32_t seed)
 {
-	logger_queue_t q;
+	struct logger_queue q;
 	size_t requested = 2u << (seed % 4u);
 	CHECK(!logger_queue_init(&q, requested));
 	CHECK(q.cap == requested);
 	size_t front = 0, count = 0;
 	int serial = 0;
 	uint64_t exhaustion = logger_queue_spill_exhaustions(&q);
-	logger_message_t message;
+	struct logger_message message;
 
-	for (unsigned step = 0; step < STEPS; ++step) {
-		unsigned choice = next_random(&seed);
+	for (unsigned int step = 0; step < STEPS; ++step) {
+		unsigned int choice = next_random(&seed);
 		if ((choice & 3u) != 0) {
 			write_record(&message, &seed, serial);
 			int result = logger_queue_push(&q, &message);

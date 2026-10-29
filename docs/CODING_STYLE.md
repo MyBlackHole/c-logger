@@ -48,7 +48,7 @@ i++; /* i 加 1 */
 复杂资源建议在创建、转移和最终释放位置分别写清楚：
 
 ```c
-/* 所有权转移：词法作用域内的临时所有者 -> logger_queue_t。
+/* 所有权转移：词法作用域内的临时所有者 -> struct logger_queue。
  * 最终由 logger_queue_destroy() 释放。 */
 q->slots = no_free_ptr(slots);
 ```
@@ -57,7 +57,7 @@ q->slots = no_free_ptr(slots);
 
 ```c
 /* 创建成功后由 logger_t 拥有；等待工作线程退出后才能释放。 */
-logger_worker_workspace_t *worker_workspace;
+struct logger_worker_workspace *worker_workspace;
 ```
 
 ## 锁和并发注释

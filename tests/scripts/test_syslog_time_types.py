@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PREAMBLE = '''#include "logger_syslog.h"
-int probe(logger_syslog_t *syslog, struct logger_monotonic_ms now,
+int probe(struct logger_syslog *syslog, struct logger_monotonic_ms now,
           struct logger_duration_ms interval, uint64_t raw)
 {
     (void)syslog;

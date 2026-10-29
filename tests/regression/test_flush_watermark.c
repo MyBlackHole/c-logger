@@ -8,11 +8,13 @@ static _Atomic int first_entered, first_release, second_entered, second_release;
 static _Atomic int waiting, flushed;
 static _Thread_local int flushing, counted;
 static int results[WAITERS];
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	if (!strcmp(m->text, "before-watermark")) {
 		atomic_store(&first_entered, 1);

@@ -10,7 +10,7 @@
 | 全局 `g_lifetime_lock` | 进程运行域 | `g_logger` 发布/销毁与读侧生命周期固定保护（pin） | `g_control_mu`（写者/控制器）或无（读者） | 实例锁 | 保持显式 |
 | `logger_t.emit_mu` | Logger 实例 | 文件/syslog 后端可变状态、写入/同步/重新打开 | 全局生命周期固定保护（pin）；普通显式 API 可直接获取 | 不允许 `progress_mu/q.wait_mu` | 简单路径可 guard |
 | `logger_t.progress_mu` | Logger 实例 | `completed_pos/progress_cv` 完成谓词 | 全局生命周期固定保护（pin）；普通显式 API 可直接获取 | 不允许 `emit_mu/q.wait_mu` | 可 guard |
-| `logger_queue_t.wait_mu` | 队列实例 | consumer_waiting 握手 + 条件变量睡眠/唤醒；生产者仅在 waiting 慢速路径获取 | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
+| `struct logger_queue.wait_mu` | 队列实例 | consumer_waiting 握手 + 条件变量睡眠/唤醒；生产者仅在 waiting 慢速路径获取 | 无 | 不允许 `emit_mu/progress_mu` | 可 guard |
 | Console `g_console_mu` | 进程运行域 | Console FILE 输出与 flush | 无 | 格式协调锁 | 带错误检查的 guard |
 | `format_mu` | 进程运行域 | 本库 libc 敏感调用与 fork 边界 | Global 控制/生命周期、实例输出、Console 或无 | 资源协调锁 | 显式检查解锁结果 |
 | `resource_mu` | 进程运行域 | 映射/fd 取得、登记与消费 | Global 控制/生命周期、实例输出、格式协调或无 | 无 | 租约跨临时 DIR，显式处理 |

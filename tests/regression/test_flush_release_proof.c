@@ -19,11 +19,11 @@ static _Atomic int fail_sync, sync_calls, fail_progress_lock;
 static _Thread_local int caller; /* 1：刷新；2：全局关闭 */
 static int use_global, stop_rc, stop_error;
 
-int __real_logger_create(const logger_config_t *, logger_t **);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
-int __real_fsync(int);
+int __real_logger_create(const logger_config_t *config, logger_t **out);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
+int __real_fsync(int fd);
 
 int __wrap_logger_create(const logger_config_t *config, logger_t **out)
 {

@@ -6,11 +6,11 @@
 #include <fcntl.h>
 #include <stdatomic.h>
 
-static _Atomic unsigned free_calls;
+static _Atomic unsigned int free_calls;
 static int class_release_total;
 static char *consumed_ptr;
 
-void __real_free(void *);
+void __real_free(void *p);
 void __wrap_free(void *p)
 {
 	if (p)
@@ -210,7 +210,7 @@ static void class_and_guard_scope(void)
 int main(void)
 {
 	CHECK(logger_process_init() == 0);
-	unsigned before =
+	unsigned int before =
 		atomic_load_explicit(&free_calls, memory_order_relaxed);
 	auto_free_scope();
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==

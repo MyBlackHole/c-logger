@@ -13,7 +13,7 @@
  * 所有操作由所属 logger 的 emit_mu 串行化。
  * 普通文件通过 <active>.logger.lock 做跨实例协调，这里不会删除该锁文件。
  */
-typedef struct {
+struct logger_file {
 	char path[LOGGER_PATH_MAX]; /* 仅用于诊断；绑定后绝不重新解析路径 */
 	char name[LOGGER_FILENAME_MAX + 1];
 	char lock_name[LOGGER_FILENAME_MAX + 1];
@@ -36,21 +36,24 @@ typedef struct {
 	int archive_time_valid;
 	int iov_max;
 	logger_file_metrics_t metrics;
-} logger_file_t;
-#define LOGGER_FILE_EMPTY \
-	((logger_file_t){ .fd = { -1 }, .dir_fd = { -1 }, .lock_fd = { -1 } })
-int logger_file_init(logger_file_t *, const char *, logger_rotation_config_t,
-		     mode_t);
-int logger_file_close_status(logger_file_t *); /* 0 / -errno；释放全部 fd */
-void logger_file_close(logger_file_t *);
-int logger_file_sync(logger_file_t *); /* 0 / -errno；调用者必须持有 emit_mu */
-int logger_file_reopen(logger_file_t *); /* 0 / -1 + errno */
-int logger_file_write(logger_file_t *, const char *, size_t,
-		      const struct timespec *, int);
-int logger_file_writev(logger_file_t *, struct iovec *, int, size_t,
-		       const struct timespec *, int);
+};
+#define LOGGER_FILE_EMPTY      \
+	((struct logger_file){ \
+		.fd = { -1 }, .dir_fd = { -1 }, .lock_fd = { -1 } })
+int logger_file_init(struct logger_file *f, const char *path,
+		     logger_rotation_config_t rotation, mode_t mode);
+int logger_file_close_status(
+	struct logger_file *f); /* 0 / -errno；释放全部 fd */
+void logger_file_close(struct logger_file *f);
+int logger_file_sync(
+	struct logger_file *f); /* 0 / -errno；调用者必须持有 emit_mu */
+int logger_file_reopen(struct logger_file *f); /* 0 / -1 + errno */
+int logger_file_write(struct logger_file *f, const char *p, size_t n,
+		      const struct timespec *t, int sync);
+int logger_file_writev(struct logger_file *f, struct iovec *v, int count,
+		       size_t n, const struct timespec *t, int sync);
 /* 独立编译单元便于链接时故障测试。使用 Linux 系统调用，
  * 不提供会覆盖目标的重命名回退；平台不支持时返回 ENOTSUP。
  */
-int logger_file_rename_noreplace(int, const char *, const char *);
+int logger_file_rename_noreplace(int dirfd, const char *from, const char *to);
 #endif

@@ -12,20 +12,20 @@
  * 多线程 fork 后创建线程是本次研究的 Linux 扩展场景，不声称可移植 POSIX。
  */
 static _Atomic int stop;
-static _Atomic unsigned ready;
+static _Atomic unsigned int ready;
 static void *allocator(void *unused)
 {
 	(void)unused;
 	atomic_fetch_add(&ready, 1);
 	while (!atomic_load(&stop)) {
 		void *p[128];
-		for (unsigned i = 0; i < 128; ++i) {
+		for (unsigned int i = 0; i < 128; ++i) {
 			p[i] = calloc(1, 32 + (i % 4) * 16);
 			if (!p[i])
 				abort();
 			*(volatile unsigned char *)p[i] = (unsigned char)i;
 		}
-		for (unsigned i = 0; i < 128; ++i)
+		for (unsigned int i = 0; i < 128; ++i)
 			free(p[i]);
 	}
 	return NULL;
@@ -35,21 +35,21 @@ static void *child_worker(void *unused)
 	(void)unused;
 	return NULL;
 }
-extern unsigned sanitizer_atfork_registrations;
-extern unsigned sanitizer_atfork_dropped;
+extern unsigned int sanitizer_atfork_registrations;
+extern unsigned int sanitizer_atfork_dropped;
 int main(void)
 {
 	printf("SANITIZER_ATFORK registrations=%u dropped=%u\n",
 	       sanitizer_atfork_registrations, sanitizer_atfork_dropped);
 	fflush(stdout);
 	pthread_t parents[8];
-	for (unsigned i = 0; i < 8; ++i)
+	for (unsigned int i = 0; i < 8; ++i)
 		if (pthread_create(&parents[i], NULL, allocator, NULL))
 			return 2;
 	while (atomic_load(&ready) != 8)
 		usleep(10);
-	unsigned completed = 0, timed_out = 0, failed = 0;
-	for (unsigned i = 0; i < 96; ++i) {
+	unsigned int completed = 0, timed_out = 0, failed = 0;
+	for (unsigned int i = 0; i < 96; ++i) {
 		pid_t pid = fork();
 		if (pid < 0) {
 			++failed;
@@ -81,7 +81,7 @@ int main(void)
 		fflush(stdout);
 	}
 	atomic_store(&stop, 1);
-	for (unsigned i = 0; i < 8; ++i)
+	for (unsigned int i = 0; i < 8; ++i)
 		if (pthread_join(parents[i], NULL))
 			return 6;
 	printf("FORK_PROBE completed=%u timeout=%u failed=%u\n", completed,

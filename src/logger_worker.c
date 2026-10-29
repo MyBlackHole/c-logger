@@ -14,7 +14,7 @@
 
 struct logger_worker_workspace {
 	size_t capacity;
-	logger_message_t *batch;
+	struct logger_message *batch;
 	struct iovec *vec;
 	struct iovec *copy;
 	char *lines;
@@ -22,23 +22,25 @@ struct logger_worker_workspace {
 	unsigned char *failed;
 };
 
-static char *workspace_line(logger_worker_workspace_t *workspace, size_t index)
+static char *workspace_line(struct logger_worker_workspace *workspace,
+			    size_t index)
 {
 	return workspace->lines + index * LOGGER_LINE_MAX;
 }
 
-logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
+struct logger_worker_workspace *
+logger_worker_workspace_create(size_t queue_capacity)
 {
 	size_t capacity = queue_capacity < BATCH_MAX ? queue_capacity :
 						       BATCH_MAX;
 	if (!capacity)
 		capacity = 1;
 
-	logger_worker_workspace_t *workspace __free(runtime_free) =
+	struct logger_worker_workspace *workspace __free(runtime_free) =
 		logger_runtime_calloc(1, sizeof(*workspace));
 	if (!workspace)
 		return NULL;
-	logger_message_t *batch __free(runtime_free) =
+	struct logger_message *batch __free(runtime_free) =
 		logger_runtime_calloc(capacity, sizeof(*batch));
 	if (!batch)
 		return NULL;
@@ -77,7 +79,7 @@ logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 	return_ptr(workspace);
 }
 
-void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
+void logger_worker_workspace_destroy(struct logger_worker_workspace *workspace)
 {
 	if (!workspace)
 		return;
@@ -92,7 +94,7 @@ void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
 
 int logger_stderr_writev_all(struct iovec *v, int count)
 {
-	logger_sigpipe_guard_t sigpipe_guard;
+	struct logger_sigpipe_guard sigpipe_guard;
 	int result = logger_sigpipe_begin(&sigpipe_guard);
 	if (result)
 		return result;
@@ -123,7 +125,8 @@ int logger_stderr_writev_all(struct iovec *v, int count)
 	return logger_sigpipe_end(&sigpipe_guard, result, result == -EPIPE);
 }
 
-int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
+int logger_emit_status(logger_t *l, const struct logger_message *m,
+		       int force_sync)
 {
 	char line[LOGGER_LINE_MAX];
 	size_t n;
@@ -203,7 +206,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 	return rc;
 }
 
-static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
+static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 		       size_t count)
 {
 	memset(workspace->failed, 0, count);
@@ -300,7 +303,7 @@ account_batch:;
 void *logger_worker_main(void *p)
 {
 	logger_t *l = p;
-	logger_worker_workspace_t *workspace = l->worker_workspace;
+	struct logger_worker_workspace *workspace = l->worker_workspace;
 	logger_scope_worker_enter();
 	for (;;) {
 		size_t n = logger_queue_drain(&l->q, workspace->batch,

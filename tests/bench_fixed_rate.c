@@ -16,7 +16,7 @@ struct phase {
 	logger_t *logger;
 	const char *payload;
 	uint64_t rate, count, start, end;
-	unsigned threads, number;
+	unsigned int threads, number;
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	int ready;
@@ -26,7 +26,7 @@ struct phase {
 
 struct producer {
 	struct phase *phase;
-	unsigned index;
+	unsigned int index;
 	uint64_t attempted;
 	int error;
 };
@@ -97,7 +97,7 @@ static int compare_u64(const void *left, const void *right)
 	return (a > b) - (a < b);
 }
 
-static uint64_t percentile(const uint64_t *values, uint64_t n, unsigned pct)
+static uint64_t percentile(const uint64_t *values, uint64_t n, unsigned int pct)
 {
 	return n ? values[(n * pct + 99) / 100 - 1] : 0;
 }
@@ -130,7 +130,7 @@ static void print_success_latency(struct latency values, uint64_t n)
 static uint64_t drops(const logger_metrics_t *m)
 {
 	uint64_t n = 0;
-	for (unsigned i = 0; i < 6; i++)
+	for (unsigned int i = 0; i < 6; i++)
 		n += m->dropped[i];
 	return n;
 }
@@ -154,9 +154,9 @@ static int wait_output(logger_t *logger, const logger_metrics_t *m)
 	}
 }
 
-static int run_phase(logger_t *logger, unsigned number, unsigned threads,
-		     uint64_t rate, unsigned seconds, const char *payload,
-		     int file_backend, FILE *raw)
+static int run_phase(logger_t *logger, unsigned int number,
+		     unsigned int threads, uint64_t rate, unsigned int seconds,
+		     const char *payload, int file_backend, FILE *raw)
 {
 	struct phase p = { .logger = logger,
 			   .payload = payload,
@@ -171,7 +171,7 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	logger_metrics_t before, after;
 	logger_io_metrics_t io_before, io_after;
 	uint64_t attempted = 0;
-	unsigned started = 0;
+	unsigned int started = 0;
 	int failed = 0;
 	int generator_error = 0;
 
@@ -206,7 +206,7 @@ static int run_phase(logger_t *logger, unsigned number, unsigned threads,
 	p.ready = started == threads ? 1 : -1;
 	pthread_cond_broadcast(&p.cond);
 	pthread_mutex_unlock(&p.mutex);
-	for (unsigned i = 0; i < started; i++) {
+	for (unsigned int i = 0; i < started; i++) {
 		if (pthread_join(ids[i], NULL))
 			abort(); /* 不在借用者尚未退出时释放实例或数组。 */
 		attempted += producers[i].attempted;
@@ -411,13 +411,14 @@ int main(int argc, char **argv)
 		return 3;
 	}
 	int file_backend = strcmp(argv[6], "/dev/null") != 0;
-	int rc = warmup ? run_phase(logger, 0, (unsigned)threads, rate,
-				    (unsigned)warmup, payload, file_backend,
+	int rc = warmup ? run_phase(logger, 0, (unsigned int)threads, rate,
+				    (unsigned int)warmup, payload, file_backend,
 				    raw) :
 			  0;
 	if (!rc)
-		rc = run_phase(logger, 1, (unsigned)threads, rate,
-			       (unsigned)seconds, payload, file_backend, raw);
+		rc = run_phase(logger, 1, (unsigned int)threads, rate,
+			       (unsigned int)seconds, payload, file_backend,
+			       raw);
 	/* 销毁 /dev/null 时的 fsync EINVAL 不属于输出失败，单独记录状态。
 	 * 文件后端则必须成功关闭。 */
 	int close_rc = logger_destroy(&logger);

@@ -64,9 +64,9 @@ static inline console_config_t console_defaults_cpp(void)
  * 保留原屏蔽字和待处理信号，不改变宿主信号处理函数；较早的 stdio 主错误优先。
  * 宿主在 Console 之外直接写入/刷新不受保护。printf 的 %m 使用入口 errno。
  */
-LOGGER_API int console_init(const console_config_t *);
-LOGGER_API int console_set_verbosity(console_verbosity_t);
-LOGGER_API int console_set_color(console_color_mode_t);
+LOGGER_API int console_init(const console_config_t *c);
+LOGGER_API int console_set_verbosity(console_verbosity_t value);
+LOGGER_API int console_set_color(console_color_mode_t value);
 /* 查询成功写入 0/1（非终端/终端），ENOTTY 是成功的非终端结果。
  * EBADF 等错误仍返回负错误码；包括收尾失败在内的任意失败不修改 *out。
  * out==NULL 为 EINVAL；调用方保证非空输出槽独占、存活且可写。

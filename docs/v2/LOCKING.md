@@ -12,7 +12,7 @@
 | Global `g_lifetime_lock` | `g_logger` 发布/撤销发布 + 读者生命周期固定保护（pin） | 写者可持 `g_control_mu`；读者无 | 实例锁 | **是：当前全局读者生命周期固定保护（pin）** | MAY_BLOCK |
 | `logger_t.emit_mu` | 文件/syslog 后端可变状态、写入/同步/重新打开 | 全局生命周期固定保护（pin） / 显式调用方作用域 | 不允许进度/等待锁 | 否 | MAY_BLOCK |
 | `logger_t.progress_mu` | `completed_pos` + `progress_cv` 谓词 | 全局生命周期固定保护（pin） / 显式调用方作用域 | 不允许输出/等待锁 | 否 | MAY_BLOCK |
-| `logger_queue_t.wait_mu` | 工作线程睡眠谓词 + 条件变量握手 | 无 | 不允许输出/进度锁 | 否 | MAY_BLOCK，仅慢速路径 |
+| `struct logger_queue.wait_mu` | 工作线程睡眠谓词 + 条件变量握手 | 无 | 不允许输出/进度锁 | 否 | MAY_BLOCK，仅慢速路径 |
 | Console `g_console_mu` | FILE 输出 + 刷新 | 无 | 格式协调锁 | 否 | MAY_BLOCK |
 | 运行域 `format_mu` | 本库格式化/时间/标准流的 fork 一致边界 | Global 控制/生命周期、实例输出、Console 或无 | 资源协调锁 | 否 | MAY_BLOCK |
 | 运行域 `resource_mu` | fd/映射候选的取得、登记、移交与消费 | Global 控制/生命周期、实例输出、格式协调或无 | 不允许继续拿锁 | 否；不替代对象静默证明 | MAY_BLOCK |

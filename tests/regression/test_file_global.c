@@ -6,7 +6,7 @@
 static _Atomic int pause_close, entered, released;
 static logger_t *owner;
 static int destroy_result;
-int __real_logger_destroy(logger_t **);
+int __real_logger_destroy(logger_t **slot);
 int __wrap_logger_destroy(logger_t **slot)
 {
 	if (atomic_exchange(&pause_close, 0)) {

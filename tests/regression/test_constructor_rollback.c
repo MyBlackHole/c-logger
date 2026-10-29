@@ -23,9 +23,9 @@ static int candidate_freed;
 static int create_failed;
 static int queue_init_failure;
 static int queue_init_failed;
-static unsigned release_calls;
+static unsigned int release_calls;
 
-void *__real_logger_runtime_calloc(size_t, size_t);
+void *__real_logger_runtime_calloc(size_t count, size_t size);
 void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
 	void *p = __real_logger_runtime_calloc(count, size);
@@ -34,7 +34,7 @@ void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 	return p;
 }
 
-int __real_logger_runtime_free(void *);
+int __real_logger_runtime_free(void *p);
 int __wrap_logger_runtime_free(void *p)
 {
 	if (p == candidate)
@@ -42,10 +42,10 @@ int __wrap_logger_runtime_free(void *p)
 	return __real_logger_runtime_free(p);
 }
 
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
+int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+			  void *(*start)(void *arg), void *arg);
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			  void *(*start)(void *), void *arg)
+			  void *(*start)(void *arg), void *arg)
 {
 	if (!create_failed) {
 		create_failed = 1;
@@ -54,8 +54,9 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	return __real_pthread_create(thread, attr, start, arg);
 }
 
-int __real_pthread_cond_destroy(pthread_cond_t *);
-int __real_pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *);
+int __real_pthread_cond_destroy(pthread_cond_t *cv);
+int __real_pthread_cond_init(pthread_cond_t *cv,
+			     const pthread_condattr_t *attr);
 int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *attr)
 {
 	if (candidate && queue_init_failure && cv == &candidate->q.wait_cv) {
@@ -80,7 +81,7 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 	return __real_pthread_cond_destroy(cv);
 }
 
-int __real_pthread_mutex_destroy(pthread_mutex_t *);
+int __real_pthread_mutex_destroy(pthread_mutex_t *mu);
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 {
 	if (candidate && failure == PROOF_QUEUE_MUTEX &&

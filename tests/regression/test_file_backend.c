@@ -12,17 +12,17 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
-static int test_file_fd(const logger_file_t *f)
+static int test_file_fd(const struct logger_file *f)
 {
 	return logger_fd_number(logger_fd_borrow(&f->fd));
 }
 
-static int test_lock_fd(const logger_file_t *f)
+static int test_lock_fd(const struct logger_file *f)
 {
 	return logger_fd_number(logger_fd_borrow(&f->lock_fd));
 }
 
-static int test_dir_fd(const logger_file_t *f)
+static int test_dir_fd(const struct logger_file *f)
 {
 	return logger_fd_number(logger_fd_borrow(&f->dir_fd));
 }
@@ -35,23 +35,23 @@ static int candidate_rollback;
 static int candidate_close_error;
 static int candidate_fd = -1;
 static int reused_candidate_fd = -1;
-static logger_file_t *closing_file;
+static struct logger_file *closing_file;
 static int closing_fds[3];
-static unsigned closing_calls;
+static unsigned int closing_calls;
 static int closing_primary_error, closing_secondary_error;
 static int closing_reused_fd = -1;
 static _Atomic int failures, wins;
 static logger_t *winner;
 static struct timespec frozen = { 1700000000, 0 };
 
-int __real_openat(int, const char *, int, ...);
-int __real_fsync(int);
-int __real_close(int);
-int __real_clock_gettime(clockid_t, struct timespec *);
-int __real_logger_file_rename_noreplace(int, const char *, const char *);
-int __real_unlinkat(int, const char *, int);
-int __real_flock(int, int);
-ssize_t __real_writev(int, const struct iovec *, int);
+int __real_openat(int d, const char *p, int flags, ...);
+int __real_fsync(int fd);
+int __real_close(int fd);
+int __real_clock_gettime(clockid_t which, struct timespec *t);
+int __real_logger_file_rename_noreplace(int d, const char *a, const char *b);
+int __real_unlinkat(int d, const char *p, int flags);
+int __real_flock(int fd, int op);
+ssize_t __real_writev(int fd, const struct iovec *v, int n);
 
 int __wrap_openat(int d, const char *p, int flags, ...)
 {
@@ -120,7 +120,7 @@ int __wrap_fsync(int fd)
 int __wrap_close(int fd)
 {
 	if (closing_file) {
-		unsigned phase = closing_calls++;
+		unsigned int phase = closing_calls++;
 
 		CHECK(phase < 3 && fd == closing_fds[phase]);
 		CHECK(phase != 0 || !logger_fd_valid(&closing_file->fd));
@@ -202,11 +202,11 @@ static void put(const char *path, const char *text)
 	CHECK(write(fd, text, n) == (ssize_t)n);
 	CHECK(close(fd) == 0);
 }
-static unsigned fds(void)
+static unsigned int fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
 	CHECK(d);
-	unsigned n = 0;
+	unsigned int n = 0;
 	struct dirent *e;
 	while ((e = readdir(d)))
 		if (e->d_name[0] != '.')
@@ -288,10 +288,10 @@ static void owner(const char *scenario)
 	logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
 	if (!strcmp(scenario, "owner-race")) {
 		pthread_t t[16];
-		for (unsigned i = 0; i < 16; ++i)
+		for (unsigned int i = 0; i < 16; ++i)
 			CHECK(pthread_create(t + i, NULL, race_create, &c) ==
 			      0);
-		for (unsigned i = 0; i < 16; ++i)
+		for (unsigned int i = 0; i < 16; ++i)
 			CHECK(pthread_join(t[i], NULL) == 0);
 		CHECK(atomic_load(&wins) == 1 && atomic_load(&failures) == 15);
 		emit(winner, "winner");
@@ -389,7 +389,7 @@ static void invalid_path(const char *scenario)
 		expected = EINVAL;
 	} else
 		CHECK(0);
-	unsigned count = fds();
+	unsigned int count = fds();
 	for (int i = 0; i < 20; ++i) {
 		logger_t *l = NULL;
 		CHECK(logger_create(&c, &l) == -expected && !l);
@@ -411,7 +411,7 @@ static void reopen_case(const char *scenario)
 	emit(l, "first");
 	old_fd = test_file_fd(&l->file_backend);
 	CHECK(rename("out.log", "old.log") == 0);
-	unsigned count = fds();
+	unsigned int count = fds();
 	if (!strcmp(scenario, "reopen-permission"))
 		data_open_error = EACCES;
 	if (!strcmp(scenario, "reopen-space"))
@@ -486,7 +486,7 @@ static void reopen_candidate_reuse(const char *scenario)
 	emit(l, "first");
 	old_fd = test_file_fd(&l->file_backend);
 	CHECK(rename("out.log", "old.log") == 0);
-	unsigned count = fds();
+	unsigned int count = fds();
 	sync_error = 1;
 	candidate_rollback = 1;
 	candidate_close_error =
@@ -553,7 +553,7 @@ static void collision(const char *scenario)
 		CHECK(rc == -rename_error);
 		CHECK(file_contains("out.log", "first") &&
 		      !file_contains("out.log", "second"));
-		CHECK((unsigned)rename_calls ==
+		CHECK((unsigned int)rename_calls ==
 		      (!strcmp(scenario, "collision-limit") ?
 			       LOGGER_ARCHIVE_ATTEMPTS :
 			       1));
@@ -638,7 +638,7 @@ static void rotation_candidate_reuse(const char *scenario)
 	CHECK(logger_create(&c, &l) == 0 && l);
 	emit(l, "first");
 	old_fd = test_file_fd(&l->file_backend);
-	unsigned count = fds();
+	unsigned int count = fds();
 	candidate_rollback = 1;
 	candidate_close_error = strstr(scenario, "eintr") ? EINTR : EIO;
 	sync_error = strstr(scenario, "dir-sync") ? 5 : 3;
@@ -789,7 +789,7 @@ static void metrics_contract(void)
 
 static void vectors(void)
 {
-	logger_file_t f = LOGGER_FILE_EMPTY;
+	struct logger_file f = LOGGER_FILE_EMPTY;
 	logger_rotation_config_t r = { .mode = LOGGER_ROTATE_NONE };
 	CHECK(logger_file_init(&f, "out.log", r, 0600) == 0);
 	vector_max = 2;
@@ -806,7 +806,7 @@ static void vectors(void)
 /* 最终关闭的顺序、首错优先和 fd 整数复用必须由生产路径验证。 */
 static void file_close_owned_reuse(const char *scenario)
 {
-	logger_file_t f = LOGGER_FILE_EMPTY;
+	struct logger_file f = LOGGER_FILE_EMPTY;
 	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
 
 	CHECK(!logger_file_init(&f, "out.log", rotation, 0600));
@@ -851,7 +851,7 @@ static void file_close_owned_zero(void)
 	CHECK(saved >= 0 || errno == EBADF);
 	if (saved >= 0)
 		CHECK(!__real_close(STDIN_FILENO));
-	logger_file_t f = LOGGER_FILE_EMPTY;
+	struct logger_file f = LOGGER_FILE_EMPTY;
 	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
 
 	CHECK(!logger_file_init(&f, "out.log", rotation, 0600));
@@ -897,7 +897,7 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	char dir[] = "/tmp/logger-file-XXXXXX";
 	enter_temp(dir);
-	unsigned count = fds();
+	unsigned int count = fds();
 	const char *s = argv[1];
 	if (!strncmp(s, "owner-", 6))
 		owner(s);

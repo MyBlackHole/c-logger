@@ -5,17 +5,17 @@
 #include <fcntl.h>
 
 /* 只包装测试程序的系统调用，生产头文件不含测试钩子。 */
-static unsigned close_calls;
-static unsigned directory_calls;
-static unsigned closedir_calls;
+static unsigned int close_calls;
+static unsigned int directory_calls;
+static unsigned int closedir_calls;
 static int close_error;
 static int directory_error;
 static int reuse_fd;
 static struct logger_owned_fd *closing_owner;
 
-int __real_close(int);
-DIR *__real_fdopendir(int);
-int __real_closedir(DIR *);
+int __real_close(int fd);
+DIR *__real_fdopendir(int fd);
+int __real_closedir(DIR *directory);
 
 int __wrap_close(int fd)
 {

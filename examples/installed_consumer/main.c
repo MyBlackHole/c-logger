@@ -7,8 +7,9 @@
 int main(void)
 {
 	char masked[16] = "abcd";
-	int (*mask)(const char *, char *, size_t, size_t, size_t) =
-		logger_mask_secret;
+	int (*mask)(const char *input, char *out, size_t cap,
+		    size_t keep_prefix,
+		    size_t keep_suffix) = logger_mask_secret;
 
 	errno = EDOM;
 	if (mask(masked, masked, sizeof(masked), 1, 1) || errno != EDOM)
@@ -44,7 +45,7 @@ int main(void)
 		return 2;
 	}
 	int rc = 0;
-	for (unsigned i = 0; i < 16; ++i) {
+	for (unsigned int i = 0; i < 16; ++i) {
 		int record_rc = LOGGER_INFO(a, "host-a", "record=%u", i);
 		if (record_rc && !rc)
 			rc = record_rc;

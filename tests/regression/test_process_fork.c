@@ -29,13 +29,13 @@ static _Atomic int release_console_at_prepare;
 static pthread_t console_thread;
 static _Atomic int console_completed, console_joined;
 static _Thread_local int pause_console_flush_lock;
-static _Atomic unsigned registrations;
-static _Atomic unsigned foreign_registrations;
+static _Atomic unsigned int registrations;
+static _Atomic unsigned int foreign_registrations;
 static _Atomic int omit_registration_observation;
 static logger_t *instance;
 static logger_config_t cfg;
 
-int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
+int __real_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void));
 int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 {
 	/* 只观测本库的真实注册；宿主及检测器的处理函数不属于注入目标。
@@ -57,7 +57,7 @@ int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 	}
 	return __real_pthread_atfork(a, b, c);
 }
-int __real_pthread_mutex_lock(pthread_mutex_t *);
+int __real_pthread_mutex_lock(pthread_mutex_t *p);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 {
 	if (atomic_load(&release_console_at_prepare) &&
@@ -82,72 +82,72 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 	}
 	return rc;
 }
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *p);
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_rwlock_rdlock(p);
 }
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *p);
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_rwlock_wrlock(p);
 }
-int __real_pthread_once(pthread_once_t *, void (*)(void));
+int __real_pthread_once(pthread_once_t *p, void (*f)(void));
 int __wrap_pthread_once(pthread_once_t *p, void (*f)(void))
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_once(p, f);
 }
-void *__real_logger_runtime_calloc(size_t, size_t);
+void *__real_logger_runtime_calloc(size_t n, size_t z);
 void *__wrap_logger_runtime_calloc(size_t n, size_t z)
 {
 	if (strict_child)
 		_exit(91);
 	return __real_logger_runtime_calloc(n, z);
 }
-int __real_logger_runtime_free(void *);
+int __real_logger_runtime_free(void *p);
 int __wrap_logger_runtime_free(void *p)
 {
 	if (strict_child)
 		_exit(91);
 	return __real_logger_runtime_free(p);
 }
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
+int __real_pthread_create(pthread_t *t, const pthread_attr_t *a,
+			  void *(*f)(void *arg), void *p);
 int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
-			  void *(*f)(void *), void *p)
+			  void *(*f)(void *arg), void *p)
 {
 	if (strict_child)
 		_exit(91);
 	return __real_pthread_create(t, a, f, p);
 }
-ssize_t __real_write(int, const void *, size_t);
+ssize_t __real_write(int fd, const void *p, size_t n);
 ssize_t __wrap_write(int fd, const void *p, size_t n)
 {
 	if (strict_child)
 		_exit(92);
 	return __real_write(fd, p, n);
 }
-int __real_close(int);
+int __real_close(int fd);
 int __wrap_close(int fd)
 {
 	if (strict_child)
 		_exit(92);
 	return __real_close(fd);
 }
-int __real_vsnprintf(char *, size_t, const char *, va_list);
+int __real_vsnprintf(char *p, size_t n, const char *fmt, va_list a);
 int __wrap_vsnprintf(char *p, size_t n, const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
 	return __real_vsnprintf(p, n, fmt, a);
 }
-int __real_vfprintf(FILE *, const char *, va_list);
+int __real_vfprintf(FILE *f, const char *fmt, va_list a);
 int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 {
 	if (strict_child)
@@ -157,9 +157,9 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 		pause_console_flush_lock = 1;
 	return result;
 }
-int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
-				const char *, int, const char *, const char *,
-				va_list);
+int __real_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
+				const char *f, int line, const char *fn,
+				const char *fmt, va_list a);
 int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 				const char *f, int line, const char *fn,
 				const char *fmt, va_list a)
@@ -399,7 +399,7 @@ static void foreign_child(void)
 
 static void check_foreign_registration(void)
 {
-	unsigned before = atomic_load(&foreign_registrations);
+	unsigned int before = atomic_load(&foreign_registrations);
 
 	CHECK(atomic_load(&registrations) == 0);
 	atomic_store(&fail_registration, 1);

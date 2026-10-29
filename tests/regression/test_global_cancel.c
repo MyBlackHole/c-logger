@@ -16,15 +16,17 @@ static _Thread_local int delay_reader, delay_controller, watch_cond;
 static int cleanup_phase_error;
 static const char *scenario;
 
-int __real_logger_file_write(logger_file_t *, const char *, size_t,
-			     const struct timespec *, int);
-int __real_logger_file_reopen(logger_file_t *);
-int __real_logger_queue_push(logger_queue_t *, const logger_message_t *);
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
+int __real_logger_file_write(struct logger_file *f, const char *text, size_t n,
+			     const struct timespec *ts, int sync);
+int __real_logger_file_reopen(struct logger_file *f);
+int __real_logger_queue_push(struct logger_queue *q,
+			     const struct logger_message *m);
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
 
 static void inspect_mask(void)
 {
@@ -42,24 +44,26 @@ static void rendezvous(enum point p)
 	atomic_store(&at_point, 1);
 	wait_flag(&release_point);
 }
-int __wrap_logger_file_write(logger_file_t *f, const char *text, size_t n,
+int __wrap_logger_file_write(struct logger_file *f, const char *text, size_t n,
 			     const struct timespec *ts, int sync)
 {
 	rendezvous(P_WRITE);
 	return __real_logger_file_write(f, text, n, ts, sync);
 }
-int __wrap_logger_file_reopen(logger_file_t *f)
+int __wrap_logger_file_reopen(struct logger_file *f)
 {
 	rendezvous(P_REOPEN);
 	return __real_logger_file_reopen(f);
 }
-int __wrap_logger_queue_push(logger_queue_t *q, const logger_message_t *m)
+int __wrap_logger_queue_push(struct logger_queue *q,
+			     const struct logger_message *m)
 {
 	rendezvous(P_QUEUE);
 	return __real_logger_queue_push(q, m);
 }
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	if (atomic_exchange(&hold_format, 0)) {
 		atomic_store(&format_entered, 1);

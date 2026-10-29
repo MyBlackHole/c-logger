@@ -8,13 +8,13 @@ static logger_t *default_owner;
 #include <stdlib.h>
 #include <time.h>
 
-typedef struct {
+struct bench_argument {
 	long id;
 	long count;
-} arg_t;
+};
 static void *run(void *p)
 {
-	arg_t *a = (arg_t *)p;
+	struct bench_argument *a = (struct bench_argument *)p;
 	for (long i = 0; i < a->count; i++)
 		LOG_INFO("worker=%ld seq=%ld value=%d", a->id, i, 42);
 	return NULL;
@@ -45,10 +45,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	pthread_t *ts = calloc((size_t)n, sizeof(*ts));
-	arg_t *as = calloc((size_t)n, sizeof(*as));
+	struct bench_argument *as = calloc((size_t)n, sizeof(*as));
 	double a = sec();
 	for (int i = 0; i < n; i++) {
-		as[i] = (arg_t){ i, each };
+		as[i] = (struct bench_argument){ i, each };
 		pthread_create(&ts[i], NULL, run, &as[i]);
 	}
 	for (int i = 0; i < n; i++)

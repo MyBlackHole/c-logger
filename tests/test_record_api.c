@@ -55,7 +55,7 @@ static void cold(void)
 	logger_t *poison = (logger_t *)(uintptr_t)1;
 	int count = -1;
 
-	for (unsigned api = 0; api < 4; ++api) {
+	for (unsigned int api = 0; api < 4; ++api) {
 		errno = EDOM;
 		result(record(api, poison, LOGGER_INFO, "%s%n", "forbidden",
 			      &count),
@@ -103,7 +103,7 @@ static void ready(int asynchronous)
 	static const char *const bodies[] = { "instance", "source", "default",
 					      "strict" };
 
-	for (unsigned api = 0; api < 4; ++api) {
+	for (unsigned int api = 0; api < 4; ++api) {
 		int count = -1;
 
 		errno = EDOM;
@@ -149,7 +149,7 @@ static void ready(int asynchronous)
 	memset(retained, 'x', sizeof(retained));
 	memcpy(retained + sizeof(retained) - sizeof(marker), marker,
 	       sizeof(marker));
-	for (unsigned api = 0; api < 3; ++api) {
+	for (unsigned int api = 0; api < 3; ++api) {
 		errno = EDOM;
 		result(record(api, owner, LOGGER_INFO, "%s%n", oversized,
 			      &count),
@@ -186,7 +186,7 @@ static void stderr_error(void)
 	CHECK(close(pipe_fds[0]) == 0);
 	CHECK(dup2(pipe_fds[1], STDERR_FILENO) == STDERR_FILENO);
 	CHECK(close(pipe_fds[1]) == 0);
-	for (unsigned api = 0; api < 4; ++api) {
+	for (unsigned int api = 0; api < 4; ++api) {
 		int count = -1;
 		errno = EDOM;
 		result(record(api, owner, LOGGER_INFO, "%s%n", "closed-pipe",

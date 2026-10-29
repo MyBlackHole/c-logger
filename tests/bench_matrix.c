@@ -8,15 +8,15 @@
 #include <string.h>
 #include <time.h>
 
-typedef struct {
+struct matrix_argument {
 	logger_t *logger;
 	uint64_t count;
 	const char *message;
-} argument_t;
+};
 
 static void *produce(void *p)
 {
-	const argument_t *a = p;
+	const struct matrix_argument *a = p;
 	for (uint64_t i = 0; i < a->count; ++i)
 		logger_log(a->logger, LOGGER_INFO, "bench", __FILE__, __LINE__,
 			   __func__, "%s", a->message);
@@ -75,7 +75,7 @@ int main(int argc, char **argv)
 		free(threads);
 		return 4;
 	}
-	argument_t a = { l, nr, msg };
+	struct matrix_argument a = { l, nr, msg };
 	struct timespec begin, producer_end, output_end;
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	uint64_t started = 0;
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
 	int metrics_rc = logger_get_metrics(l, &m);
 	int io_rc = logger_get_io_metrics(l, &io);
 	uint64_t drops = 0;
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		drops += m.dropped[i];
 	uint64_t attempted = started * nr;
 	int valid = !error && !metrics_rc && !io_rc && rc == 0 &&
@@ -132,8 +132,8 @@ int main(int argc, char **argv)
 	       es > 0 ? io.emitted_records / es : 0, m.enqueued, drops,
 	       m.sync_fallbacks, m.queue_high_watermark, m.consumer_records,
 	       m.consumer_batches, io.async_completed, io.emitted_records,
-	       io.failed_records, sizeof(logger_queue_slot_t),
-	       l->q.cap * sizeof(logger_queue_slot_t),
+	       io.failed_records, sizeof(struct logger_queue_slot),
+	       l->q.cap * sizeof(struct logger_queue_slot),
 	       logger_queue_spill_capacity(&l->q),
 	       logger_queue_spill_storage_bytes(&l->q),
 	       logger_queue_spill_exhaustions(&l->q),

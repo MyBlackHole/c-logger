@@ -7,7 +7,7 @@
 /* 拥有者槽属于调用方。探针只观察真实交接、取消和系统资源回收。 */
 static logger_t *owned;
 static logger_t *subject;
-static unsigned freed;
+static unsigned int freed;
 static int fail_join, fail_entry, fail_unmap;
 static int cancel_create, cancel_destroy, reentry;
 static int create_restore, fail_restore, fail_create;
@@ -15,13 +15,13 @@ static _Thread_local int caller;
 static _Atomic int cleanup_ran;
 static logger_config_t config;
 
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
-int __real_pthread_join(pthread_t, void **);
-int __real_pthread_setcancelstate(int, int *);
-int __real_logger_runtime_free(void *);
-void *__real_logger_runtime_calloc(size_t, size_t);
-int __real_munmap(void *, size_t);
+int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+			  void *(*start)(void *arg), void *arg);
+int __real_pthread_join(pthread_t thread, void **result);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_logger_runtime_free(void *ptr);
+void *__real_logger_runtime_calloc(size_t count, size_t size);
+int __real_munmap(void *base, size_t bytes);
 
 void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
@@ -33,7 +33,7 @@ void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 }
 
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			  void *(*start)(void *), void *arg)
+			  void *(*start)(void *arg), void *arg)
 {
 	if (start != logger_worker_main)
 		return __real_pthread_create(thread, attr, start, arg);

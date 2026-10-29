@@ -24,7 +24,7 @@
 #define g_console_mu (logger_runtime_current()->console_mu)
 
 /* 公开接口统一返回负错误码；作用域仍负责准入、取消和主错误优先。 */
-static int begin(logger_scope_t *scope)
+static int begin(struct logger_scope *scope)
 {
 	int saved = errno;
 	int rc = logger_scope_begin(scope);
@@ -33,7 +33,7 @@ static int begin(logger_scope_t *scope)
 	return rc;
 }
 
-static int finish(logger_scope_t *scope, int rc)
+static int finish(struct logger_scope *scope, int rc)
 {
 	int saved = scope->saved_errno;
 
@@ -44,7 +44,7 @@ static int finish(logger_scope_t *scope, int rc)
 
 int console_init(const console_config_t *c)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = begin(&scope);
 	if (rc)
 		return rc;
@@ -60,32 +60,33 @@ int console_init(const console_config_t *c)
 		       sizeof(version));
 		rc = logger_uapi_copy_struct(&config, sizeof(config), c, size,
 					     version, CONSOLE_CONFIG_VERSION);
-		if (!rc && ((unsigned)config.verbosity > CONSOLE_DEBUG ||
-			    (unsigned)config.color > CONSOLE_COLOR_NEVER))
+		if (!rc && ((unsigned int)config.verbosity > CONSOLE_DEBUG ||
+			    (unsigned int)config.color > CONSOLE_COLOR_NEVER))
 			rc = -EINVAL;
 		if (!rc)
-			atomic_store_explicit(&g_config,
-					      ((unsigned)config.verbosity
-					       << COLOR_BITS) |
-						      (unsigned)config.color,
-					      memory_order_relaxed);
+			atomic_store_explicit(
+				&g_config,
+				((unsigned int)config.verbosity << COLOR_BITS) |
+					(unsigned int)config.color,
+				memory_order_relaxed);
 	}
 	return finish(&scope, rc);
 }
 
-static int set_config(unsigned value, int color)
+static int set_config(unsigned int value, int color)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = begin(&scope);
 	if (rc)
 		return rc;
-	rc = value > (unsigned)(color ? CONSOLE_COLOR_NEVER : CONSOLE_DEBUG) ?
+	rc = value > (unsigned int)(color ? CONSOLE_COLOR_NEVER :
+					    CONSOLE_DEBUG) ?
 		     -EINVAL :
 		     0;
 	if (!rc) {
-		unsigned old = atomic_load_explicit(&g_config,
-						    memory_order_relaxed),
-			 next;
+		unsigned int old = atomic_load_explicit(&g_config,
+							memory_order_relaxed),
+			     next;
 		do {
 			next = color ? (old & ~COLOR_MASK) | value :
 				       (old & COLOR_MASK) |
@@ -99,16 +100,16 @@ static int set_config(unsigned value, int color)
 
 int console_set_verbosity(console_verbosity_t value)
 {
-	return set_config((unsigned)value, 0);
+	return set_config((unsigned int)value, 0);
 }
 int console_set_color(console_color_mode_t value)
 {
-	return set_config((unsigned)value, 1);
+	return set_config((unsigned int)value, 1);
 }
 
 static int tty(int fd, int *out)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = begin(&scope);
 	if (rc)
 		return rc;
@@ -137,9 +138,9 @@ int console_stderr_is_tty(int *out)
 	return tty(STDERR_FILENO, out);
 }
 
-static int color_enabled(unsigned config, FILE *out)
+static int color_enabled(unsigned int config, FILE *out)
 {
-	unsigned color = config & COLOR_MASK;
+	unsigned int color = config & COLOR_MASK;
 	if (color != CONSOLE_COLOR_AUTO)
 		return color == CONSOLE_COLOR_ALWAYS;
 	int saved = errno;
@@ -164,7 +165,7 @@ static void stdio_error(int failed, int *first_error, int *saw_epipe)
  * 也不承诺与宿主外部 flockfile() 建立额外锁顺序。
  */
 static int write_v(FILE *out, const char *label, const char *ansi,
-		   unsigned config, const char *fmt, va_list ap)
+		   unsigned int config, const char *fmt, va_list ap)
 {
 	if (!fmt)
 		return -EINVAL;
@@ -176,7 +177,7 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 	int rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
 	if (rc)
 		return rc;
-	logger_sigpipe_guard_t sigpipe_guard;
+	struct logger_sigpipe_guard sigpipe_guard;
 	rc = logger_sigpipe_begin(&sigpipe_guard);
 	int guarded = !rc;
 	int saw_epipe = 0;
@@ -209,11 +210,12 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 
 int console_print(const char *fmt, ...)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = begin(&scope);
 	if (rc)
 		return rc;
-	unsigned config = atomic_load_explicit(&g_config, memory_order_relaxed);
+	unsigned int config =
+		atomic_load_explicit(&g_config, memory_order_relaxed);
 	va_list ap;
 	va_start(ap, fmt);
 	rc = write_v(stdout, NULL, NULL, config, fmt, ap);
@@ -224,11 +226,11 @@ int console_print(const char *fmt, ...)
 #define DIAGNOSTIC(function, minimum, label, color)                            \
 	int function(const char *fmt, ...)                                     \
 	{                                                                      \
-		logger_scope_t scope;                                          \
+		struct logger_scope scope;                                     \
 		int rc = begin(&scope);                                        \
 		if (rc)                                                        \
 			return rc;                                             \
-		unsigned config =                                              \
+		unsigned int config =                                          \
 			atomic_load_explicit(&g_config, memory_order_relaxed); \
 		rc = !fmt ? -EINVAL : 0;                                       \
 		if (!rc && (int)(config >> COLOR_BITS) >= (int)(minimum)) {    \
@@ -249,11 +251,12 @@ DIAGNOSTIC(console_debug, CONSOLE_DEBUG, "DEBUG", "\033[90m")
 int console_debug_source(const char *file, int line, const char *func,
 			 const char *fmt, ...)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = begin(&scope);
 	if (rc)
 		return rc;
-	unsigned config = atomic_load_explicit(&g_config, memory_order_relaxed);
+	unsigned int config =
+		atomic_load_explicit(&g_config, memory_order_relaxed);
 	rc = !fmt ? -EINVAL : 0;
 	if (!rc && (config >> COLOR_BITS) >= CONSOLE_DEBUG) {
 		const char *base = file ? strrchr(file, '/') : NULL;
@@ -290,7 +293,7 @@ int console_debug_source(const char *file, int line, const char *func,
 			rc = ACQUIRE_ERR(pthread_mutex_console_checked,
 					 &console_guard);
 			if (!rc) {
-				logger_sigpipe_guard_t sigpipe_guard;
+				struct logger_sigpipe_guard sigpipe_guard;
 				rc = logger_sigpipe_begin(&sigpipe_guard);
 				int guarded = !rc;
 				int saw_epipe = 0;

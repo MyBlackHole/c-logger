@@ -23,7 +23,7 @@ struct logger_borrowed_fd {
 };
 
 /* 只接管已由 fork 协调器登记的 fd；借用视图不得重造第二个所有者。 */
-static inline LOGGER_MUST_CHECK struct logger_owned_fd logger_fd_own(int fd)
+static inline struct logger_owned_fd LOGGER_MUST_CHECK logger_fd_own(int fd)
 {
 	return (struct logger_owned_fd){ .value = fd };
 }
@@ -46,8 +46,7 @@ static inline int logger_fd_valid(const struct logger_owned_fd *owner)
 }
 
 /* 显式移交给仍使用原始 int 的所有者；调用方必须接住返回值。 */
-static inline LOGGER_MUST_CHECK int
-logger_fd_take(struct logger_owned_fd *owner)
+static inline int LOGGER_MUST_CHECK logger_fd_take(struct logger_owned_fd *owner)
 {
 	int fd = owner->value;
 
@@ -58,7 +57,7 @@ logger_fd_take(struct logger_owned_fd *owner)
 /* 保持类型的拥有权转移：源先失效，再返回新的唯一拥有者。
  * 只可移入已为空的目的位置；C 仍允许复制和字段裸访问，调用方必须独占。
  */
-static inline LOGGER_MUST_CHECK struct logger_owned_fd
+static inline struct logger_owned_fd LOGGER_MUST_CHECK
 logger_fd_move(struct logger_owned_fd *owner)
 {
 	return logger_fd_own(logger_fd_take(owner));
@@ -68,7 +67,7 @@ logger_fd_move(struct logger_owned_fd *owner)
  * Linux close 即使报 EINTR，也不得恢复源或重试，因为整数可能已被复用。
  * fork 资源锁取得/释放的错误同样由调用者显式处理或上层粘滞诊断保留。
  */
-static inline LOGGER_MUST_CHECK int
+static inline int LOGGER_MUST_CHECK
 logger_fd_close_status(struct logger_owned_fd *owner)
 {
 	int fd = logger_fd_take(owner);
@@ -93,7 +92,7 @@ static inline void logger_fd_cleanup(struct logger_owned_fd *owner)
  * 整段目录遍历必须由同线程 logger_fork_closedir 结束，绝不能直接 closedir，
  * 否则会留下资源协调锁和 fd 位图登记。显式处理关闭错误，不用 cleanup 隐藏。
  */
-static inline LOGGER_MUST_CHECK DIR *
+static inline DIR *LOGGER_MUST_CHECK
 logger_fd_fdopendir(struct logger_owned_fd *owner)
 {
 	if (!logger_fd_valid(owner)) {

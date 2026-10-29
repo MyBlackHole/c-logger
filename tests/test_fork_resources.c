@@ -22,7 +22,7 @@ int main(void)
 	CHECK(logger_create(&cfg, &l) == 0);
 	CHECK(l != NULL);
 	int owned[4];
-	unsigned count = 0;
+	unsigned int count = 0;
 	DIR *scan = opendir("/proc/self/fd");
 	CHECK(scan);
 	struct dirent *entry;
@@ -51,7 +51,7 @@ int main(void)
 	pid_t pid = fork();
 	CHECK(pid >= 0);
 	if (!pid) {
-		for (unsigned i = 0; i < count; ++i) {
+		for (unsigned int i = 0; i < count; ++i) {
 			if (fcntl(owned[i], F_GETFD) != -1 || errno != EBADF)
 				_exit(10);
 		}
@@ -64,7 +64,7 @@ int main(void)
 	}
 	char c = 1;
 	CHECK(read(ready[0], &c, 1) == 1);
-	for (unsigned i = 0; i < count; ++i)
+	for (unsigned int i = 0; i < count; ++i)
 		CHECK(fcntl(owned[i], F_GETFD) >= 0);
 	int lock = open("out.log.logger.lock", O_RDWR | O_CLOEXEC);
 	CHECK(lock >= 0);
@@ -83,7 +83,7 @@ int main(void)
 	} while (got < 0 && errno == EINTR);
 	CHECK(got == pid && WIFEXITED(status) && !WEXITSTATUS(status));
 	CHECK(!close(lock));
-	for (unsigned i = 0; i < 2; ++i) {
+	for (unsigned int i = 0; i < 2; ++i) {
 		CHECK(!close(ready[i]));
 		CHECK(!close(finish[i]));
 	}

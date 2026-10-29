@@ -21,9 +21,9 @@
 #define SYSLOG_SEND_ATTEMPTS 4u
 #define SYSLOG_PACKET_MAX 8192u
 
-static unsigned priority(logger_level_t level)
+static unsigned int priority(logger_level_t level)
 {
-	static const unsigned values[] = { 7, 7, 6, 4, 3, 2 };
+	static const unsigned int values[] = { 7, 7, 6, 4, 3, 2 };
 	return values[level]; /* 调用者验证 level */
 }
 
@@ -71,7 +71,7 @@ static int broken_association(int error)
  * 先使字段失效，再消费 fork 位图并完成一次 Linux close；
  * 即使 close 报 EINTR，也绝不能重试原 fd 整数。
  */
-int logger_syslog_close_status(logger_syslog_t *s)
+int logger_syslog_close_status(struct logger_syslog *s)
 {
 	if (!s || !logger_fd_valid(&s->fd))
 		return 0;
@@ -86,12 +86,12 @@ int logger_syslog_close_status(logger_syslog_t *s)
 	return rc;
 }
 
-void logger_syslog_close(logger_syslog_t *s)
+void logger_syslog_close(struct logger_syslog *s)
 {
 	(void)logger_syslog_close_status(s);
 }
 
-static int copy_path(logger_syslog_t *s, const char *path)
+static int copy_path(struct logger_syslog *s, const char *path)
 {
 	if (!path)
 		path = "/dev/log";
@@ -127,7 +127,7 @@ static int copy_path(logger_syslog_t *s, const char *path)
 /* 恰好新建一个套接字并调用一次 connect。任何连接失败都丢弃候选对象；
  * 不假定出现 EINTR/EAGAIN 的套接字可用。
  */
-static int connect_once(logger_syslog_t *s, int *deferable)
+static int connect_once(struct logger_syslog *s, int *deferable)
 {
 	*deferable = 0;
 	++s->metrics.connect_attempts;
@@ -169,7 +169,7 @@ failed: {
 }
 }
 
-int logger_syslog_init(logger_syslog_t *s, const char *ident,
+int logger_syslog_init(struct logger_syslog *s, const char *ident,
 		       const logger_syslog_config_t *config)
 {
 	if (!s || !config)
@@ -177,7 +177,7 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	memset(s, 0, sizeof(*s));
 	s->fd = logger_fd_own(-1);
 	if ((config->facility & 7u) != 0 || config->facility > 23u * 8u ||
-	    (unsigned)config->startup > LOGGER_SYSLOG_START_DEFERRED ||
+	    (unsigned int)config->startup > LOGGER_SYSLOG_START_DEFERRED ||
 	    config->reconnect_interval_ms > 60000u)
 		return fail(EINVAL);
 	s->facility = config->facility;
@@ -224,7 +224,7 @@ int logger_syslog_init(logger_syslog_t *s, const char *ident,
 	return -1;
 }
 
-static int record_failure(logger_syslog_t *s, int error)
+static int record_failure(struct logger_syslog *s, int error)
 {
 	if (!error)
 		error = EIO;
@@ -235,13 +235,13 @@ static int record_failure(logger_syslog_t *s, int error)
 	return fail(error);
 }
 
-int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
+int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 			const char *line, size_t n)
 {
 	if (!s)
 		return fail(EINVAL);
 	++s->metrics.submitted_records;
-	if (!line || (unsigned)level >= LOGGER_OFF)
+	if (!line || (unsigned int)level >= LOGGER_OFF)
 		return record_failure(s, EINVAL);
 	/* 访问 line[n-1] 前先验证大小。不静默截断，也不将一条记录
 	 * 拆分为多个数据报。普通日志记录的尺寸更小。
@@ -294,7 +294,7 @@ int logger_syslog_write(logger_syslog_t *s, logger_level_t level,
 
 	int fd = logger_fd_number(logger_fd_borrow(&s->fd));
 	int error = EINTR;
-	for (unsigned i = 0; i < SYSLOG_SEND_ATTEMPTS; ++i) {
+	for (unsigned int i = 0; i < SYSLOG_SEND_ATTEMPTS; ++i) {
 		++s->metrics.send_attempts;
 		ssize_t sent =
 			send(fd, packet, size, MSG_NOSIGNAL | MSG_DONTWAIT);

@@ -55,7 +55,7 @@ int main(void)
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *l = NULL;
 	(void)logger_create(&cfg, &l);
-	logger_message_t *m = calloc(1, sizeof(*m));
+	struct logger_message *m = calloc(1, sizeof(*m));
 	char *out = malloc(LOGGER_LINE_MAX);
 	char *expected = malloc(LOGGER_LINE_MAX);
 

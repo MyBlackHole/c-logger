@@ -4,6 +4,9 @@
 
 ## 目标
 
+旧源码的类型名在历史比较处保留；当前 `struct logger_message` / `struct logger_queue`
+与旧名称的对照见 [编码规范](v2/CODING_STYLE.md)，历史基准数据与验证身份不改写。
+
 旧队列槽位直接内嵌完整 `logger_message_t`，其中仅正文就包含
 `text[4096]`。队列容量较大时，即使绝大多数日志只有几十到几百字节，也会为每个
 槽位固定支付 4KiB 正文空间。
@@ -22,7 +25,7 @@
     = 最多 1024 × LOGGER_MESSAGE_MAX
 ```
 
-公开 API、格式化结果和同步路径仍使用完整 `logger_message_t`。
+公开 API、格式化结果和同步路径仍使用完整 `struct logger_message`。
 
 <a id="inline-与-spill-边界"></a>
 
@@ -73,7 +76,7 @@ ERROR/FATAL 默认          -> SYNC 回退
 
 ### 队列生命周期
 
-`logger_queue_t` 结构性拥有：
+`struct logger_queue` 结构性拥有：
 
 - 紧凑 `slots`；
 - `spills`；
@@ -179,7 +182,7 @@ DSO/源信息生命周期契约不变。
 
 ## 工作线程工作区
 
-工作线程批次仍使用完整 `logger_message_t`，但容量最大为 256。
+工作线程批次仍使用完整 `struct logger_message`，但容量最大为 256。
 
 这是有意保留的第二阶段结构：
 
@@ -220,7 +223,7 @@ DSO/源信息生命周期契约不变。
 
 - 内嵌最大正文从 255B 提升到 **512B**；
 - 溢出块空闲链表互斥锁改为无锁（lock-free）原子位图；
-- `logger_message_t.text_len` 直接保存 `vsnprintf()` 已知的实际写入长度，
+- `struct logger_message.text_len` 直接保存 `vsnprintf()` 已知的实际写入长度，
   异步入队不再重新扫描最多 4095B 正文。
 
 源信息快照同时保存实际长度，减少固定尾部内存流量。

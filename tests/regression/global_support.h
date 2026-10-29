@@ -25,7 +25,7 @@ static const char *const operation_names[] = {
 	"write",   "flush",   "flush-void", "reopen",	   "level",
 	"dropped", "metrics", "io",	    "diagnostics", "file-metrics"
 };
-typedef struct {
+struct call_result {
 	enum operation op;
 	int rc, error;
 	uint64_t value;
@@ -34,7 +34,7 @@ typedef struct {
 	logger_diagnostics_t diagnostics;
 	logger_file_metrics_t file_metrics;
 	_Atomic int done;
-} call_result_t;
+};
 
 static inline logger_config_t config_for(const char *path, int async)
 {
@@ -56,7 +56,7 @@ static inline enum operation parse_operation(const char *name)
 	return OP_WRITE;
 }
 
-static inline void invoke(call_result_t *r)
+static inline void invoke(struct call_result *r)
 {
 	r->rc = 0;
 	r->value = UINT64_C(777);
@@ -110,7 +110,7 @@ static inline void expect_query_sentinel(const void *out, size_t size)
 		CHECK(bytes[i] == 0xa5);
 }
 
-static inline void expect_rejection(const call_result_t *r, int error)
+static inline void expect_rejection(const struct call_result *r, int error)
 {
 	CHECK(r->rc == -error && r->error == EDOM);
 	if (r->op == OP_DROPPED)
@@ -139,11 +139,11 @@ static inline void fixture_reset(void)
 	}
 }
 
-static inline unsigned file_lines(const char *path)
+static inline unsigned int file_lines(const char *path)
 {
 	FILE *f = fopen(path, "rb");
 	CHECK(f);
-	unsigned n = 0;
+	unsigned int n = 0;
 	int c;
 	while ((c = fgetc(f)) != EOF)
 		if (c == '\n')

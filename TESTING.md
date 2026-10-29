@@ -508,6 +508,19 @@ close-error 与 close-eintr，并通过 run_close_eintr.sh 对本次源码编译
 当前版本没有 Audit/密钥熵源或通用引用计数原语，不生成伪覆盖；
 任何新资源取得点仍要明确写出实际失败回滚测试、所有者及最终释放前提。
 
+## 私有类型与返回值检查
+
+现有 `fd_type_contract/owned_borrowed_compile` 入口由 Xmake 传入真实目标 C 编译器，
+执行 `tests/scripts/test_fd_types.py` 的拥有／借用类型正反例。
+它同时检查 `logger_fd_own/take/move/close_status/fdopendir` 和
+`__cleanup_must_check_ptr` 的返回值检查注解：使用结果必须可编译，丢弃结果必须
+出现对应函数的 unused-result 错误；仅在片段中撤掉注解后，同一丢弃语句须可编译，
+避免把其他编译错误当作注解有效的证据。
+
+这六组注解对照生成对象文件，不只使用 `-fsyntax-only`，因为 GCC 的相关诊断需要
+对象编译阶段。片段不链接、不执行；源码、对象和编译器临时目录均须放在工作区。
+现有 Clang AST 复制规则及其故意包含 typedef 链的样例继续独立验证。
+
 ## #107 模糊测试与属性回归
 
 [模糊测试与属性模型规范](docs/v2/FUZZ_PROPERTY_POLICY.md)明确公开

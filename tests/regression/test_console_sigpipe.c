@@ -38,12 +38,12 @@ static const char *const labels[] = { "",
 				      "DEBUG: ",
 				      "DEBUG: console_source.c:42 caller() " };
 
-typedef int (*output_fn)(const char *, ...);
-static const output_fn outputs[] = { console_print,   console_info,
-				     console_warn,    console_error,
-				     console_verbose, console_debug };
+static int (*const outputs[])(const char *format,
+			      ...) = { console_print,	console_info,
+				       console_warn,	console_error,
+				       console_verbose, console_debug };
 
-static int output(unsigned api)
+static int output(unsigned int api)
 {
 	/* 函数指针类型有意不带 printf 属性：%m 是被测的受支持 libc 扩展，
 	 * 不是 ISO 格式。
@@ -103,7 +103,7 @@ static void check_signal_state(const sigset_t *expected_mask,
 	CHECK(signal_calls == 0);
 }
 
-static void run_case(const char *scenario, unsigned api, int buffered)
+static void run_case(const char *scenario, unsigned int api, int buffered)
 {
 	report_fd = dup(STDERR_FILENO);
 	CHECK(report_fd >= 0);
@@ -281,7 +281,8 @@ int main(int argc, char **argv)
 	      !strcmp(scenario, "first-error") ||
 	      !strcmp(scenario, "host-buffer") ||
 	      !strcmp(scenario, "host-flush"));
-	for (unsigned api = 0; api < sizeof(names) / sizeof(names[0]); ++api) {
+	for (unsigned int api = 0; api < sizeof(names) / sizeof(names[0]);
+	     ++api) {
 		if (!strcmp(scenario, "first-error") && api == 6)
 			continue;
 		if (!strcmp(scenario, "host-flush") && api != 0)

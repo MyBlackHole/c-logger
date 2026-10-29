@@ -76,12 +76,12 @@ static void wait_child(pid_t pid)
 	CHECK(got == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-static unsigned count_lines(const char *path, const char *marker)
+static unsigned int count_lines(const char *path, const char *marker)
 {
 	FILE *stream = fopen(path, "r");
 	CHECK(stream);
 	char line[8192];
-	unsigned count = 0;
+	unsigned int count = 0;
 	while (fgets(line, sizeof(line), stream)) {
 		CHECK(strstr(line, marker) != NULL);
 		++count;

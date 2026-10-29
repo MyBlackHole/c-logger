@@ -11,7 +11,7 @@
 /* 系统调用包装函数只存在于此测试可执行文件。不含生产钩子。 */
 static int inject_socket, inject_connect, inject_send, inject_clock,
 	inject_close;
-static unsigned send_interrupts, sends, connects, sockets, closes;
+static unsigned int send_interrupts, sends, connects, sockets, closes;
 static int send_partial, watch, reuse_during_close;
 static int reused_fd = -1;
 static uint64_t now_ms = 10000;
@@ -19,7 +19,7 @@ static int raw_clock;
 static struct timespec raw_now;
 static char endpoint[108], temp[] = "/tmp/lg-sys-fault-XXXXXX";
 
-int __real_socket(int, int, int);
+int __real_socket(int domain, int type, int protocol);
 int __wrap_socket(int domain, int type, int protocol)
 {
 	if (watch && domain == AF_UNIX) {
@@ -33,7 +33,7 @@ int __wrap_socket(int domain, int type, int protocol)
 	}
 	return __real_socket(domain, type, protocol);
 }
-int __real_connect(int, const struct sockaddr *, socklen_t);
+int __real_connect(int fd, const struct sockaddr *addr, socklen_t n);
 int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t n)
 {
 	if (watch) {
@@ -52,7 +52,7 @@ int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t n)
 	}
 	return __real_connect(fd, addr, n);
 }
-ssize_t __real_send(int, const void *, size_t, int);
+ssize_t __real_send(int fd, const void *buf, size_t n, int flags);
 ssize_t __wrap_send(int fd, const void *buf, size_t n, int flags)
 {
 	if (watch) {
@@ -73,7 +73,7 @@ ssize_t __wrap_send(int fd, const void *buf, size_t n, int flags)
 	}
 	return __real_send(fd, buf, n, flags);
 }
-int __real_clock_gettime(clockid_t, struct timespec *);
+int __real_clock_gettime(clockid_t id, struct timespec *out);
 int __wrap_clock_gettime(clockid_t id, struct timespec *out)
 {
 	if (watch && id == CLOCK_MONOTONIC) {
@@ -91,7 +91,7 @@ int __wrap_clock_gettime(clockid_t id, struct timespec *out)
 	}
 	return __real_clock_gettime(id, out);
 }
-int __real_close(int);
+int __real_close(int fd);
 int __wrap_close(int fd)
 {
 	if (watch)
@@ -173,7 +173,7 @@ static int parse_error(const char *s)
 	CHECK(!"bad test error");
 	return 0;
 }
-static int syslog_fd(const logger_syslog_t *s)
+static int syslog_fd(const struct logger_syslog *s)
 {
 	return logger_fd_number(logger_fd_borrow(&s->fd));
 }
@@ -190,7 +190,7 @@ static void candidate_ownership(const char *mode)
 		if (saved_stdin >= 0)
 			CHECK(!__real_close(STDIN_FILENO));
 
-		logger_syslog_t syslog;
+		struct logger_syslog syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
 		CHECK(syslog_fd(&syslog) == STDIN_FILENO &&
 		      syslog.metrics.connected);
@@ -216,7 +216,7 @@ static void candidate_ownership(const char *mode)
 	inject_close = closing_error;
 	reuse_during_close = 1;
 
-	logger_syslog_t failed;
+	struct logger_syslog failed;
 	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
 	      errno == primary_error);
 	CHECK(!logger_fd_valid(&failed.fd) && !failed.metrics.connected);
@@ -227,7 +227,7 @@ static void candidate_ownership(const char *mode)
 	      failed.metrics.last_close_error == closing_error);
 	CHECK(failed.metrics.last_error == primary_error);
 	CHECK(failed.metrics.interrupted_calls ==
-	      (unsigned)(primary_error == EINTR));
+	      (unsigned int)(primary_error == EINTR));
 	CHECK(sockets == 1 && connects == 1 && closes == 1);
 	CHECK(reused_fd >= 0);
 	int stale_fd = reused_fd;
@@ -244,7 +244,7 @@ static void candidate_ownership(const char *mode)
 	reuse_during_close = 0;
 
 	/* 再由真正生产入口取得原整数，必须可以重新登记并正常关闭。 */
-	logger_syslog_t next;
+	struct logger_syslog next;
 	CHECK(!logger_syslog_init(&next, "app", &c.syslog));
 	CHECK(syslog_fd(&next) == stale_fd && next.metrics.connected);
 	logger_syslog_close(&next);
@@ -258,13 +258,13 @@ static void retire_ownership(const char *mode)
 {
 	logger_config_t c = config();
 	int error = strstr(mode, "eintr") ? EINTR : EIO;
-	unsigned before = closes;
+	unsigned int before = closes;
 	inject_close = error;
 	reuse_during_close = 1;
 	int raw;
 
 	if (!strncmp(mode, "retire-status-", 14)) {
-		logger_syslog_t syslog;
+		struct logger_syslog syslog;
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
 		raw = syslog_fd(&syslog);
 		CHECK(raw >= 0 && syslog.metrics.connected);
@@ -319,7 +319,7 @@ static void rejected_clock(int error)
 	CHECK(logger_create(&c, &l) == -error && !l && errno == EDOM);
 	CHECK(!sockets && !connects && !sends && !closes);
 
-	logger_syslog_t failed;
+	struct logger_syslog failed;
 	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
 	      errno == error);
 	CHECK(failed.retry_from_ms.value == 0);
@@ -516,7 +516,7 @@ static void run(const char *mode, int fd)
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		CHECK(sockets == 1 && connects == 1 && closes == 1);
-		for (unsigned i = 0; i < 1000; ++i)
+		for (unsigned int i = 0; i < 1000; ++i)
 			CHECK(output(l) == -ENOENT);
 		CHECK(connects == 1 && sockets == 1 && !sends);
 		now_ms += 99;
@@ -564,7 +564,7 @@ static void run(const char *mode, int fd)
 		    error == ENOTCONN || error == ECONNREFUSED ||
 		    error == EIO) {
 			CHECK(!m.connected && closes == 1);
-			for (unsigned i = 0; i < 300; ++i)
+			for (unsigned int i = 0; i < 300; ++i)
 				CHECK(output(l) == -error);
 			CHECK(connects == 1 && sends == 1);
 			now_ms += 100;
@@ -621,7 +621,7 @@ static void run(const char *mode, int fd)
 		now_ms += 100;
 		CHECK(output(l) == -EACCES);
 		CHECK(sockets == 2 && connects == 2);
-		for (unsigned i = 0; i < 1000; ++i)
+		for (unsigned int i = 0; i < 1000; ++i)
 			CHECK(output(l) == -EACCES);
 		CHECK(sockets == 2 && connects == 2);
 		inject_connect = 0;

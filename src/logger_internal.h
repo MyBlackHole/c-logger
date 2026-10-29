@@ -11,21 +11,22 @@
 #include <time.h>
 #include <stdarg.h>
 #include "logger_record.h"
-const char *logger_level_name(logger_level_t);
-const char *logger_basename(const char *);
-size_t logger_format_line(const logger_t *, const logger_message_t *, char *,
-			  size_t);
+const char *logger_level_name(logger_level_t level);
+const char *logger_basename(const char *path);
+size_t logger_format_line(const logger_t *l, const struct logger_message *m,
+			  char *out, size_t cap);
 /* 带确认的输出：不回退或截断；出错时长度为零。
  * 返回 0/-errno。调用者不得在失败后输出部分缓冲区。
  */
-int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
-			       char *out, size_t cap, size_t *length);
-logger_detail_t logger_internal_detail(const logger_t *);
-int logger_internal_include_pid(const logger_t *);
-int logger_internal_include_tid(const logger_t *);
-int logger_internal_include_source(const logger_t *);
+int logger_format_line_checked(const logger_t *l,
+			       const struct logger_message *m, char *out,
+			       size_t cap, size_t *length);
+logger_detail_t logger_internal_detail(const logger_t *l);
+int logger_internal_include_pid(const logger_t *l);
+int logger_internal_include_tid(const logger_t *l);
+int logger_internal_include_source(const logger_t *l);
 
-typedef struct logger_worker_workspace logger_worker_workspace_t;
+struct logger_worker_workspace;
 
 enum {
 	LOGGER_CAPTURE_MODULE = LOGGER_RECORD_META_MODULE,
@@ -47,7 +48,7 @@ struct logger {
 
 	/* 构造并发布成功后保持不变。 */
 	logger_detail_t detail;
-	unsigned outputs;
+	unsigned int outputs;
 	mode_t file_mode;
 	int async_mode;
 	int include_pid;
@@ -55,13 +56,13 @@ struct logger {
 	int include_source;
 	logger_level_t flush_level;
 	/* 构造时按 detail/include_* 冻结；生产者不再每条日志重复推导。 */
-	unsigned capture_mask;
+	unsigned int capture_mask;
 	pid_t pid;
 	char ident[128];
 
 	/* 后端可变状态统一由 emit_mu 串行化。 */
-	logger_file_t file_backend;
-	logger_syslog_t syslog_backend;
+	struct logger_file file_backend;
+	struct logger_syslog syslog_backend;
 	pthread_mutex_t emit_mu;
 	/* 完成事件与队列消费、emit_mu 相互独立。
 	 * 任何线程都不能在持有 emit_mu 时等待 progress_cv。
@@ -85,9 +86,9 @@ struct logger {
 	 * 生产者与消费者的顺序由 slot.seq 原子发布协议保证；
 	 * q.wait_mu 只负责睡眠与唤醒，不是负载发布锁。
 	 */
-	logger_queue_t q;
+	struct logger_queue q;
 	/* 创建成功后由 logger_t 拥有；必须在工作线程退出并回收后才能释放。 */
-	logger_worker_workspace_t *worker_workspace;
+	struct logger_worker_workspace *worker_workspace;
 	/* 工作线程生命周期由 logger_t 拥有；必须协作停止并等待退出、回收。 */
 	pthread_t worker;
 	_Atomic int running;
@@ -164,32 +165,35 @@ static inline int logger_state_try_publish(_Atomic logger_state_t *state,
  * 无法证明已静止，则故意保留退役分配，绝不继续释放而造成释放后使用。
  * 拆除一旦开始，旧指针都不能被调用者当作可重试对象。
  */
-int logger_dispose_internal(logger_t *);
+int logger_dispose_internal(logger_t *l);
 /* 供控制方调用正常 logger_destroy() 入口（含链接时包装函数）
  * 使用的当前线程最终释放回执。调用前重置；只有完成最终存活对象计数释放
  * 和 free 后才设置回执。
  */
 void logger_destroy_receipt_reset(void);
 int logger_destroy_receipt_read(void);
-int logger_emit_status(logger_t *, const logger_message_t *, int);
+int logger_emit_status(logger_t *l, const struct logger_message *m,
+		       int force_sync);
 /* 消耗并推进 iovecs，同时保留调用者的 SIGPIPE 策略。 */
 struct iovec;
-int logger_stderr_writev_all(struct iovec *, int);
-int logger_vlog_internal(logger_t *, logger_level_t, const char *, const char *,
-			 int, const char *, const char *, va_list);
-logger_worker_workspace_t *logger_worker_workspace_create(size_t);
-void logger_worker_workspace_destroy(logger_worker_workspace_t *);
-void *logger_worker_main(void *);
-void logger_note_io_error(logger_t *, int);
-void logger_note_lifecycle_error(logger_t *, int);
-void logger_note_synchronization_error(logger_t *, int);
+int logger_stderr_writev_all(struct iovec *v, int count);
+int logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
+			 const char *file, int line, const char *function,
+			 const char *fmt, va_list args);
+struct logger_worker_workspace *
+logger_worker_workspace_create(size_t queue_capacity);
+void logger_worker_workspace_destroy(struct logger_worker_workspace *workspace);
+void *logger_worker_main(void *p);
+void logger_note_io_error(logger_t *l, int error);
+void logger_note_lifecycle_error(logger_t *l, int error);
+void logger_note_synchronization_error(logger_t *l, int error);
 /* 调用者已拥有显式实例或全局的取消与生命周期作用域。
  * 返回 0/-errno，且只在获取 emit_mu 后写入 out。
  */
-int logger_file_metrics_snapshot(logger_t *, logger_file_metrics_t *);
+int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out);
 /* 内部：等待已排队的后端输出完成，但不执行 fsync。返回 0 / -errno。 */
-int logger_wait_for_output(logger_t *);
+int logger_wait_for_output(logger_t *l);
 /* 调用时必须已经持有 emit_mu。 */
-int logger_sync_outputs_locked(logger_t *);
+int logger_sync_outputs_locked(logger_t *l);
 
 #endif

@@ -51,13 +51,13 @@ struct global_generation {
 #define g_lock_error (logger_runtime_current()->global_lock_error)
 static _Thread_local int g_in_global;
 
-typedef struct {
+struct global_scope {
 	int old_cancel;
 	int saved_errno;
 	int control_locked;
 	int lifetime_locked;
 	logger_t *release_borrow; /* 所有解锁已确认后，才撤销旧实例的借用标记 */
-} global_scope_t;
+};
 
 static enum global_phase phase_of(struct global_ticket ticket)
 {
@@ -117,7 +117,7 @@ static void rollback_ticket(struct global_ticket ticket,
  * 这里是取消延后，不是回滚，也不是 I/O 超时期限。
  * 显式实例 API 还会建立自己的内层作用域，并继承禁用状态。
  */
-static int finish_result(global_scope_t *scope, int rc)
+static int finish_result(struct global_scope *scope, int rc)
 {
 	int error;
 
@@ -148,14 +148,14 @@ static int finish_result(global_scope_t *scope, int rc)
 }
 
 /* begin 的内部错误桥接仍使用 POSIX 风格；公开 API 统一 0/-errno。 */
-static int finish(global_scope_t *scope, int rc)
+static int finish(struct global_scope *scope, int rc)
 {
 	rc = finish_result(scope, rc);
 	errno = rc < 0 ? -rc : scope->saved_errno;
 	return rc < 0 ? -1 : 0;
 }
 
-static int begin(global_scope_t *scope)
+static int begin(struct global_scope *scope)
 {
 	/* 接触继承来的同步对象或 once 状态前，先检查进程标识。 */
 	if (logger_process_is_child()) {
@@ -175,7 +175,7 @@ static int begin(global_scope_t *scope)
 		errno = -rc;
 		return -1;
 	}
-	*scope = (global_scope_t){ .saved_errno = errno };
+	*scope = (struct global_scope){ .saved_errno = errno };
 	rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &scope->old_cancel);
 	if (rc) {
 		errno = rc;
@@ -186,7 +186,7 @@ static int begin(global_scope_t *scope)
 	return rc ? finish(scope, rc) : 0;
 }
 
-static int lock_control(global_scope_t *scope)
+static int lock_control(struct global_scope *scope)
 {
 	int rc = __cleanup_lockdep_mutex_lock(&g_control_mu,
 					      LOGGER_LOCK_GLOBAL_CONTROL);
@@ -215,7 +215,7 @@ static int phase_error(struct global_ticket ticket)
 	}
 }
 
-static int pin(global_scope_t *scope)
+static int pin(struct global_scope *scope)
 {
 	struct global_ticket ticket = { atomic_load_explicit(
 		&g_ticket, memory_order_acquire) };
@@ -244,7 +244,7 @@ static int pin(global_scope_t *scope)
 int logger_default_set(logger_t *expected, logger_t *replacement)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	int rc;
 
 	if (begin(&scope)) {
@@ -338,7 +338,7 @@ out:
 int logger_default_flush(void)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	int rc;
 
 	if (begin(&scope)) {
@@ -357,14 +357,14 @@ out:
 int logger_set_level(logger_level_t level)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	int rc;
 
 	if (begin(&scope)) {
 		rc = -errno;
 		goto out;
 	}
-	rc = (unsigned)level <= LOGGER_OFF ? pin(&scope) : -EINVAL;
+	rc = (unsigned int)level <= LOGGER_OFF ? pin(&scope) : -EINVAL;
 	if (!rc) {
 		/* 生命周期读侧已固定默认代次；不要重复进入公开实例作用域。 */
 		logger_level_store_relaxed(&g_logger->level, level);
@@ -379,7 +379,7 @@ out:
 int logger_global_dropped(uint64_t *out)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	uint64_t snapshot;
 	int rc;
 
@@ -401,7 +401,7 @@ done:
 int logger_default_reopen(void)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	int rc;
 
 	if (begin(&scope)) {
@@ -420,7 +420,7 @@ out:
 int logger_get_global_metrics(logger_metrics_t *out)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	logger_metrics_t snapshot;
 	int rc;
 
@@ -443,7 +443,7 @@ done:
 int logger_get_global_io_metrics(logger_io_metrics_t *out)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	logger_io_metrics_t snapshot;
 	int rc;
 
@@ -465,7 +465,7 @@ done:
 int logger_get_global_diagnostics(logger_diagnostics_t *out)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	logger_diagnostics_t snapshot;
 	int rc;
 
@@ -487,7 +487,7 @@ done:
 int logger_get_global_file_metrics(logger_file_metrics_t *out)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	logger_file_metrics_t snapshot;
 	int rc;
 
@@ -511,14 +511,14 @@ int logger_global_write(logger_level_t level, const char *module,
 			const char *fmt, ...)
 {
 	int saved = errno;
-	global_scope_t scope;
+	struct global_scope scope;
 	int rc;
 
 	if (begin(&scope)) {
 		rc = -errno;
 		goto out;
 	}
-	rc = !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : pin(&scope);
+	rc = !fmt || (unsigned int)level >= LOGGER_OFF ? -EINVAL : pin(&scope);
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);

@@ -42,7 +42,7 @@ typedef enum {
 typedef struct {
 	logger_rotate_mode_t mode;
 	size_t max_file_size;
-	unsigned retention_days;
+	unsigned int retention_days;
 } logger_rotation_config_t;
 typedef struct logger logger_t;
 typedef enum {
@@ -111,8 +111,8 @@ typedef enum {
 typedef struct {
 	logger_state_t state;
 	logger_level_t level;
-	unsigned outputs;
-	unsigned observation_flags;
+	unsigned int outputs;
+	unsigned int observation_flags;
 	int async_mode;
 	int worker_running;
 	int consumer_waiting;
@@ -201,7 +201,7 @@ typedef enum {
 #define LOGGER_SYSLOG_FACILITY_LOCAL7 (23u << 3)
 typedef struct {
 	const char *path; /* NULL：/dev/log；创建时复制 */
-	unsigned facility; /* 带命名空间的 facility 或标准编号 * 8 */
+	unsigned int facility; /* 带命名空间的 facility 或标准编号 * 8 */
 	uint32_t reconnect_interval_ms; /* 0：1000 ms；其他值为 1..60000 */
 	logger_syslog_start_t startup;
 } logger_syslog_config_t;
@@ -253,10 +253,10 @@ typedef struct {
 	uint32_t version;
 	logger_level_t level;
 	logger_detail_t detail;
-	unsigned outputs;
+	unsigned int outputs;
 	const char *file_path;
 	logger_rotation_config_t rotation;
-	unsigned file_mode;
+	unsigned int file_mode;
 	int async_mode;
 	size_t queue_capacity;
 	logger_level_t flush_level;
@@ -320,7 +320,7 @@ LOGGER_API int logger_process_init(void);
  * 失败保持槽为 NULL，成功才发布完整实例。不得与 cfg 存储重叠。
  * 调用前必须显式 process_init；进程准入失败先于读取配置或拥有者槽。
  */
-LOGGER_API int logger_create(const logger_config_t *, logger_t **out);
+LOGGER_API int logger_create(const logger_config_t *input, logger_t **out);
 /* 当前线程的请求上下文；不分配堆存储，不拥有调用方字符串。
  * set 先把三个字段分别截断复制到线程局部的 63 字节缓冲，再发布指针，
  * 允许使用先前 get 的指针或在当前线程中交换字段作为 set 输入。
@@ -331,7 +331,7 @@ LOGGER_API int logger_create(const logger_config_t *, logger_t **out);
  * get 返回本线程存储的借用指针，不得跨线程或在线程退出后使用，
  * 下一次本线程 set/clear 将使先前快照中的字符串内容失效。
  */
-LOGGER_API int logger_context_set(const logger_context_t *);
+LOGGER_API int logger_context_set(const logger_context_t *c);
 LOGGER_API int logger_context_clear(void);
 LOGGER_API int logger_context_get(logger_context_t *out);
 
@@ -351,8 +351,8 @@ LOGGER_API int logger_mask_secret(const char *value, char *out, size_t out_size,
 				  size_t visible_prefix, size_t visible_suffix);
 
 /* 与 logger_log 相同的普通记录合同，来源参数使用值结构。 */
-LOGGER_API int logger_log_source(logger_t *, logger_level_t, logger_source_t,
-				 const char *, ...)
+LOGGER_API int logger_log_source(logger_t *l, logger_level_t level,
+				 logger_source_t source, const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 4, 5)))
 #endif
@@ -371,7 +371,7 @@ LOGGER_API int logger_destroy(logger_t **owner);
  * 写输出槽，所有失败保持原值。准入检查先于实例访问，NULL 参数 -EINVAL。
  * 允许观察仍然存活的 STOPPING/STOPPED 实例；调用者须保护其生命周期。
  */
-LOGGER_API int logger_get_state(const logger_t *, logger_state_t *out);
+LOGGER_API int logger_get_state(const logger_t *l, logger_state_t *out);
 /* 普通记录返回 0/-errno，所有正常返回保留调用方 errno，GNU %m 使用入口值。
  * 级别过滤是成功的无操作；非法参数和停止状态先于过滤检查。
  * 同步调用返回本次输出结果；异步成功表示入队，不表示已输出或持久化。
@@ -391,8 +391,9 @@ LOGGER_API int logger_get_state(const logger_t *, logger_state_t *out);
  * 均不会保留指向可卸载业务 .so 中存储空间的引用。
  * 这不允许在未完成的调用及日志工作线程结束前卸载 liblogger 本身
  * 或回调提供方。 */
-LOGGER_API int logger_log(logger_t *, logger_level_t, const char *,
-			  const char *, int, const char *, const char *, ...)
+LOGGER_API int logger_log(logger_t *l, logger_level_t level, const char *module,
+			  const char *file, int line, const char *function,
+			  const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 7, 8)))
 #endif
@@ -402,9 +403,10 @@ LOGGER_API int logger_log(logger_t *, logger_level_t, const char *,
  * 并对文件强制同步。它不等待先前异步记录的完成水位，也不确认远端持久化。
  * 普通记录与本路径的截断差异见 docs/v2/RECORD_API.md。
  */
-LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
-				      const char *, int, const char *,
-				      const char *, ...)
+LOGGER_API int logger_log_sync_status(logger_t *l, logger_level_t level,
+				      const char *module, const char *file,
+				      int line, const char *function,
+				      const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 7, 8)))
 #endif
@@ -419,34 +421,37 @@ LOGGER_API int logger_log_sync_status(logger_t *, logger_level_t, const char *,
  * 失败并不证明已静止：销毁实例前须停止并等待所有借用者结束。
  * 这不是远端 syslog 持久化确认，也不提供 I/O 超时。
  * 调用者必须始终保护显式实例的生命周期。 */
-LOGGER_API int logger_flush(logger_t *);
+LOGGER_API int logger_flush(logger_t *l);
 /* 重新打开当前实例的文件后端。0/-errno，所有正常返回保留 errno。
  * 就绪后 NULL 或未选择文件输出返回 -EINVAL；不改变实例所有权。
  * 返回错误可能发生于文件切换之后，不保证没有 I/O 副作用或可安全重试。
  */
-LOGGER_API int logger_reopen(logger_t *);
+LOGGER_API int logger_reopen(logger_t *l);
 /* 显式级别设置：0/-errno，保留入口 errno；先做进程准入，
  * 再验证非空实例和 TRACE..OFF 范围。只执行 release-free 的 relaxed
  * 原子更新，无锁、不访问后端、不改变取消策略。允许在调用方证明仍
  * 存活的 STOPPING/STOPPED 实例上更新；不允许与销毁并发。
  * 失败不修改级别。
  */
-LOGGER_API int logger_set_instance_level(logger_t *, logger_level_t);
-LOGGER_API int logger_dropped(const logger_t *, uint64_t *out);
-LOGGER_API int logger_get_metrics(const logger_t *, logger_metrics_t *);
-LOGGER_API int logger_get_io_metrics(const logger_t *, logger_io_metrics_t *);
+LOGGER_API int logger_set_instance_level(logger_t *l, logger_level_t v);
+LOGGER_API int logger_dropped(const logger_t *l, uint64_t *out);
+LOGGER_API int logger_get_metrics(const logger_t *l, logger_metrics_t *out);
+LOGGER_API int logger_get_io_metrics(const logger_t *l,
+				     logger_io_metrics_t *out);
 /* 无锁且不获取后端锁的近似快照，不执行 I/O 或切换取消策略。
  * 同其他查询：0/-errno、保留 errno，完整成功才写输出，不保证跨字段一致。
  * 调用者仍须保护 logger_t 的生命周期，避免并发销毁。
  */
-LOGGER_API int logger_get_diagnostics(const logger_t *, logger_diagnostics_t *);
+LOGGER_API int logger_get_diagnostics(const logger_t *l,
+				      logger_diagnostics_t *out);
 /* 一致的 File 后端快照。0/-errno、保留 errno、完整成功才写输出。
  * 未选择文件输出时返回 -ENOTSUP。不执行 flush/fsync/reopen，快照为只读。 */
-LOGGER_API int logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
+LOGGER_API int logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out);
 /* 要求实例存活；与其他控制操作一样，由外部保护生命周期。
  * 0/-errno、保留 errno。未选择 Syslog 时返回 -ENOTSUP；出错时输出不变。
  * 不执行连接、重试、刷新，也不重置粘滞 I/O 错误。 */
-LOGGER_API int logger_get_syslog_metrics(logger_t *, logger_syslog_metrics_t *);
+LOGGER_API int logger_get_syslog_metrics(logger_t *l,
+					 logger_syslog_metrics_t *out);
 /* 默认槽只借用普通实例，不创建、刷新或销毁实例。
  * logger_default_set(NULL, next) 绑定；(old, next) 原子替换；(old, NULL) 解绑。
  * 0/-errno，保留 errno。expected 与当前绑定不符或排队期间代次变化：-ESTALE。
@@ -483,21 +488,22 @@ LOGGER_API int logger_default_reopen(void);
  * 已提交后解锁证明或取消恢复失败仍可能返回负值；不保证回滚。
  * 全局锁解锁证明失败将毒化绑定，不可据此销毁可能仍被借用的实例。
  */
-LOGGER_API int logger_set_level(logger_level_t);
+LOGGER_API int logger_set_level(logger_level_t level);
 /* 默认查询在固定代次的借用完全归还后才写输出。0/-errno、保留 errno，
  * 所有失败保持输出槽原值；空槽 -ENODEV、转换中 -EAGAIN、代次失效 -ESHUTDOWN。
  */
 LOGGER_API int logger_global_dropped(uint64_t *out);
-LOGGER_API int logger_get_global_metrics(logger_metrics_t *);
-LOGGER_API int logger_get_global_io_metrics(logger_io_metrics_t *);
-LOGGER_API int logger_get_global_diagnostics(logger_diagnostics_t *);
+LOGGER_API int logger_get_global_metrics(logger_metrics_t *out);
+LOGGER_API int logger_get_global_io_metrics(logger_io_metrics_t *out);
+LOGGER_API int logger_get_global_diagnostics(logger_diagnostics_t *out);
 /* 通过当前默认代次获取相同的只读文件快照，遵循上述输出与借用规则。 */
-LOGGER_API int logger_get_global_file_metrics(logger_file_metrics_t *);
+LOGGER_API int logger_get_global_file_metrics(logger_file_metrics_t *out);
 /* 固定一个默认代次执行 logger_log 的普通记录合同。宏 LOG_* 传回该状态。
  * 默认生命周期锁释放证明失败优先返回安全错误，并保守保留借用。
  */
-LOGGER_API int logger_global_write(logger_level_t, const char *, const char *,
-				   int, const char *, const char *, ...)
+LOGGER_API int logger_global_write(logger_level_t level, const char *module,
+				   const char *file, int line, const char *func,
+				   const char *fmt, ...)
 #if defined(__GNUC__) || defined(__clang__)
 	__attribute__((format(printf, 6, 7)))
 #endif

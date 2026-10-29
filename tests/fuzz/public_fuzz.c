@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 	uint32_t state = (uint32_t)seed;
 	if (!state)
 		state = UINT32_C(0x9e3779b9);
-	for (unsigned i = 0; i < 2048; ++i) {
+	for (unsigned int i = 0; i < 2048; ++i) {
 		uint8_t bytes[128];
 		size_t length = 5 + next_random(&state) % 120u;
 		for (size_t j = 0; j < length; ++j)

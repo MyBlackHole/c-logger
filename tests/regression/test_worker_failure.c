@@ -35,7 +35,7 @@ static enum scenario selected;
 /* instance 仅供工作线程和包装器借用，独占拥有者槽必须另行保存。 */
 static logger_t *instance;
 static logger_t **owner_slot;
-static void *(*worker_fn)(void *);
+static void *(*worker_fn)(void *arg);
 static void *worker_arg;
 static pthread_t worker_id;
 static _Thread_local int is_worker;
@@ -53,22 +53,23 @@ static _Atomic int release_waiter;
 static _Atomic int notifier_attempt;
 static _Atomic int error_broadcasts;
 static _Atomic int producers_returned;
-static unsigned joined;
-static unsigned released;
+static unsigned int joined;
+static unsigned int released;
 static size_t joined_completed;
 static uint64_t joined_emitted;
 
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
-int __real_pthread_join(pthread_t, void **);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-int __real_pthread_cond_broadcast(pthread_cond_t *);
-char *__real_strrchr(const char *, int);
-int __real_logger_file_writev(logger_file_t *, struct iovec *, int, size_t,
-			      const struct timespec *, int);
-int __real_logger_runtime_free(void *);
+int __real_pthread_create(pthread_t *id, const pthread_attr_t *attr,
+			  void *(*fn)(void *arg), void *arg);
+int __real_pthread_join(pthread_t id, void **result);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+int __real_pthread_cond_broadcast(pthread_cond_t *cv);
+char *__real_strrchr(const char *s, int c);
+int __real_logger_file_writev(struct logger_file *f, struct iovec *vec,
+			      int count, size_t length,
+			      const struct timespec *ts, int sync);
+int __real_logger_runtime_free(void *ptr);
 
 static int healthy_worker(void)
 {
@@ -83,7 +84,7 @@ static int defer_waiter(void)
 
 static void await_count(const _Atomic int *value, int expected)
 {
-	for (unsigned i = 0; i < 5000; ++i) {
+	for (unsigned int i = 0; i < 5000; ++i) {
 		if (atomic_load(value) >= expected)
 			return;
 		nap_ms();
@@ -106,7 +107,7 @@ static void *worker_entry(void *unused)
 }
 
 int __wrap_pthread_create(pthread_t *id, const pthread_attr_t *attr,
-			  void *(*fn)(void *), void *arg)
+			  void *(*fn)(void *arg), void *arg)
 {
 	instance = arg;
 	worker_fn = fn;
@@ -186,9 +187,9 @@ char *__wrap_strrchr(const char *s, int c)
 	return __real_strrchr(s, c);
 }
 
-int __wrap_logger_file_writev(logger_file_t *f, struct iovec *vec, int count,
-			      size_t length, const struct timespec *ts,
-			      int sync)
+int __wrap_logger_file_writev(struct logger_file *f, struct iovec *vec,
+			      int count, size_t length,
+			      const struct timespec *ts, int sync)
 {
 	if (selected == BACKEND_ERROR)
 		return -ENOSPC;
@@ -270,7 +271,7 @@ static void *flush(void *arg)
 
 static void await_later_slot(void)
 {
-	for (unsigned i = 0; i < 5000; ++i) {
+	for (unsigned int i = 0; i < 5000; ++i) {
 		if (atomic_load(&instance->q.slots[1].seq) == 2)
 			return;
 		nap_ms();
@@ -280,10 +281,10 @@ static void await_later_slot(void)
 
 static void test_failure_or_gap(void)
 {
-	unsigned count = selected == MULTIPLE || selected == GLOBAL ? 4 : 1;
-	unsigned producers = selected == EMPTY_TARGET ? 0 :
-			     selected == LATER_SLOT   ? 2 :
-							1;
+	unsigned int count = selected == MULTIPLE || selected == GLOBAL ? 4 : 1;
+	unsigned int producers = selected == EMPTY_TARGET ? 0 :
+				 selected == LATER_SLOT	  ? 2 :
+							    1;
 	pthread_t producer[2];
 	pthread_t flushers[4];
 	struct answer answers[4] = { 0 };
@@ -305,7 +306,7 @@ static void test_failure_or_gap(void)
 	if (selected == SPILL)
 		CHECK(logger_queue_spill_in_use(&instance->q) == 1);
 
-	for (unsigned i = 0; i < count; ++i) {
+	for (unsigned int i = 0; i < count; ++i) {
 		CHECK(!__real_pthread_create(&flushers[i], NULL, flush,
 					     &answers[i]));
 		if (defer_waiter())
@@ -336,7 +337,7 @@ static void test_failure_or_gap(void)
 	/* 即使生产者仍拥有其预留，失败也必须释放全部等待者。
 	 * 通知不得假装完成该槽位。
 	 */
-	for (unsigned i = 0; i < count; ++i) {
+	for (unsigned int i = 0; i < count; ++i) {
 		void *result;
 
 		wait_flag(&answers[i].done);
@@ -356,7 +357,7 @@ static void test_failure_or_gap(void)
 			CHECK(atomic_load(&answers[i].calls) == 0);
 	}
 	atomic_store(&release_head, 1);
-	for (unsigned i = 0; i < producers; ++i)
+	for (unsigned int i = 0; i < producers; ++i)
 		CHECK(!__real_pthread_join(producer[i], NULL));
 	CHECK(atomic_load(&producers_returned) == (int)producers);
 
@@ -396,7 +397,7 @@ static enum scenario scenario_from_name(const char *name)
 		"cancel"
 	};
 
-	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+	for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
 		if (!strcmp(names[i], name))
 			return (enum scenario)i;
 	CHECK(!"unknown scenario");
@@ -431,7 +432,7 @@ int main(int argc, char **argv)
 	wait_flag(&worker_waiting);
 
 	if (selected == NORMAL_DRAIN) {
-		for (unsigned i = 0; i < 5; ++i)
+		for (unsigned int i = 0; i < 5; ++i)
 			logger_log(instance, LOGGER_INFO, "drain", NULL, 0,
 				   NULL, "record %u", i);
 		CHECK(atomic_load(&instance->enqueued) == 5);

@@ -9,7 +9,7 @@ const char *logger_level_name(logger_level_t level)
 {
 	static const char *names[] = { "TRACE", "DEBUG", "INFO", "WARN",
 				       "ERROR", "FATAL", "OFF" };
-	return (unsigned)level <= LOGGER_OFF ? names[level] : "UNKNOWN";
+	return (unsigned int)level <= LOGGER_OFF ? names[level] : "UNKNOWN";
 }
 
 const char *logger_basename(const char *path)
@@ -61,12 +61,12 @@ static int canonical_time(const struct timestamp_cache *cache)
 {
 	const char *d = cache->date;
 	const char *z = cache->zone;
-	static const unsigned days[] = { 31, 28, 31, 30, 31, 30,
-					 31, 31, 30, 31, 30, 31 };
+	static const unsigned int days[] = { 31, 28, 31, 30, 31, 30,
+					     31, 31, 30, 31, 30, 31 };
 
 	if (!cache->valid || strlen(d) != 19 || strlen(z) != 5)
 		return 0;
-	for (unsigned i = 0; i < 19; ++i) {
+	for (unsigned int i = 0; i < 19; ++i) {
 		char delimiter = i == 4 || i == 7   ? '-' :
 				 i == 10	    ? 'T' :
 				 i == 13 || i == 16 ? ':' :
@@ -76,34 +76,38 @@ static int canonical_time(const struct timestamp_cache *cache)
 	}
 	if (z[0] != '+' && z[0] != '-')
 		return 0;
-	for (unsigned i = 1; i < 5; ++i)
+	for (unsigned int i = 1; i < 5; ++i)
 		if (z[i] < '0' || z[i] > '9')
 			return 0;
 
-	unsigned year = (unsigned)(d[0] - '0') * 1000u +
-			(unsigned)(d[1] - '0') * 100u +
-			(unsigned)(d[2] - '0') * 10u + (unsigned)(d[3] - '0');
-	unsigned month = (unsigned)(d[5] - '0') * 10u + (unsigned)(d[6] - '0');
-	unsigned day = (unsigned)(d[8] - '0') * 10u + (unsigned)(d[9] - '0');
-	unsigned hour = (unsigned)(d[11] - '0') * 10u + (unsigned)(d[12] - '0');
-	unsigned minute =
-		(unsigned)(d[14] - '0') * 10u + (unsigned)(d[15] - '0');
-	unsigned second =
-		(unsigned)(d[17] - '0') * 10u + (unsigned)(d[18] - '0');
-	unsigned zone_hour =
-		(unsigned)(z[1] - '0') * 10u + (unsigned)(z[2] - '0');
-	unsigned zone_minute =
-		(unsigned)(z[3] - '0') * 10u + (unsigned)(z[4] - '0');
+	unsigned int year = (unsigned int)(d[0] - '0') * 1000u +
+			    (unsigned int)(d[1] - '0') * 100u +
+			    (unsigned int)(d[2] - '0') * 10u +
+			    (unsigned int)(d[3] - '0');
+	unsigned int month =
+		(unsigned int)(d[5] - '0') * 10u + (unsigned int)(d[6] - '0');
+	unsigned int day =
+		(unsigned int)(d[8] - '0') * 10u + (unsigned int)(d[9] - '0');
+	unsigned int hour =
+		(unsigned int)(d[11] - '0') * 10u + (unsigned int)(d[12] - '0');
+	unsigned int minute =
+		(unsigned int)(d[14] - '0') * 10u + (unsigned int)(d[15] - '0');
+	unsigned int second =
+		(unsigned int)(d[17] - '0') * 10u + (unsigned int)(d[18] - '0');
+	unsigned int zone_hour =
+		(unsigned int)(z[1] - '0') * 10u + (unsigned int)(z[2] - '0');
+	unsigned int zone_minute =
+		(unsigned int)(z[3] - '0') * 10u + (unsigned int)(z[4] - '0');
 
 	if (!year || !month || month > 12 || !day || hour > 23 || minute > 59 ||
 	    second > 60 || zone_hour > 23 || zone_minute > 59)
 		return 0;
-	unsigned leap = !(year % 4) && (year % 100 || !(year % 400));
+	unsigned int leap = !(year % 4) && (year % 100 || !(year % 400));
 	return day <= days[month - 1] + (month == 2 && leap);
 }
 
-static int format_line(const logger_t *l, const logger_message_t *m, char *out,
-		       size_t cap, size_t *length, int strict)
+static int format_line(const logger_t *l, const struct logger_message *m,
+		       char *out, size_t cap, size_t *length, int strict)
 {
 	if (!cap)
 		return strict ? -EOVERFLOW : 0;
@@ -186,7 +190,7 @@ static int format_line(const logger_t *l, const logger_message_t *m, char *out,
 	return 0;
 }
 
-size_t logger_format_line(const logger_t *l, const logger_message_t *m,
+size_t logger_format_line(const logger_t *l, const struct logger_message *m,
 			  char *out, size_t cap)
 {
 	size_t length = 0;
@@ -200,8 +204,9 @@ size_t logger_format_line(const logger_t *l, const logger_message_t *m,
 	return length;
 }
 
-int logger_format_line_checked(const logger_t *l, const logger_message_t *m,
-			       char *out, size_t cap, size_t *length)
+int logger_format_line_checked(const logger_t *l,
+			       const struct logger_message *m, char *out,
+			       size_t cap, size_t *length)
 {
 	if (!length)
 		return -EINVAL;

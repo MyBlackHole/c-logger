@@ -32,7 +32,7 @@ static int child_error;
 static int child_valid;
 static _Thread_local uint64_t *snapshot_fds;
 static _Thread_local size_t snapshot_bytes;
-static _Thread_local unsigned fork_depth;
+static _Thread_local unsigned int fork_depth;
 static _Thread_local DIR *directory_lease;
 static uint64_t *child_bitmap;
 static size_t child_bitmap_bytes;
@@ -110,7 +110,7 @@ static int is_owned(int fd)
 {
 	return fd >= 0 && (size_t)fd / 64u < owned_bytes / sizeof(*owned) &&
 	       (owned[(size_t)fd / 64u] &
-		(UINT64_C(1) << ((unsigned)fd % 64u)));
+		(UINT64_C(1) << ((unsigned int)fd % 64u)));
 }
 
 static int register_fd(int fd)
@@ -123,14 +123,14 @@ static int register_fd(int fd)
 		logger_fork_resource_poison(EUCLEAN);
 		return EUCLEAN;
 	}
-	owned[(size_t)fd / 64u] |= UINT64_C(1) << ((unsigned)fd % 64u);
+	owned[(size_t)fd / 64u] |= UINT64_C(1) << ((unsigned int)fd % 64u);
 	++owned_count;
 	return 0;
 }
 
 static void unregister_fd(int fd)
 {
-	owned[(size_t)fd / 64u] &= ~(UINT64_C(1) << ((unsigned)fd % 64u));
+	owned[(size_t)fd / 64u] &= ~(UINT64_C(1) << ((unsigned int)fd % 64u));
 	--owned_count;
 }
 
@@ -351,7 +351,8 @@ void logger_fork_fd_child(void)
 			uint64_t bits = snapshot_fds[word];
 			snapshot_fds[word] = 0;
 			while (bits) {
-				unsigned bit = (unsigned)__builtin_ctzll(bits);
+				unsigned int bit =
+					(unsigned int)__builtin_ctzll(bits);
 				bits &= bits - 1u;
 				int fd = (int)(word * 64u + bit);
 				if (close(fd) && !child_error)

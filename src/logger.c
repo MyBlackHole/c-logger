@@ -24,7 +24,6 @@
 #include <time.h>
 #include <unistd.h>
 #define PATH_MAX_ 4096
-typedef logger_message_t msg_t;
 static int reject_access(void)
 {
 	if (logger_process_is_child()) {
@@ -76,7 +75,7 @@ static void copy_ctx(char *d, size_t n, const char *s)
 int logger_context_set(const logger_context_t *c)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 	if (rc)
 		goto done;
@@ -106,7 +105,7 @@ int logger_context_clear(void)
 int logger_context_get(logger_context_t *out)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 	if (rc)
 		goto done;
@@ -123,7 +122,7 @@ done:
 	errno = saved;
 	return rc;
 }
-static void capture_context(msg_t *m)
+static void capture_context(struct logger_message *m)
 {
 	logger_context_t c = g_ctx;
 	copy_ctx(m->request_id, sizeof(m->request_id), c.request_id);
@@ -136,9 +135,9 @@ static pid_t tid_(void)
 	return (pid_t)syscall(SYS_gettid);
 }
 
-static unsigned capture_mask_from_config(const logger_config_t *cfg)
+static unsigned int capture_mask_from_config(const logger_config_t *cfg)
 {
-	unsigned mask = 0;
+	unsigned int mask = 0;
 	if (cfg->detail >= LOGGER_DETAIL_NORMAL)
 		mask |= LOGGER_CAPTURE_MODULE;
 	if (cfg->detail >= LOGGER_DETAIL_VERBOSE) {
@@ -155,11 +154,11 @@ static unsigned capture_mask_from_config(const logger_config_t *cfg)
 	return mask;
 }
 
-static void prepare_record_metadata(logger_t *l, msg_t *m, const char *module,
-				    const char *file, int line,
-				    const char *function)
+static void prepare_record_metadata(logger_t *l, struct logger_message *m,
+				    const char *module, const char *file,
+				    int line, const char *function)
 {
-	unsigned mask = l->capture_mask;
+	unsigned int mask = l->capture_mask;
 	m->metadata_mask = (uint8_t)(mask & LOGGER_CAPTURE_RECORD_MASK);
 	if (mask & LOGGER_CAPTURE_MODULE)
 		m->module = module;
@@ -211,7 +210,7 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 {
 	if (lv < atomic_load_explicit(&l->level, memory_order_relaxed))
 		return 0;
-	msg_t m = { .level = lv };
+	struct logger_message m = { .level = lv };
 	prepare_record_metadata(l, &m, mod, f, line, fn);
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
 		return -(errno ? errno : EIO);
@@ -274,12 +273,12 @@ int logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
 			 const char *fmt, va_list args)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
 		goto out;
-	if (!l || !fmt || (unsigned)level >= LOGGER_OFF)
+	if (!l || !fmt || (unsigned int)level >= LOGGER_OFF)
 		rc = -EINVAL;
 	else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
 		 LOGGER_STATE_RUNNING)
@@ -319,28 +318,28 @@ static int copy_logger_config(const logger_config_t *in, logger_config_t *out)
 }
 static int validate_logger_config(const logger_config_t *cfg)
 {
-	const unsigned output_mask = LOGGER_OUT_STDERR | LOGGER_OUT_FILE |
-				     LOGGER_OUT_SYSLOG;
-	if ((unsigned)cfg->level > LOGGER_OFF ||
-	    (unsigned)cfg->detail > LOGGER_DETAIL_DEBUG || !cfg->outputs ||
+	const unsigned int output_mask = LOGGER_OUT_STDERR | LOGGER_OUT_FILE |
+					 LOGGER_OUT_SYSLOG;
+	if ((unsigned int)cfg->level > LOGGER_OFF ||
+	    (unsigned int)cfg->detail > LOGGER_DETAIL_DEBUG || !cfg->outputs ||
 	    (cfg->outputs & ~output_mask) ||
-	    (unsigned)cfg->rotation.mode > LOGGER_ROTATE_EXTERNAL ||
+	    (unsigned int)cfg->rotation.mode > LOGGER_ROTATE_EXTERNAL ||
 	    (cfg->file_mode & ~0777u) ||
-	    (unsigned)cfg->flush_level > LOGGER_OFF)
+	    (unsigned int)cfg->flush_level > LOGGER_OFF)
 		return -EINVAL;
-	for (unsigned i = 0; i < 6; ++i)
-		if ((unsigned)cfg->overflow[i] > LOGGER_OVERFLOW_SYNC)
+	for (unsigned int i = 0; i < 6; ++i)
+		if ((unsigned int)cfg->overflow[i] > LOGGER_OVERFLOW_SYNC)
 			return -EINVAL;
 	return 0;
 }
 
-typedef struct {
+struct logger_ctor_state {
 	int emit_mu_ready;
 	int progress_mu_ready;
 	int progress_cv_ready;
 	int queue_ready;
 	int worker_started;
-} logger_ctor_state_t;
+};
 
 static void logger_ctor_note_proof_error(logger_t *l, int rc)
 {
@@ -360,7 +359,8 @@ static void logger_ctor_note_proof_error(logger_t *l, int rc)
  * 满足静默期前提。销毁/线程回收/计数错误作为额外不变量故障保守保留容器。
  * 调用者保留原始构造 errno；此返回值只用于清理诊断。
  */
-static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
+static int logger_ctor_rollback(logger_t *l,
+				const struct logger_ctor_state *state)
 {
 	if (!l)
 		return logger_process_object_release();
@@ -443,7 +443,7 @@ static int logger_ctor_rollback(logger_t *l, const logger_ctor_state_t *state)
 static logger_t *create_logger(const logger_config_t *input)
 {
 	logger_config_t cfg;
-	logger_ctor_state_t state = { 0 };
+	struct logger_ctor_state state = { 0 };
 	logger_state_t expected = LOGGER_STATE_CREATED;
 	int rc;
 	if (copy_logger_config(input, &cfg) != 0)
@@ -486,7 +486,7 @@ static logger_t *create_logger(const logger_config_t *input)
 	atomic_init(&l->first_error, 0);
 	atomic_init(&l->lifecycle_error, 0);
 	atomic_init(&l->synchronization_error, 0);
-	for (unsigned i = 0; i < 6; ++i) {
+	for (unsigned int i = 0; i < 6; ++i) {
 		atomic_init(&l->dropped_by_level[i], 0);
 		l->overflow[i] = cfg.overflow[i];
 	}
@@ -604,7 +604,8 @@ static void cancel_unreturned_logger(void *arg)
 /* 将所有权交接与构造分开：清理宏可能实现 setjmp 作用域，
  * 而构造涉及许多可变资源。
  */
-static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
+static logger_t *finish_create(struct logger_scope *scope, logger_t *l,
+			       int error)
 {
 	int rc;
 
@@ -625,7 +626,7 @@ static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
 
 static logger_t *create_entry(const logger_config_t *input)
 {
-	logger_scope_t scope;
+	struct logger_scope scope;
 	if (logger_scope_begin(&scope))
 		return NULL;
 	/* 启用异步取消时，返回拥有所有权的指针无法成为原子交接。
@@ -817,7 +818,7 @@ static int logger_dispose_internal_tracked(logger_t *l, int *released)
 			*released = 1;
 		return rc;
 	}
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 	if (rc)
 		return rc;
@@ -846,7 +847,7 @@ int logger_destroy(logger_t **owner)
 {
 	int saved = errno;
 	int rc;
-	logger_scope_t scope;
+	struct logger_scope scope;
 
 	logger_destroy_receipt_reset();
 	/* 拒绝发生在读取拥有者槽和消费其内容之前。普通调用者必须提供
@@ -893,12 +894,12 @@ int logger_log(logger_t *l, logger_level_t level, const char *module,
 	       const char *fmt, ...)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
 		goto out;
-	rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
+	rc = !l || !fmt || (unsigned int)level >= LOGGER_OFF ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
@@ -918,12 +919,12 @@ int logger_log_source(logger_t *l, logger_level_t level, logger_source_t source,
 		      const char *fmt, ...)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
 		goto out;
-	rc = !l || !fmt || (unsigned)level >= LOGGER_OFF ? -EINVAL : 0;
+	rc = !l || !fmt || (unsigned int)level >= LOGGER_OFF ? -EINVAL : 0;
 	if (!rc && atomic_load_explicit(&l->state, memory_order_acquire) !=
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
@@ -945,19 +946,19 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 			   const char *function, const char *fmt, ...)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
 		goto out;
-	if (!l || !fmt || (unsigned)level >= LOGGER_OFF)
+	if (!l || !fmt || (unsigned int)level >= LOGGER_OFF)
 		rc = -EINVAL;
 	else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
 		 LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	else if (level >=
 		 atomic_load_explicit(&l->level, memory_order_relaxed)) {
-		logger_message_t msg = { .level = level };
+		struct logger_message msg = { .level = level };
 		prepare_record_metadata(l, &msg, module, file, line, function);
 		if (clock_gettime(CLOCK_REALTIME, &msg.ts))
 			rc = -(errno ? errno : EIO);
@@ -985,7 +986,7 @@ out:
 int logger_reopen(logger_t *l)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
@@ -1131,7 +1132,7 @@ int logger_sync_outputs_locked(logger_t *l)
 int logger_flush(logger_t *l)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
 
 	if (rc)
@@ -1190,7 +1191,7 @@ int logger_set_instance_level(logger_t *l, logger_level_t v)
 		rc = -errno;
 		goto out;
 	}
-	rc = !l || (unsigned)v > LOGGER_OFF ? -EINVAL : 0;
+	rc = !l || (unsigned int)v > LOGGER_OFF ? -EINVAL : 0;
 	if (!rc)
 		logger_level_store_relaxed(&l->level, v);
 out:
@@ -1209,7 +1210,7 @@ int logger_dropped(const logger_t *l, uint64_t *out)
 	}
 	if (!l || !out)
 		goto done;
-	for (unsigned i = 0; i < 6; i++)
+	for (unsigned int i = 0; i < 6; i++)
 		n += atomic_load_explicit(&l->dropped_by_level[i],
 					  memory_order_relaxed);
 	*out = n;
@@ -1230,7 +1231,7 @@ int logger_get_metrics(const logger_t *l, logger_metrics_t *out)
 	if (!l || !out)
 		goto done;
 	memset(out, 0, sizeof(*out));
-	for (unsigned i = 0; i < 6; i++)
+	for (unsigned int i = 0; i < 6; i++)
 		out->dropped[i] = atomic_load_explicit(&l->dropped_by_level[i],
 						       memory_order_relaxed);
 	out->queue_high_watermark = atomic_load_explicit(
@@ -1299,7 +1300,7 @@ int logger_get_diagnostics(const logger_t *l, logger_diagnostics_t *out)
 						     memory_order_acquire) :
 				0;
 
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		out->dropped_records += atomic_load_explicit(
 			&l->dropped_by_level[i], memory_order_relaxed);
 	out->sync_fallbacks =
@@ -1395,7 +1396,7 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 int logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	logger_file_metrics_t snapshot;
 	int rc = logger_scope_begin(&scope);
 
@@ -1414,7 +1415,7 @@ done:
 int logger_get_syslog_metrics(logger_t *l, logger_syslog_metrics_t *out)
 {
 	int saved = errno;
-	logger_scope_t scope;
+	struct logger_scope scope;
 	logger_syslog_metrics_t snapshot;
 	int rc = logger_scope_begin(&scope);
 

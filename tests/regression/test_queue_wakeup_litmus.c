@@ -8,11 +8,11 @@
 
 #define ROUNDS 20000
 
-static logger_queue_t queue;
+static struct logger_queue queue;
 static pthread_barrier_t start_barrier;
 static pthread_barrier_t done_barrier;
-static _Atomic unsigned worker_saw_record;
-static _Atomic unsigned producer_saw_waiting;
+static _Atomic unsigned int worker_saw_record;
+static _Atomic unsigned int producer_saw_waiting;
 
 static void wait_barrier(pthread_barrier_t *barrier)
 {
@@ -25,11 +25,12 @@ static void *worker_side(void *arg)
 {
 	(void)arg;
 
-	for (unsigned i = 0; i < ROUNDS; ++i) {
+	for (unsigned int i = 0; i < ROUNDS; ++i) {
 		wait_barrier(&start_barrier);
 		logger_queue_wait_arm_recheck(&queue);
-		unsigned seen = atomic_load_explicit(&queue.slots[0].seq,
-						     memory_order_acquire) == 1;
+		unsigned int seen =
+			atomic_load_explicit(&queue.slots[0].seq,
+					     memory_order_acquire) == 1;
 		atomic_store_explicit(&worker_saw_record, seen,
 				      memory_order_relaxed);
 		wait_barrier(&done_barrier);
@@ -41,12 +42,13 @@ static void *producer_side(void *arg)
 {
 	(void)arg;
 
-	for (unsigned i = 0; i < ROUNDS; ++i) {
+	for (unsigned int i = 0; i < ROUNDS; ++i) {
 		wait_barrier(&start_barrier);
 		atomic_store_explicit(&queue.slots[0].seq, 1,
 				      memory_order_release);
-		unsigned seen =
-			(unsigned)logger_queue_wait_probe_after_publish(&queue);
+		unsigned int seen =
+			(unsigned int)logger_queue_wait_probe_after_publish(
+				&queue);
 		atomic_store_explicit(&producer_saw_waiting, seen,
 				      memory_order_relaxed);
 		wait_barrier(&done_barrier);
@@ -56,7 +58,7 @@ static void *producer_side(void *arg)
 
 static void check_reservation_gap(void)
 {
-	logger_queue_t q;
+	struct logger_queue q;
 
 	CHECK(logger_queue_init(&q, 2) == 0);
 
@@ -91,9 +93,9 @@ int main(void)
 	CHECK(pthread_create(&worker, NULL, worker_side, NULL) == 0);
 	CHECK(pthread_create(&producer, NULL, producer_side, NULL) == 0);
 
-	unsigned worker_wins = 0;
-	unsigned producer_wins = 0;
-	for (unsigned i = 0; i < ROUNDS; ++i) {
+	unsigned int worker_wins = 0;
+	unsigned int producer_wins = 0;
+	for (unsigned int i = 0; i < ROUNDS; ++i) {
 		/* 主线程重置下一次判别测试实例时，两个参与者都在 done_barrier 处静止。
 		 * 生产初始化后的写入只使用 QUEUE_WAKEUP_PROOF.md 说明的读改写辅助函数。
 		 */
@@ -109,9 +111,9 @@ int main(void)
 		wait_barrier(&start_barrier);
 		wait_barrier(&done_barrier);
 
-		unsigned saw_record = atomic_load_explicit(
+		unsigned int saw_record = atomic_load_explicit(
 			&worker_saw_record, memory_order_relaxed);
-		unsigned saw_waiting = atomic_load_explicit(
+		unsigned int saw_waiting = atomic_load_explicit(
 			&producer_saw_waiting, memory_order_relaxed);
 
 		/* 禁止结果：

@@ -19,19 +19,19 @@ struct logger_runtime {
 	pthread_mutex_t global_control_mu;
 	pthread_rwlock_t global_lifetime_lock;
 	pthread_mutex_t console_mu;
-	unsigned initialized;
+	unsigned int initialized;
 	_Atomic int resource_error;
 	uint64_t *owned_fds;
 	size_t owned_bytes;
 	size_t owned_count;
 	struct logger_allocation *allocations;
 	size_t allocation_count;
-	_Atomic unsigned live_objects;
+	_Atomic unsigned int live_objects;
 
 	struct logger *global_logger;
 	_Atomic uint64_t global_ticket;
 	_Atomic int global_lock_error;
-	_Atomic unsigned console_config;
+	_Atomic unsigned int console_config;
 	_Atomic int console_lock_error;
 };
 

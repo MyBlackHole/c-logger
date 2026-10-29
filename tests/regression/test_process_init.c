@@ -24,8 +24,8 @@ static int init_result;
 static int early_handler_done;
 static _Atomic int forbid_resources;
 
-int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
-int __real_pthread_setcancelstate(int, int *);
+int __real_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void));
+int __real_pthread_setcancelstate(int state, int *old);
 int __real_sched_yield(void);
 
 int __wrap_pthread_setcancelstate(int state, int *old)
@@ -237,7 +237,8 @@ static void in_progress(const char *mode)
 	CHECK(atomic_load(&registration_calls) == (retry ? 2 : 1));
 }
 
-void *__real_mmap(void *, size_t, int, int, int, off_t);
+void *__real_mmap(void *addr, size_t len, int prot, int flags, int fd,
+		  off_t offset);
 void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd,
 		  off_t offset)
 {
@@ -245,21 +246,21 @@ void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd,
 	return __real_mmap(addr, len, prot, flags, fd, offset);
 }
 
-int __real_pthread_mutex_lock(pthread_mutex_t *);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	CHECK(!atomic_load(&forbid_resources));
 	return __real_pthread_mutex_lock(mutex);
 }
 
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *lock);
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
 {
 	CHECK(!atomic_load(&forbid_resources));
 	return __real_pthread_rwlock_rdlock(lock);
 }
 
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *lock);
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *lock)
 {
 	CHECK(!atomic_load(&forbid_resources));
@@ -270,7 +271,7 @@ static void cold_rejected(void)
 {
 	CHECK(logger_runtime_current() == NULL);
 	atomic_store(&forbid_resources, 1);
-	for (unsigned i = 0; i < 3; ++i) {
+	for (unsigned int i = 0; i < 3; ++i) {
 		CHECK(logger_process_require() == -ENODEV);
 		check_process_rejection(ENODEV);
 	}

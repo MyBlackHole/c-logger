@@ -12,11 +12,11 @@ static int armed;
 static int fail_mask;
 static int fail_pending;
 static int fail_unlock;
-static unsigned locks;
-static unsigned unlocks;
+static unsigned int locks;
+static unsigned int unlocks;
 static pthread_mutex_t *console_mutex;
 
-int __real_pthread_mutex_lock(pthread_mutex_t *);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_lock(mutex);
@@ -26,7 +26,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 	return rc;
 }
 
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_unlock(mutex);
@@ -40,7 +40,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 	return rc;
 }
 
-int __real_pthread_sigmask(int, const sigset_t *, sigset_t *);
+int __real_pthread_sigmask(int how, const sigset_t *set, sigset_t *old);
 int __wrap_pthread_sigmask(int how, const sigset_t *set, sigset_t *old)
 {
 	if (armed && how == SIG_BLOCK && fail_mask) {
@@ -50,7 +50,7 @@ int __wrap_pthread_sigmask(int how, const sigset_t *set, sigset_t *old)
 	return __real_pthread_sigmask(how, set, old);
 }
 
-int __real_sigpending(sigset_t *);
+int __real_sigpending(sigset_t *pending);
 int __wrap_sigpending(sigset_t *pending)
 {
 	if (armed && fail_pending) {

@@ -16,16 +16,16 @@
 
 _Static_assert(LOGGER_MESSAGE_MAX - 1u <= UINT16_MAX,
 	       "queue text_len must fit uint16_t");
-_Static_assert(sizeof(unsigned) * CHAR_BIT == LOGGER_QUEUE_SPILL_WORD_BITS,
+_Static_assert(sizeof(unsigned int) * CHAR_BIT == LOGGER_QUEUE_SPILL_WORD_BITS,
 	       "spill bitmap requires 32-bit unsigned");
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2,
 	       "spill bitmap requires lock-free unsigned atomics");
 
-/* 队列槽位不内嵌完整 logger_message_t。
+/* 队列槽位不内嵌完整 struct logger_message。
  * 来源和上下文使用固定快照；正文 <= 512B 直接内嵌，
  * 更长正文保存溢出区索引，由预分配溢出池持有。
  */
-typedef struct {
+struct logger_queue_record {
 	logger_level_t level;
 	struct timespec ts;
 	pid_t pid;
@@ -43,20 +43,20 @@ typedef struct {
 	uint8_t file_len;
 	uint8_t function_len;
 	char inline_text[LOGGER_QUEUE_INLINE_TEXT + 1u];
-} logger_queue_record_t;
+};
 
-typedef struct {
+struct logger_queue_slot {
 	_Atomic size_t seq;
-	logger_queue_record_t record;
-} logger_queue_slot_t;
+	struct logger_queue_record record;
+};
 
-typedef struct {
+struct logger_queue_spill {
 	char text[LOGGER_MESSAGE_MAX];
-} logger_queue_spill_t;
+};
 
-typedef struct {
+struct logger_queue {
 	/* logger_queue_init() 成功后为 OWNED；由 logger_queue_destroy() 最终释放。 */
-	logger_queue_slot_t *slots;
+	struct logger_queue_slot *slots;
 	size_t cap;
 	size_t mask;
 
@@ -64,9 +64,9 @@ typedef struct {
 	 * spill_used 是无锁位图；生产者通过 0->1 CAS 独占块，
 	 * 消费者完成复制后通过原子清位归还。
 	 */
-	logger_queue_spill_t *spills;
+	struct logger_queue_spill *spills;
 	size_t spill_cap;
-	_Atomic unsigned spill_used[LOGGER_QUEUE_SPILL_WORDS];
+	_Atomic unsigned int spill_used[LOGGER_QUEUE_SPILL_WORDS];
 	_Atomic uint64_t spill_exhaustions;
 	size_t storage_bytes;
 
@@ -78,7 +78,7 @@ typedef struct {
 	 * consumer_waiting=1 表示工作线程已进入 wait_mu 保护的“准备睡眠/已睡眠”状态；
 	 * 生产者只有观察到 1 才进入 wait_mu + cond_signal 慢路径。
 	 */
-	_Atomic unsigned consumer_waiting;
+	_Atomic unsigned int consumer_waiting;
 	_Atomic uint64_t wait_count;
 	_Atomic uint64_t producer_wake_signals;
 	_Atomic uint64_t force_wake_signals;
@@ -86,7 +86,7 @@ typedef struct {
 	_Atomic int wait_mu_error;
 	pthread_mutex_t wait_mu;
 	pthread_cond_t wait_cv;
-} logger_queue_t;
+};
 
 /* 防止单消费者丢失唤醒的交接协议。
  *
@@ -97,51 +97,52 @@ typedef struct {
  *
  * 参见 docs/v2/QUEUE_WAKEUP_PROOF.md。
  */
-static inline void logger_queue_wait_arm_recheck(logger_queue_t *q)
+static inline void logger_queue_wait_arm_recheck(struct logger_queue *q)
 {
 	(void)atomic_exchange_explicit(&q->consumer_waiting, 1,
 				       memory_order_acq_rel);
 }
 
-static inline int logger_queue_wait_probe_after_publish(logger_queue_t *q)
+static inline int logger_queue_wait_probe_after_publish(struct logger_queue *q)
 {
 	return atomic_fetch_or_explicit(&q->consumer_waiting, 0,
 					memory_order_acq_rel) != 0;
 }
 
-static inline int logger_queue_wait_claim_signal(logger_queue_t *q)
+static inline int logger_queue_wait_claim_signal(struct logger_queue *q)
 {
 	return atomic_exchange_explicit(&q->consumer_waiting, 0,
 					memory_order_acq_rel) != 0;
 }
 
-static inline void logger_queue_wait_disarm(logger_queue_t *q)
+static inline void logger_queue_wait_disarm(struct logger_queue *q)
 {
 	(void)atomic_exchange_explicit(&q->consumer_waiting, 0,
 				       memory_order_acq_rel);
 }
 
-int logger_queue_init(logger_queue_t *, size_t);
-int logger_queue_destroy(logger_queue_t *);
+int logger_queue_init(struct logger_queue *q, size_t requested);
+int logger_queue_destroy(struct logger_queue *q);
 /* 返回 1 表示入队成功，0 表示未入队，负值表示已发布但唤醒失败。 */
-int logger_queue_push(logger_queue_t *, const logger_message_t *);
-int logger_queue_try_pop(logger_queue_t *, logger_message_t *);
-size_t logger_queue_drain(logger_queue_t *, logger_message_t *, size_t);
-int logger_queue_empty(logger_queue_t *);
+int logger_queue_push(struct logger_queue *q, const struct logger_message *m);
+int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m);
+size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
+			  size_t max);
+int logger_queue_empty(struct logger_queue *q);
 /* 通知和强制唤醒均返回 0 或负 errno；负值不能被当作入队失败回滚。 */
-int logger_queue_notify_if_waiting(logger_queue_t *);
-int logger_queue_wake_force(logger_queue_t *);
-int logger_queue_wait_error(const logger_queue_t *);
-size_t logger_queue_depth(const logger_queue_t *);
+int logger_queue_notify_if_waiting(struct logger_queue *q);
+int logger_queue_wake_force(struct logger_queue *q);
+int logger_queue_wait_error(const struct logger_queue *q);
+size_t logger_queue_depth(const struct logger_queue *q);
 
 /* 私有基准测试与诊断辅助函数，不进入公开 ABI。 */
-size_t logger_queue_storage_bytes(const logger_queue_t *);
-size_t logger_queue_spill_capacity(const logger_queue_t *);
-size_t logger_queue_spill_storage_bytes(const logger_queue_t *);
-uint64_t logger_queue_spill_exhaustions(const logger_queue_t *);
-size_t logger_queue_spill_in_use(const logger_queue_t *);
-uint64_t logger_queue_wait_count(const logger_queue_t *);
-uint64_t logger_queue_producer_wake_signals(const logger_queue_t *);
-uint64_t logger_queue_force_wake_signals(const logger_queue_t *);
+size_t logger_queue_storage_bytes(const struct logger_queue *q);
+size_t logger_queue_spill_capacity(const struct logger_queue *q);
+size_t logger_queue_spill_storage_bytes(const struct logger_queue *q);
+uint64_t logger_queue_spill_exhaustions(const struct logger_queue *q);
+size_t logger_queue_spill_in_use(const struct logger_queue *q);
+uint64_t logger_queue_wait_count(const struct logger_queue *q);
+uint64_t logger_queue_producer_wake_signals(const struct logger_queue *q);
+uint64_t logger_queue_force_wake_signals(const struct logger_queue *q);
 
 #endif

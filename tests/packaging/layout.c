@@ -47,7 +47,7 @@ int main(void)
 	N(l.include_tid);
 	N(l.include_source);
 	printf("ident=%s\n", l.ident);
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		N(l.overflow[i]);
 	N(l.syslog.path == NULL);
 	N(l.syslog.facility);

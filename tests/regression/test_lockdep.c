@@ -37,11 +37,11 @@ static pthread_barrier_t tls_done;
 static pthread_mutex_t cond_mutex;
 static pthread_cond_t cond_cv;
 static int cond_ready;
-static _Atomic unsigned *unlock_calls;
+static _Atomic unsigned int *unlock_calls;
 static pthread_mutex_t *unlock_probe_target;
 static int unlock_probe_armed;
 
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
 
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 {
@@ -155,9 +155,10 @@ static void *real_abba_side(void *arg)
 	int left = arg == NULL;
 	pthread_mutex_t *first = left ? &real_abba_a : &real_abba_b;
 	pthread_mutex_t *second = left ? &real_abba_b : &real_abba_a;
-	logger_lock_class_t first_class = left ? LOGGER_LOCK_INSTANCE_EMIT :
-						 LOGGER_LOCK_INSTANCE_PROGRESS;
-	logger_lock_class_t second_class =
+	enum logger_lock_class first_class =
+		left ? LOGGER_LOCK_INSTANCE_EMIT :
+		       LOGGER_LOCK_INSTANCE_PROGRESS;
+	enum logger_lock_class second_class =
 		left ? LOGGER_LOCK_INSTANCE_PROGRESS :
 		       LOGGER_LOCK_INSTANCE_EMIT;
 	int rc = __cleanup_lockdep_mutex_lock(first, first_class);
@@ -317,14 +318,14 @@ static void test_failed_rwlock_trywrite(void)
 	CHECK(pthread_rwlock_destroy(&real_rwlock) == 0);
 }
 
-typedef struct {
+struct tls_lock_arg {
 	pthread_mutex_t *mu;
 	pthread_mutex_t *other;
-} tls_lock_arg_t;
+};
 
 static void *tls_lock_side(void *arg)
 {
-	tls_lock_arg_t *locks = arg;
+	struct tls_lock_arg *locks = arg;
 	int rc = __cleanup_lockdep_mutex_lock(locks->mu,
 					      LOGGER_LOCK_INSTANCE_PROGRESS);
 	if (rc)
@@ -345,8 +346,8 @@ static void test_thread_local_tracking(void)
 {
 	pthread_t left, right;
 	void *thread_result;
-	tls_lock_arg_t left_locks = { &tls_mutex_a, &tls_mutex_b };
-	tls_lock_arg_t right_locks = { &tls_mutex_b, &tls_mutex_a };
+	struct tls_lock_arg left_locks = { &tls_mutex_a, &tls_mutex_b };
+	struct tls_lock_arg right_locks = { &tls_mutex_b, &tls_mutex_a };
 	CHECK(pthread_barrier_init(&tls_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&tls_done, NULL, 2) == 0);
 	CHECK(pthread_create(&left, NULL, tls_lock_side, &left_locks) == 0);

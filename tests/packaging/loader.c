@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 		"audit_digest_provider",       "audit_checkpoint_persist",
 		"logger_fault_should_fail"
 	};
-	for (unsigned i = 0;
+	for (unsigned int i = 0;
 	     i < sizeof(private_names) / sizeof(private_names[0]); ++i)
 		if (dlsym(h, private_names[i])) {
 			fprintf(stderr, "private symbol exposed\n");

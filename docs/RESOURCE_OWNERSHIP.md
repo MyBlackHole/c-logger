@@ -31,9 +31,9 @@ c-logger 使用五种所有权/生命周期状态：
 示例：
 
 - 使用 `__free(free)` 的局部指针；
-- `logger_queue_init()` 成功后的 `logger_queue_t.slots`；
+- `logger_queue_init()` 成功后的 `struct logger_queue.slots`；
 - 构造函数发布后的 `logger_t.worker_workspace`；
-- 持有文件/目录/协调 fd 的 `logger_file_t`。
+- 持有文件/目录/协调 fd 的 `struct logger_file`。
 
 OWNED 资源允许移动，但禁止悄悄复制成第二个所有者。
 
@@ -107,7 +107,7 @@ REFCOUNTED 不等于 SHARED。工作线程 join、读写锁生命周期固定保
 - 被调用函数成功后消费所有权：`retain_and_null_ptr(local)`；
 - POSIX fd 移动：`take_fd(fd)`。
 
-对 `logger_file_t` 这类可移动结构体，移动后源必须立即恢复成定义好的空资源状态。
+对 `struct logger_file` 这类可移动结构体，移动后源必须立即恢复成定义好的空资源状态。
 
 <a id="owner-与-releaser-必须成对"></a>
 
@@ -116,9 +116,9 @@ REFCOUNTED 不等于 SHARED。工作线程 join、读写锁生命周期固定保
 长期拥有资源的字段应在字段声明或构造函数/析构函数附近明确最终释放者。
 
 ```text
-logger_queue_t.slots
+struct logger_queue.slots
   获取：logger_queue_init() 中 calloc()
-  发布后所有者：logger_queue_t
+  发布后所有者：struct logger_queue
   最终释放：logger_queue_destroy()
 
 logger_t.worker_workspace

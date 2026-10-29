@@ -47,24 +47,24 @@ static int fail_emit_lock;
 static int fail_emit_unlock;
 static int fail_read_lock;
 static int fail_read_unlock;
-static unsigned cancel_calls;
-static unsigned mutex_calls;
-static unsigned emit_unlock_calls;
-static unsigned read_calls;
-static unsigned read_unlock_calls;
-static unsigned io_calls;
-static unsigned checks;
+static unsigned int cancel_calls;
+static unsigned int mutex_calls;
+static unsigned int emit_unlock_calls;
+static unsigned int read_calls;
+static unsigned int read_unlock_calls;
+static unsigned int io_calls;
+static unsigned int checks;
 
-int __real_pthread_setcancelstate(int, int *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
-ssize_t __real_write(int, const void *, size_t);
-ssize_t __real_writev(int, const struct iovec *, int);
-int __real_fsync(int);
-int __real_connect(int, const struct sockaddr *, socklen_t);
-ssize_t __real_send(int, const void *, size_t, int);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *lock);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *lock);
+ssize_t __real_write(int fd, const void *data, size_t size);
+ssize_t __real_writev(int fd, const struct iovec *iov, int count);
+int __real_fsync(int fd);
+int __real_connect(int fd, const struct sockaddr *address, socklen_t size);
+ssize_t __real_send(int fd, const void *data, size_t size, int flags);
 
 static int take_error(int *slot)
 {
@@ -535,7 +535,7 @@ int main(int argc, char **argv)
 	} else if (!strncmp(mode, "read-unlock-", 12)) {
 		static const char *const names[] = { "dropped", "metrics", "io",
 						     "diagnostics", "file" };
-		unsigned index;
+		unsigned int index;
 
 		for (index = 0; index < sizeof(names) / sizeof(names[0]);
 		     ++index)
