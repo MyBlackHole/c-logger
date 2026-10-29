@@ -1,12 +1,13 @@
+#include <stdbool.h>
 #include "logger.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-static int contains(const char *p, const char *s)
+static bool contains(const char *p, const char *s)
 {
 	FILE *f = fopen(p, "r");
 	if (!f)
-		return 0;
+		return false;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
 	fclose(f);

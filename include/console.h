@@ -42,7 +42,7 @@ static inline console_config_t console_defaults_cpp(void)
 			     .version = CONSOLE_CONFIG_VERSION,       \
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
-#endif
+#endif /* __cplusplus */
 /*
  * 所有 Console 接口成功返回 0，失败返回负 errno；正常返回均保留调用方
  * errno。输出成功也包括按 verbosity 过滤的诊断，但 fmt==NULL 始终 EINVAL。
@@ -118,4 +118,4 @@ LOGGER_API int console_debug_source(const char *file, int line,
 #ifdef __cplusplus
 }
 #endif
-#endif
+#endif /* CONSOLE_H */

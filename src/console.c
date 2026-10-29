@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "console.h"
 #include "logger_runtime.h"
@@ -18,8 +19,7 @@
  * 每次操作只读取一个配置快照：并发初始化不会把新 verbosity 与旧 color 混用。
  * 独立设置函数只对自己负责的位做 CAS。
  */
-#define COLOR_BITS 2u
-#define COLOR_MASK 3u
+enum { COLOR_BITS = 2, COLOR_MASK = 3 };
 #define g_config (logger_runtime_current()->console_config)
 #define g_console_lock_error (logger_runtime_current()->console_lock_error)
 #define g_console_mu (logger_runtime_current()->console_mu)
@@ -140,7 +140,7 @@ int console_stderr_is_tty(int *out)
 	return tty(STDERR_FILENO, out);
 }
 
-static int color_enabled(unsigned int config, FILE *out)
+static bool color_enabled(unsigned int config, FILE *out)
 {
 	unsigned int color = config & COLOR_MASK;
 	if (color != CONSOLE_COLOR_AUTO)
@@ -151,13 +151,13 @@ static int color_enabled(unsigned int config, FILE *out)
 	return enabled;
 }
 
-static void stdio_error(int failed, int *first_error, int *saw_epipe)
+static void stdio_error(bool failed, int *first_error, bool *saw_epipe)
 {
 	if (!failed)
 		return;
 	int error = errno ? errno : EIO;
 	if (error == EPIPE)
-		*saw_epipe = 1;
+		*saw_epipe = true;
 	if (!*first_error)
 		*first_error = -error;
 }
@@ -182,8 +182,8 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 		return rc;
 	struct logger_sigpipe_guard sigpipe_guard;
 	rc = logger_sigpipe_begin(&sigpipe_guard);
-	int guarded = !rc;
-	int saw_epipe = 0;
+	bool guarded = !rc;
+	bool saw_epipe = false;
 	if (guarded) {
 		if (label) {
 			int n = color_enabled(config, out) && ansi ?
@@ -298,8 +298,8 @@ int console_debug_source(const char *file, int line, const char *func,
 			if (!rc) {
 				struct logger_sigpipe_guard sigpipe_guard;
 				rc = logger_sigpipe_begin(&sigpipe_guard);
-				int guarded = !rc;
-				int saw_epipe = 0;
+				bool guarded = !rc;
+				bool saw_epipe = false;
 				if (guarded) {
 					stdio_error(logger_libc_fprintf(
 							    stderr,

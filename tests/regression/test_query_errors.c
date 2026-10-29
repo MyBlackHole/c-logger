@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
 #include "support.h"
 #include "logger_internal.h"
 #include "logger_runtime.h"
@@ -308,8 +309,7 @@ static void healthy_again(enum query op)
 
 static void cancellation_matrix(int setup)
 {
-	for (size_t i = 0;
-	     i < sizeof(scoped_queries) / sizeof(scoped_queries[0]); ++i) {
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(scoped_queries); ++i) {
 		enum query op = scoped_queries[i];
 
 		reset_probe();
@@ -337,8 +337,7 @@ static void cancellation_matrix(int setup)
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state) == 0);
 	CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_type) ==
 	      0);
-	for (size_t i = 0;
-	     i < sizeof(scoped_queries) / sizeof(scoped_queries[0]); ++i) {
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(scoped_queries); ++i) {
 		reset_probe();
 		exercise(scoped_queries[i], 0);
 		int observed;
@@ -397,8 +396,7 @@ static void primary_errors(void)
 {
 	emit_lock(Q_FILE, 1);
 	emit_lock(Q_DEFAULT_FILE, 1);
-	for (size_t i = 0;
-	     i < sizeof(scoped_queries) / sizeof(scoped_queries[0]); ++i) {
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(scoped_queries); ++i) {
 		reset_probe();
 		fail_restore = EIO;
 		errno = EDOM;
@@ -537,11 +535,10 @@ int main(int argc, char **argv)
 						     "diagnostics", "file" };
 		unsigned int index;
 
-		for (index = 0; index < sizeof(names) / sizeof(names[0]);
-		     ++index)
+		for (index = 0; index < LOGGER_ARRAY_SIZE(names); ++index)
 			if (!strcmp(mode + 12, names[index]))
 				break;
-		CHECK(index < sizeof(names) / sizeof(names[0]));
+		CHECK(index < LOGGER_ARRAY_SIZE(names));
 		read_unlock(Q_DEFAULT_DROPPED + index, 0);
 		retained = 1;
 	} else if (!strcmp(mode, "syslog-restore")) {

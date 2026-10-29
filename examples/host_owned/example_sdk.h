@@ -45,4 +45,4 @@ void example_sdk_destroy(example_sdk_t *sdk);
 #ifdef __cplusplus
 }
 #endif
-#endif
+#endif /* EXAMPLE_SDK_H */

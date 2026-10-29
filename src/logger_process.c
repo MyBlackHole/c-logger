@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger.h"
 #include "logger_process.h"
 #include "logger_fork_fd.h"
@@ -20,7 +21,7 @@ enum process_phase {
 	PROCESS_READY = -2
 };
 static _Atomic int process_ticket;
-static _Thread_local int initializing;
+static _Thread_local bool initializing;
 /* 这不是实例引用计数，也不是全部在途操作/继承资源的清单。 */
 /* 实例计数属于新进程域；不清零继承的旧对象计数。 */
 #define live_objects (logger_runtime_current()->live_objects)
@@ -34,10 +35,10 @@ void logger_process_invalidate_child(void)
 	logger_runtime_invalidate_child();
 }
 
-int logger_process_is_child(void)
+bool logger_process_is_child(void)
 {
 	if (atomic_load_explicit(&forked_child, memory_order_relaxed))
-		return 1;
+		return true;
 	int owner = atomic_load_explicit(&owner_pid, memory_order_acquire);
 	/* 覆盖注册尚未完成及宿主更早注册的 child handler。 */
 	return owner != 0 && owner != (int)getpid();
@@ -60,7 +61,7 @@ static int claim_process(void)
 
 static int initialize_process(void)
 {
-	int child = logger_process_is_child();
+	bool child = logger_process_is_child();
 	if (child &&
 	    (!atomic_load_explicit(&forked_child, memory_order_relaxed) ||
 	     !logger_fork_fd_child_valid()))
@@ -91,7 +92,7 @@ static int initialize_process(void)
 		    memory_order_acq_rel, memory_order_acquire)) {
 		rc = ticket == PROCESS_READY ? -EALREADY : -EAGAIN;
 	} else {
-		initializing = 1;
+		initializing = true;
 		struct logger_runtime *runtime = NULL;
 		int result = child ? logger_fork_fd_child_reinit() : 0;
 		if (!result)
@@ -128,7 +129,7 @@ static int initialize_process(void)
 		atomic_store_explicit(&process_ticket,
 				      error ? error : PROCESS_READY,
 				      memory_order_release);
-		initializing = 0;
+		initializing = false;
 		rc = -error;
 	}
 	int restore = pthread_setcancelstate(old_cancel, NULL);
@@ -201,7 +202,7 @@ unsigned int logger_process_object_count(void)
 	return atomic_load_explicit(&live_objects, memory_order_acquire);
 }
 
-int logger_process_ready(void)
+bool logger_process_ready(void)
 {
 	return atomic_load_explicit(&process_ticket, memory_order_acquire) ==
 	       PROCESS_READY;

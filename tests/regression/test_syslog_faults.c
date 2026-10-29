@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
 #include "support.h"
 #include "logger_internal.h"
 #include "logger_fork_fd.h"
@@ -170,7 +171,7 @@ static int parse_error(const char *s)
 		       { "reset", ECONNRESET },
 		       { "notconn", ENOTCONN },
 		       { "io", EIO } };
-	for (size_t i = 0; i < sizeof(errors) / sizeof(errors[0]); ++i)
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(errors); ++i)
 		if (!strcmp(s, errors[i].name))
 			return errors[i].e;
 	CHECK(!"bad test error");

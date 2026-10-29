@@ -18,26 +18,33 @@ struct example_plugin {
 static inline int example_plugin_open(struct example_plugin *p,
 				      const char *path)
 {
+	void *address;
+
+	_Static_assert(sizeof(p->create) == sizeof(address),
+		       "Linux pointer size");
+	_Static_assert(sizeof(p->run) == sizeof(address), "Linux pointer size");
+	_Static_assert(sizeof(p->destroy) == sizeof(address),
+		       "Linux pointer size");
 	memset(p, 0, sizeof(*p));
 	p->handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (!p->handle)
 		return -1;
-#define EXAMPLE_SYMBOL(member, symbol)                               \
-	do {                                                         \
-		void *address = dlsym(p->handle, symbol);            \
-		_Static_assert(sizeof(p->member) == sizeof(address), \
-			       "Linux pointer size");                \
-		if (!address) {                                      \
-			dlclose(p->handle);                          \
-			p->handle = NULL;                            \
-			return -1;                                   \
-		}                                                    \
-		memcpy(&p->member, &address, sizeof(address));       \
-	} while (0)
-	EXAMPLE_SYMBOL(create, "example_sdk_create");
-	EXAMPLE_SYMBOL(run, "example_sdk_run");
-	EXAMPLE_SYMBOL(destroy, "example_sdk_destroy");
-#undef EXAMPLE_SYMBOL
+	address = dlsym(p->handle, "example_sdk_create");
+	if (!address)
+		goto close_handle;
+	memcpy(&p->create, &address, sizeof(address));
+	address = dlsym(p->handle, "example_sdk_run");
+	if (!address)
+		goto close_handle;
+	memcpy(&p->run, &address, sizeof(address));
+	address = dlsym(p->handle, "example_sdk_destroy");
+	if (!address)
+		goto close_handle;
+	memcpy(&p->destroy, &address, sizeof(address));
 	return 0;
+close_handle:
+	dlclose(p->handle);
+	p->handle = NULL;
+	return -1;
 }
-#endif
+#endif /* EXAMPLE_PLUGIN_API_H */

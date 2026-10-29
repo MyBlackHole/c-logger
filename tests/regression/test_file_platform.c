@@ -29,7 +29,7 @@ long __wrap_syscall(long number, ...)
 	(void)number;
 	CHECK(0);
 	return -1;
-#endif
+#endif /* SYS_renameat2 */
 }
 int main(int argc, char **argv)
 {

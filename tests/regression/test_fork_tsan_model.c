@@ -10,7 +10,7 @@
 #if __has_feature(thread_sanitizer)
 #define MODEL_TSAN 1
 #endif
-#endif
+#endif /* defined(__SANITIZE_THREAD__) */
 
 #ifdef MODEL_TSAN
 static _Atomic int ready;
@@ -78,7 +78,7 @@ static void child_case(const char *mode)
 	}
 	unbind(&owner);
 }
-#endif
+#endif /* MODEL_TSAN */
 
 int main(int argc, char **argv)
 {
@@ -106,5 +106,5 @@ int main(int argc, char **argv)
 	if (!WIFEXITED(status))
 		return 99;
 	return WEXITSTATUS(status);
-#endif
+#endif /* MODEL_TSAN */
 }

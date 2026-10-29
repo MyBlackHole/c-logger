@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
 #include <errno.h>
 #include "default_fixture.h"
 static logger_t *default_owner;
@@ -139,7 +140,7 @@ static enum scenario scenario_from_name(const char *name)
 		"destroy-error", "creator-first", "global-worker-first"
 	};
 
-	for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i)
 		if (!strcmp(name, names[i]))
 			return (enum scenario)i;
 	CHECK(!"unknown scenario");

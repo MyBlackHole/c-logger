@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "logger_runtime.h"
 #include "logger.h"
@@ -23,23 +24,22 @@
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
-#define PATH_MAX_ 4096
-static int reject_access(void)
+static bool reject_access(void)
 {
 	if (logger_process_is_child()) {
 		errno = ECHILD;
-		return 1;
+		return true;
 	}
 	if (logger_scope_busy()) {
 		errno = EDEADLK;
-		return 1;
+		return true;
 	}
 	int rc = logger_process_require();
 	if (rc) {
 		errno = -rc;
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 logger_detail_t logger_internal_detail(const logger_t *l)
@@ -334,11 +334,11 @@ static int validate_logger_config(const logger_config_t *cfg)
 }
 
 struct logger_ctor_state {
-	int emit_mu_ready;
-	int progress_mu_ready;
-	int progress_cv_ready;
-	int queue_ready;
-	int worker_started;
+	bool emit_mu_ready;
+	bool progress_mu_ready;
+	bool progress_cv_ready;
+	bool queue_ready;
+	bool worker_started;
 };
 
 static void logger_ctor_note_proof_error(logger_t *l, int rc)
@@ -509,17 +509,17 @@ static logger_t *create_logger(const logger_config_t *input)
 	rc = pthread_mutex_init(&l->emit_mu, NULL);
 	if (rc != 0)
 		goto fail;
-	state.emit_mu_ready = 1;
+	state.emit_mu_ready = true;
 
 	rc = pthread_mutex_init(&l->progress_mu, NULL);
 	if (rc != 0)
 		goto fail;
-	state.progress_mu_ready = 1;
+	state.progress_mu_ready = true;
 
 	rc = pthread_cond_init(&l->progress_cv, NULL);
 	if (rc != 0)
 		goto fail;
-	state.progress_cv_ready = 1;
+	state.progress_cv_ready = true;
 
 	if ((l->outputs & LOGGER_OUT_FILE) &&
 	    logger_file_init(&l->file_backend, cfg.file_path, cfg.rotation,
@@ -554,7 +554,7 @@ static logger_t *create_logger(const logger_config_t *input)
 								  proof_error);
 			goto fail;
 		}
-		state.queue_ready = 1;
+		state.queue_ready = true;
 		l->worker_workspace = logger_worker_workspace_create(l->q.cap);
 		if (!l->worker_workspace) {
 			rc = errno ? errno : ENOMEM;
@@ -567,7 +567,7 @@ static logger_t *create_logger(const logger_config_t *input)
 					      memory_order_release);
 			goto fail;
 		}
-		state.worker_started = 1;
+		state.worker_started = true;
 	}
 
 	/*

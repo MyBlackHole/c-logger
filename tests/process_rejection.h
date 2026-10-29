@@ -122,4 +122,4 @@ static void check_process_rejection(int error)
 	CHECK(logger_mask_secret("secret", masked, sizeof(masked), 0, 0) == 0);
 }
 
-#endif
+#endif /* LOGGER_PROCESS_REJECTION_TEST_H */

@@ -192,7 +192,7 @@ int main(int argc, char **argv)
 		       argv[1]);
 		return 77;
 	}
-#endif
+#endif /* defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer) */
 	char path[PATH_MAX];
 	enter_temp_workspace(path, sizeof(path), "logger-fork-reinit");
 	if (!strcmp(argv[1], "nested")) {

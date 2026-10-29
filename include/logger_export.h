@@ -11,5 +11,5 @@
 #define LOGGER_API __attribute__((visibility("default")))
 #else
 #define LOGGER_API
-#endif
-#endif
+#endif /* defined(LOGGER_STATIC_DEFINE) */
+#endif /* LOGGER_EXPORT_H */

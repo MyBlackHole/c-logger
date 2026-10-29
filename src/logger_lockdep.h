@@ -104,6 +104,6 @@ logger_lockdep_class_name(enum logger_lock_class class_id)
 	return "disabled";
 }
 
-#endif
+#endif /* LOGGER_ENABLE_LOCKDEP */
 
-#endif
+#endif /* LOGGER_LOCKDEP_H */

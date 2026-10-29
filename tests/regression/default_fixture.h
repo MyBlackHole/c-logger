@@ -28,4 +28,4 @@ static inline int fixture_default_destroy(logger_t **owner)
 	int rc = logger_default_set(*owner, NULL);
 	return rc ? rc : logger_destroy(owner);
 }
-#endif
+#endif /* LOGGER_DEFAULT_FIXTURE_H */

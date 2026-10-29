@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "logger_runtime.h"
 #include "logger_process.h"
@@ -5,10 +6,10 @@
 #include "logger_cleanup.h"
 #include <errno.h>
 
-static _Thread_local int entered;
+static _Thread_local bool entered;
 static _Thread_local int prepared;
 
-int logger_libc_busy(void)
+bool logger_libc_busy(void)
 {
 	return entered;
 }
@@ -37,7 +38,7 @@ static int begin(void)
 			if (released)
 				logger_fork_resource_poison(released);
 		} else {
-			entered = 1;
+			entered = true;
 		}
 	}
 	return error;
@@ -50,7 +51,7 @@ static int end(int error)
 		&logger_runtime_current()->format_mu,
 		LOGGER_LOCK_RUNTIME_FORMAT);
 
-	entered = 0;
+	entered = false;
 	if (rc)
 		logger_fork_resource_poison(rc);
 	errno = saved;
@@ -86,7 +87,7 @@ void logger_libc_fork_child(void)
 {
 	/* 锁在不继承映射中；只能清理当前线程标记，不能操作旧 mutex。 */
 	prepared = 0;
-	entered = 0;
+	entered = false;
 }
 
 int logger_libc_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)

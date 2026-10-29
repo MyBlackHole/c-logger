@@ -1,18 +1,21 @@
 #ifndef LOGGER_QUEUE_H
 #define LOGGER_QUEUE_H
+#include <stdbool.h>
 #include "logger_record.h"
 #include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
 
-#define LOGGER_QUEUE_INLINE_TEXT 512u
-#define LOGGER_QUEUE_SPILL_LIMIT 1024u
+enum {
+	LOGGER_QUEUE_INLINE_TEXT = 512,
+	LOGGER_QUEUE_SPILL_LIMIT = 1024,
+	LOGGER_QUEUE_SPILL_WORD_BITS = 32,
+	LOGGER_QUEUE_SPILL_WORDS =
+		(LOGGER_QUEUE_SPILL_LIMIT + LOGGER_QUEUE_SPILL_WORD_BITS - 1) /
+		LOGGER_QUEUE_SPILL_WORD_BITS
+};
 #define LOGGER_QUEUE_SPILL_NONE UINT32_MAX
-#define LOGGER_QUEUE_SPILL_WORD_BITS 32u
-#define LOGGER_QUEUE_SPILL_WORDS                                          \
-	((LOGGER_QUEUE_SPILL_LIMIT + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) / \
-	 LOGGER_QUEUE_SPILL_WORD_BITS)
 
 _Static_assert(LOGGER_MESSAGE_MAX - 1u <= UINT16_MAX,
 	       "queue text_len must fit uint16_t");
@@ -111,13 +114,13 @@ static inline void logger_queue_wait_arm_recheck(struct logger_queue *q)
 				       memory_order_acq_rel);
 }
 
-static inline int logger_queue_wait_probe_after_publish(struct logger_queue *q)
+static inline bool logger_queue_wait_probe_after_publish(struct logger_queue *q)
 {
 	return atomic_fetch_or_explicit(&q->consumer_waiting, 0,
 					memory_order_acq_rel) != 0;
 }
 
-static inline int logger_queue_wait_claim_signal(struct logger_queue *q)
+static inline bool logger_queue_wait_claim_signal(struct logger_queue *q)
 {
 	return atomic_exchange_explicit(&q->consumer_waiting, 0,
 					memory_order_acq_rel) != 0;
@@ -151,7 +154,7 @@ int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m);
 size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
 			  size_t max);
 /* 只探测下一消费槽是否已发布；空不证明没有在途预留或并发生产者。 */
-int logger_queue_empty(struct logger_queue *q);
+bool logger_queue_empty(struct logger_queue *q);
 /* 通知和强制唤醒均返回 0 或负 errno；负值不能被当作入队失败回滚。 */
 int logger_queue_notify_if_waiting(struct logger_queue *q);
 int logger_queue_wake_force(struct logger_queue *q);
@@ -168,4 +171,4 @@ uint64_t logger_queue_wait_count(const struct logger_queue *q);
 uint64_t logger_queue_producer_wake_signals(const struct logger_queue *q);
 uint64_t logger_queue_force_wake_signals(const struct logger_queue *q);
 
-#endif
+#endif /* LOGGER_QUEUE_H */

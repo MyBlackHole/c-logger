@@ -1,6 +1,7 @@
 #ifndef LOGGER_RUNTIME_H
 #define LOGGER_RUNTIME_H
 
+#include <stdbool.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -56,6 +57,6 @@ int logger_runtime_free(void *ptr);
 void logger_context_reset_child(void);
 void logger_format_reset_child(void);
 void logger_scope_reset_child(void);
-int logger_global_scope_busy(void);
+bool logger_global_scope_busy(void);
 void logger_global_reset_child(void);
-#endif
+#endif /* LOGGER_RUNTIME_H */

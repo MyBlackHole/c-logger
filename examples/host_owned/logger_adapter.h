@@ -33,4 +33,4 @@ static inline void example_to_logger(void *user,
 	(void)logger_log((logger_t *)user, level, r->module, r->file, r->line,
 			 r->function, "%.*s", (int)r->message_len, r->message);
 }
-#endif
+#endif /* EXAMPLE_LOGGER_ADAPTER_H */

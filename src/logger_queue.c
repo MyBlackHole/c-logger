@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger_runtime.h"
 #include "logger_queue.h"
 #include "logger_queue_size.h"
@@ -176,8 +177,8 @@ static unsigned int spill_valid_mask(size_t spill_cap, size_t word)
 	return (1u << remaining) - 1u;
 }
 
-static int queue_spill_take(struct logger_queue *q, const char *text,
-			    size_t text_len, uint32_t *index)
+static bool queue_spill_try_take(struct logger_queue *q, const char *text,
+				 size_t text_len, uint32_t *index)
 {
 	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
 		       LOGGER_QUEUE_SPILL_WORD_BITS;
@@ -214,14 +215,14 @@ static int queue_spill_take(struct logger_queue *q, const char *text,
 				memcpy(q->spills[found].text, text,
 				       text_len + 1u);
 				*index = found;
-				return 1;
+				return true;
 			}
 		}
 	}
 
 	atomic_fetch_add_explicit(&q->spill_exhaustions, 1,
 				  memory_order_relaxed);
-	return 0;
+	return false;
 }
 
 static void queue_spill_put(struct logger_queue *q, uint32_t index)
@@ -418,7 +419,7 @@ int logger_queue_push(struct logger_queue *q, const struct logger_message *m)
 
 	uint32_t spill_index = LOGGER_QUEUE_SPILL_NONE;
 	if (text_len > LOGGER_QUEUE_INLINE_TEXT &&
-	    !queue_spill_take(q, m->text, text_len, &spill_index))
+	    !queue_spill_try_take(q, m->text, text_len, &spill_index))
 		return 0;
 
 	size_t pos =
@@ -481,7 +482,7 @@ size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
 	return n;
 }
 
-int logger_queue_empty(struct logger_queue *q)
+bool logger_queue_empty(struct logger_queue *q)
 {
 	size_t pos =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_relaxed);

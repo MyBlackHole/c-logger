@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
+#include "logger_compiler.h"
 #include <errno.h>
 #include "default_fixture.h"
 static logger_t *default_owner;
@@ -200,13 +202,13 @@ int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 			_exit(code);                    \
 	} while (0)
 
-static int child_query_unchanged(const void *out, size_t size)
+static bool child_query_unchanged(const void *out, size_t size)
 {
 	const unsigned char *bytes = out;
 	for (size_t i = 0; i < size; ++i)
 		if (bytes[i] != 0xa5)
-			return 0;
-	return 1;
+			return false;
+	return true;
 }
 
 static void child_guard_matrix(void)
@@ -443,7 +445,7 @@ int main(int argc, char **argv)
 		"register-console", "register-context"
 	};
 	int known = 0;
-	for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(modes); ++i)
 		known |= !strcmp(mode, modes[i]);
 	CHECK(known);
 	cfg = LOGGER_DEFAULT_CONFIG();

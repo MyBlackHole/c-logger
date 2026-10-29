@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "crash_support.h"
 #include "logger.h"
 #include "regression/support.h"
@@ -26,15 +27,15 @@ static const char *const points[] = { "acknowledged",
 				      "file_after_active_open",
 				      "file_after_active_dirsync" };
 
-int crash_fixture_point_valid(const char *point)
+bool crash_fixture_point_valid(const char *point)
 {
 	for (size_t i = 0; i < sizeof(points) / sizeof(points[0]); ++i)
 		if (!strcmp(point, points[i]))
-			return 1;
-	return 0;
+			return true;
+	return false;
 }
 
-static int rotates(const char *point)
+static bool rotates(const char *point)
 {
 	return !strncmp(point, "file_after_", 11) ||
 	       !strcmp(point, "rotation_after_file_fsync");
@@ -175,11 +176,11 @@ void crash_fixture_write(const char *point)
 	CHECK(!"requested ordinary Logger cut point was not reached");
 }
 
-static int archive_name(const char *name)
+static bool archive_name(const char *name)
 {
 	if (strlen(name) != 33 || strncmp(name, "crash.", 6) ||
 	    strcmp(name + 29, ".log"))
-		return 0;
+		return false;
 	const char *stamp = name + 6;
 	for (unsigned int i = 0; i < 23; ++i) {
 		char delimiter = i == 8	 ? 'T' :
@@ -188,9 +189,9 @@ static int archive_name(const char *name)
 					   0;
 		if (delimiter ? stamp[i] != delimiter :
 				stamp[i] < '0' || stamp[i] > '9')
-			return 0;
+			return false;
 	}
-	return 1;
+	return true;
 }
 
 static int select_archive(const struct dirent *entry)

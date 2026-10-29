@@ -53,7 +53,7 @@ void __wrap_logger_lockdep_assert_held(enum logger_lock_class class_id,
 		wait_flag(&return_writer);
 	}
 }
-#endif
+#endif /* LOGGER_ENABLE_LOCKDEP */
 
 static void *reader(void *unused)
 {

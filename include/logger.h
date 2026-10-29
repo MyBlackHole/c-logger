@@ -66,7 +66,7 @@ typedef struct {
 			    .file = __FILE__,     \
 			    .func = __func__,     \
 			    .line = __LINE__ })
-#endif
+#endif /* __cplusplus */
 
 typedef enum {
 	LOGGER_OVERFLOW_DROP = 0,
@@ -228,7 +228,7 @@ static inline logger_syslog_config_t logger_syslog_defaults_cpp(void)
 				   .facility = LOGGER_SYSLOG_FACILITY_USER, \
 				   .reconnect_interval_ms = 1000u,          \
 				   .startup = LOGGER_SYSLOG_START_REQUIRED })
-#endif
+#endif /* __cplusplus */
 
 /*
  * 在输出互斥锁保护下获取快照。connected 表示本地关联，
@@ -632,8 +632,8 @@ static inline logger_config_t logger_defaults_cpp(void)
 			      LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,   \
 			      LOGGER_OVERFLOW_SYNC, LOGGER_OVERFLOW_SYNC }, \
 		.syslog = LOGGER_SYSLOG_DEFAULT_CONFIG() })
-#endif
+#endif /* __cplusplus */
 #ifdef __cplusplus
 }
 #endif
-#endif
+#endif /* LOGGER_H */

@@ -32,4 +32,4 @@ int logger_syslog_close_status(
 void logger_syslog_close(struct logger_syslog *s);
 int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 			const char *line, size_t n);
-#endif
+#endif /* LOGGER_SYSLOG_H */

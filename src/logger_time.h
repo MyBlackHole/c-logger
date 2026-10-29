@@ -1,6 +1,7 @@
 #ifndef LOGGER_TIME_H
 #define LOGGER_TIME_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -16,13 +17,13 @@ struct logger_duration_ms {
 	uint32_t value;
 };
 
-static inline int logger_monotonic_ms_before(struct logger_monotonic_ms left,
-					     struct logger_monotonic_ms right)
+static inline bool logger_monotonic_ms_before(struct logger_monotonic_ms left,
+					      struct logger_monotonic_ms right)
 {
 	return left.value < right.value;
 }
 
-static inline int
+static inline bool
 logger_monotonic_ms_elapsed(struct logger_monotonic_ms now,
 			    struct logger_monotonic_ms since,
 			    struct logger_duration_ms interval)
@@ -32,4 +33,4 @@ logger_monotonic_ms_elapsed(struct logger_monotonic_ms now,
 	       now.value - since.value >= interval.value;
 }
 
-#endif
+#endif /* LOGGER_TIME_H */

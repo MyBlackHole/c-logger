@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
+#include "logger_compiler.h"
 #include "support.h"
 #include "logger.h"
 #include "logger_internal.h"
@@ -50,14 +52,14 @@ int __real_pthread_mutex_lock(pthread_mutex_t *p);
 int __real_pthread_mutex_unlock(pthread_mutex_t *p);
 struct tm *__real_localtime_r(const time_t *time, struct tm *out);
 
-static int failing(int which)
+static bool failing(int which)
 {
 	if (fault != which || !countdown)
-		return 0;
+		return false;
 	if (--countdown)
-		return 0;
+		return false;
 	fault = FAIL_NONE;
-	return 1;
+	return true;
 }
 
 void *__wrap_mmap(void *p, size_t n, int prot, int flags, int fd, off_t off)
@@ -186,8 +188,7 @@ static void check_unmapped(void)
 	/* 在创建任何新域前确认旧页不存在，避免地址复用造成伪阳性。 */
 	long page = sysconf(_SC_PAGESIZE);
 	child_check(page > 0, 45);
-	for (unsigned int i = 0;
-	     i < sizeof(old_regions) / sizeof(old_regions[0]); ++i) {
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(old_regions); ++i) {
 		unsigned char resident;
 		uintptr_t address = (uintptr_t)old_regions[i];
 		address -= address % (uintptr_t)page;
@@ -324,10 +325,8 @@ static void allocation_failures(void)
 	 * 一个实例、两个队列数组、七个工作区映射，逐点拒绝真实系统调用。
 	 * 非 ENOMEM 错误必须原样返回；首错后不再取得后续候选映射。
 	 */
-	for (unsigned int f = 0; f < sizeof(failures) / sizeof(failures[0]);
-	     ++f) {
-		for (unsigned int e = 0; e < sizeof(errors) / sizeof(errors[0]);
-		     ++e) {
+	for (unsigned int f = 0; f < LOGGER_ARRAY_SIZE(failures); ++f) {
+		for (unsigned int e = 0; e < LOGGER_ARRAY_SIZE(errors); ++e) {
 			for (unsigned int i = 1; i <= 10; ++i) {
 				allocation_errno = errors[e];
 				fault = failures[f];
@@ -387,7 +386,7 @@ int main(int argc, char **argv)
 		CHECK(rmdir(path) == 0);
 		return 77;
 	}
-#endif
+#endif /* defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer) */
 	if (!strcmp(mode, "earlier-handler"))
 		CHECK(pthread_atfork(NULL, NULL, early_child) == 0);
 	CHECK(logger_process_init() == 0);
@@ -469,7 +468,7 @@ int main(int argc, char **argv)
 	const char *extra[] = { "child.log", "child.log.logger.lock",
 				"failed.log", "failed.log.logger.lock",
 				"never-created.log.logger.lock" };
-	for (unsigned int i = 0; i < sizeof(extra) / sizeof(extra[0]); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(extra); ++i)
 		CHECK(unlink(extra[i]) == 0 || errno == ENOENT);
 	leave_temp(path);
 	printf("FORK_RUNTIME_PASS=%s child_async=%d\n", argv[1], child_async);

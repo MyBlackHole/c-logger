@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger.h"
 
 #include <errno.h>
@@ -54,7 +55,7 @@ static void write_config(const struct syslog_fixture *f)
 	CHECK(fclose(out) == 0);
 }
 
-static int socket_ready(const char *path)
+static bool socket_ready(const char *path)
 {
 	struct stat st;
 	return lstat(path, &st) == 0 && S_ISSOCK(st.st_mode);
@@ -106,11 +107,11 @@ static void stop_daemon(struct syslog_fixture *f)
 	(void)unlink(f->pid_path);
 }
 
-static int file_contains(const char *path, const char *needle)
+static bool file_contains(const char *path, const char *needle)
 {
 	FILE *in = fopen(path, "rb");
 	if (!in)
-		return 0;
+		return false;
 	char buffer[8192];
 	size_t n = fread(buffer, 1, sizeof(buffer) - 1u, in);
 	CHECK(!ferror(in));

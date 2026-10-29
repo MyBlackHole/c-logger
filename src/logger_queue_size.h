@@ -15,4 +15,4 @@ struct logger_queue_bytes {
 	size_t value;
 };
 
-#endif
+#endif /* LOGGER_QUEUE_SIZE_H */

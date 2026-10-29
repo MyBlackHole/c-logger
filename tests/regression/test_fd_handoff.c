@@ -26,7 +26,7 @@ static struct logger_owned_fd copy_or_move(struct logger_owned_fd *owner)
 	return logger_fd_move(owner);
 }
 #define logger_fd_move copy_or_move
-#endif
+#endif /* LOGGER_TEST_HANDOFF_VARIANT != 0 */
 #include "../../src/logger_file.c"
 #if LOGGER_TEST_HANDOFF_VARIANT != 0
 #undef logger_fd_move

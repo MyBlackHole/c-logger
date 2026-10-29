@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
+#include "logger_compiler.h"
 #include "logger.h"
 #include "logger_file.h"
 #include "support.h"
@@ -34,18 +36,18 @@ static void got_fd(int fd)
 {
 	if (fd < 0)
 		return;
-	CHECK(acquired < sizeof(descriptors) / sizeof(descriptors[0]));
+	CHECK(acquired < LOGGER_ARRAY_SIZE(descriptors));
 	for (unsigned int i = 0; i < acquired; ++i)
 		CHECK(descriptors[i].released || descriptors[i].fd != fd);
 	descriptors[acquired++] = (struct descriptor){ .fd = fd };
 }
 
-static int tracked_live_fd(int fd)
+static bool tracked_live_fd(int fd)
 {
 	for (unsigned int i = 0; i < acquired; ++i)
 		if (descriptors[i].fd == fd && !descriptors[i].released)
-			return 1;
-	return 0;
+			return true;
+	return false;
 }
 
 static void released_fd(int fd)

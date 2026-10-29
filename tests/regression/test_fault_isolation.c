@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "support.h"
 #include "logger.h"
 #include <dirent.h>
@@ -44,13 +45,13 @@ static logger_config_t log_config(void)
 	return c;
 }
 
-static int file_fault(const char *mode)
+static bool file_fault(const char *mode)
 {
 	return !strcmp(mode, "file_write") || !strcmp(mode, "file_fsync") ||
 	       !strcmp(mode, "file_rename");
 }
 
-static int file_crash(const char *mode)
+static bool file_crash(const char *mode)
 {
 	/*
 	 * 其他四个进程崩溃用例使用系统调用与确认探针，

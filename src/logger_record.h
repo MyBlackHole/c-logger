@@ -5,8 +5,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <string.h>
-#define LOGGER_MESSAGE_MAX 4096
-#define LOGGER_LINE_MAX 5120
+enum { LOGGER_MESSAGE_MAX = 4096, LOGGER_LINE_MAX = 5120 };
 
 /*
  * 普通日志保留长度受限的字节前缀，并添加可见标记。
@@ -99,4 +98,4 @@ static inline void logger_record_own_source(struct logger_message *m)
 			   m->func ? m->func : "?");
 	logger_record_rebase(m);
 }
-#endif
+#endif /* LOGGER_RECORD_H */
