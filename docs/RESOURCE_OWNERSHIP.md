@@ -1,6 +1,7 @@
 # 资源所有权规范
 
-> 当前创建/销毁以[新生命周期合同](v2/LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+> 当前创建/销毁以[生命周期合同](v2/LIFECYCLE_API.md)为准：直接使用拥有者槽与负错误码，不保留旧接口。
+> [默认槽只借用宿主实例](v2/DEFAULT_BORROW.md)，绑定和解绑都不转移实例所有权。
 
 资源所有权是 c-logger 生命周期模型的第一层。自动清理、加锁和原子操作
 都只是实现工具，它们本身不能回答“最终由谁负责释放资源”。
@@ -74,7 +75,7 @@ fd = take_fd(local_fd);
 
 当前示例：
 
-- 代次/准入 + 生命周期读写锁保护的全局 Logger；
+- 代次/准入 + 生命周期读写锁保护的默认实例借用；实例始终由宿主持有；
 - 通过协作式停止 + join 结束生命周期的工作线程；
 - 多生产者 / 单消费者共享的队列状态。
 
@@ -125,12 +126,18 @@ logger_t.worker_workspace
   发布后所有者：logger_t
   最终释放：工作线程 join 后 logger_worker_workspace_destroy()
 
-全局 g_logger
-  获取：logger_create()
-  发布后所有者：全局生命周期控制器
-  使用者：只允许受生命周期固定保护的 BORROWED
-  最终释放：logger_shutdown_status() / 受控销毁
+默认槽 g_logger
+  绑定：logger_default_set(NULL, owner)
+  实例所有者：宿主持有的 owner 槽；默认槽仅 BORROWED
+  默认调用：代次/准入 + 生命周期读写锁保护每次借用
+  归还默认借用：logger_default_set(owner, NULL) 解绑成功
+  最终释放：宿主停止并等待其他借用者退出后 logger_destroy(&owner)
 ```
+
+解绑等待默认入口的在途调用退出，不隐含队列排空、刷新或实例销毁。
+默认绑定、退役读者或尚未证明归还的默认借用会保持 `default_borrowed` 标记；
+此时销毁返回 `-EBUSY` 并保留拥有者槽，不能强行释放。
+该标记不是引用计数，清零也不证明其他显式借用者已经退出。
 
 <a id="显式-logger-的-public-ownership"></a>
 
@@ -145,11 +152,19 @@ logger_t.worker_workspace
     |
 宿主停止并 join 所有借用者
     |
-宿主销毁 logger_t
+若实例仍绑定默认槽，宿主成功解绑并归还默认借用
+    |
+宿主显式刷新（如需）并 logger_destroy(&owner)
 ```
 
 任何内部清理辅助函数都不能把原始借用 `logger_t *` 自动变成跨线程安全引用。
 并发销毁仍属于调用者违反生命周期契约。
+
+创建成功才向空拥有者槽发布实例；销毁开始前消费拥有者并清空槽。
+入口拒绝（包括默认借用尚未归还）保留原槽；进入拆除后，即使 I/O 失败也不恢复旧指针。
+无法证明线程退出或安全回收时，库会保守保留相关分配；槽为空不等于物理释放完成，
+其他旧别名也不能用于重试。具体状态与取消边界以[生命周期合同](v2/LIFECYCLE_API.md)
+和[默认借用合同](v2/DEFAULT_BORROW.md)为准。
 
 <a id="review-checklist"></a>
 
