@@ -8,6 +8,7 @@ static int rejects_invalid(logger_config_t *c)
 	errno = 0;
 	logger_t *l = NULL;
 	int rc = logger_create(c, &l);
+
 	if (l) {
 		logger_destroy(&l);
 		return 0;
@@ -25,6 +26,7 @@ int main(void)
 		       "Console v1 config size changed");
 
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
+
 	if (l.version != LOGGER_CONFIG_VERSION || l.struct_size != sizeof(l))
 		return 1;
 	l.version = 999;
@@ -73,6 +75,7 @@ int main(void)
 		.config = LOGGER_DEFAULT_CONFIG(),
 		.tail = 0,
 	};
+
 	future.config.struct_size = sizeof(future);
 	future.config.outputs = LOGGER_OUT_STDERR;
 	future.config.async_mode = 0;
@@ -85,6 +88,7 @@ int main(void)
 	future.tail = UINT64_C(1);
 	errno = 0;
 	int rc = logger_create(&future.config, &instance);
+
 	if (instance) {
 		logger_destroy(&instance);
 		return 12;
@@ -93,6 +97,7 @@ int main(void)
 		return 13;
 
 	console_config_t con = CONSOLE_DEFAULT_CONFIG();
+
 	if (con.version != CONSOLE_CONFIG_VERSION ||
 	    con.struct_size != sizeof(con))
 		return 16;
@@ -104,6 +109,7 @@ int main(void)
 		.config = CONSOLE_DEFAULT_CONFIG(),
 		.tail = 0,
 	};
+
 	future_console.config.struct_size = sizeof(future_console);
 	errno = EDOM;
 	rc = console_init(&future_console.config);

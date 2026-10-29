@@ -22,10 +22,12 @@ enum operation {
 	OP_FILE_METRICS,
 	OP_COUNT
 };
+
 static const char *const operation_names[] = {
 	"write",   "flush",   "flush-void", "reopen",	   "level",
 	"dropped", "metrics", "io",	    "diagnostics", "file-metrics"
 };
+
 struct call_result {
 	enum operation op;
 	int rc;
@@ -35,12 +37,14 @@ struct call_result {
 	logger_io_metrics_t io;
 	logger_diagnostics_t diagnostics;
 	logger_file_metrics_t file_metrics;
+
 	_Atomic int done;
 };
 
 static inline logger_config_t config_for(const char *path, int async)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = path;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -51,9 +55,10 @@ static inline logger_config_t config_for(const char *path, int async)
 
 static inline enum operation parse_operation(const char *name)
 {
-	for (int i = 0; i < OP_COUNT; ++i)
+	for (int i = 0; i < OP_COUNT; ++i) {
 		if (!strcmp(name, operation_names[i]))
 			return (enum operation)i;
+	}
 	CHECK(!"unknown global operation");
 	return OP_WRITE;
 }
@@ -108,6 +113,7 @@ static inline void invoke(struct call_result *r)
 static inline void expect_query_sentinel(const void *out, size_t size)
 {
 	const unsigned char *bytes = out;
+
 	for (size_t i = 0; i < size; ++i)
 		CHECK(bytes[i] == 0xa5);
 }
@@ -135,6 +141,7 @@ static inline void fixture_reset(void)
 	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(names); ++i) {
 		(void)unlink(names[i]);
 		char lock[64];
+
 		CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", names[i]) >
 		      0);
 		(void)unlink(lock);
@@ -144,12 +151,15 @@ static inline void fixture_reset(void)
 static inline unsigned int file_lines(const char *path)
 {
 	FILE *f = fopen(path, "rb");
+
 	CHECK(f);
 	unsigned int n = 0;
 	int c;
-	while ((c = fgetc(f)) != EOF)
+
+	while ((c = fgetc(f)) != EOF) {
 		if (c == '\n')
 			++n;
+	}
 	CHECK(!ferror(f) && !fclose(f));
 	return n;
 }

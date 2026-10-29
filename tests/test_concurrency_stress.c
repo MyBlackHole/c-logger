@@ -5,22 +5,27 @@
 static logger_t *g;
 static _Atomic int run = 1;
 static _Atomic int query_error;
+
 static void *prod(void *x)
 {
 	long id = (long)x;
 	unsigned long n = 0;
+
 	while (atomic_load(&run))
 		logger_log(g, LOGGER_INFO, "stress", __FILE__, __LINE__,
 			   __func__, "p=%ld n=%lu", id, n++);
 	return 0;
 }
+
 static void *ctl(void *x)
 {
 	(void)x;
 	logger_metrics_t m;
+
 	while (atomic_load(&run)) {
 		logger_set_instance_level(g, LOGGER_DEBUG);
 		int rc = logger_get_metrics(g, &m);
+
 		if (rc)
 			atomic_store(&query_error, rc);
 		logger_flush(g);
@@ -28,12 +33,14 @@ static void *ctl(void *x)
 	}
 	return 0;
 }
+
 int main(void)
 {
 	if (logger_process_init() != 0)
 		return 1;
 	unlink("./stress.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "./stress.log";
 	c.queue_capacity = 16384;
@@ -44,9 +51,11 @@ int main(void)
 	pthread_t p[12];
 	pthread_t c1;
 	pthread_t c2;
-	for (long i = 0; i < 12; i++)
+
+	for (long i = 0; i < 12; i++) {
 		if (pthread_create(&p[i], 0, prod, (void *)i))
 			return 2;
+	}
 	if (pthread_create(&c1, 0, ctl, 0) || pthread_create(&c2, 0, ctl, 0))
 		return 3;
 	usleep(100000);

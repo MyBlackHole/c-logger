@@ -44,6 +44,7 @@ static void sleep_ms(unsigned int ms)
 static void write_config(const struct syslog_fixture *f)
 {
 	FILE *out = fopen(f->config_path, "w");
+
 	CHECK(out != NULL);
 	CHECK(fprintf(out,
 		      "global(workDirectory=\"%s\")\n"
@@ -58,6 +59,7 @@ static void write_config(const struct syslog_fixture *f)
 static bool socket_ready(const char *path)
 {
 	struct stat st;
+
 	return lstat(path, &st) == 0 && S_ISSOCK(st.st_mode);
 }
 
@@ -67,6 +69,7 @@ static void start_daemon(struct syslog_fixture *f)
 	(void)unlink(f->socket_path);
 	(void)unlink(f->pid_path);
 	pid_t child = fork();
+
 	CHECK(child >= 0);
 	if (!child) {
 		execlp("rsyslogd", "rsyslogd", "-n", "-f", f->config_path, "-i",
@@ -77,6 +80,7 @@ static void start_daemon(struct syslog_fixture *f)
 	for (unsigned int i = 0; i < 500; ++i) {
 		int status;
 		pid_t rc = waitpid(child, &status, WNOHANG);
+
 		CHECK(rc >= 0);
 		if (rc == child) {
 			fprintf(stderr, "rsyslogd exited early status=%d\n",
@@ -98,6 +102,7 @@ static void stop_daemon(struct syslog_fixture *f)
 	CHECK(kill(f->daemon_pid, SIGCONT) == 0 || errno == ESRCH);
 	CHECK(kill(f->daemon_pid, SIGTERM) == 0 || errno == ESRCH);
 	int status;
+
 	CHECK(waitpid(f->daemon_pid, &status, 0) == f->daemon_pid);
 	CHECK(WIFEXITED(status) || WIFSIGNALED(status));
 	f->daemon_pid = -1;
@@ -110,10 +115,12 @@ static void stop_daemon(struct syslog_fixture *f)
 static bool file_contains(const char *path, const char *needle)
 {
 	FILE *in = fopen(path, "rb");
+
 	if (!in)
 		return false;
 	char buffer[8192];
 	size_t n = fread(buffer, 1, sizeof(buffer) - 1u, in);
+
 	CHECK(!ferror(in));
 	CHECK(fclose(in) == 0);
 	buffer[n] = '\0';
@@ -135,6 +142,7 @@ static logger_config_t syslog_config(const struct syslog_fixture *f,
 				     logger_syslog_start_t startup)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_SYSLOG;
 	c.async_mode = 0;
 	c.level = LOGGER_TRACE;
@@ -155,6 +163,7 @@ static int write_one(logger_t *log, const char *text)
 static logger_syslog_metrics_t metrics(logger_t *log)
 {
 	logger_syslog_metrics_t out;
+
 	CHECK(logger_get_syslog_metrics(log, &out) == 0);
 	CHECK(out.submitted_records == out.sent_records + out.failed_records);
 	return out;
@@ -163,6 +172,7 @@ static logger_syslog_metrics_t metrics(logger_t *log)
 static logger_diagnostics_t diagnostics(logger_t *log)
 {
 	logger_diagnostics_t out;
+
 	memset(&out, 0, sizeof(out));
 	CHECK(logger_get_diagnostics(log, &out) == 0);
 	return out;
@@ -173,9 +183,11 @@ static void scenario_required_missing(struct syslog_fixture *f)
 	stop_daemon(f);
 	(void)unlink(f->socket_path);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
+
 	errno = EDOM;
 	logger_t *log = NULL;
 	int create_rc = logger_create(&c, &log);
+
 	CHECK(errno == EDOM);
 	CHECK(log == NULL);
 	CHECK(create_rc == -ENOENT || create_rc == -ECONNREFUSED);
@@ -186,11 +198,13 @@ static void scenario_required_delivery(struct syslog_fixture *f)
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
 	logger_t *log = NULL;
+
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "required-delivery") == 0);
 	wait_contains(f, "required-delivery");
 	logger_syslog_metrics_t m = metrics(log);
+
 	CHECK(m.connected);
 	CHECK(m.connect_attempts == 1);
 	CHECK(m.connect_failures == 0);
@@ -208,6 +222,7 @@ static void scenario_restart_reconnect(struct syslog_fixture *f)
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
 	logger_t *log = NULL;
+
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "before-restart") == 0);
@@ -215,19 +230,23 @@ static void scenario_restart_reconnect(struct syslog_fixture *f)
 
 	stop_daemon(f);
 	int lost = write_one(log, "lost-not-replayed");
+
 	CHECK(lost < 0);
 	logger_syslog_metrics_t m = metrics(log);
+
 	CHECK(!m.connected);
 	CHECK(m.failed_records == 1);
 	unsigned int attempts = (unsigned int)m.connect_attempts;
 
 	int cooldown = write_one(log, "cooldown-record");
+
 	CHECK(cooldown < 0);
 	m = metrics(log);
 	CHECK(m.cooldown_records >= 1);
 	CHECK(m.connect_attempts == attempts);
 
 	logger_diagnostics_t d = diagnostics(log);
+
 	CHECK(d.first_error != 0);
 	CHECK(d.observation_flags & LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED);
 
@@ -256,9 +275,11 @@ static void scenario_deferred_reconnect(struct syslog_fixture *f)
 	(void)unlink(f->socket_path);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_DEFERRED);
 	logger_t *log = NULL;
+
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	logger_syslog_metrics_t m = metrics(log);
+
 	CHECK(!m.connected);
 	CHECK(m.connect_attempts == 1);
 	CHECK(m.connect_failures == 1);
@@ -280,6 +301,7 @@ static void scenario_deferred_reconnect(struct syslog_fixture *f)
 	CHECK(m.last_error == 0);
 
 	logger_diagnostics_t d = diagnostics(log);
+
 	CHECK(d.first_error > 0);
 	errno = EDOM;
 	CHECK(logger_destroy(&log) == -d.first_error);
@@ -292,6 +314,7 @@ static void scenario_real_backpressure(struct syslog_fixture *f)
 	start_daemon(f);
 	logger_config_t c = syslog_config(f, LOGGER_SYSLOG_START_REQUIRED);
 	logger_t *log = NULL;
+
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
 	CHECK(write_one(log, "before-backpressure") == 0);
@@ -299,11 +322,14 @@ static void scenario_real_backpressure(struct syslog_fixture *f)
 
 	CHECK(kill(f->daemon_pid, SIGSTOP) == 0);
 	char payload[4001];
+
 	memset(payload, 'x', sizeof(payload) - 1u);
 	payload[sizeof(payload) - 1u] = '\0';
 	int observed = 0;
+
 	for (unsigned int i = 0; i < 20000; ++i) {
 		int rc = write_one(log, payload);
+
 		if (rc == -EAGAIN || rc == -ENOBUFS || rc == -ENOMEM) {
 			observed = 1;
 			break;
@@ -312,16 +338,19 @@ static void scenario_real_backpressure(struct syslog_fixture *f)
 	}
 	CHECK(observed);
 	logger_syslog_metrics_t m = metrics(log);
+
 	CHECK(m.backpressure_records >= 1);
 	CHECK(m.failed_records >= 1);
 	CHECK(m.connected);
 	logger_diagnostics_t d = diagnostics(log);
+
 	CHECK(d.observation_flags & LOGGER_DIAG_OUTPUT_FAILURE_OBSERVED);
 
 	CHECK(kill(f->daemon_pid, SIGCONT) == 0);
 	sleep_ms(50);
 	errno = 0;
 	int flush_rc = logger_flush(log);
+
 	CHECK(flush_rc == -EAGAIN || flush_rc == -ENOBUFS ||
 	      flush_rc == -ENOMEM);
 	CHECK(flush_rc == -d.first_error && errno == 0);
@@ -336,6 +365,7 @@ int main(void)
 	CHECK(logger_process_init() == 0);
 	struct syslog_fixture f = { .daemon_pid = -1 };
 	char temp[] = "/tmp/c-logger-rsyslog-XXXXXX";
+
 	CHECK(mkdtemp(temp) != NULL);
 	CHECK(snprintf(f.dir, sizeof(f.dir), "%s", temp) > 0);
 	CHECK(snprintf(f.socket_dir, sizeof(f.socket_dir), "%s/dev", temp) > 0);

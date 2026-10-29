@@ -20,6 +20,7 @@ int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
 int __real_logger_file_write(struct logger_file *f, const char *s, size_t n,
 			     const struct timespec *ts, int sync);
+
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 {
 	if (count_reads)
@@ -31,12 +32,14 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 	}
 	return __real_pthread_rwlock_rdlock(rw);
 }
+
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 {
 	if (rw == &logger_runtime_current()->global_lifetime_lock)
 		atomic_store(&writer_waiting, 1);
 	return __real_pthread_rwlock_wrlock(rw);
 }
+
 int __wrap_logger_file_write(struct logger_file *f, const char *s, size_t n,
 			     const struct timespec *ts, int sync)
 {
@@ -46,21 +49,26 @@ int __wrap_logger_file_write(struct logger_file *f, const char *s, size_t n,
 	}
 	return __real_logger_file_write(f, s, n, ts, sync);
 }
+
 static void all_rejected(int error)
 {
 	for (int i = 0; i < OP_COUNT; ++i) {
 		struct call_result r = { .op = (enum operation)i };
+
 		invoke(&r);
 		expect_rejection(&r, error);
 	}
 }
+
 static void make_owners(void)
 {
 	logger_config_t a = config_for("old.log", 0);
 	logger_config_t b = config_for("new.log", 0);
+
 	CHECK(logger_create(&a, &old_owner) == 0);
 	CHECK(logger_create(&b, &new_owner) == 0);
 }
+
 static void finish_owners(logger_t *bound)
 {
 	CHECK(logger_default_set(bound, NULL) == 0);
@@ -69,12 +77,14 @@ static void finish_owners(logger_t *bound)
 	CHECK(logger_process_object_count() == 0);
 	all_rejected(ENODEV);
 }
+
 static void *delayed_call(void *r)
 {
 	delay_read = 1;
 	invoke(r);
 	return NULL;
 }
+
 static void generation(enum operation op)
 {
 	make_owners();
@@ -82,6 +92,7 @@ static void generation(enum operation op)
 	LOG_INFO("old-base");
 	struct call_result r = { .op = op };
 	pthread_t reader;
+
 	CHECK(pthread_create(&reader, NULL, delayed_call, &r) == 0);
 	wait_flag(&delayed);
 	CHECK(logger_default_set(old_owner, new_owner) == 0);
@@ -92,6 +103,7 @@ static void generation(enum operation op)
 	expect_rejection(&r, ESHUTDOWN);
 	/* 延迟级别设置、重开、刷新和写入均不能落到新代次。 */
 	logger_state_t state;
+
 	CHECK(logger_get_state(new_owner, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
 	LOG_INFO("new-still-visible");
@@ -99,18 +111,21 @@ static void generation(enum operation op)
 	CHECK(file_lines("old.log") == 1 && file_lines("new.log") == 2);
 	CHECK(!file_contains("new.log", "delayed-record"));
 }
+
 static void *writer(void *unused)
 {
 	(void)unused;
 	LOG_INFO("pinned-before-replace");
 	return NULL;
 }
+
 static void *setter(void *unused)
 {
 	(void)unused;
 	setter_result = logger_default_set(old_owner, new_owner);
 	return NULL;
 }
+
 static void *flood(void *unused)
 {
 	(void)unused;
@@ -119,6 +134,7 @@ static void *flood(void *unused)
 		all_rejected(EAGAIN);
 	return NULL;
 }
+
 static void closed_gate(void)
 {
 	make_owners();
@@ -128,6 +144,7 @@ static void closed_gate(void)
 	pthread_t w;
 	pthread_t s;
 	pthread_t readers[8];
+
 	CHECK(pthread_create(&w, NULL, writer, NULL) == 0);
 	wait_flag(&entered);
 	CHECK(pthread_create(&s, NULL, setter, NULL) == 0);
@@ -146,6 +163,7 @@ static void closed_gate(void)
 	finish_owners(new_owner);
 	CHECK(file_lines("old.log") == 2 && file_lines("new.log") == 1);
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);

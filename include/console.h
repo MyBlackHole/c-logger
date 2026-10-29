@@ -11,14 +11,17 @@ typedef enum {
 	CONSOLE_COLOR_ALWAYS,
 	CONSOLE_COLOR_NEVER
 } console_color_mode_t;
+
 typedef enum {
 	CONSOLE_QUIET = 0,
 	CONSOLE_NORMAL = 1,
 	CONSOLE_VERBOSE = 2,
 	CONSOLE_DEBUG = 3
 } console_verbosity_t;
+
 #define CONSOLE_CONFIG_VERSION 1u
 #define CONSOLE_CONFIG_SIZE 16u
+
 typedef struct {
 	uint32_t struct_size;
 	uint32_t version;
@@ -29,12 +32,14 @@ typedef struct {
 static inline console_config_t console_defaults_cpp(void)
 {
 	console_config_t c = {};
+
 	c.struct_size = sizeof(c);
 	c.version = CONSOLE_CONFIG_VERSION;
 	c.verbosity = CONSOLE_NORMAL;
 	c.color = CONSOLE_COLOR_AUTO;
 	return c;
 }
+
 #define CONSOLE_DEFAULT_CONFIG() console_defaults_cpp()
 #else
 #define CONSOLE_DEFAULT_CONFIG()                                      \

@@ -36,15 +36,18 @@ int main(int argc, char **argv)
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	const char *mode = argv[1];
+
 	CHECK(!strcmp(mode, "explicit-sync") ||
 	      !strcmp(mode, "explicit-async") || !strcmp(mode, "global") ||
 	      !strcmp(mode, "bootstrap") || !strcmp(mode, "status") ||
 	      !strcmp(mode, "metadata-sync") ||
 	      !strcmp(mode, "metadata-async"));
 	char dir[] = "/tmp/logger-truncation-XXXXXX";
+
 	enter_temp(dir);
 	CHECK(setlocale(LC_CTYPE, "C") != NULL);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "message.log";
 	c.detail = !strncmp(mode, "metadata-", 9) ? LOGGER_DETAIL_DEBUG :
@@ -56,9 +59,11 @@ int main(int argc, char **argv)
 		       !strcmp(mode, "metadata-async");
 	logger_t *log = NULL;
 	int saved_stderr = -1;
+
 	if (!strcmp(mode, "bootstrap")) {
 		/* 无默认实例不再提供启动回退：必须在读取变参前拒绝。 */
 		int touched = 7;
+
 		errno = EDOM;
 		CHECK(LOG_INFO("%8192s%n", "", &touched) == -ENODEV);
 		CHECK(errno == EDOM && touched == 7);
@@ -77,9 +82,11 @@ int main(int argc, char **argv)
 	char text[8192];
 	char line[8192];
 	FILE *file = fopen("message.log", "r");
+
 	CHECK(file != NULL);
 	for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
 		size_t n = lengths[i];
+
 		memset(text, 'x', n);
 		text[n] = '\0';
 		if (!strcmp(mode, "status")) {
@@ -96,10 +103,12 @@ int main(int argc, char **argv)
 		clearerr(file);
 		CHECK(fgets(line, sizeof(line), file) != NULL);
 		size_t stored = n > MESSAGE_CAPACITY ? MESSAGE_CAPACITY : n;
+
 		if (n > MESSAGE_CAPACITY)
 			memcpy(text + MESSAGE_CAPACITY - (sizeof(marker) - 1),
 			       marker, sizeof(marker));
 		size_t total = strlen(line);
+
 		CHECK(total >= stored + 1);
 		CHECK(line[total - 1] == '\n');
 		CHECK(!memcmp(line + total - stored - 1, text, stored));
@@ -115,6 +124,7 @@ int main(int argc, char **argv)
 		CHECK(fgets(line, sizeof(line), file) != NULL);
 		if (!strcmp(mode, "metadata-sync")) {
 			size_t n = strlen(line);
+
 			CHECK(n == 5119 && line[n - 1] == '\n');
 			CHECK(!memcmp(line + n - sizeof(marker), marker,
 				      sizeof(marker) - 1));
@@ -130,6 +140,7 @@ int main(int argc, char **argv)
 		CHECK(fgets(line, sizeof(line), file) != NULL);
 		if (!strcmp(mode, "metadata-sync")) {
 			size_t n = strlen(line);
+
 			CHECK(n == 5119 && line[n - 1] == '\n');
 			CHECK(!memcmp(line + n - sizeof(marker), marker,
 				      sizeof(marker) - 1));
@@ -161,6 +172,7 @@ int main(int argc, char **argv)
 	CHECK(fclose(file) == 0);
 	if (strcmp(mode, "bootstrap")) {
 		logger_io_metrics_t io;
+
 		if (!strcmp(mode, "global"))
 			CHECK(logger_get_global_io_metrics(&io) == 0);
 		else

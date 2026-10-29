@@ -31,6 +31,7 @@ static char endpoint[108];
 static char temp[] = "/tmp/lg-sys-fault-XXXXXX";
 
 int __real_socket(int domain, int type, int protocol);
+
 int __wrap_socket(int domain, int type, int protocol)
 {
 	if (watch && domain == AF_UNIX) {
@@ -44,7 +45,9 @@ int __wrap_socket(int domain, int type, int protocol)
 	}
 	return __real_socket(domain, type, protocol);
 }
+
 int __real_connect(int fd, const struct sockaddr *addr, socklen_t n);
+
 int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t n)
 {
 	if (watch) {
@@ -52,6 +55,7 @@ int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t n)
 		CHECK(fcntl(fd, F_GETFL) & O_NONBLOCK);
 		CHECK(fcntl(fd, F_GETFD) & FD_CLOEXEC);
 		const struct sockaddr_un *a = (const struct sockaddr_un *)addr;
+
 		CHECK(a->sun_family == AF_UNIX &&
 		      !strcmp(a->sun_path, endpoint));
 		CHECK(n == offsetof(struct sockaddr_un, sun_path) +
@@ -63,7 +67,9 @@ int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t n)
 	}
 	return __real_connect(fd, addr, n);
 }
+
 ssize_t __real_send(int fd, const void *buf, size_t n, int flags);
+
 ssize_t __wrap_send(int fd, const void *buf, size_t n, int flags)
 {
 	if (watch) {
@@ -84,7 +90,9 @@ ssize_t __wrap_send(int fd, const void *buf, size_t n, int flags)
 	}
 	return __real_send(fd, buf, n, flags);
 }
+
 int __real_clock_gettime(clockid_t id, struct timespec *out);
+
 int __wrap_clock_gettime(clockid_t id, struct timespec *out)
 {
 	if (watch && id == CLOCK_MONOTONIC) {
@@ -102,12 +110,15 @@ int __wrap_clock_gettime(clockid_t id, struct timespec *out)
 	}
 	return __real_clock_gettime(id, out);
 }
+
 int __real_close(int fd);
+
 int __wrap_close(int fd)
 {
 	if (watch)
 		++closes;
 	int rc = __real_close(fd);
+
 	if (watch && inject_close) {
 		if (reuse_during_close) {
 			/*
@@ -117,6 +128,7 @@ int __wrap_close(int fd)
 			CHECK(reused_fd == -1);
 			int flags = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 			int replacement = __real_socket(AF_UNIX, flags, 0);
+
 			CHECK(replacement >= 0);
 			if (replacement != fd) {
 				CHECK(dup2(replacement, fd) == fd);
@@ -129,36 +141,44 @@ int __wrap_close(int fd)
 	}
 	return rc;
 }
+
 static int receiver(void)
 {
 	int fd = __real_socket(AF_UNIX,
 			       SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
 	CHECK(fd >= 0);
 	struct sockaddr_un a = { .sun_family = AF_UNIX };
+
 	strcpy(a.sun_path, endpoint);
 	CHECK(!bind(fd, (struct sockaddr *)&a, sizeof(a)));
 	return fd;
 }
+
 static logger_config_t config(void)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 0;
 	c.outputs = LOGGER_OUT_SYSLOG;
 	c.syslog.path = endpoint;
 	c.syslog.reconnect_interval_ms = 100;
 	return c;
 }
+
 static int output(logger_t *l)
 {
 	return logger_log_sync_status(l, LOGGER_INFO, "fault", NULL, 0, NULL,
 				      "marker");
 }
+
 static logger_syslog_metrics_t metrics(logger_t *l)
 {
 	logger_syslog_metrics_t m;
+
 	CHECK(!logger_get_syslog_metrics(l, &m));
 	return m;
 }
+
 static int parse_error(const char *s)
 {
 	struct {
@@ -181,12 +201,15 @@ static int parse_error(const char *s)
 		       { "reset", ECONNRESET },
 		       { "notconn", ENOTCONN },
 		       { "io", EIO } };
-	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(errors); ++i)
+
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(errors); ++i) {
 		if (!strcmp(s, errors[i].name))
 			return errors[i].e;
+	}
 	CHECK(!"bad test error");
 	return 0;
 }
+
 static int syslog_fd(const struct logger_syslog *s)
 {
 	return logger_fd_number(logger_fd_borrow(&s->fd));
@@ -200,11 +223,13 @@ static void candidate_ownership(const char *mode)
 	if (!strcmp(mode, "candidate-fd-zero")) {
 		/* stdin 可能已由 CI 关闭；在两种情况下都能恢复原有状态。 */
 		int saved_stdin = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 3);
+
 		CHECK(saved_stdin >= 0 || errno == EBADF);
 		if (saved_stdin >= 0)
 			CHECK(!__real_close(STDIN_FILENO));
 
 		struct logger_syslog syslog;
+
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
 		CHECK(syslog_fd(&syslog) == STDIN_FILENO &&
 		      syslog.metrics.connected);
@@ -223,14 +248,17 @@ static void candidate_ownership(const char *mode)
 	}
 
 	int closing_error = EIO;
+
 	if (!strcmp(mode, "candidate-eintr-reuse"))
 		closing_error = EINTR;
 	int primary_error = closing_error == EINTR ? EINTR : ENOENT;
+
 	inject_connect = primary_error;
 	inject_close = closing_error;
 	reuse_during_close = 1;
 
 	struct logger_syslog failed;
+
 	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
 	      errno == primary_error);
 	CHECK(!logger_fd_valid(&failed.fd) && !failed.metrics.connected);
@@ -245,6 +273,7 @@ static void candidate_ownership(const char *mode)
 	CHECK(sockets == 1 && connects == 1 && closes == 1);
 	CHECK(reused_fd >= 0);
 	int stale_fd = reused_fd;
+
 	logger_syslog_close(&failed);
 	CHECK(closes == 1 && fcntl(stale_fd, F_GETFD) >= 0);
 
@@ -259,6 +288,7 @@ static void candidate_ownership(const char *mode)
 
 	/* 再由真正生产入口取得原整数，必须可以重新登记并正常关闭。 */
 	struct logger_syslog next;
+
 	CHECK(!logger_syslog_init(&next, "app", &c.syslog));
 	CHECK(syslog_fd(&next) == stale_fd && next.metrics.connected);
 	logger_syslog_close(&next);
@@ -273,12 +303,14 @@ static void retire_ownership(const char *mode)
 	logger_config_t c = config();
 	int error = strstr(mode, "eintr") ? EINTR : EIO;
 	unsigned int before = closes;
+
 	inject_close = error;
 	reuse_during_close = 1;
 	int raw;
 
 	if (!strncmp(mode, "retire-status-", 14)) {
 		struct logger_syslog syslog;
+
 		CHECK(!logger_syslog_init(&syslog, "app", &c.syslog));
 		raw = syslog_fd(&syslog);
 		CHECK(raw >= 0 && syslog.metrics.connected);
@@ -321,6 +353,7 @@ static void clock_at_ms(uint64_t value)
 	/* 上界用例属于当前 64 位支持矩阵；不允许截断输入或跳过后计作通过。 */
 	CHECK(sizeof(time_t) >= sizeof(int64_t));
 	time_t seconds = (time_t)(value / 1000u);
+
 	CHECK(seconds >= 0 && (uint64_t)seconds == value / 1000u);
 	clock_at(seconds, (long)(value % 1000u) * 1000000L);
 }
@@ -329,11 +362,13 @@ static void rejected_clock(int error)
 {
 	logger_config_t c = config();
 	logger_t *l = NULL;
+
 	errno = EDOM;
 	CHECK(logger_create(&c, &l) == -error && !l && errno == EDOM);
 	CHECK(!sockets && !connects && !sends && !closes);
 
 	struct logger_syslog failed;
+
 	CHECK(logger_syslog_init(&failed, "app", &c.syslog) == -1 &&
 	      errno == error);
 	CHECK(failed.retry_from_ms.value == 0);
@@ -356,6 +391,7 @@ static void rejected_clock(int error)
 	CHECK(l->syslog_backend.connection_error == ENOENT &&
 	      !l->syslog_backend.retry_clock_pending);
 	logger_syslog_metrics_t m = metrics(l);
+
 	CHECK(m.submitted_records == 1 && m.failed_records == 1 &&
 	      !m.sent_records && !m.cooldown_records && !m.send_attempts);
 	CHECK(m.connect_attempts == 1 && m.connect_failures == 1 &&
@@ -405,6 +441,7 @@ static void clock_boundaries(const char *mode)
 
 	logger_config_t c = config();
 	logger_t *l = NULL;
+
 	if (!strcmp(mode, "clock-max-milliseconds")) {
 		clock_at_ms(UINT64_MAX);
 		raw_now.tv_nsec += 999999L;
@@ -413,6 +450,7 @@ static void clock_boundaries(const char *mode)
 		CHECK(l->syslog_backend.reconnect_interval_ms.value == 100);
 		CHECK(!output(l));
 		logger_syslog_metrics_t m = metrics(l);
+
 		CHECK(m.connect_attempts == 1 && !m.connect_failures &&
 		      m.submitted_records == 1 && m.sent_records == 1 &&
 		      !m.failed_records && m.connected && !m.last_error);
@@ -424,6 +462,7 @@ static void clock_boundaries(const char *mode)
 	}
 
 	uint64_t start = now_ms;
+
 	if (!strcmp(mode, "clock-limit-cooldown")) {
 		start = UINT64_MAX - 100u;
 		clock_at_ms(start);
@@ -448,12 +487,14 @@ static void clock_boundaries(const char *mode)
 	CHECK(l->syslog_backend.retry_from_ms.value == start);
 	CHECK(sockets == 1 && connects == 1 && !sends);
 	logger_syslog_metrics_t m = metrics(l);
+
 	CHECK(m.submitted_records == 1 && m.failed_records == 1 &&
 	      m.cooldown_records == 1 && !m.sent_records && !m.connected);
 	CHECK(m.connect_attempts == 1 && m.connect_failures == 1 &&
 	      m.last_error == ENOENT);
 
 	uint64_t retry = start + 100u;
+
 	if (!strcmp(mode, "clock-wide-elapsed"))
 		retry = start + (uint64_t)UINT32_MAX + 1u;
 	/* 亚毫秒起点仍向下取整；到第 100 个整数毫秒即允许重连。 */
@@ -475,6 +516,7 @@ static void clock_boundaries(const char *mode)
 static bool run_create_case(const char *mode)
 {
 	logger_config_t c = config();
+
 	if (!strncmp(mode, "clock-", 6) && strcmp(mode, "clock-init") &&
 	    strcmp(mode, "clock-disconnect")) {
 		clock_boundaries(mode);
@@ -526,6 +568,7 @@ static bool run_create_case(const char *mode)
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		inject_connect = ENOENT;
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		CHECK(sockets == 1 && connects == 1 && closes == 1);
@@ -543,8 +586,9 @@ static bool run_create_case(const char *mode)
 			CHECK(output(l) == -ENOENT);
 			CHECK(connects == 1);
 			now_ms = 200;
-		} else
+		} else {
 			++now_ms;
+		}
 		CHECK(output(l) == -ENOENT);
 		CHECK(connects == 2 && sockets == 2);
 		inject_connect = 0;
@@ -552,6 +596,7 @@ static bool run_create_case(const char *mode)
 		CHECK(!output(l));
 		CHECK(connects == 3 && sockets == 3 && sends == 1);
 		logger_syslog_metrics_t m = metrics(l);
+
 		CHECK(m.reconnect_successes == 1 && m.connected &&
 		      !m.last_error);
 		CHECK(logger_flush(l) == -ENOENT);
@@ -568,16 +613,19 @@ static void run(const char *mode, int fd)
 		return;
 	logger_config_t c = config();
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	CHECK(connects == 1 && sockets == 1);
 	int error = 0;
+
 	if (!strncmp(mode, "send-", 5)) {
 		inject_send = parse_error(mode + 5);
 		error = inject_send;
 		CHECK(output(l) == -error);
 		CHECK(sends == (error == EINTR ? 4u : 1u));
 		logger_syslog_metrics_t m = metrics(l);
+
 		CHECK(m.failed_records == 1 && m.sent_records == 0);
 		if (error == EAGAIN || error == ENOBUFS || error == ENOMEM)
 			CHECK(m.backpressure_records == 1 && m.connected);
@@ -628,6 +676,7 @@ static void run(const char *mode, int fd)
 		CHECK(output(l) == -ECONNREFUSED);
 		error = ECONNREFUSED;
 		logger_syslog_metrics_t m = metrics(l);
+
 		CHECK(m.close_failures == 1 && m.last_close_error == EIO &&
 		      !m.connected);
 		inject_send = 0;
@@ -653,6 +702,7 @@ static void run(const char *mode, int fd)
 		CHECK(connects == 3);
 	} else if (!strcmp(mode, "oversize")) {
 		char b[9000];
+
 		memset(b, 'x', sizeof(b));
 		CHECK(logger_syslog_write(&l->syslog_backend, LOGGER_INFO, b,
 					  sizeof(b)) == -1 &&
@@ -664,26 +714,32 @@ static void run(const char *mode, int fd)
 		CHECK(metrics(l).failed_records == 2);
 	} else if (!strcmp(mode, "max-packet")) {
 		char b[8192];
+
 		memset(b, 'x', sizeof(b));
 		int len = snprintf(NULL, 0, "<14>app[%ld]: ", (long)getpid());
+
 		CHECK(len > 0);
 		CHECK(!logger_syslog_write(&l->syslog_backend, LOGGER_INFO, b,
 					   sizeof(b) - (size_t)len));
 		char rx[9000];
 		ssize_t n = recv(fd, rx, sizeof(rx), MSG_DONTWAIT);
+
 		CHECK(n == 8192);
 		CHECK(logger_syslog_write(&l->syslog_backend, LOGGER_INFO, b,
 					  sizeof(b) - (size_t)len + 1) == -1 &&
 		      errno == EMSGSIZE);
 		CHECK(sends == 1);
-	} else
+	} else {
 		CHECK(!"unknown mode");
+	}
 	if (error) {
 		CHECK(logger_flush(l) == -error);
 		CHECK(logger_destroy(&l) == -error);
-	} else
+	} else {
 		CHECK(!logger_destroy(&l));
+	}
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
@@ -692,6 +748,7 @@ int main(int argc, char **argv)
 	CHECK(!chdir(temp));
 	CHECK(snprintf(endpoint, sizeof(endpoint), "%s/sink", temp) > 0);
 	int fd = receiver();
+
 	run(argv[1], fd);
 	watch = 0;
 	CHECK(!close(fd));

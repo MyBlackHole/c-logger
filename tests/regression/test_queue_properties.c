@@ -17,11 +17,13 @@ struct expected_record {
 	size_t length;
 	char text[901];
 };
+
 static struct expected_record expected[MAX_CAP];
 
 static uint32_t next_random(uint32_t *state)
 {
 	uint32_t n = *state;
+
 	n ^= n << 13;
 	n ^= n >> 17;
 	n ^= n << 5;
@@ -51,6 +53,7 @@ static size_t text_length(unsigned int choice)
 static void write_record(struct logger_message *m, uint32_t *seed, int serial)
 {
 	size_t n = text_length(next_random(seed));
+
 	memset(m, 0, sizeof(*m));
 	m->level = LOGGER_INFO;
 	m->line = serial;
@@ -69,12 +72,14 @@ static void verify_pop(struct logger_queue *queue, size_t *front, size_t *count)
 {
 	struct logger_message actual = { 0 };
 	int result = logger_queue_try_pop(queue, &actual);
+
 	if (!*count) {
 		CHECK(result == 0);
 		return;
 	}
 	CHECK(result == 1);
 	const struct expected_record *model = &expected[*front];
+
 	CHECK(actual.line == model->line);
 	CHECK(actual.text_len == model->length);
 	CHECK(!memcmp(actual.text, model->text, model->length + 1u));
@@ -89,6 +94,7 @@ static void run_model(uint32_t seed)
 {
 	struct logger_queue q;
 	size_t requested = 2u << (seed % 4u);
+
 	CHECK(!logger_queue_init(&q, requested));
 	CHECK(q.cap == requested);
 	size_t front = 0;
@@ -99,9 +105,11 @@ static void run_model(uint32_t seed)
 
 	for (unsigned int step = 0; step < STEPS; ++step) {
 		unsigned int choice = next_random(&seed);
+
 		if ((choice & 3u) != 0) {
 			write_record(&message, &seed, serial);
 			int result = logger_queue_push(&q, &message);
+
 			if (count == q.cap) {
 				CHECK(result == 0);
 			} else {
@@ -141,8 +149,10 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	char *end = NULL;
 	unsigned long value = strtoul(argv[1], &end, 10);
+
 	CHECK(end && end != argv[1] && *end == '\0' && value <= UINT32_MAX);
 	uint32_t seed = (uint32_t)value;
+
 	if (!seed)
 		seed = UINT32_C(0x9e3779b9);
 	run_model(seed);

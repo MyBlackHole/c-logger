@@ -7,17 +7,20 @@
 #include <sys/syscall.h>
 static int injected;
 long __real_syscall(long number, ...);
+
 long __wrap_syscall(long number, ...)
 {
 #ifdef SYS_renameat2
 	CHECK(number == SYS_renameat2);
 	va_list ap;
+
 	va_start(ap, number);
 	int a = va_arg(ap, int);
 	const char *from = va_arg(ap, const char *);
 	int b = va_arg(ap, int);
 	const char *to = va_arg(ap, const char *);
 	unsigned int flags = va_arg(ap, unsigned int);
+
 	va_end(ap);
 	CHECK(a == b && flags == 1u);
 	if (injected) {
@@ -31,16 +34,20 @@ long __wrap_syscall(long number, ...)
 	return -1;
 #endif /* SYS_renameat2 */
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	int fd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
 	CHECK(fd >= 0);
 	int a = openat(fd, "source", O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
+
 	CHECK(a >= 0);
 	CHECK(write(a, "source-data", 11) == 11 && close(a) == 0);
 	int b = openat(fd, "destination", O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
+
 	CHECK(b >= 0);
 	CHECK(write(b, "existing", 8) == 8 && close(b) == 0);
 	if (!strcmp(argv[1], "enosys"))

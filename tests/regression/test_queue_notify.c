@@ -8,6 +8,7 @@ static _Atomic int release_wait;
 static _Atomic int intercepted;
 static _Atomic int fail_wait;
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (!atomic_exchange(&intercepted, 1)) {
@@ -15,31 +16,38 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 		wait_flag(&release_wait); /* 工作线程仍持有谓词互斥锁 */
 	}
 	int rc = __real_pthread_cond_wait(cv, mu);
+
 	if (!rc && atomic_exchange(&fail_wait, 0))
 		return EIO; /* 已重新获取互斥锁，与条件等待返回语义一致 */
 	return rc;
 }
+
 static void *producer(void *p)
 {
 	logger_log(p, LOGGER_INFO, "notify", __FILE__, __LINE__, __func__,
 		   "last-before-idle");
 	return NULL;
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 1 || argc == 2);
 	int wait_error = argc == 2 && !strcmp(argv[1], "wait-error");
+
 	if (argc == 2)
 		CHECK(wait_error);
 	char dir[] = "/tmp/logger-notify-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	if (wait_error) {
@@ -77,6 +85,7 @@ int main(int argc, char **argv)
 	CHECK(logger_queue_wait_count(&l->q) >= 1);
 	CHECK(logger_queue_producer_wake_signals(&l->q) == 0);
 	pthread_t thread;
+
 	CHECK(pthread_create(&thread, NULL, producer, l) == 0);
 	/*
 	 * 只等待发布，不等生产者返回：
@@ -84,6 +93,7 @@ int main(int argc, char **argv)
 	 * 所以生产者的少数慢路径会阻塞到 cond_wait 原子释放互斥锁。
 	 */
 	int published = 0;
+
 	for (int i = 0; i < 5000; ++i) {
 		if (atomic_load_explicit(&l->q.slots[0].seq,
 					 memory_order_acquire) == 1) {
@@ -98,6 +108,7 @@ int main(int argc, char **argv)
 	CHECK(logger_queue_producer_wake_signals(&l->q) == 1);
 	CHECK(logger_queue_force_wake_signals(&l->q) == 0);
 	int output_without_rescue = 0;
+
 	for (int i = 0; i < 1000; ++i) {
 		if (file_size("out.log") > 0) {
 			output_without_rescue = 1;

@@ -16,22 +16,26 @@ typedef enum {
 	LOGGER_FATAL,
 	LOGGER_OFF
 } logger_level_t;
+
 typedef enum {
 	LOGGER_DETAIL_MINIMAL = 0,
 	LOGGER_DETAIL_NORMAL,
 	LOGGER_DETAIL_VERBOSE,
 	LOGGER_DETAIL_DEBUG
 } logger_detail_t;
+
 typedef struct {
 	const char *request_id;
 	const char *session_id;
 	const char *trace_id;
 } logger_context_t;
+
 typedef enum {
 	LOGGER_OUT_STDERR = 1u << 0,
 	LOGGER_OUT_FILE = 1u << 1,
 	LOGGER_OUT_SYSLOG = 1u << 2
 } logger_output_t;
+
 typedef enum {
 	LOGGER_ROTATE_NONE = 0,
 	LOGGER_ROTATE_SIZE,
@@ -39,18 +43,21 @@ typedef enum {
 	LOGGER_ROTATE_SIZE_DAILY,
 	LOGGER_ROTATE_EXTERNAL
 } logger_rotate_mode_t;
+
 typedef struct {
 	logger_rotate_mode_t mode;
 	size_t max_file_size;
 	unsigned int retention_days;
 } logger_rotation_config_t;
 typedef struct logger logger_t;
+
 typedef enum {
 	LOGGER_STATE_CREATED = 0,
 	LOGGER_STATE_RUNNING,
 	LOGGER_STATE_STOPPING,
 	LOGGER_STATE_STOPPED
 } logger_state_t;
+
 typedef struct {
 	const char *module;
 	const char *file;
@@ -72,6 +79,7 @@ typedef enum {
 	LOGGER_OVERFLOW_DROP = 0,
 	LOGGER_OVERFLOW_SYNC = 1
 } logger_overflow_policy_t;
+
 typedef struct {
 	uint64_t dropped[6]; /* 仅统计队列满时的 DROP；不含同步回退 */
 	uint64_t queue_high_watermark;
@@ -80,6 +88,7 @@ typedef struct {
 	uint64_t consumer_batches;
 	uint64_t consumer_records; /* 已出队的记录数，并非已完成输出的记录数 */
 } logger_metrics_t;
+
 /*
  * 独立扩展：logger_metrics_t 保留原有二进制布局。
  * 实时快照可能跨越并发更新。生产者停止产生日志后执行 flush，
@@ -192,6 +201,7 @@ typedef enum {
 	LOGGER_SYSLOG_START_REQUIRED = 0,
 	LOGGER_SYSLOG_START_DEFERRED = 1
 } logger_syslog_start_t;
+
 /*
  * 带命名空间的 facility 值避免依赖 <syslog.h>，其中的 LOG_* 宏
  * 会与旧版全局便捷宏冲突。其他标准 facility 编号 0..23
@@ -206,6 +216,7 @@ typedef enum {
 #define LOGGER_SYSLOG_FACILITY_LOCAL5 (21u << 3)
 #define LOGGER_SYSLOG_FACILITY_LOCAL6 (22u << 3)
 #define LOGGER_SYSLOG_FACILITY_LOCAL7 (23u << 3)
+
 typedef struct {
 	const char *path; /* NULL：/dev/log；创建时复制 */
 	unsigned int facility; /* 带命名空间的 facility 或标准编号 * 8 */
@@ -216,11 +227,13 @@ typedef struct {
 static inline logger_syslog_config_t logger_syslog_defaults_cpp(void)
 {
 	logger_syslog_config_t c = {};
+
 	c.facility = LOGGER_SYSLOG_FACILITY_USER;
 	c.reconnect_interval_ms = 1000u;
 	c.startup = LOGGER_SYSLOG_START_REQUIRED;
 	return c;
 }
+
 #define LOGGER_SYSLOG_DEFAULT_CONFIG() logger_syslog_defaults_cpp()
 #else
 #define LOGGER_SYSLOG_DEFAULT_CONFIG()                                      \
@@ -256,6 +269,7 @@ typedef struct {
 } logger_syslog_metrics_t;
 
 #define LOGGER_CONFIG_VERSION 1u
+
 typedef struct {
 	uint32_t struct_size;
 	uint32_t version;
@@ -276,6 +290,7 @@ typedef struct {
 	/* 当前 ABI 2 的固定字段；未来扩展追加在当前结构之后。 */
 	logger_syslog_config_t syslog;
 } logger_config_t;
+
 #define LOGGER_CONFIG_SIZE 144u
 /*
  * 所有权与线程约定：
@@ -588,6 +603,7 @@ LOGGER_API int logger_global_write(logger_level_t level, const char *module,
 static inline logger_config_t logger_defaults_cpp(void)
 {
 	logger_config_t c = {};
+
 	c.struct_size = sizeof(c);
 	c.version = LOGGER_CONFIG_VERSION;
 	c.level = LOGGER_INFO;
@@ -609,6 +625,7 @@ static inline logger_config_t logger_defaults_cpp(void)
 	c.syslog = LOGGER_SYSLOG_DEFAULT_CONFIG();
 	return c;
 }
+
 #define LOGGER_DEFAULT_CONFIG() logger_defaults_cpp()
 #else
 #define LOGGER_DEFAULT_CONFIG()                                             \

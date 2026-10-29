@@ -11,6 +11,7 @@ struct example_plugin {
 	int (*run)(example_sdk_t *sdk, unsigned int task);
 	void (*destroy)(example_sdk_t *sdk);
 };
+
 /*
  * POSIX dlsym 提供函数地址。memcpy 避免 ISO C 严格检查下
  * 函数指针与 void * 之间的强制转换。Linux 目标断言其表示形式。

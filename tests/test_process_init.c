@@ -19,27 +19,33 @@ static void wait_ok(pid_t pid)
 static void cold(void)
 {
 	char path[] = "/tmp/logger-process-init-XXXXXX";
+
 	enter_temp(path);
 	errno = ERANGE;
 	CHECK(logger_process_init() == 0 && errno == ERANGE);
 	CHECK(logger_process_init() == -EALREADY && errno == ERANGE);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.queue_capacity = 8;
 	logger_t *a = NULL;
+
 	CHECK(logger_create(&cfg, &a) == 0);
 	CHECK(a != NULL);
 	logger_config_t bcfg = LOGGER_DEFAULT_CONFIG();
+
 	bcfg.async_mode = 0;
 	logger_t *b = NULL;
+
 	CHECK(logger_create(&bcfg, &b) == 0);
 	CHECK(b != NULL);
 	LOGGER_INFO(a, "init", "BEFORE_FORK");
 	CHECK(logger_flush(a) == 0);
 
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		errno = EDOM;
@@ -67,8 +73,10 @@ static void cold(void)
 static void prefork(void)
 {
 	char path[] = "/tmp/logger-process-prefork-XXXXXX";
+
 	enter_temp(path);
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		/*
@@ -77,6 +85,7 @@ static void prefork(void)
 		if (logger_process_init())
 			_exit(20);
 		logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 		cfg.outputs = LOGGER_OUT_FILE;
 		cfg.file_path = "out.log";
 		cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -101,8 +110,10 @@ static void uninitialized(void)
 		check_process_rejection(ENODEV);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&cfg, &l) == 0);
 	CHECK(l != NULL);
 	CHECK(logger_process_init() == -EALREADY);

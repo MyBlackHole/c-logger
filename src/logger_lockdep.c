@@ -99,6 +99,7 @@ void logger_lockdep_check_acquire(enum logger_lock_class class_id,
 	if (state.depth == LOGGER_LOCKDEP_MAX_HELD)
 		violation("held-lock stack overflow", class_id, lock);
 }
+
 void logger_lockdep_acquire(enum logger_lock_class class_id, const void *lock)
 {
 	logger_lockdep_check_acquire(class_id, lock);
@@ -114,6 +115,7 @@ void logger_lockdep_check_release(enum logger_lock_class class_id,
 		violation("release without acquire", class_id, lock);
 
 	struct logger_lockdep_entry *top = &state.held[state.depth - 1];
+
 	if (top->class_id != class_id || top->lock != lock)
 		violation("non-LIFO/wrong-owner release", class_id, lock);
 }

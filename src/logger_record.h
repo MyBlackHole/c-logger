@@ -5,6 +5,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <string.h>
+
 enum { LOGGER_MESSAGE_MAX = 4096, LOGGER_LINE_MAX = 5120 };
 
 /*
@@ -14,6 +15,7 @@ enum { LOGGER_MESSAGE_MAX = 4096, LOGGER_LINE_MAX = 5120 };
 static inline void logger_text_mark_truncated(char *text, size_t capacity)
 {
 	static const char marker[] = " [truncated]";
+
 	if (capacity >= sizeof(marker))
 		memcpy(text + capacity - sizeof(marker), marker,
 		       sizeof(marker));
@@ -50,6 +52,7 @@ struct logger_message {
 	char file_storage[256];
 	char function_storage[128];
 };
+
 /*
  * 需要跨调用保留来源时，复制进记录自身的固定数组；同步记录只在当前调用
  * 期间借用来源，调用方须保证其存活。
@@ -58,6 +61,7 @@ struct logger_message {
 static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 {
 	size_t n = 0;
+
 	while (n + 1 < cap && src[n])
 		++n;
 	memcpy(dst, src, n);
@@ -65,6 +69,7 @@ static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 	if (src[n] && n)
 		dst[n - 1] = '~';
 }
+
 static inline size_t logger_record_text_length(const struct logger_message *m)
 {
 	size_t n = m->text_len;
@@ -87,9 +92,11 @@ static inline void logger_record_rebase(struct logger_message *m)
 	m->file = m->file_storage;
 	m->func = m->function_storage;
 }
+
 static inline void logger_record_own_source(struct logger_message *m)
 {
 	const char *file = m->file ? strrchr(m->file, '/') : NULL;
+
 	file = file ? file + 1 : (m->file ? m->file : "?");
 	logger_source_copy(m->module_storage, sizeof(m->module_storage),
 			   m->module ? m->module : "app");

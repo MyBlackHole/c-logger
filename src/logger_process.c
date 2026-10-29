@@ -14,12 +14,14 @@
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "fork guard requires lock-free int");
 static _Atomic int owner_pid;
 static _Atomic int forked_child;
+
 /* 负数表示阶段，正数完整保存最近一次注册错误，不额外发布普通错误字段。 */
 enum process_phase {
 	PROCESS_IDLE = 0,
 	PROCESS_STARTING = -1,
 	PROCESS_READY = -2
 };
+
 static _Atomic int process_ticket;
 static _Thread_local bool initializing;
 /* 这不是实例引用计数，也不是全部在途操作/继承资源的清单。 */
@@ -62,11 +64,13 @@ static int claim_process(void)
 static int initialize_process(void)
 {
 	bool child = logger_process_is_child();
+
 	if (child &&
 	    (!atomic_load_explicit(&forked_child, memory_order_relaxed) ||
 	     !logger_fork_fd_child_valid()))
 		return -ECHILD;
 	int rc = child ? 0 : claim_process();
+
 	if (rc)
 		return rc;
 	if (initializing)
@@ -84,6 +88,7 @@ static int initialize_process(void)
 	 * 完成发布后恢复调用方策略；待定取消不会撤销已注册的进程能力。
 	 */
 	int old_cancel;
+
 	rc = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_cancel);
 	if (rc)
 		return -rc;
@@ -95,9 +100,11 @@ static int initialize_process(void)
 		initializing = true;
 		struct logger_runtime *runtime = NULL;
 		int result = child ? logger_fork_fd_child_reinit() : 0;
+
 		if (!result)
 			result = logger_runtime_create(&runtime);
 		int error = result < 0 ? -result : 0;
+
 		if (!error && !atomic_load_explicit(&handlers_registered,
 						    memory_order_acquire)) {
 			error = pthread_atfork(logger_fork_fd_prepare,
@@ -133,6 +140,7 @@ static int initialize_process(void)
 		rc = -error;
 	}
 	int restore = pthread_setcancelstate(old_cancel, NULL);
+
 	return rc ? rc : -restore;
 }
 

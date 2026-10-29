@@ -31,6 +31,7 @@ int main(void)
 	errno = EDOM;
 	/* 空元数据用 C11 零指针常量；唯一被测错误是无实例。 */
 	int rc = logger_log_sync_status(NULL, LOGGER_INFO, 0, 0, 0, 0, "x");
+
 	if (rc != -EINVAL || errno != EDOM)
 		return 4;
 
@@ -48,6 +49,7 @@ int main(void)
 		return 7;
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.async_mode = 0;
 	logger_t *instance = NULL;

@@ -26,6 +26,7 @@
 #define g_logger (logger_runtime_current()->global_logger)
 
 enum global_phase { G_IDLE, G_RUNNING, G_STOPPING, G_BROKEN };
+
 /*
  * 票据含有阶段位，代次不含阶段；原子存储仍为 uint64_t。
  * 显式 .value 保留打包边界，CAS 失败直接写回完整票据的字段。
@@ -179,6 +180,7 @@ static int begin(struct global_scope *scope)
 		return -1;
 	}
 	int rc = logger_process_require();
+
 	if (rc) {
 		errno = -rc;
 		return -1;
@@ -201,6 +203,7 @@ static int lock_control(struct global_scope *scope)
 	if (!rc) {
 		scope->control_locked = true;
 		int poison = global_lock_error();
+
 		if (poison)
 			return -poison;
 	}
@@ -228,6 +231,7 @@ static int pin(struct global_scope *scope)
 	struct global_ticket ticket = { atomic_load_explicit(
 		&g_ticket, memory_order_acquire) };
 	int error = phase_error(ticket);
+
 	if (error)
 		return -error;
 	/*
@@ -236,10 +240,12 @@ static int pin(struct global_scope *scope)
 	 * 已经延迟的调用最多进入一次，并在拿到生命周期保护后重新校验票据。
 	 */
 	int rc = __cleanup_lockdep_rwlock_rdlock(&g_lifetime_lock);
+
 	if (rc)
 		return -rc;
 	scope->lifetime_locked = true;
 	int poison = global_lock_error();
+
 	if (poison)
 		return -poison;
 	if (ticket.value !=
@@ -295,11 +301,13 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 		goto done;
 	}
 	struct global_generation generation = generation_of(current);
+
 	if (generation.value == (UINT64_MAX >> PHASE_BITS)) {
 		rc = -EOVERFLOW;
 		goto done;
 	}
 	struct global_ticket updating = with_phase(current, G_STOPPING);
+
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &current.value, updating.value,
 		    memory_order_acq_rel, memory_order_acquire)) {
@@ -532,6 +540,7 @@ int logger_global_write(logger_level_t level, const char *module,
 	rc = !fmt || (unsigned int)level >= LOGGER_OFF ? -EINVAL : pin(&scope);
 	if (!rc) {
 		va_list ap;
+
 		va_start(ap, fmt);
 		/*
 		 * 默认借用的成功锁操作也可能改变 errno；%m 使用最外层入口值。

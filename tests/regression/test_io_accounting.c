@@ -12,6 +12,7 @@ enum injection {
 	FILE_SYNC_ERROR,
 	DIR_SYNC_ERROR
 };
+
 static _Atomic int fault;
 static _Atomic int calls;
 static _Atomic int block_first;
@@ -34,22 +35,26 @@ ssize_t __wrap_write(int fd, const void *p, size_t n)
 	}
 	return __real_write(fd, p, n);
 }
+
 ssize_t __wrap_writev(int fd, const struct iovec *v, int count)
 {
 	if (fd == output_fd) {
 		int mode = atomic_load(&fault);
+
 		if (mode == WRITEV_ERROR) {
 			errno = ENOSPC;
 			return -1;
 		}
 		if (mode == SHORT_SUCCESS || mode == SHORT_ERROR) {
 			int call = atomic_fetch_add(&calls, 1);
+
 			if (call == 0) {
 				errno = EINTR;
 				return -1;
 			}
 			if (call == 1) {
 				struct iovec short_vec = v[0];
+
 				if (short_vec.iov_len > 3)
 					short_vec.iov_len = 3;
 				return __real_writev(fd, &short_vec, 1);
@@ -62,11 +67,13 @@ ssize_t __wrap_writev(int fd, const struct iovec *v, int count)
 	}
 	return __real_writev(fd, v, count);
 }
+
 int __wrap_fsync(int fd)
 {
 	int mode = atomic_load(&fault);
 	struct stat st;
 	int matched = mode == FILE_SYNC_ERROR && fd == output_fd;
+
 	if (mode == DIR_SYNC_ERROR && fstat(fd, &st) == 0 &&
 	    S_ISDIR(st.st_mode))
 		matched = 1;
@@ -76,6 +83,7 @@ int __wrap_fsync(int fd)
 	}
 	return __real_fsync(fd);
 }
+
 size_t __wrap_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap)
@@ -86,9 +94,11 @@ size_t __wrap_logger_format_line(const logger_t *l,
 	}
 	return __real_logger_format_line(l, m, out, cap);
 }
+
 static uint64_t dropped(const logger_metrics_t *m)
 {
 	uint64_t n = 0;
+
 	for (unsigned int i = 0; i < 6; ++i)
 		n += m->dropped[i];
 	return n;
@@ -97,16 +107,19 @@ static uint64_t dropped(const logger_metrics_t *m)
 static logger_file_metrics_t file_metrics(void)
 {
 	logger_file_metrics_t metrics;
+
 	CHECK(logger_get_file_metrics(instance, &metrics) == 0);
 	CHECK(metrics.current_size ==
 	      (uint64_t)instance->file_backend.current_size);
 	CHECK(metrics.detached == instance->file_backend.detached);
 	return metrics;
 }
+
 static void check_terminal(uint64_t queued, uint64_t sync, uint64_t good,
 			   uint64_t bad)
 {
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(io.async_completed == queued);
 	CHECK(io.sync_completed == sync);
@@ -115,9 +128,11 @@ static void check_terminal(uint64_t queued, uint64_t sync, uint64_t good,
 	CHECK(io.async_completed + io.sync_completed ==
 	      io.emitted_records + io.failed_records);
 }
+
 static void spill_policy(void)
 {
 	char long_message[701];
+
 	memset(long_message, 'L', sizeof(long_message) - 1u);
 	long_message[sizeof(long_message) - 1u] = '\0';
 
@@ -142,6 +157,7 @@ static void spill_policy(void)
 	      errno == EDOM);
 
 	logger_metrics_t metrics;
+
 	CHECK(logger_get_metrics(instance, &metrics) == 0);
 	CHECK(metrics.enqueued == 1u + LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(metrics.sync_fallbacks == 1);
@@ -149,6 +165,7 @@ static void spill_policy(void)
 	CHECK(metrics.queue_high_watermark == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_spill_exhaustions(&instance->q) == 2);
 	logger_diagnostics_t diagnostics;
+
 	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);
 	CHECK(diagnostics.state == LOGGER_STATE_RUNNING);
 	CHECK(diagnostics.async_mode && diagnostics.worker_running);
@@ -180,6 +197,7 @@ static void full_queue(const char *mode)
 {
 	int fallback = strcmp(mode, "drop") != 0;
 	int failure = strcmp(mode, "fallback-error") == 0;
+
 	atomic_store(&block_first, 1);
 	errno = EDOM;
 	CHECK(LOGGER_INFO(instance, "io", "worker-held") == 0 && errno == EDOM);
@@ -198,12 +216,14 @@ static void full_queue(const char *mode)
 		CHECK(LOGGER_INFO(instance, "io", "queue-drop") == -EAGAIN);
 	CHECK(errno == EDOM);
 	logger_metrics_t metrics;
+
 	CHECK(logger_get_metrics(instance, &metrics) == 0);
 	CHECK(metrics.enqueued == 3);
 	CHECK(metrics.sync_fallbacks == (uint64_t)fallback);
 	CHECK(dropped(&metrics) == (uint64_t)!fallback);
 	CHECK(metrics.queue_high_watermark <= 2);
 	logger_diagnostics_t diagnostics;
+
 	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);
 	CHECK(diagnostics.queue_capacity == 2);
 	CHECK(diagnostics.queue_depth == 2);
@@ -219,19 +239,23 @@ static void full_queue(const char *mode)
 	check_terminal(0, fallback, fallback && !failure, failure);
 	atomic_store(&release_format, 1);
 	int rc = logger_flush(instance);
+
 	CHECK(failure ? rc == -ENOSPC : rc == 0);
 	check_terminal(3, fallback, 3 + (fallback && !failure), failure);
 	CHECK(!file_contains("out.log", "queue-drop"));
 	if (fallback && !failure)
 		CHECK(file_contains("out.log", "fallback-message"));
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	char dir[] = "/tmp/logger-io-account-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 2;
@@ -261,6 +285,7 @@ int main(int argc, char **argv)
 		CHECK(logger_flush(instance) == -ENOSPC);
 		check_terminal(1, 0, 0, 1);
 		logger_file_metrics_t file = file_metrics();
+
 		CHECK(file.write_operations == 1);
 		CHECK(file.failed_write_operations == 1);
 		CHECK(file.write_syscalls == 1);
@@ -285,12 +310,15 @@ int main(int argc, char **argv)
 	} else if (!strcmp(argv[1], "short-ok") ||
 		   !strcmp(argv[1], "short-error")) {
 		int bad = !strcmp(argv[1], "short-error");
+
 		atomic_store(&fault, bad ? SHORT_ERROR : SHORT_SUCCESS);
 		LOGGER_INFO(instance, "io", "short-writev-message");
 		int rc = logger_flush(instance);
+
 		CHECK(bad ? rc == -EIO : rc == 0);
 		check_terminal(1, 0, !bad, bad);
 		logger_file_metrics_t file = file_metrics();
+
 		CHECK(file.write_operations == 1);
 		CHECK(file.failed_write_operations == (uint64_t)bad);
 		CHECK(file.write_syscalls == 3);
@@ -316,6 +344,7 @@ int main(int argc, char **argv)
 		CHECK(logger_flush(instance) == -EIO);
 		check_terminal(1, 0, 1, 0); /* fsync 失败不是额外记录 */
 		logger_file_metrics_t file = file_metrics();
+
 		CHECK(file.data_sync_attempts == 1);
 		CHECK(file.data_sync_failures ==
 		      (uint64_t)(!strcmp(argv[1], "file-fsync")));
@@ -340,6 +369,7 @@ int main(int argc, char **argv)
 		CHECK(logger_fd_valid(&instance->file_backend.fd));
 		check_terminal(2, 0, 1, 1);
 		logger_file_metrics_t file = file_metrics();
+
 		CHECK(file.rotation_attempts == 1);
 		CHECK(!file.rotation_successes && file.rotation_failures == 1);
 		CHECK(file.last_rotation_error == EIO);
@@ -359,6 +389,7 @@ int main(int argc, char **argv)
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;
 	logger_diagnostics_t diagnostics;
+
 	CHECK(logger_get_metrics(instance, &metrics) == 0);
 	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(logger_get_diagnostics(instance, &diagnostics) == 0);

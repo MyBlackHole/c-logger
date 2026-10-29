@@ -16,6 +16,7 @@ static void reject_all(int error)
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
 	int tty = 7;
 	int count = -1;
+
 	errno = EDOM;
 	result(console_init(&cfg), error);
 	result(console_set_color(CONSOLE_COLOR_NEVER), error);
@@ -41,12 +42,15 @@ static void reject_all(int error)
 static void config_and_output(void)
 {
 	FILE *sink = tmpfile();
+
 	CHECK(sink);
 	FILE *old_out = stdout;
 	FILE *old_err = stderr;
+
 	stderr = sink;
 	stdout = stderr;
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
+
 	cfg.verbosity = CONSOLE_QUIET;
 	cfg.color = CONSOLE_COLOR_NEVER;
 	errno = EDOM;
@@ -55,6 +59,7 @@ static void config_and_output(void)
 	result(console_set_verbosity((console_verbosity_t)-1), EINVAL);
 	result(console_set_color((console_color_mode_t)-1), EINVAL);
 	console_config_t bad = cfg;
+
 	bad.verbosity = CONSOLE_DEBUG;
 	bad.color = (console_color_mode_t)-1;
 	result(console_init(&bad), EINVAL);
@@ -92,21 +97,26 @@ static void config_and_output(void)
 static void tty_query(void)
 {
 	int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
+
 	CHECK(master >= 0);
 	CHECK(grantpt(master) == 0 && unlockpt(master) == 0);
 	char *name = ptsname(master);
+
 	CHECK(name);
 	int slave = open(name, O_RDWR | O_NOCTTY | O_CLOEXEC);
 	int file = open("/dev/null", O_WRONLY | O_CLOEXEC);
+
 	CHECK(slave >= 0 && file >= 0);
 	int (*queries[])(int *out) = { console_stdout_is_tty,
 				       console_stderr_is_tty };
 	for (int index = 0; index < 2; ++index) {
 		int fd = index ? STDERR_FILENO : STDOUT_FILENO;
 		int saved = dup(fd);
+
 		CHECK(saved >= 0);
 		CHECK(dup2(file, fd) == fd);
 		int answer = 7;
+
 		errno = EDOM;
 		result(queries[index](&answer), 0);
 		CHECK(answer == 0);
@@ -119,6 +129,7 @@ static void tty_query(void)
 		errno = EDOM;
 		int rc = queries[index](&answer);
 		int error = errno;
+
 		CHECK(dup2(saved, fd) == fd);
 		CHECK(close(saved) == 0);
 		CHECK(rc == -EBADF && error == EDOM && answer == 1);
@@ -142,6 +153,7 @@ int main(int argc, char **argv)
 		} else {
 			CHECK(!strcmp(argv[1], "fork"));
 			pid_t pid = fork();
+
 			CHECK(pid >= 0);
 			if (!pid) {
 				reject_all(ECHILD);
@@ -150,6 +162,7 @@ int main(int argc, char **argv)
 				_exit(0);
 			}
 			int status;
+
 			CHECK(waitpid(pid, &status, 0) == pid);
 			CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 			config_and_output();

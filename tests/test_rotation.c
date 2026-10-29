@@ -16,15 +16,18 @@ static logger_t *default_owner;
 static int verify_file(const char *path, unsigned int *next)
 {
 	FILE *file = fopen(path, "r");
+
 	if (!file)
 		return -1;
 	char *line = NULL;
 	size_t capacity = 0;
 	int rc = 0;
+
 	while (getline(&line, &capacity, file) >= 0) {
 		char *record = strstr(line, "record=");
 		char expected[128];
 		unsigned int id;
+
 		if (!record || sscanf(record, "record=%u", &id) != 1 ||
 		    id >= RECORDS || id != *next) {
 			rc = -1;
@@ -54,6 +57,7 @@ static int select_archive(const struct dirent *entry)
 {
 	const char *name = entry->d_name;
 	size_t length = strlen(name);
+
 	return !strncmp(name, "rotation.", 9) && length > 13 &&
 	       !strcmp(name + length - 5, "Z.log");
 }
@@ -62,11 +66,13 @@ static int verify_directory(const char *directory)
 {
 	struct dirent **archives = NULL;
 	int count = scandir(directory, &archives, select_archive, alphasort);
+
 	if (count < 0)
 		return -1;
 	unsigned int next = 0;
 	int rc = count ? 0 : -1;
 	char path[512];
+
 	for (int i = 0; i < count; i++) {
 		unsigned int before = next;
 		int n = snprintf(path, sizeof(path), "%s/%s", directory,
@@ -78,6 +84,7 @@ static int verify_directory(const char *directory)
 	}
 	free(archives);
 	int n = snprintf(path, sizeof(path), "%s/rotation.log", directory);
+
 	if (n < 0 || (size_t)n >= sizeof(path) || verify_file(path, &next))
 		rc = -1;
 	if (next != RECORDS)
@@ -88,10 +95,12 @@ static int verify_directory(const char *directory)
 static int cleanup_directory(const char *directory)
 {
 	DIR *dir = opendir(directory);
+
 	if (!dir)
 		return -1;
 	int rc = 0;
 	struct dirent *entry;
+
 	while ((entry = readdir(dir))) {
 		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
 			continue;
@@ -113,11 +122,14 @@ int main(void)
 	if (logger_process_init() != 0)
 		return 1;
 	char directory[] = "rotation-test.XXXXXX";
+
 	if (!mkdtemp(directory))
 		return 1;
 	char path[128];
+
 	snprintf(path, sizeof(path), "%s/rotation.log", directory);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = path;
 	c.async_mode = 0;
@@ -125,6 +137,7 @@ int main(void)
 	c.rotation.max_file_size = 1024;
 	c.rotation.retention_days = 1;
 	int rc = 0;
+
 	if (fixture_default_create(&c, &default_owner)) {
 		fputs("DEFAULT_BIND_FAILED\n", stderr);
 		rc = 1;

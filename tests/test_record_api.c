@@ -79,6 +79,7 @@ static void expect_line(FILE *file, const char *body)
 	clearerr(file);
 	CHECK(fgets(line, sizeof(line), file) != NULL);
 	size_t total = strlen(line);
+
 	CHECK(total > length + 1 && line[total - 1] == '\n');
 	CHECK(!memcmp(line + total - length - 1, body, length));
 }
@@ -86,9 +87,11 @@ static void expect_line(FILE *file, const char *body)
 static void ready(int asynchronous)
 {
 	char directory[] = "/tmp/logger-record-api-XXXXXX";
+
 	enter_temp(directory);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -96,9 +99,11 @@ static void ready(int asynchronous)
 	cfg.async_mode = asynchronous;
 	cfg.queue_capacity = 8;
 	logger_t *owner = NULL;
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	CHECK(logger_default_set(NULL, owner) == 0);
 	FILE *file = fopen("out.log", "rb");
+
 	CHECK(file);
 	static const char *const bodies[] = { "instance", "source", "default",
 					      "strict" };
@@ -134,9 +139,11 @@ static void ready(int asynchronous)
 	}
 
 	char oversized[5000];
+
 	memset(oversized, 'x', sizeof(oversized) - 1);
 	oversized[sizeof(oversized) - 1] = '\0';
 	int count = -1;
+
 	errno = EDOM;
 	result(record(RECORD_SYNC, owner, LOGGER_INFO, "%s%n", oversized,
 		      &count),
@@ -146,6 +153,7 @@ static void ready(int asynchronous)
 	CHECK(fgetc(file) == EOF && !ferror(file));
 	char retained[4096];
 	static const char marker[] = " [truncated]";
+
 	memset(retained, 'x', sizeof(retained));
 	memcpy(retained + sizeof(retained) - sizeof(marker), marker,
 	       sizeof(marker));
@@ -171,15 +179,19 @@ static void stderr_error(void)
 {
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.async_mode = 0;
 	logger_t *owner = NULL;
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	CHECK(logger_default_set(NULL, owner) == 0);
 	int saved = dup(STDERR_FILENO);
 	int pipe_fds[2];
+
 	CHECK(saved >= 0 && pipe(pipe_fds) == 0);
 	int report_fd = dup(saved);
+
 	CHECK(report_fd >= 0);
 	report = fdopen(report_fd, "w");
 	CHECK(report);
@@ -188,6 +200,7 @@ static void stderr_error(void)
 	CHECK(close(pipe_fds[1]) == 0);
 	for (unsigned int api = 0; api < 4; ++api) {
 		int count = -1;
+
 		errno = EDOM;
 		result(record(api, owner, LOGGER_INFO, "%s%n", "closed-pipe",
 			      &count),
@@ -208,11 +221,11 @@ static void stderr_error(void)
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
-	if (!strcmp(argv[1], "cold"))
+	if (!strcmp(argv[1], "cold")) {
 		cold();
-	else if (!strcmp(argv[1], "stderr-error"))
+	} else if (!strcmp(argv[1], "stderr-error")) {
 		stderr_error();
-	else {
+	} else {
 		CHECK(!strcmp(argv[1], "sync") || !strcmp(argv[1], "async"));
 		ready(!strcmp(argv[1], "async"));
 	}

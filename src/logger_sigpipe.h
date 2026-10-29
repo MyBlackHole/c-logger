@@ -22,9 +22,11 @@ static inline int logger_sigpipe_begin(struct logger_sigpipe_guard *guard)
 	int saved_errno = errno;
 	sigset_t block;
 	sigset_t pending;
+
 	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
 		return -(errno ? errno : EINVAL);
 	int rc = pthread_sigmask(SIG_BLOCK, &block, &guard->old_mask);
+
 	if (rc != 0)
 		return -rc;
 	if (sigpending(&pending) != 0) {
@@ -33,6 +35,7 @@ static inline int logger_sigpipe_begin(struct logger_sigpipe_guard *guard)
 		return -error;
 	}
 	int member = sigismember(&pending, SIGPIPE);
+
 	if (member < 0) {
 		int error = errno ? errno : EINVAL;
 		(void)pthread_sigmask(SIG_SETMASK, &guard->old_mask, NULL);
@@ -49,13 +52,16 @@ static inline void logger_sigpipe_consume_new(int was_pending)
 		return;
 	sigset_t block;
 	sigset_t pending;
+
 	if (sigemptyset(&block) != 0 || sigaddset(&block, SIGPIPE) != 0)
 		return;
 	if (sigpending(&pending) != 0 || sigismember(&pending, SIGPIPE) != 1)
 		return;
 	struct timespec timeout = { 0 };
+
 	for (;;) {
 		int rc = sigtimedwait(&block, NULL, &timeout);
+
 		if (rc == SIGPIPE || (rc < 0 && errno == EAGAIN))
 			return;
 		if (rc < 0 && errno == EINTR)
@@ -72,9 +78,11 @@ static inline int logger_sigpipe_end(struct logger_sigpipe_guard *guard,
 				     int result, int saw_epipe)
 {
 	int saved_errno = errno;
+
 	if (saw_epipe)
 		logger_sigpipe_consume_new(guard->was_pending);
 	int restore = pthread_sigmask(SIG_SETMASK, &guard->old_mask, NULL);
+
 	errno = saved_errno;
 	return !result && restore ? -restore : result;
 }

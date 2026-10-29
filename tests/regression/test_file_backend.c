@@ -66,8 +66,10 @@ ssize_t __real_writev(int fd, const struct iovec *v, int n);
 int __wrap_openat(int d, const char *p, int flags, ...)
 {
 	mode_t mode = 0;
+
 	if (flags & O_CREAT) {
 		va_list ap;
+
 		va_start(ap, flags);
 		mode = va_arg(ap, mode_t);
 		va_end(ap);
@@ -77,12 +79,14 @@ int __wrap_openat(int d, const char *p, int flags, ...)
 		return -1;
 	}
 	int fd = __real_openat(d, p, flags, mode);
+
 	if (candidate_rollback && fd >= 0 && !strcmp(p, "out.log")) {
 		CHECK(candidate_fd == -1);
 		candidate_fd = fd;
 	}
 	return fd;
 }
+
 int __wrap_clock_gettime(clockid_t which, struct timespec *t)
 {
 	if (fixed_time && which == CLOCK_REALTIME) {
@@ -91,6 +95,7 @@ int __wrap_clock_gettime(clockid_t which, struct timespec *t)
 	}
 	return __real_clock_gettime(which, t);
 }
+
 int __wrap_logger_file_rename_noreplace(int d, const char *a, const char *b)
 {
 	++rename_calls;
@@ -99,13 +104,16 @@ int __wrap_logger_file_rename_noreplace(int d, const char *a, const char *b)
 		return -1;
 	}
 	int rc = __real_logger_file_rename_noreplace(d, a, b);
+
 	if (!rc)
 		renamed = 1;
 	return rc;
 }
+
 int __wrap_fsync(int fd)
 {
 	struct stat st;
+
 	CHECK(fstat(fd, &st) == 0);
 	int match = (sync_error == 1 && fd == old_fd) ||
 		    (sync_error == 2 && renamed && S_ISDIR(st.st_mode)) ||
@@ -123,10 +131,12 @@ int __wrap_fsync(int fd)
 		return -1;
 	}
 	int rc = __real_fsync(fd);
+
 	if (!rc && renamed && S_ISREG(st.st_mode) && fd != old_fd)
 		new_synced = 1;
 	return rc;
 }
+
 int __wrap_close(int fd)
 {
 	if (closing_file) {
@@ -158,6 +168,7 @@ int __wrap_close(int fd)
 		return 0;
 	}
 	int rc = __real_close(fd);
+
 	if (candidate_rollback && fd == candidate_fd) {
 		CHECK(rc == 0 && candidate_close_error);
 		/* 真实 close 后由宿主占用相同整数，再合成 EINTR/EIO。 */
@@ -180,6 +191,7 @@ int __wrap_close(int fd)
 	}
 	return rc;
 }
+
 int __wrap_unlinkat(int d, const char *p, int flags)
 {
 	if (unlink_error && strstr(p, "20000101")) {
@@ -188,6 +200,7 @@ int __wrap_unlinkat(int d, const char *p, int flags)
 	}
 	return __real_unlinkat(d, p, flags);
 }
+
 int __wrap_flock(int fd, int op)
 {
 	if (flock_eintr) {
@@ -197,6 +210,7 @@ int __wrap_flock(int fd, int op)
 	}
 	return __real_flock(fd, op);
 }
+
 ssize_t __wrap_writev(int fd, const struct iovec *v, int n)
 {
 	if (vector_max)
@@ -207,26 +221,34 @@ ssize_t __wrap_writev(int fd, const struct iovec *v, int n)
 static void put(const char *path, const char *text)
 {
 	int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+
 	CHECK(fd >= 0);
 	size_t n = strlen(text);
+
 	CHECK(write(fd, text, n) == (ssize_t)n);
 	CHECK(close(fd) == 0);
 }
+
 static unsigned int fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
+
 	CHECK(d);
 	unsigned int n = 0;
 	struct dirent *e;
-	while ((e = readdir(d)))
+
+	while ((e = readdir(d))) {
 		if (e->d_name[0] != '.')
 			++n;
+	}
 	CHECK(closedir(d) == 0);
 	return n;
 }
+
 static logger_config_t config(const char *p, logger_rotate_mode_t mode)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = p;
 	c.async_mode = 0;
@@ -235,16 +257,19 @@ static logger_config_t config(const char *p, logger_rotate_mode_t mode)
 	c.rotation.retention_days = 0;
 	return c;
 }
+
 static void emit(logger_t *l, const char *text)
 {
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "file", __FILE__, __LINE__,
 				     __func__, "%s", text) == 0);
 }
+
 static void finish(logger_t *l)
 {
 	logger_destroy(&l);
 	CHECK(logger_process_object_count() == 0);
 }
+
 static int child_probe(int argc, char **argv)
 {
 	CHECK(argc == 5);
@@ -253,6 +278,7 @@ static int child_probe(int argc, char **argv)
 	int create_rc = logger_create(&c, &l);
 	int error = -create_rc;
 	int busy = !strcmp(argv[3], "busy");
+
 	CHECK(busy ? !l && error == EBUSY : l != NULL);
 	if (l)
 		emit(l, "child");
@@ -261,10 +287,12 @@ static int child_probe(int argc, char **argv)
 	logger_destroy(&l);
 	return 0;
 }
+
 static void probe(const char *path, const char *expect, const char *exit_mode)
 {
 	char exe[4096];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+
 	CHECK(n > 0);
 	exe[n] = 0;
 	char *args[] = {
@@ -272,19 +300,23 @@ static void probe(const char *path, const char *expect, const char *exit_mode)
 		NULL
 	};
 	pid_t p = fork();
+
 	CHECK(p >= 0);
 	if (!p) {
 		execv(exe, args);
 		_exit(127);
 	}
 	int st;
+
 	CHECK(waitpid(p, &st, 0) == p && WIFEXITED(st) && WEXITSTATUS(st) == 0);
 }
+
 static void *race_create(void *p)
 {
 	logger_config_t *c = p;
 	logger_t *l = NULL;
 	int create_rc = logger_create(c, &l);
+
 	if (l) {
 		CHECK(atomic_fetch_add(&wins, 1) == 0);
 		winner = l;
@@ -294,11 +326,14 @@ static void *race_create(void *p)
 	}
 	return NULL;
 }
+
 static void owner(const char *scenario)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
+
 	if (!strcmp(scenario, "owner-race")) {
 		pthread_t t[16];
+
 		for (unsigned int i = 0; i < 16; ++i)
 			CHECK(pthread_create(t + i, NULL, race_create, &c) ==
 			      0);
@@ -312,12 +347,14 @@ static void owner(const char *scenario)
 	if (!strcmp(scenario, "owner-exit")) {
 		probe("out.log", "free", "crash");
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		finish(l);
 		return;
 	}
 	logger_t *a = NULL;
+
 	CHECK(logger_create(&c, &a) == 0);
 	CHECK(a != NULL);
 	emit(a, "owner");
@@ -330,25 +367,30 @@ static void owner(const char *scenario)
 		}
 		if (!strcmp(scenario, "owner-close-other")) {
 			int fd = open("out.log.logger.lock", O_RDWR);
+
 			CHECK(fd >= 0);
 			CHECK(close(fd) == 0);
 		}
 		logger_t *b = NULL;
+
 		CHECK(logger_create(&c, &b) == -EBUSY && !b);
 	}
 	emit(a, "still-owner");
 	finish(a);
 	logger_t *b = NULL;
+
 	CHECK(logger_create(&c, &b) == 0);
 	CHECK(b != NULL);
 	finish(b);
 	probe("out.log", "free", "close");
 }
+
 static void invalid_path(const char *scenario)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
 	int expected = 0;
 	char long_name[5000];
+
 	if (!strcmp(scenario, "path-empty")) {
 		c.file_path = "";
 		expected = EINVAL;
@@ -398,11 +440,14 @@ static void invalid_path(const char *scenario)
 		c.file_path = "/dev/null";
 		c.rotation.mode = LOGGER_ROTATE_SIZE;
 		expected = EINVAL;
-	} else
+	} else {
 		CHECK(0);
+	}
 	unsigned int count = fds();
+
 	for (int i = 0; i < 20; ++i) {
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == -expected && !l);
 		CHECK(fds() == count);
 	}
@@ -413,16 +458,19 @@ static void invalid_path(const char *scenario)
 	if (!strcmp(scenario, "path-dangling"))
 		CHECK(access("absent.log", F_OK) != 0);
 }
+
 static void reopen_case(const char *scenario)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_EXTERNAL);
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "first");
 	old_fd = test_file_fd(&l->file_backend);
 	CHECK(rename("out.log", "old.log") == 0);
 	unsigned int count = fds();
+
 	if (!strcmp(scenario, "reopen-permission"))
 		data_open_error = EACCES;
 	if (!strcmp(scenario, "reopen-space"))
@@ -448,8 +496,10 @@ static void reopen_case(const char *scenario)
 		       close_error_fd >= 0		     ? EIO :
 							       0;
 	int rc = logger_reopen(l);
+
 	CHECK(rc == -expected);
 	logger_file_metrics_t file_metrics;
+
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.reopen_attempts == 1);
 	CHECK(file_metrics.reopen_successes == (uint64_t)!expected);
@@ -477,8 +527,9 @@ static void reopen_case(const char *scenario)
 		CHECK(file_metrics.reopen_failures == 1);
 		CHECK(file_metrics.last_reopen_error == expected);
 		CHECK(file_metrics.last_error == 0);
-	} else
+	} else {
 		CHECK(test_file_fd(&l->file_backend) != old_fd);
+	}
 	LOGGER_INFO(l, "test", "new-file");
 	CHECK(file_contains("out.log", "new-file"));
 	if (expected)
@@ -487,6 +538,7 @@ static void reopen_case(const char *scenario)
 		CHECK(logger_flush(l) == 0);
 	finish(l);
 }
+
 /* reopen 旧文件同步失败，新候选必须由词法拥有者单次回滚。 */
 static void reopen_candidate_reuse(const char *scenario)
 {
@@ -498,6 +550,7 @@ static void reopen_candidate_reuse(const char *scenario)
 	old_fd = test_file_fd(&l->file_backend);
 	CHECK(rename("out.log", "old.log") == 0);
 	unsigned int count = fds();
+
 	sync_error = 1;
 	candidate_rollback = 1;
 	candidate_close_error =
@@ -537,9 +590,11 @@ static void collision(const char *scenario)
 	fixed_time = 1;
 	frozen = (struct timespec){ 1700000000, 0 };
 	const char *target = "out.20231114T221320.000000Z.log";
+
 	put(target, "do-not-overwrite");
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "first");
@@ -552,6 +607,7 @@ static void collision(const char *scenario)
 	int rc = logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__,
 					__LINE__, __func__, "second");
 	logger_file_metrics_t file_metrics;
+
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.rotation_attempts == 1);
 	CHECK(file_metrics.rotation_successes == (uint64_t)!rename_error);
@@ -584,11 +640,13 @@ static void collision(const char *scenario)
 	rename_error = 0;
 	finish(l);
 }
+
 static void rotation_failure(const char *scenario)
 {
 	fixed_time = 1;
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "first");
@@ -602,9 +660,11 @@ static void rotation_failure(const char *scenario)
 	if (!strcmp(scenario, "rotation-new-dir-sync"))
 		sync_error = 5;
 	int expected = data_open_error ? data_open_error : EIO;
+
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
 				     __func__, "unwritten") == -expected);
 	logger_file_metrics_t file_metrics;
+
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.rotation_attempts == 1);
 	CHECK(!file_metrics.rotation_successes &&
@@ -617,6 +677,7 @@ static void rotation_failure(const char *scenario)
 	      l->file_backend.detached);
 	const char *archive = "out.20231114T221320.000000Z.log";
 	off_t size = file_size(archive);
+
 	CHECK(file_contains(archive, "first"));
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
 				     __func__, "not-in-archive") == -expected);
@@ -639,6 +700,7 @@ static void rotation_failure(const char *scenario)
 	CHECK(logger_flush(l) == -expected);
 	finish(l);
 }
+
 /* 新活动 inode/目录持久化失败后，即使候选 close 出错也不能重用旧归档 fd。 */
 static void rotation_candidate_reuse(const char *scenario)
 {
@@ -650,6 +712,7 @@ static void rotation_candidate_reuse(const char *scenario)
 	emit(l, "first");
 	old_fd = test_file_fd(&l->file_backend);
 	unsigned int count = fds();
+
 	candidate_rollback = 1;
 	candidate_close_error = strstr(scenario, "eintr") ? EINTR : EIO;
 	sync_error = strstr(scenario, "dir-sync") ? 5 : 3;
@@ -668,6 +731,7 @@ static void rotation_candidate_reuse(const char *scenario)
 	CHECK(l->file_backend.dir_dirty && l->file_backend.archive_time_valid);
 
 	logger_file_metrics_t metrics;
+
 	CHECK(logger_get_file_metrics(l, &metrics) == 0);
 	CHECK(metrics.rotation_attempts == 1 && metrics.rotation_failures == 1);
 	CHECK(!metrics.rotation_successes);
@@ -676,6 +740,7 @@ static void rotation_candidate_reuse(const char *scenario)
 
 	const char *archive = "out.20231114T221320.000000Z.log";
 	off_t size = file_size(archive);
+
 	CHECK(file_contains(archive, "first"));
 	CHECK(!file_contains(archive, "unwritten"));
 	CHECK(logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__, __LINE__,
@@ -705,6 +770,7 @@ static void cwd_case(int rename_parent)
 	CHECK(mkdir("a", 0700) == 0 && mkdir("b", 0700) == 0);
 	logger_config_t c = config("a/out.log", LOGGER_ROTATE_SIZE);
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "old");
@@ -720,10 +786,12 @@ static void cwd_case(int rename_parent)
 	CHECK(file_contains(rename_parent ? "moved/out.log" : "a/out.log",
 			    "after-chdir"));
 }
+
 static void stale_active(void)
 {
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "old");
@@ -734,6 +802,7 @@ static void stale_active(void)
 	CHECK(file_size("out.log") == 14 && file_contains("old.log", "old"));
 	finish(l);
 }
+
 static void retention_case(int error)
 {
 	put("out.20000101T000000.000000Z.log", "old");
@@ -743,13 +812,16 @@ static void retention_case(int error)
 	CHECK(symlink("outside", "out.20000101T000000.000002Z.log") == 0);
 	put("not-out.20000101T000000.000000Z.log", "other-owner");
 	struct timespec age[2] = { { 1, 0 }, { 1, 0 } };
+
 	CHECK(utimensat(AT_FDCWD, "out.20000101T000000.000000Z.log", age, 0) ==
 	      0);
 	CHECK(utimensat(AT_FDCWD, "out.20000101T000000.000001Z.log", age, 0) ==
 	      0);
 	logger_config_t c = config("out.log", LOGGER_ROTATE_SIZE);
+
 	c.rotation.retention_days = 1;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	emit(l, "first");
@@ -766,15 +838,19 @@ static void retention_case(int error)
 	unlink_error = 0;
 	finish(l);
 }
+
 static void metrics_contract(void)
 {
 	logger_config_t none = LOGGER_DEFAULT_CONFIG();
+
 	none.outputs = LOGGER_OUT_STDERR;
 	none.async_mode = 0;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&none, &l) == 0);
 	CHECK(l != NULL);
 	logger_file_metrics_t metrics;
+
 	memset(&metrics, 0x5a, sizeof(metrics));
 	errno = EDOM;
 	CHECK(logger_get_file_metrics(l, &metrics) == -ENOTSUP &&
@@ -784,6 +860,7 @@ static void metrics_contract(void)
 	CHECK(logger_destroy(&l) == 0);
 
 	logger_config_t file = config("out.log", LOGGER_ROTATE_NONE);
+
 	CHECK(logger_create(&file, &l) == 0);
 	CHECK(l != NULL);
 	memset(&metrics, 0xa5, sizeof(metrics));
@@ -802,18 +879,21 @@ static void vectors(void)
 {
 	struct logger_file f = LOGGER_FILE_EMPTY;
 	logger_rotation_config_t r = { .mode = LOGGER_ROTATE_NONE };
+
 	CHECK(logger_file_init(&f, "out.log", r, 0600) == 0);
 	vector_max = 2;
 	f.iov_max = 2;
 	struct iovec v[7] = { { "a", 1 }, { NULL, 0 }, { "bc", 2 }, { "", 0 },
 			      { "d", 1 }, { "e", 1 },  { NULL, 0 } };
 	struct timespec t = { 1700000000, 0 };
+
 	CHECK(logger_file_writev(&f, v, 7, 5, &t, 1) == 0 &&
 	      f.current_size == 5);
 	CHECK(file_contains("out.log", "abcde"));
 	CHECK(logger_file_writev(&f, v, 7, 99, &t, 0) == -EINVAL);
 	CHECK(logger_file_close_status(&f) == 0);
 }
+
 /* 最终关闭的顺序、首错优先和 fd 整数复用必须由生产路径验证。 */
 static void file_close_owned_reuse(const char *scenario)
 {
@@ -883,23 +963,29 @@ static void file_close_owned_zero(void)
 static void cleanup(const char *path)
 {
 	DIR *d = opendir(path);
+
 	CHECK(d);
 	struct dirent *e;
+
 	while ((e = readdir(d))) {
 		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
 			continue;
 		char p[512];
+
 		CHECK(snprintf(p, sizeof(p), "%s/%s", path, e->d_name) > 0);
 		struct stat st;
+
 		CHECK(lstat(p, &st) == 0);
 		if (S_ISDIR(st.st_mode)) {
 			cleanup(p);
 			CHECK(rmdir(p) == 0);
-		} else
+		} else {
 			CHECK(unlink(p) == 0);
+		}
 	}
 	CHECK(closedir(d) == 0);
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
@@ -907,49 +993,53 @@ int main(int argc, char **argv)
 		return child_probe(argc, argv);
 	CHECK(argc == 2);
 	char dir[] = "/tmp/logger-file-XXXXXX";
+
 	enter_temp(dir);
 	unsigned int count = fds();
 	const char *s = argv[1];
-	if (!strncmp(s, "owner-", 6))
+
+	if (!strncmp(s, "owner-", 6)) {
 		owner(s);
-	else if (!strncmp(s, "path-", 5) || !strncmp(s, "lock-", 5) ||
-		 !strcmp(s, "name-long") || !strcmp(s, "device-rotate"))
+	} else if (!strncmp(s, "path-", 5) || !strncmp(s, "lock-", 5) ||
+		   !strcmp(s, "name-long") || !strcmp(s, "device-rotate")) {
 		invalid_path(s);
-	else if (!strncmp(s, "reopen-candidate-", 17))
+	} else if (!strncmp(s, "reopen-candidate-", 17)) {
 		reopen_candidate_reuse(s);
-	else if (!strncmp(s, "reopen-", 7))
+	} else if (!strncmp(s, "reopen-", 7)) {
 		reopen_case(s);
-	else if (!strncmp(s, "collision", 9) || !strcmp(s, "clock-backwards") ||
-		 !strcmp(s, "rotation-unsupported") ||
-		 !strcmp(s, "rotation-rename-error"))
+	} else if (!strncmp(s, "collision", 9) ||
+		   !strcmp(s, "clock-backwards") ||
+		   !strcmp(s, "rotation-unsupported") ||
+		   !strcmp(s, "rotation-rename-error")) {
 		collision(s);
-	else if (!strncmp(s, "rotation-candidate-", 19))
+	} else if (!strncmp(s, "rotation-candidate-", 19)) {
 		rotation_candidate_reuse(s);
-	else if (!strncmp(s, "rotation-", 9))
+	} else if (!strncmp(s, "rotation-", 9)) {
 		rotation_failure(s);
-	else if (!strcmp(s, "cwd"))
+	} else if (!strcmp(s, "cwd")) {
 		cwd_case(0);
-	else if (!strcmp(s, "directory-rename"))
+	} else if (!strcmp(s, "directory-rename")) {
 		cwd_case(1);
-	else if (!strcmp(s, "active-replaced"))
+	} else if (!strcmp(s, "active-replaced")) {
 		stale_active();
-	else if (!strcmp(s, "retention"))
+	} else if (!strcmp(s, "retention")) {
 		retention_case(0);
-	else if (!strcmp(s, "retention-error"))
+	} else if (!strcmp(s, "retention-error")) {
 		retention_case(1);
-	else if (!strcmp(s, "metrics-contract"))
+	} else if (!strcmp(s, "metrics-contract")) {
 		metrics_contract();
-	else if (!strcmp(s, "vectors"))
+	} else if (!strcmp(s, "vectors")) {
 		vectors();
-	else if (!strcmp(s, "close-owned-fd-zero"))
+	} else if (!strcmp(s, "close-owned-fd-zero")) {
 		file_close_owned_zero();
-	else if (!strcmp(s, "close-owned-first-eintr") ||
-		 !strcmp(s, "close-owned-first-eio"))
+	} else if (!strcmp(s, "close-owned-first-eintr") ||
+		   !strcmp(s, "close-owned-first-eio")) {
 		file_close_owned_reuse(s);
-	else if (!strcmp(s, "eintr")) {
+	} else if (!strcmp(s, "eintr")) {
 		flock_eintr = 1;
 		logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		sync_error = 4;
@@ -966,18 +1056,21 @@ int main(int argc, char **argv)
 		logger_destroy(&b);
 	} else if (!strcmp(s, "init-cleanup")) {
 		logger_config_t c = config("out.log", LOGGER_ROTATE_NONE);
+
 		for (int i = 0; i < 100; ++i) {
 			data_open_error = EMFILE;
 			CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
 			      -EMFILE);
 			data_open_error = 0;
 			logger_t *l = NULL;
+
 			CHECK(logger_create(&c, &l) == 0);
 			CHECK(l != NULL);
 			finish(l);
 		}
-	} else
+	} else {
 		CHECK(0);
+	}
 	CHECK(fds() == count);
 	cleanup(".");
 	CHECK(chdir("/") == 0 && rmdir(dir) == 0);

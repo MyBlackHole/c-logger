@@ -101,8 +101,10 @@ static void take_once(void)
 	/* 不经裸 int 往返，直接将拥有者移入另一私有字段。 */
 	struct logger_owned_fd source = logger_fd_own(new_fd());
 	struct logger_owned_fd destination = logger_fd_move(&source);
+
 	CHECK(!logger_fd_valid(&source) && logger_fd_valid(&destination));
 	int moved = logger_fd_number(logger_fd_borrow(&destination));
+
 	CHECK(!logger_fd_close_status(&source));
 	CHECK(!logger_fd_close_status(&destination));
 	CHECK(fcntl(moved, F_GETFD) == -1 && errno == EBADF);
@@ -197,9 +199,11 @@ static void invalid_owner(void)
 static void zero_descriptor(void)
 {
 	int saved = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 3);
+
 	CHECK(!__real_close(STDIN_FILENO));
 	/* 必须经过 fork 资源登记，而非从宿主 dup2 偷偷制造已登记 fd。 */
 	int raw = new_fd();
+
 	CHECK(raw == STDIN_FILENO);
 	struct logger_owned_fd fd = logger_fd_own(raw);
 
@@ -217,29 +221,30 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	CHECK(logger_process_init() == 0);
-	if (!strcmp(argv[1], "close"))
+	if (!strcmp(argv[1], "close")) {
 		close_once();
-	else if (!strcmp(argv[1], "take"))
+	} else if (!strcmp(argv[1], "take")) {
 		take_once();
-	else if (!strcmp(argv[1], "cleanup-error")) {
+	} else if (!strcmp(argv[1], "cleanup-error")) {
 		CHECK(scope_error() == -EACCES);
 		CHECK(errno == EACCES && close_calls == 1);
-	} else if (!strcmp(argv[1], "close-eintr-reuse"))
+	} else if (!strcmp(argv[1], "close-eintr-reuse")) {
 		close_reuse(EINTR);
-	else if (!strcmp(argv[1], "close-eio-reuse"))
+	} else if (!strcmp(argv[1], "close-eio-reuse")) {
 		close_reuse(EIO);
-	else if (!strcmp(argv[1], "directory-success"))
+	} else if (!strcmp(argv[1], "directory-success")) {
 		directory_transfer(0, 0);
-	else if (!strcmp(argv[1], "directory-failure"))
+	} else if (!strcmp(argv[1], "directory-failure")) {
 		directory_transfer(1, 0);
-	else if (!strcmp(argv[1], "directory-retry"))
+	} else if (!strcmp(argv[1], "directory-retry")) {
 		directory_transfer(1, 1);
-	else if (!strcmp(argv[1], "invalid"))
+	} else if (!strcmp(argv[1], "invalid")) {
 		invalid_owner();
-	else if (!strcmp(argv[1], "zero"))
+	} else if (!strcmp(argv[1], "zero")) {
 		zero_descriptor();
-	else
+	} else {
 		CHECK(!"unknown fd ownership scenario");
+	}
 	printf("FD_OWNERSHIP_PASS=%s\n", argv[1]);
 	return 0;
 }

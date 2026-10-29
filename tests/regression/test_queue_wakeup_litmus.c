@@ -93,11 +93,13 @@ int main(void)
 
 	pthread_t worker;
 	pthread_t producer;
+
 	CHECK(pthread_create(&worker, NULL, worker_side, NULL) == 0);
 	CHECK(pthread_create(&producer, NULL, producer_side, NULL) == 0);
 
 	unsigned int worker_wins = 0;
 	unsigned int producer_wins = 0;
+
 	for (unsigned int i = 0; i < ROUNDS; ++i) {
 		/*
 		 * 主线程重置下一次判别测试实例时，两个参与者都在 done_barrier

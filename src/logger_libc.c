@@ -17,11 +17,13 @@ bool logger_libc_busy(void)
 static int begin(void)
 {
 	int error = logger_process_require();
+
 	if (error)
 		return -error;
 	if (entered)
 		return EDEADLK;
 	struct logger_runtime *runtime = logger_runtime_current();
+
 	error = atomic_load_explicit(&runtime->resource_error,
 				     memory_order_acquire);
 	if (!error)
@@ -62,6 +64,7 @@ static int end(int error)
 static int finish_int(int result, int saved, int fallback)
 {
 	int error = result < 0 ? (errno ? errno : fallback) : 0;
+
 	error = end(error);
 	errno = error ? error : saved;
 	return error ? -1 : result;
@@ -71,6 +74,7 @@ int logger_libc_fork_prepare(void)
 {
 	prepared = 0;
 	int rc = begin();
+
 	if (!rc)
 		prepared = 1;
 	return rc;
@@ -94,6 +98,7 @@ int logger_libc_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return -1;
@@ -101,6 +106,7 @@ int logger_libc_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 	/* GNU %m 使用进入调用时的 errno，不能为错误检测将其清零。 */
 	errno = saved;
 	int result = vsnprintf(out, cap, fmt, args);
+
 	return finish_int(result, saved, EILSEQ);
 }
 
@@ -108,12 +114,14 @@ int logger_libc_vfprintf(FILE *out, const char *fmt, va_list args)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return -1;
 	}
 	errno = saved;
 	int result = vfprintf(out, fmt, args);
+
 	return finish_int(result, saved, EIO);
 }
 
@@ -121,12 +129,14 @@ struct tm *logger_libc_localtime_r(const time_t *time, struct tm *out)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return NULL;
 	}
 	errno = 0;
 	struct tm *result = localtime_r(time, out);
+
 	error = end(result ? 0 : (errno ? errno : EOVERFLOW));
 	errno = error ? error : saved;
 	return error ? NULL : result;
@@ -136,12 +146,14 @@ struct tm *logger_libc_gmtime_r(const time_t *time, struct tm *out)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return NULL;
 	}
 	errno = 0;
 	struct tm *result = gmtime_r(time, out);
+
 	error = end(result ? 0 : (errno ? errno : EOVERFLOW));
 	errno = error ? error : saved;
 	return error ? NULL : result;
@@ -152,6 +164,7 @@ size_t logger_libc_strftime(char *out, size_t cap, const char *fmt,
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return 0;
@@ -168,12 +181,14 @@ int logger_libc_fflush(FILE *out)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return EOF;
 	}
 	errno = 0;
 	int result = fflush(out);
+
 	return finish_int(result, saved, EIO);
 }
 
@@ -181,20 +196,24 @@ int logger_libc_fputc(int c, FILE *out)
 {
 	int saved = errno;
 	int error = begin();
+
 	if (error) {
 		errno = error;
 		return EOF;
 	}
 	errno = 0;
 	int result = fputc(c, out);
+
 	return finish_int(result, saved, EIO);
 }
 
 int logger_libc_snprintf(char *out, size_t cap, const char *fmt, ...)
 {
 	va_list args;
+
 	va_start(args, fmt);
 	int rc = logger_libc_vsnprintf(out, cap, fmt, args);
+
 	va_end(args);
 	return rc;
 }
@@ -202,8 +221,10 @@ int logger_libc_snprintf(char *out, size_t cap, const char *fmt, ...)
 int logger_libc_fprintf(FILE *out, const char *fmt, ...)
 {
 	va_list args;
+
 	va_start(args, fmt);
 	int rc = logger_libc_vfprintf(out, fmt, args);
+
 	va_end(args);
 	return rc;
 }

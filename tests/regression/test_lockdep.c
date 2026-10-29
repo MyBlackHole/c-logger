@@ -57,6 +57,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 static void expect_abort(void (*fn)(void))
 {
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		alarm(3);
@@ -64,6 +65,7 @@ static void expect_abort(void (*fn)(void))
 		_exit(0);
 	}
 	int status;
+
 	CHECK(waitpid(pid, &status, 0) == pid);
 	CHECK(WIFSIGNALED(status));
 	CHECK(WTERMSIG(status) == SIGABRT);
@@ -126,6 +128,7 @@ static void bad_preflight_release_order(void)
 static void init_normal_mutex(pthread_mutex_t *mu)
 {
 	pthread_mutexattr_t attr;
+
 	CHECK(pthread_mutexattr_init(&attr) == 0);
 	CHECK(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL) == 0);
 	CHECK(pthread_mutex_init(mu, &attr) == 0);
@@ -165,6 +168,7 @@ static void *real_abba_side(void *arg)
 		left ? LOGGER_LOCK_INSTANCE_PROGRESS :
 		       LOGGER_LOCK_INSTANCE_EMIT;
 	int rc = __cleanup_lockdep_mutex_lock(first, first_class);
+
 	if (rc)
 		return (void *)(intptr_t)rc;
 	rc = pthread_barrier_wait(&real_abba_ready);
@@ -178,6 +182,7 @@ static void bad_real_reverse_lock_order(void)
 {
 	pthread_t left;
 	pthread_t right;
+
 	CHECK(pthread_barrier_init(&real_abba_ready, NULL, 2) == 0);
 	CHECK(pthread_create(&left, NULL, real_abba_side, NULL) == 0);
 	CHECK(pthread_create(&right, NULL, real_abba_side, &real_abba_b) == 0);
@@ -210,6 +215,7 @@ static void test_failed_mutex_trylock(void)
 {
 	pthread_t owner;
 	void *thread_result;
+
 	CHECK(pthread_barrier_init(&real_trylock_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&real_trylock_done, NULL, 2) == 0);
 	CHECK(pthread_create(&owner, NULL, hold_progress_for_trylock, NULL) ==
@@ -286,6 +292,7 @@ static void *hold_rwlock_for_trywrite(void *arg)
 {
 	(void)arg;
 	int rc = __cleanup_lockdep_rwlock_rdlock(&real_rwlock);
+
 	if (rc)
 		return (void *)(intptr_t)rc;
 	if (!barrier_wait_ok(&real_rwlock_ready) ||
@@ -299,6 +306,7 @@ static void test_failed_rwlock_trywrite(void)
 {
 	pthread_t reader;
 	void *thread_result;
+
 	CHECK(pthread_rwlock_init(&real_rwlock, NULL) == 0);
 	CHECK(pthread_barrier_init(&real_rwlock_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&real_rwlock_done, NULL, 2) == 0);
@@ -308,6 +316,7 @@ static void test_failed_rwlock_trywrite(void)
 	CHECK(__cleanup_lockdep_mutex_lock(&real_abba_a,
 					   LOGGER_LOCK_INSTANCE_EMIT) == 0);
 	int rc = __cleanup_lockdep_rwlock_trywrlock(&real_rwlock);
+
 	CHECK(rc == EBUSY || rc == EAGAIN);
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &real_abba_a);
 	logger_lockdep_assert_not_held(LOGGER_LOCK_GLOBAL_LIFETIME,
@@ -353,6 +362,7 @@ static void test_thread_local_tracking(void)
 	void *thread_result;
 	struct tls_lock_arg left_locks = { &tls_mutex_a, &tls_mutex_b };
 	struct tls_lock_arg right_locks = { &tls_mutex_b, &tls_mutex_a };
+
 	CHECK(pthread_barrier_init(&tls_ready, NULL, 2) == 0);
 	CHECK(pthread_barrier_init(&tls_done, NULL, 2) == 0);
 	CHECK(pthread_create(&left, NULL, tls_lock_side, &left_locks) == 0);
@@ -385,6 +395,7 @@ static void test_cond_wait_reacquire_tracking(void)
 {
 	pthread_t signaler;
 	void *thread_result;
+
 	cond_ready = 0;
 	CHECK(pthread_mutex_init(&cond_mutex, NULL) == 0);
 	CHECK(pthread_cond_init(&cond_cv, NULL) == 0);
@@ -419,11 +430,11 @@ int main(int argc, char **argv)
 	init_normal_mutex(&tls_mutex_a);
 	init_normal_mutex(&tls_mutex_b);
 	if (argc == 2) {
-		if (!strcmp(argv[1], "real-recursive"))
+		if (!strcmp(argv[1], "real-recursive")) {
 			expect_abort(bad_real_recursive_mutex);
-		else if (!strcmp(argv[1], "real-abba"))
+		} else if (!strcmp(argv[1], "real-abba")) {
 			expect_abort(bad_real_reverse_lock_order);
-		else if (!strcmp(argv[1], "real-unlock")) {
+		} else if (!strcmp(argv[1], "real-unlock")) {
 			expect_abort(bad_real_non_lifo_unlock);
 			CHECK(atomic_load_explicit(unlock_calls,
 						   memory_order_relaxed) == 0);

@@ -13,6 +13,7 @@
 static void check_process_rejection(int error)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	logger_t *owner = NULL;
 	int formatted = -1;
@@ -48,6 +49,7 @@ static void check_process_rejection(int error)
 	CHECK(logger_set_level(LOGGER_INFO) == -error && errno == EDOM);
 	logger_state_t state = LOGGER_STATE_RUNNING;
 	uint64_t dropped = UINT64_C(777);
+
 	CHECK(logger_get_state(NULL, &state) == -error && errno == EDOM);
 	CHECK(state == LOGGER_STATE_RUNNING);
 	CHECK(logger_dropped(NULL, &dropped) == -error && errno == EDOM);
@@ -56,6 +58,7 @@ static void check_process_rejection(int error)
 	CHECK(dropped == UINT64_C(777));
 	logger_metrics_t metrics;
 	logger_metrics_t metrics_before;
+
 	memset(&metrics, 0xa5, sizeof(metrics));
 	memcpy(&metrics_before, &metrics, sizeof(metrics));
 	CHECK(logger_get_metrics(NULL, &metrics) == -error && errno == EDOM);
@@ -64,6 +67,7 @@ static void check_process_rejection(int error)
 	CHECK(memcmp(&metrics, &metrics_before, sizeof(metrics)) == 0);
 	logger_io_metrics_t io;
 	logger_io_metrics_t io_before;
+
 	memset(&io, 0xa5, sizeof(io));
 	memcpy(&io_before, &io, sizeof(io));
 	CHECK(logger_get_io_metrics(NULL, &io) == -error && errno == EDOM);
@@ -72,6 +76,7 @@ static void check_process_rejection(int error)
 	CHECK(memcmp(&io, &io_before, sizeof(io)) == 0);
 	logger_diagnostics_t diagnostics;
 	logger_diagnostics_t diagnostics_before;
+
 	memset(&diagnostics, 0xa5, sizeof(diagnostics));
 	memcpy(&diagnostics_before, &diagnostics, sizeof(diagnostics));
 	CHECK(logger_get_diagnostics(NULL, &diagnostics) == -error &&
@@ -84,6 +89,7 @@ static void check_process_rejection(int error)
 	      0);
 	logger_file_metrics_t file;
 	logger_file_metrics_t file_before;
+
 	memset(&file, 0xa5, sizeof(file));
 	memcpy(&file_before, &file, sizeof(file));
 	CHECK(logger_get_file_metrics(NULL, &file) == -error && errno == EDOM);
@@ -92,22 +98,26 @@ static void check_process_rejection(int error)
 	CHECK(memcmp(&file, &file_before, sizeof(file)) == 0);
 	logger_syslog_metrics_t syslog;
 	logger_syslog_metrics_t syslog_before;
+
 	memset(&syslog, 0xa5, sizeof(syslog));
 	memcpy(&syslog_before, &syslog, sizeof(syslog));
 	CHECK(logger_get_syslog_metrics(NULL, &syslog) == -error &&
 	      errno == EDOM);
 	CHECK(memcmp(&syslog, &syslog_before, sizeof(syslog)) == 0);
 	logger_context_t forbidden = { .request_id = "forbidden" };
+
 	CHECK(logger_context_set(&forbidden) == -error && errno == EDOM);
 	logger_context_t context = { .request_id = "sentinel",
 				     .session_id = "sentinel",
 				     .trace_id = "sentinel" };
 	logger_context_t context_before = context;
+
 	CHECK(logger_context_get(&context) == -error && errno == EDOM);
 	CHECK(memcmp(&context, &context_before, sizeof(context)) == 0);
 	CHECK(logger_context_clear() == -error && errno == EDOM);
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
 	int tty = 9;
+
 	errno = EDOM;
 	CHECK(console_init(&console) == -error && errno == EDOM);
 	CHECK(console_set_color(CONSOLE_COLOR_NEVER) == -error);
@@ -118,6 +128,7 @@ static void check_process_rejection(int error)
 	CHECK(errno == EDOM && formatted == -1);
 	/* 无运行域的纯辅助函数继续可用，不偷偷初始化。 */
 	char masked[32];
+
 	CHECK(logger_redact() != NULL);
 	CHECK(logger_mask_secret("secret", masked, sizeof(masked), 0, 0) == 0);
 }

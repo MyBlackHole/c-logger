@@ -3,6 +3,7 @@
 #include <logger_version.h>
 #include <errno.h>
 #include <string.h>
+
 int main()
 {
 	char masked[16] = "abcd";

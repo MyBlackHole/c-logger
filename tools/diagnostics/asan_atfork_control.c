@@ -12,6 +12,7 @@ unsigned int sanitizer_atfork_registrations;
 unsigned int sanitizer_atfork_dropped;
 int __real_pthread_atfork(void (*prepare)(void), void (*parent)(void),
 			  void (*child)(void));
+
 __attribute__((no_sanitize("address", "undefined"))) int
 __wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
 		      void (*child)(void))

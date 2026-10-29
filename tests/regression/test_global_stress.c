@@ -11,15 +11,19 @@ static logger_t *owner;
 #ifdef LOGGER_PUBLIC_ABI_TEST
 #include <dirent.h>
 static unsigned int initial_fds;
+
 static unsigned int open_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
+
 	CHECK(d);
 	unsigned int n = 0;
 	struct dirent *e;
-	while ((e = readdir(d)))
+
+	while ((e = readdir(d))) {
 		if (strcmp(e->d_name, ".") && strcmp(e->d_name, ".."))
 			++n;
+	}
 	CHECK(!closedir(d));
 	return n;
 }
@@ -53,8 +57,10 @@ static void *initializer(void *unused)
 {
 	(void)unused;
 	int rc = pthread_barrier_wait(&init_barrier);
+
 	CHECK(rc == 0 || rc == PTHREAD_BARRIER_SERIAL_THREAD);
 	int result = logger_default_set(NULL, owner);
+
 	if (!result)
 		atomic_fetch_add(&succeeded, 1);
 	else if (result == -ESTALE || result == -EAGAIN)
@@ -63,10 +69,12 @@ static void *initializer(void *unused)
 		CHECK(!"unexpected init error");
 	return NULL;
 }
+
 static void *producer(void *ptr)
 {
 	size_t id = (size_t)ptr;
 	int rc = pthread_barrier_wait(&run_barrier);
+
 	CHECK(rc == 0 || rc == PTHREAD_BARRIER_SERIAL_THREAD);
 	while (atomic_load(&running)) {
 		errno = EDOM;
@@ -76,21 +84,25 @@ static void *producer(void *ptr)
 	}
 	return NULL;
 }
+
 static void *controller(void *ptr)
 {
 	size_t id = (size_t)ptr;
 	int br = pthread_barrier_wait(&run_barrier);
+
 	CHECK(br == 0 || br == PTHREAD_BARRIER_SERIAL_THREAD);
 	while (atomic_load(&running)) {
 		logger_metrics_t m;
 		logger_io_metrics_t io;
 		uint64_t dropped;
+
 		errno = EDOM;
 		expect_concurrent_result(logger_get_global_metrics(&m));
 		expect_concurrent_result(logger_get_global_io_metrics(&io));
 		expect_concurrent_result(logger_global_dropped(&dropped));
 		logger_set_level(LOGGER_INFO);
 		int rc = logger_default_flush();
+
 		CHECK(rc == 0 || rc == -ESHUTDOWN || rc == -EAGAIN ||
 		      rc == -ENODEV);
 		rc = logger_default_reopen();
@@ -101,11 +113,13 @@ static void *controller(void *ptr)
 	}
 	return NULL;
 }
+
 static void init_race(void)
 {
 	cfg = config_for("old.log", 1);
 	for (int round = 0; round < 10; ++round) {
 		pthread_t ts[8];
+
 		atomic_store(&succeeded, 0);
 		atomic_store(&already, 0);
 		CHECK(logger_create(&cfg, &owner) == 0);
@@ -123,11 +137,13 @@ static void init_race(void)
 	}
 	CHECK(file_lines("old.log") == 10);
 }
+
 static void lifetimes(int async)
 {
 	cfg = config_for("old.log", async);
 	CHECK(!fixture_default_create(&cfg, &owner));
 	pthread_t threads[8];
+
 	CHECK(!pthread_barrier_init(&run_barrier, NULL, 9));
 	for (size_t i = 0; i < 4; ++i)
 		CHECK(!pthread_create(&threads[i], NULL, producer, (void *)i));
@@ -135,6 +151,7 @@ static void lifetimes(int async)
 		CHECK(!pthread_create(&threads[i], NULL, controller,
 				      (void *)i));
 	int br = pthread_barrier_wait(&run_barrier);
+
 	CHECK(br == 0 || br == PTHREAD_BARRIER_SERIAL_THREAD);
 	/* 快速控制方循环不得在测试参与者运行前结束。 */
 	for (int i = 0; i < 8; ++i)
@@ -154,6 +171,7 @@ static void lifetimes(int async)
 	CHECK(!logger_default_flush() && !fixture_default_destroy(&owner));
 	expect_clean();
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);

@@ -14,12 +14,14 @@
  */
 static _Atomic int stop;
 static _Atomic unsigned int ready;
+
 static void *allocator(void *unused)
 {
 	(void)unused;
 	atomic_fetch_add(&ready, 1);
 	while (!atomic_load(&stop)) {
 		void *p[128];
+
 		for (unsigned int i = 0; i < 128; ++i) {
 			p[i] = calloc(1, 32 + (i % 4) * 16);
 			if (!p[i])
@@ -31,29 +33,36 @@ static void *allocator(void *unused)
 	}
 	return NULL;
 }
+
 static void *child_worker(void *unused)
 {
 	(void)unused;
 	return NULL;
 }
+
 extern unsigned int sanitizer_atfork_registrations;
 extern unsigned int sanitizer_atfork_dropped;
+
 int main(void)
 {
 	printf("SANITIZER_ATFORK registrations=%u dropped=%u\n",
 	       sanitizer_atfork_registrations, sanitizer_atfork_dropped);
 	fflush(stdout);
 	pthread_t parents[8];
-	for (unsigned int i = 0; i < 8; ++i)
+
+	for (unsigned int i = 0; i < 8; ++i) {
 		if (pthread_create(&parents[i], NULL, allocator, NULL))
 			return 2;
+	}
 	while (atomic_load(&ready) != 8)
 		usleep(10);
 	unsigned int completed = 0;
 	unsigned int timed_out = 0;
 	unsigned int failed = 0;
+
 	for (unsigned int i = 0; i < 96; ++i) {
 		pid_t pid = fork();
+
 		if (pid < 0) {
 			++failed;
 			break;
@@ -69,6 +78,7 @@ int main(void)
 		}
 		int status;
 		pid_t got;
+
 		do {
 			got = waitpid(pid, &status, 0);
 		} while (got < 0 && errno == EINTR);
@@ -84,9 +94,10 @@ int main(void)
 		fflush(stdout);
 	}
 	atomic_store(&stop, 1);
-	for (unsigned int i = 0; i < 8; ++i)
+	for (unsigned int i = 0; i < 8; ++i) {
 		if (pthread_join(parents[i], NULL))
 			return 6;
+	}
 	printf("FORK_PROBE completed=%u timeout=%u failed=%u\n", completed,
 	       timed_out, failed);
 	return timed_out || failed ? 1 : 0;

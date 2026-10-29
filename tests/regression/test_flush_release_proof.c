@@ -39,6 +39,7 @@ int __real_fsync(int fd);
 int __wrap_logger_create(const logger_config_t *config, logger_t **out)
 {
 	int rc = __real_logger_create(config, out);
+
 	if (!rc)
 		subject = *out;
 	return rc;
@@ -106,6 +107,7 @@ static void cancelled_flush_cleanup(void *unused)
 	 */
 	CHECK(!logger_scope_busy());
 	logger_state_t state;
+
 	CHECK(logger_get_state(subject, &state) == 0 &&
 	      state == LOGGER_STATE_STOPPING);
 	atomic_store(&cancel_cleanup_ran, 1);
@@ -117,6 +119,7 @@ static void *flush_thread(void *unused)
 	caller = 1;
 	int rc;
 	int error;
+
 	pthread_cleanup_push(cancelled_flush_cleanup, NULL);
 	errno = EDOM;
 	rc = use_global ? logger_default_flush() : logger_flush(subject);
@@ -140,6 +143,7 @@ static void *shutdown_thread(void *unused)
 static logger_config_t config(int asynchronous)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
@@ -152,6 +156,7 @@ static void release_failure(int global, int cancel)
 {
 	use_global = global;
 	logger_config_t c = config(1);
+
 	if (global)
 		CHECK(fixture_default_create(&c, &default_owner) == 0);
 	else
@@ -161,6 +166,7 @@ static void release_failure(int global, int cancel)
 	atomic_store(&pause_flush, 1);
 	pthread_t flusher;
 	pthread_t stopper;
+
 	CHECK(!pthread_create(&flusher, NULL, flush_thread, NULL));
 	wait_flag(&at_progress);
 	atomic_store(&fail_emit_unlock, 1);
@@ -179,6 +185,7 @@ static void release_failure(int global, int cancel)
 	CHECK(!pthread_join(subject->worker, NULL));
 	CHECK(atomic_load(&subject->async_completed) == 1);
 	int before = atomic_load(&sync_calls);
+
 	if (global) {
 		CHECK(!pthread_create(&stopper, NULL, shutdown_thread, NULL));
 		wait_flag(&at_global_writer);
@@ -188,6 +195,7 @@ static void release_failure(int global, int cancel)
 		CHECK(!pthread_cancel(flusher));
 	atomic_store(&resume_flush, 1);
 	void *answer;
+
 	CHECK(!pthread_join(flusher, &answer));
 	CHECK(answer == (cancel ? PTHREAD_CANCELED : NULL));
 	CHECK(atomic_load(&cancel_cleanup_ran) == cancel);
@@ -202,6 +210,7 @@ static void release_failure(int global, int cancel)
 	}
 	CHECK(logger_process_object_count() == 1);
 	int lease = open("out.log.logger.lock", O_RDWR | O_CLOEXEC);
+
 	CHECK(lease >= 0);
 	CHECK(flock(lease, LOCK_EX | LOCK_NB) == -1 &&
 	      (errno == EAGAIN || errno == EWOULDBLOCK));
@@ -216,8 +225,10 @@ static void release_failure(int global, int cancel)
 static void ordinary_error(int wait_error)
 {
 	logger_config_t c = config(wait_error);
+
 	CHECK(logger_create(&c, &owner) == 0);
 	int expected;
+
 	if (wait_error) {
 		atomic_store(&fail_progress_lock, 1);
 		expected = EAGAIN;
@@ -229,6 +240,7 @@ static void ordinary_error(int wait_error)
 		expected = EIO;
 	}
 	int before = atomic_load(&sync_calls);
+
 	CHECK(logger_flush(subject) == -expected);
 	CHECK(!atomic_load(&subject->synchronization_error));
 	CHECK(atomic_load(&sync_calls) > before);
@@ -243,6 +255,7 @@ int main(int argc, char **argv)
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	char directory[] = "/tmp/logger-flush-proof-XXXXXX";
+
 	enter_temp(directory);
 	if (!strcmp(argv[1], "explicit-proof"))
 		release_failure(0, 0);

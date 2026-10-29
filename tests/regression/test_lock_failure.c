@@ -32,6 +32,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 		return EAGAIN;
 	}
 	int rc = __real_pthread_mutex_lock(mu);
+
 	if (!rc && failed_mutex == mu)
 		failed_mutex = NULL;
 	return rc;
@@ -65,21 +66,26 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cv)
 static int test_normal_lock_path(void)
 {
 	char dir[] = "/tmp/logger-lock-normal-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 0;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-normal",
 					NULL, 0, NULL, "normal-lock-path");
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int bytes = (int)file_size("out.log");
 	int destroy_rc = logger_destroy(&logger);
+
 	leave_temp(dir);
 	CHECK(rc == 0 && bytes > 0 && metrics.emitted_records == 1 &&
 	      metrics.failed_records == 0 && destroy_rc == 0);
@@ -89,13 +95,16 @@ static int test_normal_lock_path(void)
 static int test_emit_lock_failure(void)
 {
 	char dir[] = "/tmp/logger-lock-emit-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 0;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 
@@ -106,8 +115,10 @@ static int test_emit_lock_failure(void)
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int had_invalid_unlock = invalid_unlock;
+
 	failed_mutex = NULL;
 	int destroy_rc = logger_destroy(&logger);
 	(void)destroy_rc;
@@ -131,13 +142,16 @@ static int test_emit_lock_failure(void)
 static int test_emit_unlock_failure(void)
 {
 	char dir[] = "/tmp/logger-lock-unlock-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 0;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 
@@ -155,9 +169,11 @@ static int test_emit_unlock_failure(void)
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
+
 	leave_temp(dir);
 
 	if (!captured_mutex || !unlock_failed || lock_failed ||
@@ -204,14 +220,17 @@ static int wait_for_async_completion(logger_t *logger)
 static int test_queue_notify_lock_failure(void)
 {
 	char dir[] = "/tmp/logger-queue-notify-lock-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 1;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
@@ -225,9 +244,11 @@ static int test_queue_notify_lock_failure(void)
 	CHECK(errno == EDOM);
 	int had_lock_failure = lock_failed;
 	int had_invalid_unlock = invalid_unlock;
+
 	fail_mutex = NULL;
 	CHECK(wait_for_async_completion(logger) == 0);
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
@@ -246,14 +267,17 @@ static int test_queue_notify_lock_failure(void)
 static int test_queue_notify_signal_failure(void)
 {
 	char dir[] = "/tmp/logger-queue-notify-signal-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 1;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
@@ -268,6 +292,7 @@ static int test_queue_notify_signal_failure(void)
 	fail_signal_cv = NULL;
 	CHECK(wait_for_async_completion(logger) == 0);
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	uint64_t force_wakes = logger_queue_force_wake_signals(&logger->q);
 	int destroy_rc = logger_destroy(&logger);
@@ -286,14 +311,17 @@ static int test_queue_notify_signal_failure(void)
 static int test_force_wake_lock_failure(void)
 {
 	char dir[] = "/tmp/logger-force-wake-lock-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.async_mode = 1;
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 	CHECK(wait_for_worker_sleep(logger) == 0);
@@ -305,9 +333,11 @@ static int test_force_wake_lock_failure(void)
 	logger_t *retained = logger;
 	int rc = logger_destroy(&logger);
 	int error = -rc;
+
 	CHECK(logger == NULL);
 	int had_lock_failure = lock_failed;
 	int had_invalid_unlock = invalid_unlock;
+
 	fail_mutex = NULL;
 	unsigned int objects = logger_process_object_count();
 	int state =

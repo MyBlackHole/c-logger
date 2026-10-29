@@ -98,12 +98,15 @@ int logger_stderr_writev_all(struct iovec *v, int count)
 {
 	struct logger_sigpipe_guard sigpipe_guard;
 	int result = logger_sigpipe_begin(&sigpipe_guard);
+
 	if (result)
 		return result;
 
 	int first = 0;
+
 	while (first < count) {
 		ssize_t n = writev(STDERR_FILENO, v + first, count - first);
+
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
@@ -115,6 +118,7 @@ int logger_stderr_writev_all(struct iovec *v, int count)
 			break;
 		}
 		size_t left = (size_t)n;
+
 		while (first < count && left >= v[first].iov_len) {
 			left -= v[first].iov_len;
 			++first;
@@ -146,6 +150,7 @@ int logger_emit_status(logger_t *l, const struct logger_message *m,
 		n = logger_format_line(l, m, line, sizeof(line));
 		if (!n) {
 			int error = errno ? errno : EILSEQ;
+
 			logger_note_io_error(l, error);
 			atomic_fetch_add_explicit(&l->failed_records, 1,
 						  memory_order_relaxed);
@@ -176,6 +181,7 @@ int logger_emit_status(logger_t *l, const struct logger_message *m,
 	}
 	if (l->outputs & LOGGER_OUT_STDERR) {
 		struct iovec v = { .iov_base = line, .iov_len = n };
+
 		rc = logger_stderr_writev_all(&v, 1);
 	}
 	if (l->outputs & LOGGER_OUT_FILE) {
@@ -192,6 +198,7 @@ int logger_emit_status(logger_t *l, const struct logger_message *m,
 			rc = -(errno ? errno : EIO);
 	}
 	int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+
 	if (unlock_rc) {
 		logger_note_synchronization_error(l, unlock_rc);
 		if (!rc)
@@ -214,8 +221,10 @@ static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 {
 	memset(workspace->failed, 0, count);
 	int format_error = 0;
+
 	for (size_t i = 0; i < count; ++i) {
 		char *line = workspace_line(workspace, i);
+
 		workspace->lens[i] = logger_format_line(l, &workspace->batch[i],
 							line, LOGGER_LINE_MAX);
 		if (!workspace->lens[i] && !format_error)
@@ -257,6 +266,7 @@ static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 		if (l->outputs & LOGGER_OUT_FILE) {
 			size_t total = 0;
 			bool need_sync = false;
+
 			for (size_t i = 0; i < count; ++i) {
 				total += workspace->lens[i];
 				if (workspace->batch[i].level >= l->flush_level)
@@ -287,6 +297,7 @@ static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 			}
 		}
 		int unlock_rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);
+
 		if (unlock_rc) {
 			memset(workspace->failed, 1, count);
 			logger_note_io_error(l, -unlock_rc);
@@ -296,6 +307,7 @@ static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 
 account_batch:;
 	uint64_t bad = 0;
+
 	for (size_t i = 0; i < count; ++i)
 		bad += workspace->failed[i];
 	atomic_fetch_add_explicit(&l->failed_records, bad,
@@ -308,6 +320,7 @@ void *logger_worker_main(void *p)
 {
 	logger_t *l = p;
 	struct logger_worker_workspace *workspace = l->worker_workspace;
+
 	logger_scope_worker_enter();
 	for (;;) {
 		size_t n = logger_queue_drain(&l->q, workspace->batch,

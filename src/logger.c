@@ -24,6 +24,7 @@
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
+
 static bool reject_access(void)
 {
 	if (logger_process_is_child()) {
@@ -35,6 +36,7 @@ static bool reject_access(void)
 		return true;
 	}
 	int rc = logger_process_require();
+
 	if (rc) {
 		errno = -rc;
 		return true;
@@ -46,22 +48,27 @@ logger_detail_t logger_internal_detail(const logger_t *l)
 {
 	return l->detail;
 }
+
 int logger_internal_include_pid(const logger_t *l)
 {
 	return l->include_pid;
 }
+
 int logger_internal_include_tid(const logger_t *l)
 {
 	return l->include_tid;
 }
+
 int logger_internal_include_source(const logger_t *l)
 {
 	return l->include_source;
 }
+
 static _Thread_local logger_context_t g_ctx;
 static _Thread_local char g_request_id[64];
 static _Thread_local char g_session_id[64];
 static _Thread_local char g_trace_id[64];
+
 static void copy_ctx(char *d, size_t n, const char *s)
 {
 	if (!s) {
@@ -69,20 +76,24 @@ static void copy_ctx(char *d, size_t n, const char *s)
 		return;
 	}
 	size_t length = strnlen(s, n - 1u);
+
 	memcpy(d, s, length);
 	d[length] = 0;
 }
+
 int logger_context_set(const logger_context_t *c)
 {
 	int saved = errno;
 	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
+
 	if (rc)
 		goto done;
 	/* 暂存全部字段，允许 set(get()) 以及重叠或交换的 TLS 输入。 */
 	char request[64] = { 0 };
 	char session[64] = { 0 };
 	char trace[64] = { 0 };
+
 	copy_ctx(request, sizeof(request), c ? c->request_id : NULL);
 	copy_ctx(session, sizeof(session), c ? c->session_id : NULL);
 	copy_ctx(trace, sizeof(trace), c ? c->trace_id : NULL);
@@ -98,15 +109,18 @@ done:
 	errno = saved;
 	return rc;
 }
+
 int logger_context_clear(void)
 {
 	return logger_context_set(NULL);
 }
+
 int logger_context_get(logger_context_t *out)
 {
 	int saved = errno;
 	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
+
 	if (rc)
 		goto done;
 	if (!out) {
@@ -115,6 +129,7 @@ int logger_context_get(logger_context_t *out)
 	}
 	/* 指针借用当前线程的存储；取消恢复前不能交付快照。 */
 	logger_context_t snapshot = g_ctx;
+
 	rc = logger_scope_end(&scope, 0);
 	if (!rc)
 		*out = snapshot;
@@ -122,9 +137,11 @@ done:
 	errno = saved;
 	return rc;
 }
+
 static void capture_context(struct logger_message *m)
 {
 	logger_context_t c = g_ctx;
+
 	copy_ctx(m->request_id, sizeof(m->request_id), c.request_id);
 	copy_ctx(m->session_id, sizeof(m->session_id), c.session_id);
 	copy_ctx(m->trace_id, sizeof(m->trace_id), c.trace_id);
@@ -138,6 +155,7 @@ static pid_t tid_(void)
 static unsigned int capture_mask_from_config(const logger_config_t *cfg)
 {
 	unsigned int mask = 0;
+
 	if (cfg->detail >= LOGGER_DETAIL_NORMAL)
 		mask |= LOGGER_CAPTURE_MODULE;
 	if (cfg->detail >= LOGGER_DETAIL_VERBOSE) {
@@ -159,6 +177,7 @@ static void prepare_record_metadata(logger_t *l, struct logger_message *m,
 				    int line, const char *function)
 {
 	unsigned int mask = l->capture_mask;
+
 	m->metadata_mask = (uint8_t)(mask & LOGGER_CAPTURE_RECORD_MASK);
 	if (mask & LOGGER_CAPTURE_MODULE)
 		m->module = module;
@@ -192,6 +211,7 @@ done:
 	errno = saved;
 	return rc;
 }
+
 static void update_high_watermark(logger_t *l)
 {
 	uint64_t depth = (uint64_t)logger_queue_depth(&l->q);
@@ -211,12 +231,14 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	if (lv < atomic_load_explicit(&l->level, memory_order_relaxed))
 		return 0;
 	struct logger_message m = { .level = lv };
+
 	prepare_record_metadata(l, &m, mod, f, line, fn);
 	if (clock_gettime(CLOCK_REALTIME, &m.ts) != 0)
 		return -(errno ? errno : EIO);
 	/* 元数据与时钟调用不能改变正文中 GNU %m 的公开入口值。 */
 	errno = format_errno;
 	int formatted = logger_libc_vsnprintf(m.text, sizeof(m.text), fmt, ap);
+
 	if (formatted < 0)
 		return -(errno ? errno : EILSEQ);
 	size_t stored = (size_t)formatted < sizeof(m.text) ?
@@ -229,6 +251,7 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	if (!l->async_mode)
 		return logger_emit_status(l, &m, 0);
 	int push_rc = logger_queue_push(&l->q, &m);
+
 	if (push_rc > 0) {
 		atomic_fetch_add_explicit(&l->enqueued, 1,
 					  memory_order_relaxed);
@@ -238,16 +261,19 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 	if (push_rc < 0) {
 		/* 记录已发布；通知失败后不能回滚 MPSC 槽位，只能停止接纳。 */
 		int error = -push_rc;
+
 		atomic_fetch_add_explicit(&l->enqueued, 1,
 					  memory_order_relaxed);
 		update_high_watermark(l);
 		logger_note_io_error(l, error);
 		logger_note_lifecycle_error(l, error);
 		int wait_error = logger_queue_wait_error(&l->q);
+
 		if (wait_error) {
 			logger_note_synchronization_error(l, wait_error);
 		} else {
 			int wake_rc = logger_queue_wake_force(&l->q);
+
 			if (wake_rc) {
 				logger_note_lifecycle_error(l, -wake_rc);
 				wait_error = logger_queue_wait_error(&l->q);
@@ -268,6 +294,7 @@ static int vlog_body(logger_t *l, logger_level_t lv, const char *mod,
 				  memory_order_relaxed);
 	return -EAGAIN;
 }
+
 int logger_vlog_internal(logger_t *l, logger_level_t level, const char *module,
 			 const char *file, int line, const char *function,
 			 const char *fmt, va_list args)
@@ -303,6 +330,7 @@ static int copy_logger_config(const logger_config_t *in, logger_config_t *out)
 
 	uint32_t size;
 	uint32_t version;
+
 	memcpy(&size, (const unsigned char *)in, sizeof(size));
 	memcpy(&version, (const unsigned char *)in + sizeof(size),
 	       sizeof(version));
@@ -316,6 +344,7 @@ static int copy_logger_config(const logger_config_t *in, logger_config_t *out)
 	out->version = LOGGER_CONFIG_VERSION;
 	return 0;
 }
+
 static int validate_logger_config(const logger_config_t *cfg)
 {
 	const unsigned int output_mask = LOGGER_OUT_STDERR | LOGGER_OUT_FILE |
@@ -327,9 +356,10 @@ static int validate_logger_config(const logger_config_t *cfg)
 	    (cfg->file_mode & ~0777u) ||
 	    (unsigned int)cfg->flush_level > LOGGER_OFF)
 		return -EINVAL;
-	for (unsigned int i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i) {
 		if ((unsigned int)cfg->overflow[i] > LOGGER_OVERFLOW_SYNC)
 			return -EINVAL;
+	}
 	return 0;
 }
 
@@ -344,6 +374,7 @@ struct logger_ctor_state {
 static void logger_ctor_note_proof_error(logger_t *l, int rc)
 {
 	int error = rc < 0 ? -rc : rc;
+
 	if (!l || !error)
 		return;
 	int expected = 0;
@@ -380,12 +411,14 @@ static int logger_ctor_rollback(logger_t *l,
 		atomic_store_explicit(&l->running, 0, memory_order_release);
 		if (state->queue_ready) {
 			int wake_rc = logger_queue_wake_force(&l->q);
+
 			if (wake_rc) {
 				logger_ctor_note_proof_error(l, wake_rc);
 				return wake_rc;
 			}
 		}
 		int join_rc = pthread_join(l->worker, NULL);
+
 		if (join_rc) {
 			logger_ctor_note_proof_error(l, join_rc);
 			return -join_rc;
@@ -397,6 +430,7 @@ static int logger_ctor_rollback(logger_t *l,
 
 	if (state->queue_ready) {
 		int rc = logger_queue_destroy(&l->q);
+
 		if (rc) {
 			logger_ctor_note_proof_error(l, rc);
 			return rc;
@@ -405,6 +439,7 @@ static int logger_ctor_rollback(logger_t *l,
 
 	if (state->progress_cv_ready) {
 		int rc = pthread_cond_destroy(&l->progress_cv);
+
 		if (rc) {
 			logger_ctor_note_proof_error(l, rc);
 			return -rc;
@@ -412,6 +447,7 @@ static int logger_ctor_rollback(logger_t *l,
 	}
 	if (state->progress_mu_ready) {
 		int rc = pthread_mutex_destroy(&l->progress_mu);
+
 		if (rc) {
 			logger_ctor_note_proof_error(l, rc);
 			return -rc;
@@ -419,6 +455,7 @@ static int logger_ctor_rollback(logger_t *l,
 	}
 	if (state->emit_mu_ready) {
 		int rc = pthread_mutex_destroy(&l->emit_mu);
+
 		if (rc) {
 			logger_ctor_note_proof_error(l, rc);
 			return -rc;
@@ -430,15 +467,18 @@ static int logger_ctor_rollback(logger_t *l,
 	 * 绝不重试 Linux close。
 	 */
 	int cleanup_rc = logger_file_close_status(&l->file_backend);
+
 	logger_syslog_close(&l->syslog_backend);
 
 	int release_rc = logger_process_object_release();
+
 	if (release_rc) {
 		logger_ctor_note_proof_error(l, release_rc);
 		return release_rc;
 	}
 
 	int free_rc = logger_runtime_free(l);
+
 	return cleanup_rc ? cleanup_rc : free_rc;
 }
 
@@ -492,6 +532,7 @@ static int logger_ctor_start_worker(logger_t *l, const logger_config_t *cfg,
 		 * 保留其容器和存活对象计数，不替换主要 errno。
 		 */
 		int proof_error = logger_queue_wait_error(&l->q);
+
 		if (proof_error)
 			logger_note_synchronization_error(l, proof_error);
 		return -error;
@@ -502,6 +543,7 @@ static int logger_ctor_start_worker(logger_t *l, const logger_config_t *cfg,
 		return -(errno ? errno : ENOMEM);
 	atomic_store_explicit(&l->running, 1, memory_order_release);
 	int rc = pthread_create(&l->worker, NULL, logger_worker_main, l);
+
 	if (rc) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
 		return -rc;
@@ -516,6 +558,7 @@ static logger_t *create_logger(const logger_config_t *input)
 	struct logger_ctor_state state = { 0 };
 	logger_state_t expected = LOGGER_STATE_CREATED;
 	int rc;
+
 	if (copy_logger_config(input, &cfg) != 0)
 		return NULL;
 	rc = validate_logger_config(&cfg);
@@ -529,6 +572,7 @@ static logger_t *create_logger(const logger_config_t *input)
 		return NULL;
 	}
 	logger_t *l = logger_runtime_calloc(1, sizeof(*l));
+
 	if (!l) {
 		int primary = errno ? errno : ENOMEM;
 		/*
@@ -649,6 +693,7 @@ static logger_t *finish_create(struct logger_scope *scope, logger_t *l,
 static logger_t *create_entry(const logger_config_t *input)
 {
 	struct logger_scope scope;
+
 	if (logger_scope_begin(&scope))
 		return NULL;
 	/*
@@ -657,6 +702,7 @@ static logger_t *create_entry(const logger_config_t *input)
 	 */
 	int old_type;
 	int rc = pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &old_type);
+
 	if (!rc)
 		rc = pthread_setcanceltype(old_type, NULL);
 	if (rc || (old_type == PTHREAD_CANCEL_ASYNCHRONOUS &&
@@ -691,6 +737,7 @@ int logger_create(const logger_config_t *input, logger_t **out)
 		rc = -EBUSY;
 	} else {
 		logger_t *candidate = create_entry(input);
+
 		if (candidate)
 			*out = candidate;
 		else
@@ -728,15 +775,18 @@ static int dispose_body(logger_t *l, int *released)
 	if (l->async_mode) {
 		atomic_store_explicit(&l->running, 0, memory_order_release);
 		int wake_rc = logger_queue_wake_force(&l->q);
+
 		if (wake_rc) {
 			logger_note_lifecycle_error(l, -wake_rc);
 			int wait_error = logger_queue_wait_error(&l->q);
+
 			if (wait_error)
 				logger_note_synchronization_error(l,
 								  wait_error);
 			return wake_rc;
 		}
 		int join_rc = pthread_join(l->worker, NULL);
+
 		if (join_rc) {
 			int expected = 0;
 			(void)atomic_compare_exchange_strong_explicit(
@@ -774,6 +824,7 @@ static int dispose_body(logger_t *l, int *released)
 		logger_worker_workspace_destroy(l->worker_workspace);
 		l->worker_workspace = NULL;
 		int qrc = logger_queue_destroy(&l->q);
+
 		if (qrc) {
 			atomic_store_explicit(&l->lifecycle_error, -qrc,
 					      memory_order_release);
@@ -786,6 +837,7 @@ static int dispose_body(logger_t *l, int *released)
 	 * 检查，不是检测并发使用者的通用机制。失败时停止最终释放。
 	 */
 	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
+
 	if (destroy_rc) {
 		atomic_store_explicit(&l->lifecycle_error, destroy_rc,
 				      memory_order_release);
@@ -805,9 +857,11 @@ static int dispose_body(logger_t *l, int *released)
 	}
 
 	int close_rc = logger_file_close_status(&l->file_backend);
+
 	if (!rc)
 		rc = close_rc;
 	int syslog_close_rc = logger_syslog_close_status(&l->syslog_backend);
+
 	if (!rc)
 		rc = syslog_close_rc;
 
@@ -818,6 +872,7 @@ static int dispose_body(logger_t *l, int *released)
 	 * 来掩盖计数下溢。
 	 */
 	int release_rc = logger_process_object_release();
+
 	if (release_rc)
 		return release_rc;
 
@@ -826,6 +881,7 @@ static int dispose_body(logger_t *l, int *released)
 	 * 失败映射仍在进程域登记中，不因对象计数归零就假称已释放。
 	 */
 	int free_rc = logger_runtime_free(l);
+
 	if (free_rc)
 		return rc ? rc : free_rc;
 	if (released)
@@ -843,12 +899,14 @@ static int logger_dispose_internal_tracked(logger_t *l, int *released)
 	/* 销毁 NULL 保留其不注册、不获取资源的行为。 */
 	if (!l) {
 		int rc = reject_access() ? -errno : 0;
+
 		if (!rc && released)
 			*released = 1;
 		return rc;
 	}
 	struct logger_scope scope;
 	int rc = logger_scope_begin(&scope);
+
 	if (rc)
 		return rc;
 	rc = dispose_body(l, released);
@@ -907,6 +965,7 @@ int logger_destroy(logger_t **owner)
 	 * 再次释放同一个对象。最终释放回执供内部 Global 单独判定。
 	 */
 	logger_t *instance = *owner;
+
 	if (atomic_load_explicit(&instance->default_borrowed,
 				 memory_order_acquire)) {
 		rc = logger_scope_end(&scope, -EBUSY);
@@ -936,6 +995,7 @@ int logger_log(logger_t *l, logger_level_t level, const char *module,
 		rc = -ESHUTDOWN;
 	if (!rc) {
 		va_list ap;
+
 		va_start(ap, fmt);
 		rc = vlog_body(l, level, module, file, line, function, fmt, ap,
 			       saved);
@@ -946,6 +1006,7 @@ out:
 	errno = saved;
 	return rc;
 }
+
 int logger_log_source(logger_t *l, logger_level_t level, logger_source_t source,
 		      const char *fmt, ...)
 {
@@ -961,6 +1022,7 @@ int logger_log_source(logger_t *l, logger_level_t level, logger_source_t source,
 		rc = -ESHUTDOWN;
 	if (!rc) {
 		va_list ap;
+
 		va_start(ap, fmt);
 		rc = vlog_body(l, level, source.module, source.file,
 			       source.line, source.func, fmt, ap, saved);
@@ -982,19 +1044,21 @@ int logger_log_sync_status(logger_t *l, logger_level_t level,
 
 	if (rc)
 		goto out;
-	if (!l || !fmt || (unsigned int)level >= LOGGER_OFF)
+	if (!l || !fmt || (unsigned int)level >= LOGGER_OFF) {
 		rc = -EINVAL;
-	else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
-		 LOGGER_STATE_RUNNING)
+	} else if (atomic_load_explicit(&l->state, memory_order_acquire) !=
+		   LOGGER_STATE_RUNNING) {
 		rc = -ESHUTDOWN;
-	else if (level >=
-		 atomic_load_explicit(&l->level, memory_order_relaxed)) {
+	} else if (level >=
+		   atomic_load_explicit(&l->level, memory_order_relaxed)) {
 		struct logger_message msg = { .level = level };
+
 		prepare_record_metadata(l, &msg, module, file, line, function);
-		if (clock_gettime(CLOCK_REALTIME, &msg.ts))
+		if (clock_gettime(CLOCK_REALTIME, &msg.ts)) {
 			rc = -(errno ? errno : EIO);
-		else {
+		} else {
 			va_list ap;
+
 			va_start(ap, fmt);
 			errno = saved;
 			int n = logger_libc_vsnprintf(
@@ -1051,6 +1115,7 @@ out:
 	errno = saved;
 	return rc;
 }
+
 void logger_note_io_error(logger_t *l, int error)
 {
 	if (error <= 0)
@@ -1116,6 +1181,7 @@ int logger_wait_for_output(logger_t *l)
 		if (rc)
 			return rc;
 		int result = 0;
+
 		for (;;) {
 			/*
 			 * 执行器失败后不能保证该水位。每次唤醒后都在通知互斥锁
@@ -1149,6 +1215,7 @@ int logger_wait_for_output(logger_t *l)
 			return result;
 	}
 	int error = atomic_load_explicit(&l->first_error, memory_order_acquire);
+
 	return error ? -error : 0;
 }
 
@@ -1157,10 +1224,12 @@ int logger_sync_outputs_locked(logger_t *l)
 	logger_lockdep_assert_held(LOGGER_LOCK_INSTANCE_EMIT, &l->emit_mu);
 	if (l->outputs & LOGGER_OUT_FILE) {
 		int rc = logger_file_sync(&l->file_backend);
+
 		if (rc < 0)
 			logger_note_io_error(l, -rc);
 	}
 	int error = atomic_load_explicit(&l->first_error, memory_order_acquire);
+
 	return error ? -error : 0;
 }
 
@@ -1190,6 +1259,7 @@ int logger_flush(logger_t *l)
 		int sync_error = atomic_load_explicit(&l->synchronization_error,
 						      memory_order_acquire);
 		int sync_rc = sync_error ? -sync_error : 0;
+
 		if (!sync_error) {
 			ACQUIRE(pthread_mutex_emit_checked, emit_guard)
 			(&l->emit_mu);
@@ -1235,6 +1305,7 @@ out:
 	errno = saved;
 	return rc;
 }
+
 int logger_dropped(const logger_t *l, uint64_t *out)
 {
 	int saved = errno;
@@ -1256,6 +1327,7 @@ done:
 	errno = saved;
 	return rc;
 }
+
 int logger_get_metrics(const logger_t *l, logger_metrics_t *out)
 {
 	int saved = errno;
@@ -1416,9 +1488,11 @@ int logger_file_metrics_snapshot(logger_t *l, logger_file_metrics_t *out)
 		return -sync_error;
 	ACQUIRE(pthread_mutex_emit_checked, emit_guard)(&l->emit_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_emit_checked, &emit_guard);
+
 	if (rc)
 		return rc;
 	logger_file_metrics_t snapshot = l->file_backend.metrics;
+
 	snapshot.current_size = (uint64_t)l->file_backend.current_size;
 	snapshot.detached = l->file_backend.detached;
 	rc = RELEASE_ERR(pthread_mutex_emit, &emit_guard);

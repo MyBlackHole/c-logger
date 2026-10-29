@@ -24,6 +24,7 @@ int logger_scope_begin(struct logger_scope *scope)
 		return -EDEADLK;
 	}
 	int rc = logger_process_require();
+
 	if (rc) {
 		errno = -rc;
 		return rc;
@@ -60,6 +61,7 @@ void logger_scope_worker_enter(void)
 {
 	in_runtime = true;
 }
+
 void logger_scope_worker_leave(void)
 {
 	in_runtime = false;

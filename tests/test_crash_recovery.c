@@ -12,6 +12,7 @@ static int notify_fd = -1;
 _Noreturn void crash_fixture_cut(const char *point)
 {
 	size_t length = strlen(point);
+
 	CHECK(notify_fd >= 0 && length < PIPE_BUF);
 	CHECK(write(notify_fd, point, length) == (ssize_t)length);
 	for (;;)
@@ -30,6 +31,7 @@ int main(int argc, char **argv)
 	if (argc == 4 && !strcmp(argv[1], "--writer")) {
 		char *end;
 		long fd = strtol(argv[3], &end, 10);
+
 		CHECK(!*end && fd >= 0 && fd <= INT_MAX);
 		notify_fd = (int)fd;
 		crash_fixture_write(argv[2]);
@@ -38,16 +40,21 @@ int main(int argc, char **argv)
 	CHECK(argc == 2 && crash_fixture_point_valid(argv[1]));
 	char exe[PATH_MAX];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+
 	CHECK(n > 0 && (size_t)n < sizeof(exe) - 1);
 	exe[n] = 0;
 	char directory[] = "/tmp/logger-crash-XXXXXX";
+
 	enter_temp(directory);
 	int notification[2];
+
 	CHECK(pipe(notification) == 0);
 	char fd[32];
+
 	CHECK(snprintf(fd, sizeof(fd), "%d", notification[1]) > 0);
 	char *args[] = { exe, "--writer", argv[1], fd, NULL };
 	pid_t child = fork();
+
 	CHECK(child >= 0);
 	if (!child) {
 		close(notification[0]);
@@ -57,6 +64,7 @@ int main(int argc, char **argv)
 	CHECK(close(notification[1]) == 0);
 	struct pollfd ready = { .fd = notification[0], .events = POLLIN };
 	int rc;
+
 	do {
 		rc = poll(&ready, 1, 10000);
 	} while (rc < 0 && errno == EINTR);
@@ -69,6 +77,7 @@ int main(int argc, char **argv)
 	/* 超时、标记缺失或错误都会失败，即使清理会终止子进程。 */
 	CHECK(kill(child, SIGKILL) == 0);
 	int status;
+
 	CHECK(waitpid(child, &status, 0) == child);
 	CHECK(close(notification[0]) == 0);
 	CHECK(reached && WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);

@@ -7,12 +7,14 @@
 static logger_t *make_logger(const char *path, int async)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = path;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.async_mode = async;
 	cfg.queue_capacity = 32;
 	logger_t *owner = NULL;
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	return owner;
 }
@@ -20,9 +22,11 @@ static logger_t *make_logger(const char *path, int async)
 static unsigned int lines(const char *path)
 {
 	FILE *f = fopen(path, "rb");
+
 	CHECK(f);
 	unsigned int result = 0;
 	int ch;
+
 	while ((ch = fgetc(f)) != EOF)
 		result += ch == '\n';
 	CHECK(!ferror(f) && fclose(f) == 0);
@@ -32,6 +36,7 @@ static unsigned int lines(const char *path)
 static void absent(void)
 {
 	int touched = 42;
+
 	errno = EDOM;
 	CHECK(LOG_INFO("must-not-format%n", &touched) == -ENODEV);
 	CHECK(errno == EDOM && touched == 42);
@@ -45,17 +50,20 @@ static void healthy(int async)
 	CHECK(logger_default_set(NULL, NULL) == 0 && errno == EDOM);
 	logger_t *a = make_logger("a.log", async);
 	logger_t *b = make_logger("b.log", async);
+
 	errno = ERANGE;
 	CHECK(logger_default_set(NULL, a) == 0 && errno == ERANGE);
 	LOGGER_INFO(a, "explicit", "A_EXPLICIT");
 	LOG_INFO("A_DEFAULT");
 	logger_t *original = a;
+
 	CHECK(logger_destroy(&a) == -EBUSY && a == original);
 	CHECK(errno == ERANGE);
 	CHECK(logger_default_set(NULL, b) == -ESTALE && errno == ERANGE);
 	CHECK(logger_default_set(a, a) == 0);
 	CHECK(logger_default_set(a, b) == 0);
 	logger_state_t state;
+
 	CHECK(logger_get_state(a, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
 	CHECK(logger_destroy(&a) == 0 && a == NULL);
@@ -75,10 +83,12 @@ static void healthy(int async)
 static void io_failure(void)
 {
 	logger_t *l = make_logger("/dev/full", 0);
+
 	CHECK(logger_default_set(NULL, l) == 0);
 	errno = EDOM;
 	CHECK(LOG_ERROR("expected-output-failure") < 0 && errno == EDOM);
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(l, &io) == 0 && errno == EDOM);
 	CHECK(io.first_error != 0);
 	errno = EDOM;
@@ -92,9 +102,11 @@ static void fork_case(void)
 {
 	/* 父方保持单线程；本用例没有检测器的多线程 fork 新 worker 豁免。 */
 	logger_t *a = make_logger("a.log", 0);
+
 	CHECK(logger_default_set(NULL, a) == 0);
 	LOG_INFO("PARENT_BEFORE");
 	pid_t child = fork();
+
 	CHECK(child >= 0);
 	if (!child) {
 		if (logger_default_set(NULL, NULL) != -ECHILD)
@@ -104,6 +116,7 @@ static void fork_case(void)
 		/* 不再访问继承的 a；新域中没有默认借用。 */
 		absent();
 		logger_t *b = make_logger("b.log", 0);
+
 		CHECK(logger_default_set(NULL, b) == 0);
 		LOG_INFO("CHILD_ONLY");
 		CHECK(logger_default_set(b, NULL) == 0);
@@ -111,6 +124,7 @@ static void fork_case(void)
 		_exit(0);
 	}
 	int status;
+
 	CHECK(waitpid(child, &status, 0) == child);
 	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 	LOG_INFO("PARENT_AFTER");
@@ -130,6 +144,7 @@ static void *stress_reader(void *unused)
 	for (unsigned int i = 0; i < 400; ++i) {
 		errno = EDOM;
 		int rc = LOG_INFO("CONCURRENT_RECORD_%u", i);
+
 		CHECK(errno == EDOM);
 		if (!rc)
 			atomic_fetch_add(&accepted, 1);
@@ -153,6 +168,7 @@ static void stress(void)
 	atomic_store(&start_readers, 1);
 	for (unsigned int i = 0; i < 200; ++i) {
 		logger_t *next = active == a ? b : a;
+
 		CHECK(logger_default_set(active, next) == 0);
 		active = next;
 	}
@@ -168,6 +184,7 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	(void)alarm(20);
 	char path[] = "/tmp/logger-default-XXXXXX";
+
 	enter_temp(path);
 	if (!strcmp(argv[1], "cold")) {
 		errno = EDOM;

@@ -60,6 +60,7 @@ int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 static int take_error(int *error)
 {
 	int result = *error;
+
 	if (result) {
 		*error = 0;
 		++injected;
@@ -72,12 +73,14 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *time)
 	if (active && clock == CLOCK_REALTIME) {
 		++clock_calls;
 		int error = take_error(&clock_error);
+
 		if (error) {
 			errno = error;
 			return -1;
 		}
 	}
 	int rc = __real_clock_gettime(clock, time);
+
 	if (!rc && active && contaminate_errno)
 		errno = ERANGE;
 	return rc;
@@ -89,6 +92,7 @@ static int reject_format(void)
 		return 0;
 	++format_calls;
 	int error = take_error(&format_error);
+
 	if (error)
 		errno = error;
 	return error;
@@ -115,6 +119,7 @@ ssize_t __wrap_write(int fd, const void *data, size_t length)
 	if (active && owner &&
 	    fd == logger_fd_number(logger_fd_borrow(&owner->file_backend.fd))) {
 		int error = take_error(&write_error);
+
 		if (error) {
 			errno = error;
 			return -1;
@@ -131,6 +136,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 		return EAGAIN;
 	}
 	int rc = __real_pthread_setcancelstate(state, old);
+
 	if (!rc && active && !old && ++restore_calls == fail_restore_number) {
 		/* 先完成真实恢复，再报告错误；不能由测试自己破坏取消策略。 */
 		fail_restore_number = 0;
@@ -145,6 +151,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	int error = 0;
+
 	if (active) {
 		if (mutex == &owner->emit_mu)
 			error = take_error(&emit_lock_error);
@@ -158,6 +165,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 		return error;
 	}
 	int rc = __real_pthread_mutex_lock(mutex);
+
 	if (!rc && active && unowned_mutex == mutex)
 		unowned_mutex = NULL;
 	return rc;
@@ -168,8 +176,10 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 	if (active)
 		CHECK(mutex != unowned_mutex);
 	int rc = __real_pthread_mutex_unlock(mutex);
+
 	if (!rc && active) {
 		int error = 0;
+
 		if (mutex == &owner->emit_mu)
 			error = take_error(&emit_unlock_error);
 		else if (mutex == &logger_runtime_current()->format_mu)
@@ -185,10 +195,12 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
 	if (active) {
 		++read_calls;
 		int error = take_error(&read_lock_error);
+
 		if (error)
 			return error;
 	}
 	int rc = __real_pthread_rwlock_rdlock(lock);
+
 	if (!rc && active && contaminate_errno)
 		errno = ERANGE;
 	return rc;
@@ -197,8 +209,10 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *lock)
 {
 	int rc = __real_pthread_rwlock_unlock(lock);
+
 	if (!rc && active) {
 		int error = take_error(&read_unlock_error);
+
 		if (error)
 			return error;
 	}
@@ -209,6 +223,7 @@ int __wrap_pthread_cond_signal(pthread_cond_t *cond)
 {
 	if (active && cond == &owner->q.wait_cv) {
 		int error = take_error(&notify_signal_error);
+
 		if (error)
 			return error;
 	}
@@ -224,6 +239,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 
 	atomic_store_explicit(&wait_entered, 1, memory_order_release);
 	int rc = __real_pthread_cond_wait(cond, mutex);
+
 	CHECK(rc == 0);
 	/*
 	 * 真实等待返回后暂时让出锁，但不能让工作线程在本次发布完成前
@@ -290,6 +306,7 @@ static int call(const char *fmt, const char *text)
 	errno = EDOM;
 	int rc = record(fmt, text);
 	int saved = errno;
+
 	active = 0;
 	CHECK(saved == EDOM);
 	return rc;
@@ -299,8 +316,10 @@ static void expect_line(FILE *file, const char *body)
 {
 	char line[8192];
 	size_t length = strlen(body);
+
 	CHECK(fgets(line, sizeof(line), file) != NULL);
 	size_t total = strlen(line);
+
 	CHECK(total > length + 1 && line[total - 1] == '\n');
 	CHECK(!memcmp(line + total - length - 1, body, length));
 }
@@ -309,6 +328,7 @@ static void expect_line(FILE *file, const char *body)
 static void expect_records(const char *body, size_t count, const char *tail)
 {
 	FILE *file = fopen("out.log", "rb");
+
 	CHECK(file);
 	for (size_t i = 0; i < count; ++i)
 		expect_line(file, body);
@@ -321,6 +341,7 @@ static void expect_records(const char *body, size_t count, const char *tail)
 static void check_cancel_state(void)
 {
 	int old;
+
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old) == 0);
 	CHECK(old == PTHREAD_CANCEL_ENABLE);
 	CHECK(pthread_setcancelstate(old, NULL) == 0);
@@ -353,6 +374,7 @@ static void queue_case(const char *mode)
 	int fallback = !strcmp(mode, "fallback-error");
 	size_t accepted = spill ? owner->q.spill_cap : owner->q.cap;
 	char long_body[600];
+
 	memset(long_body, 's', sizeof(long_body) - 1);
 	long_body[sizeof(long_body) - 1] = '\0';
 	const char *body = spill ? long_body : "queued";
@@ -391,6 +413,7 @@ static void queue_case(const char *mode)
 static void notify_case(const char *mode)
 {
 	int error = !strcmp(mode, "notify-lock") ? EAGAIN : EIO;
+
 	wait_flag(&wait_entered);
 	/*
 	 * 取得真实 wait_mu 才证明工作线程已越过发布 waiting 后的复查，
@@ -501,6 +524,7 @@ static int simple_case(const char *mode)
 
 	char expected_body[256];
 	const char *body = "probe";
+
 	if (contaminate_errno) {
 		int n = snprintf(expected_body, sizeof(expected_body),
 				 "probe errno=%s", strerror(EDOM));
@@ -551,8 +575,9 @@ int main(int argc, char **argv)
 	CHECK(argc == 3);
 	const char *names[] = { "log", "source", "default", "sync" };
 	unsigned int index;
-	for (index = 0; index < 4 && strcmp(argv[1], names[index]); ++index) {
-	}
+
+	for (index = 0; index < 4 && strcmp(argv[1], names[index]); ++index)
+		;
 	CHECK(index < 4);
 	api = (enum record_api)index;
 	const char *mode = argv[2];
@@ -566,9 +591,11 @@ int main(int argc, char **argv)
 	gate_wait_return = notify;
 	int retained = 0;
 	char directory[] = "/tmp/logger-record-errors-XXXXXX";
+
 	enter_temp(directory);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;

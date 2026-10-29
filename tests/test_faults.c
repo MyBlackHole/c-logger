@@ -4,10 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
 static int strict_logger(void)
 {
 	unlink("./fault.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "./fault.log";
 	c.async_mode = 0;
@@ -21,6 +23,7 @@ static int strict_logger(void)
 	logger_destroy(&l);
 	return rc < 0 ? 0 : 2;
 }
+
 int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)

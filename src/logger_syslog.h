@@ -25,6 +25,7 @@ struct logger_syslog {
 	int connection_error;
 	logger_syslog_metrics_t metrics;
 };
+
 int logger_syslog_init(struct logger_syslog *s, const char *ident,
 		       const logger_syslog_config_t *config);
 int logger_syslog_close_status(

@@ -24,8 +24,9 @@
 static inline void nap_ms(void)
 {
 	struct timespec ts = { 0, 1000000 };
-	while (nanosleep(&ts, &ts) && errno == EINTR) {
-	}
+
+	while (nanosleep(&ts, &ts) && errno == EINTR)
+		;
 }
 
 static inline void wait_flag(const _Atomic int *flag)
@@ -49,19 +50,23 @@ static inline void enter_temp_workspace(char *path, size_t size,
 {
 	char root[PATH_MAX];
 	const char *configured = getenv("TMPDIR");
+
 	if (!configured || !*configured) {
 		CHECK(getcwd(root, sizeof(root)) != NULL);
 	} else if (configured[0] == '/') {
 		int length = snprintf(root, sizeof(root), "%s", configured);
+
 		CHECK(length > 0 && (size_t)length < sizeof(root));
 	} else {
 		char cwd[PATH_MAX];
+
 		CHECK(getcwd(cwd, sizeof(cwd)) != NULL);
 		int length =
 			snprintf(root, sizeof(root), "%s/%s", cwd, configured);
 		CHECK(length > 0 && (size_t)length < sizeof(root));
 	}
 	int length = snprintf(path, size, "%s/%s-XXXXXX", root, name);
+
 	CHECK(length > 0 && (size_t)length < size);
 	enter_temp(path);
 }
@@ -69,6 +74,7 @@ static inline void enter_temp_workspace(char *path, size_t size,
 static inline off_t file_size(const char *path)
 {
 	struct stat st;
+
 	CHECK(stat(path, &st) == 0);
 	return st.st_size;
 }
@@ -76,9 +82,11 @@ static inline off_t file_size(const char *path)
 static inline bool file_contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "rb");
+
 	CHECK(f != NULL);
 	char text[32768];
 	size_t n = fread(text, 1, sizeof(text) - 1, f);
+
 	CHECK(!ferror(f));
 	text[n] = '\0';
 	CHECK(fclose(f) == 0);

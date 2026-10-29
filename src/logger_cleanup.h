@@ -235,6 +235,7 @@ static inline int __cleanup_normalize_lock_error(int rc)
 static inline void __cleanup_release_free(void *ptr)
 {
 	int saved = errno;
+
 	free(ptr);
 	errno = saved;
 }
@@ -269,18 +270,22 @@ DEFINE_CLASS(file, FILE *, if (_T) __cleanup_release_file(_T), _file,
 
 /* pthread 互斥锁只生成可检查获取结果的守卫。 */
 typedef pthread_mutex_t *lock_pthread_mutex_t;
+
 typedef struct {
 	pthread_mutex_t *resource;
 	int err;
 } class_pthread_mutex_t;
+
 static inline CLEANUP_MAYBE_UNUSED void
 class_pthread_mutex_destructor(class_pthread_mutex_t *__guard)
 {
 	if (!__guard->err)
 		(void)pthread_mutex_unlock(__guard->resource);
 }
+
 DEFINE_GUARD_COND(pthread_mutex, _checked, pthread_mutex_lock(_T))
 DEFINE_GUARD_COND(pthread_mutex, _try, pthread_mutex_trylock(_T))
+
 static inline CLEANUP_MAYBE_UNUSED int
 class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 {
@@ -288,6 +293,7 @@ class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 		return __guard->err;
 	__guard->err = -ECANCELED;
 	int rc = pthread_mutex_unlock(__guard->resource);
+
 	return rc ? -rc : 0;
 }
 
@@ -333,6 +339,7 @@ __cleanup_lockdep_rwlock_lock(pthread_rwlock_t *rw,
 {
 	logger_lockdep_check_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	int rc = lock_fn(rw);
+
 	if (!rc)
 		logger_lockdep_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	return rc;
@@ -361,6 +368,7 @@ static inline int __cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	logger_lockdep_check_release(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	int rc = pthread_rwlock_unlock(rw);
+
 	if (!rc)
 		logger_lockdep_release(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	else

@@ -17,28 +17,34 @@ struct matrix_argument {
 static void *produce(void *p)
 {
 	const struct matrix_argument *a = p;
+
 	for (uint64_t i = 0; i < a->count; ++i)
 		logger_log(a->logger, LOGGER_INFO, "bench", __FILE__, __LINE__,
 			   __func__, "%s", a->message);
 	return NULL;
 }
+
 static double elapsed(struct timespec start, struct timespec end)
 {
 	return (double)(end.tv_sec - start.tv_sec) +
 	       (double)(end.tv_nsec - start.tv_nsec) / 1e9;
 }
+
 static int number(const char *s, uint64_t *out)
 {
 	if (!s || !*s || *s == '-')
 		return -1;
 	char *end;
+
 	errno = 0;
 	unsigned long long n = strtoull(s, &end, 10);
+
 	if (errno || *end)
 		return -1;
 	*out = (uint64_t)n;
 	return 0;
 }
+
 int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
@@ -46,6 +52,7 @@ int main(int argc, char **argv)
 	uint64_t nt;
 	uint64_t nr;
 	uint64_t sz;
+
 	if (argc != 4 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &sz) || nt < 1 || nt > 256 || nr < 1 || sz < 1 ||
 	    sz > 4000 || nr > UINT64_MAX / nt) {
@@ -56,6 +63,7 @@ int main(int argc, char **argv)
 	}
 	char *msg = malloc((size_t)sz + 1);
 	pthread_t *threads = calloc((size_t)nt, sizeof(*threads));
+
 	if (!msg || !threads) {
 		free(msg);
 		free(threads);
@@ -64,6 +72,7 @@ int main(int argc, char **argv)
 	memset(msg, 'x', (size_t)sz);
 	msg[sz] = '\0';
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "/dev/null";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
@@ -81,9 +90,11 @@ int main(int argc, char **argv)
 	struct timespec begin;
 	struct timespec producer_end;
 	struct timespec output_end;
+
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	uint64_t started = 0;
 	int error = 0;
+
 	for (; started < nt; ++started) {
 		error = pthread_create(&threads[started], NULL, produce, &a);
 		if (error)
@@ -97,12 +108,14 @@ int main(int argc, char **argv)
 	 * 这里等待实际后端尝试全部完成。
 	 */
 	int rc = logger_wait_for_output(l);
+
 	clock_gettime(CLOCK_MONOTONIC, &output_end);
 	logger_metrics_t m = { 0 };
 	logger_io_metrics_t io = { 0 };
 	int metrics_rc = logger_get_metrics(l, &m);
 	int io_rc = logger_get_io_metrics(l, &io);
 	uint64_t drops = 0;
+
 	for (unsigned int i = 0; i < 6; ++i)
 		drops += m.dropped[i];
 	uint64_t attempted = started * nr;
@@ -114,6 +127,7 @@ int main(int argc, char **argv)
 			    io.async_completed + io.sync_completed;
 	double ps = elapsed(begin, producer_end);
 	double es = elapsed(begin, output_end);
+
 	printf("{\"threads\":%" PRIu64 ",\"message_bytes\":%" PRIu64
 	       ",\"attempted\":%" PRIu64
 	       ",\"producer_seconds\":%.9f,\"end_to_end_seconds\":%.9f"

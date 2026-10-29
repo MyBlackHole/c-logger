@@ -3,11 +3,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
+
 enum logger_fault_point {
 	LOGGER_FAULT_FILE_WRITE,
 	LOGGER_FAULT_FILE_FSYNC,
 	LOGGER_FAULT_FILE_RENAME
 };
+
 /*
  * 只有特意分离的 logger_test_support 目标包含钩子。
  * 生产宏也会消除调用参数（包括崩溃点字符串）。

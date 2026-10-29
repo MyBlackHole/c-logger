@@ -37,11 +37,13 @@ static int fail(int error)
 static int monotonic_ms(struct logger_monotonic_ms *out)
 {
 	struct timespec ts;
+
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
 		return -1;
 	if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L)
 		return fail(EIO);
 	uint64_t sub = (uint64_t)ts.tv_nsec / 1000000u;
+
 	if ((uint64_t)ts.tv_sec > (UINT64_MAX - sub) / 1000u)
 		return fail(EOVERFLOW);
 	out->value = (uint64_t)ts.tv_sec * 1000u + sub;
@@ -98,6 +100,7 @@ static int copy_path(struct logger_syslog *s, const char *path)
 	if (!path)
 		path = "/dev/log";
 	size_t n = strnlen(path, sizeof(s->path));
+
 	if (n == 0)
 		return fail(EINVAL);
 	if (n >= sizeof(s->path))
@@ -112,6 +115,7 @@ static int copy_path(struct logger_syslog *s, const char *path)
 	 * 接。
 	 */
 	char cwd[sizeof(s->path)];
+
 	if (!getcwd(cwd, sizeof(cwd))) {
 		if (errno == ERANGE)
 			errno = ENAMETOOLONG;
@@ -119,6 +123,7 @@ static int copy_path(struct logger_syslog *s, const char *path)
 	}
 	size_t len = strlen(cwd);
 	size_t slash = len == 1 && cwd[0] == '/' ? 0 : 1;
+
 	if (len + slash + n >= sizeof(s->path))
 		return fail(ENAMETOOLONG);
 	memcpy(s->path, cwd, len);
@@ -141,6 +146,7 @@ static int connect_once(struct logger_syslog *s, bool *deferable)
 	if (!logger_fd_valid(&candidate))
 		goto failed;
 	struct sockaddr_un address = { 0 };
+
 	address.sun_family = AF_UNIX;
 	memcpy(address.sun_path, s->path, strlen(s->path) + 1);
 	socklen_t size = (socklen_t)(offsetof(struct sockaddr_un, sun_path) +
@@ -150,6 +156,7 @@ static int connect_once(struct logger_syslog *s, bool *deferable)
 		int error = errno ? errno : EIO;
 		*deferable = endpoint_unavailable(error);
 		int close_error = logger_fd_close_status(&candidate);
+
 		if (close_error) {
 			++s->metrics.close_failures;
 			s->metrics.last_close_error = -close_error;
@@ -165,6 +172,7 @@ static int connect_once(struct logger_syslog *s, bool *deferable)
 	return 0;
 failed: {
 	int error = errno ? errno : EIO;
+
 	if (error == EINTR)
 		++s->metrics.interrupted_calls;
 	++s->metrics.connect_failures;
@@ -194,6 +202,7 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	if (!ident || !*ident)
 		ident = "app";
 	size_t n = strnlen(ident, sizeof(s->ident));
+
 	if (n >= sizeof(s->ident))
 		return fail(ENAMETOOLONG);
 	/*
@@ -202,6 +211,7 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	 */
 	for (size_t i = 0; i < n; ++i) {
 		unsigned char c = (unsigned char)ident[i];
+
 		if (c < 33 || c > 126 || c == ':' || c == '[' || c == ']')
 			return fail(EINVAL);
 	}
@@ -214,6 +224,7 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	 * 应用显式设置始终优先。
 	 */
 	const char *override = getenv("LOGGER_SYSLOG_PATH");
+
 	if (!config->path && override && *override) {
 		n = strnlen(override, sizeof(s->path));
 		if (n >= sizeof(s->path))
@@ -224,6 +235,7 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	if (monotonic_ms(&s->retry_from_ms) != 0)
 		return -1;
 	bool deferable;
+
 	if (connect_once(s, &deferable) == 0)
 		return 0;
 	/*
@@ -281,6 +293,7 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 
 	if (!logger_fd_valid(&s->fd)) {
 		struct logger_monotonic_ms now;
+
 		if (monotonic_ms(&now) != 0)
 			return record_failure(s, errno);
 		if (s->retry_clock_pending ||
@@ -301,12 +314,14 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 		}
 		s->retry_from_ms = now;
 		bool deferable;
+
 		if (connect_once(s, &deferable) != 0)
 			return record_failure(s, errno);
 	}
 
 	int fd = logger_fd_number(logger_fd_borrow(&s->fd));
 	int error = EINTR;
+
 	for (unsigned int i = 0; i < SYSLOG_SEND_ATTEMPTS; ++i) {
 		++s->metrics.send_attempts;
 		ssize_t sent =

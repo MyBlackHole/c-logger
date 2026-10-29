@@ -281,9 +281,11 @@ ABI_FN(logger_set_level, int, logger_level_t);
 static bool query_sentinel(const void *out, size_t size)
 {
 	const unsigned char *bytes = (const unsigned char *)out;
-	for (size_t i = 0; i < size; ++i)
+
+	for (size_t i = 0; i < size; ++i) {
 		if (bytes[i] != 0xa5)
 			return false;
+	}
 	return true;
 }
 
@@ -409,6 +411,7 @@ static int context_contract(int cold)
 				   NULL };
 	logger_context_t output = { "unchanged", "unchanged", "unchanged" };
 	logger_context_t before = output;
+
 	errno = EDOM;
 	if (cold) {
 		if (set(&input) != -ENODEV || errno != EDOM ||
@@ -441,6 +444,7 @@ static int level_contract(logger_t *owner, int cold)
 	int (*set_instance)(logger_t *logger, logger_level_t level) =
 		logger_set_instance_level;
 	int (*set_default)(logger_level_t level) = logger_set_level;
+
 	errno = EDOM;
 	if (cold) {
 		if (set_instance((logger_t *)(uintptr_t)1, LOGGER_INFO) !=
@@ -451,6 +455,7 @@ static int level_contract(logger_t *owner, int cold)
 		return 0;
 	}
 	logger_diagnostics_t diag;
+
 	if (set_instance(owner, LOGGER_DEBUG) || errno != EDOM)
 		return 2;
 	if (logger_get_diagnostics(owner, &diag) || errno != EDOM ||
@@ -466,6 +471,7 @@ static int level_contract(logger_t *owner, int cold)
 	if (set_default((logger_level_t)-1) != -EINVAL || errno != EDOM)
 		return 6;
 	logger_level_t invalid = (logger_level_t)(LOGGER_OFF + 1);
+
 	if (set_instance(owner, invalid) != -EINVAL || errno != EDOM)
 		return 6;
 	if (logger_get_diagnostics(owner, &diag) || errno != EDOM ||
@@ -479,6 +485,7 @@ static int level_contract(logger_t *owner, int cold)
 static int defaults_match(void)
 {
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
+
 	if (l.struct_size != 144 || l.version != 1 || l.level != LOGGER_INFO ||
 	    l.detail != LOGGER_DETAIL_VERBOSE ||
 	    l.outputs != LOGGER_OUT_STDERR || l.file_path != NULL ||
@@ -495,9 +502,10 @@ static int defaults_match(void)
 		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,
 		LOGGER_OVERFLOW_SYNC, LOGGER_OVERFLOW_SYNC
 	};
-	for (unsigned int i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i) {
 		if (l.overflow[i] != overflow[i])
 			return 2;
+	}
 	if (l.syslog.path != NULL ||
 	    l.syslog.facility != LOGGER_SYSLOG_FACILITY_USER ||
 	    l.syslog.reconnect_interval_ms != 1000u ||
@@ -505,6 +513,7 @@ static int defaults_match(void)
 		return 3;
 
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
+
 	if (c.struct_size != 16 || c.version != 1 ||
 	    c.verbosity != CONSOLE_NORMAL || c.color != CONSOLE_COLOR_AUTO)
 		return 5;
@@ -514,11 +523,13 @@ static int defaults_match(void)
 int main(void)
 {
 	int rc = defaults_match();
+
 	if (rc)
 		return rc;
 	/* 真实安装库的 C/C++11 调用，不仅检查头文件中存在声明。 */
 	logger_config_t cold_config = LOGGER_DEFAULT_CONFIG();
 	logger_t *cold_owner = NULL;
+
 	errno = EDOM;
 	if (logger_create(&cold_config, &cold_owner) != -ENODEV ||
 	    cold_owner != NULL || errno != EDOM)
@@ -545,11 +556,13 @@ int main(void)
 	int (*is_stdout_tty)(int *out) = console_stdout_is_tty;
 	int (*is_stderr_tty)(int *out) = console_stderr_is_tty;
 	int tty = 7;
+
 	errno = EDOM;
 	if (configure_console(&console) != -ENODEV || errno != EDOM ||
 	    is_stdout_tty(&tty) != -ENODEV || tty != 7 || errno != EDOM)
 		return 23;
 	int (*initialize)(void) = logger_process_init;
+
 	errno = EDOM;
 	if (initialize() != 0 || errno != EDOM)
 		return 10;
@@ -570,6 +583,7 @@ int main(void)
 	    is_stderr_tty(&tty) || (tty != 0 && tty != 1) || errno != EDOM)
 		return 26;
 	int (*print_console)(const char *format, ...) = console_print;
+
 	if (print_console(NULL) != -EINVAL || errno != EDOM ||
 	    console_info("filtered-installed-console") || errno != EDOM)
 		return 27;
@@ -578,6 +592,7 @@ int main(void)
 	int (*destroy)(logger_t **owner) = logger_destroy;
 	logger_t *owner = NULL;
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	if (create(&cfg, &owner) || !owner || errno != EDOM)
 		return 12;
@@ -596,6 +611,7 @@ int main(void)
 	int (*reopen)(logger_t *logger) = logger_reopen;
 	int (*default_flush)(void) = logger_default_flush;
 	int (*default_reopen)(void) = logger_default_reopen;
+
 	if (flush(owner) || errno != EDOM || default_flush() || errno != EDOM ||
 	    reopen(owner) != -EINVAL || errno != EDOM ||
 	    default_reopen() != -EINVAL || errno != EDOM)

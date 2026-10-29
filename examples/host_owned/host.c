@@ -15,6 +15,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	struct example_plugin plugin;
+
 	if (example_plugin_open(&plugin, argv[1])) {
 		fprintf(stderr, "load SDK: %s\n", dlerror());
 		return 1;
@@ -24,6 +25,7 @@ int main(int argc, char **argv)
 	example_sdk_t *first = NULL;
 	example_sdk_t *second = NULL;
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = argv[2];
 	cfg.detail = LOGGER_DETAIL_DEBUG;
@@ -31,6 +33,7 @@ int main(int argc, char **argv)
 	cfg.queue_capacity = 1024;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	int create_rc = logger_create(&cfg, &logger);
+
 	if (create_rc) {
 		errno = -create_rc;
 		perror("logger_create");
@@ -69,6 +72,7 @@ cleanup:
 			result = 1;
 		}
 		int flush_rc = logger_flush(logger);
+
 		if (flush_rc) {
 			errno = -flush_rc;
 			perror("logger_flush");
@@ -81,6 +85,7 @@ cleanup:
 	}
 	/* Logger 库与宿主回调代码保持加载，直到销毁之后。 */
 	int destroy_rc = logger_destroy(&logger);
+
 	if (destroy_rc) {
 		errno = -destroy_rc;
 		perror("logger_destroy");

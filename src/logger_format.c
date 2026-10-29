@@ -17,6 +17,7 @@ const char *logger_level_name(logger_level_t level)
 const char *logger_basename(const char *path)
 {
 	const char *slash = path ? strrchr(path, '/') : NULL;
+
 	return slash ? slash + 1 : (path ? path : "?");
 }
 
@@ -38,6 +39,7 @@ static int LOGGER_PRINTF(2, 3)
 	if (line->used >= line->cap - 1)
 		goto overflow;
 	va_list ap;
+
 	va_start(ap, fmt);
 	int n = logger_libc_vsnprintf(line->out + line->used,
 				      line->cap - line->used, fmt, ap);
@@ -50,6 +52,7 @@ static int LOGGER_PRINTF(2, 3)
 		goto overflow;
 	}
 	size_t room = line->cap - line->used;
+
 	if ((size_t)n >= room) {
 		line->used += room - 1;
 		goto overflow;
@@ -95,9 +98,10 @@ static bool canonical_time(const struct timestamp_cache *cache)
 	}
 	if (z[0] != '+' && z[0] != '-')
 		return false;
-	for (unsigned int i = 1; i < 5; ++i)
+	for (unsigned int i = 1; i < 5; ++i) {
 		if (z[i] < '0' || z[i] > '9')
 			return false;
+	}
 
 	unsigned int year = (unsigned int)(d[0] - '0') * 1000u +
 			    (unsigned int)(d[1] - '0') * 100u +
@@ -122,6 +126,7 @@ static bool canonical_time(const struct timestamp_cache *cache)
 	    second > 60 || zone_hour > 23 || zone_minute > 59)
 		return false;
 	bool leap = !(year % 4) && (year % 100 || !(year % 400));
+
 	return day <= days[month - 1] + (month == 2 && leap);
 }
 
@@ -139,6 +144,7 @@ static int format_line(const logger_t *l, const struct logger_message *m,
 		return -EINVAL;
 
 	time_t sec = m->ts.tv_sec;
+
 	if (!timestamp.valid || timestamp.sec != sec) {
 		struct tm tm;
 
@@ -179,6 +185,7 @@ static int format_line(const logger_t *l, const struct logger_message *m,
 	if (rc)
 		return rc;
 	logger_detail_t detail = logger_internal_detail(l);
+
 	if (detail >= LOGGER_DETAIL_VERBOSE) {
 		if (logger_internal_include_pid(l)) {
 			rc = append(&line, " pid=%ld", (long)m->pid);

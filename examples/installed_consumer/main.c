@@ -23,12 +23,14 @@ int main(void)
 	if (logger_process_init() != 0)
 		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 64;
 	c.file_path = "installed-a.log";
 	logger_t *a = NULL;
 	int create_rc = logger_create(&c, &a);
+
 	if (create_rc) {
 		errno = -create_rc;
 		perror("logger_create(a)");
@@ -37,6 +39,7 @@ int main(void)
 	c.file_path = "installed-b.log";
 	c.async_mode = 0;
 	logger_t *b = NULL;
+
 	create_rc = logger_create(&c, &b);
 	if (create_rc) {
 		errno = -create_rc;
@@ -45,8 +48,10 @@ int main(void)
 		return 2;
 	}
 	int rc = 0;
+
 	for (unsigned int i = 0; i < 16; ++i) {
 		int record_rc = LOGGER_INFO(a, "host-a", "record=%u", i);
+
 		if (record_rc && !rc)
 			rc = record_rc;
 		record_rc = LOGGER_INFO(b, "host-b", "record=%u", i);
@@ -54,6 +59,7 @@ int main(void)
 			rc = record_rc;
 	}
 	int flush_rc = logger_flush(a);
+
 	if (!rc)
 		rc = flush_rc;
 	logger_io_metrics_t io;
@@ -62,6 +68,7 @@ int main(void)
 	int diagnostics_rc = logger_get_diagnostics(a, &diagnostics);
 	logger_file_metrics_t file_metrics;
 	int file_rc = logger_get_file_metrics(a, &file_metrics);
+
 	if (io_rc || diagnostics_rc || file_rc) {
 		if (!rc)
 			rc = io_rc	    ? io_rc :
@@ -80,6 +87,7 @@ int main(void)
 		rc = -EIO;
 	int close_b = logger_destroy(&b);
 	int close_a = logger_destroy(&a);
+
 	if (!rc && (close_b || close_a))
 		rc = close_b ? close_b : close_a;
 	if (a || b)
@@ -91,6 +99,7 @@ int main(void)
 	}
 
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
+
 	cc.color = CONSOLE_COLOR_NEVER;
 	console_init(&cc);
 	if (console_print("installed Logger/Console consumer passed"))

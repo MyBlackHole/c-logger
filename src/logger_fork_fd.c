@@ -51,6 +51,7 @@ void logger_fork_resource_poison(int error)
 int logger_fork_resource_enter(void)
 {
 	int rc = logger_process_require();
+
 	if (rc)
 		return -rc;
 	if (in_gate)
@@ -88,15 +89,18 @@ int logger_fork_resource_leave(int error)
 static int grow_for(int fd)
 {
 	size_t required = ((size_t)fd / 64u + 1u) * sizeof(*owned);
+
 	if (required <= owned_bytes)
 		return 0;
 	size_t bytes = owned_bytes ? owned_bytes : 4096u;
+
 	while (bytes < required) {
 		if (bytes > SIZE_MAX / 2u)
 			return EOVERFLOW;
 		bytes *= 2u;
 	}
 	void *next;
+
 	if (owned)
 		next = mremap(owned, owned_bytes, bytes, MREMAP_MAYMOVE);
 	else
@@ -119,6 +123,7 @@ static bool is_owned(int fd)
 static int register_fd(int fd)
 {
 	int rc = grow_for(fd);
+
 	if (rc)
 		return rc;
 	if (is_owned(fd)) {
@@ -143,6 +148,7 @@ static int release_empty(void)
 		return 0;
 	if (munmap(owned, owned_bytes)) {
 		int error = errno;
+
 		logger_fork_resource_poison(error);
 		return error;
 	}
@@ -155,6 +161,7 @@ static int acquired(int fd)
 {
 	int error = fd < 0 ? errno : 0;
 	int saved = errno;
+
 	if (fd >= 0) {
 		error = register_fd(fd);
 		if (error) {
@@ -174,6 +181,7 @@ static int acquired(int fd)
 int logger_fork_open(const char *path, int flags, mode_t mode)
 {
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return -1;
@@ -184,6 +192,7 @@ int logger_fork_open(const char *path, int flags, mode_t mode)
 int logger_fork_openat(int dir, const char *path, int flags, mode_t mode)
 {
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return -1;
@@ -194,6 +203,7 @@ int logger_fork_openat(int dir, const char *path, int flags, mode_t mode)
 int logger_fork_socket(int domain, int type, int protocol)
 {
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return -1;
@@ -204,6 +214,7 @@ int logger_fork_socket(int domain, int type, int protocol)
 int logger_fork_close(int fd)
 {
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return -1;
@@ -218,6 +229,7 @@ int logger_fork_close(int fd)
 		if (close(fd))
 			error = errno;
 		int released = release_empty();
+
 		if (!error)
 			error = released;
 	}
@@ -230,14 +242,16 @@ int logger_fork_close(int fd)
 DIR *logger_fork_fdopendir(int fd)
 {
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return NULL;
 	}
 	DIR *dir = NULL;
-	if (!is_owned(fd))
+
+	if (!is_owned(fd)) {
 		error = EBADF;
-	else {
+	} else {
 		dir = fdopendir(fd);
 		if (!dir)
 			error = errno;
@@ -264,6 +278,7 @@ int logger_fork_closedir(DIR *dir)
 	}
 	int fd = dirfd(dir);
 	int error = 0;
+
 	if (!is_owned(fd)) {
 		error = EUCLEAN;
 		logger_fork_resource_poison(error);
@@ -272,6 +287,7 @@ int logger_fork_closedir(DIR *dir)
 		if (closedir(dir))
 			error = errno;
 		int released = release_empty();
+
 		if (!error)
 			error = released;
 	}
@@ -323,6 +339,7 @@ void logger_fork_fd_prepare(void)
 void logger_fork_fd_parent(void)
 {
 	int saved = errno;
+
 	if (fork_depth > 1) {
 		--fork_depth;
 		errno = saved;
@@ -344,6 +361,7 @@ void logger_fork_fd_parent(void)
 void logger_fork_fd_child(void)
 {
 	int saved = errno;
+
 	child_valid = prepared && !prepare_error && fork_depth == 1;
 	child_error = child_valid ? 0 :
 				    (prepare_error ? prepare_error : ECHILD);
@@ -357,12 +375,14 @@ void logger_fork_fd_child(void)
 		for (size_t word = 0;
 		     word < snapshot_bytes / sizeof(*snapshot_fds); ++word) {
 			uint64_t bits = snapshot_fds[word];
+
 			snapshot_fds[word] = 0;
 			while (bits) {
 				unsigned int bit =
 					(unsigned int)__builtin_ctzll(bits);
 				bits &= bits - 1u;
 				int fd = (int)(word * 64u + bit);
+
 				if (close(fd) && !child_error)
 					child_error = errno;
 			}

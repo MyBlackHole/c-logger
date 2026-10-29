@@ -23,11 +23,13 @@ static int rotation_check(const char *path)
 {
 	(void)unlink(path);
 	char lock[4096];
+
 	if (!CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", path) > 0))
 		return -1;
 	(void)unlink(lock);
 
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = path;
 	c.async_mode = 0;
@@ -36,6 +38,7 @@ static int rotation_check(const char *path)
 	c.rotation.retention_days = 0;
 
 	logger_t *log = NULL;
+
 	if (!CHECK(logger_create(&c, &log) == 0))
 		return -1;
 	if (!CHECK(log != NULL))
@@ -49,6 +52,7 @@ static int rotation_check(const char *path)
 					  "second") == 0))
 		return -1;
 	logger_file_metrics_t m;
+
 	if (!CHECK(logger_get_file_metrics(log, &m) == 0))
 		return -1;
 	if (!CHECK(m.rotation_attempts >= 1 && m.rotation_successes >= 1))
@@ -68,15 +72,18 @@ static int persistence_check(const char *dir)
 {
 	char path[4096];
 	int n = snprintf(path, sizeof(path), "%s/persistence.log", dir);
+
 	if (!CHECK(n > 0 && (size_t)n < sizeof(path)))
 		return -1;
 	(void)unlink(path);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = path;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
 	logger_t *log = NULL;
+
 	if (!CHECK(logger_create(&c, &log) == 0))
 		return -1;
 	if (!CHECK(log != NULL))
@@ -92,6 +99,7 @@ static int persistence_check(const char *dir)
 	if (!CHECK(logger_flush(log) == 0))
 		return -1;
 	logger_file_metrics_t m;
+
 	if (!CHECK(logger_get_file_metrics(log, &m) == 0))
 		return -1;
 	if (!CHECK(m.data_sync_attempts >= 2 && m.data_sync_failures == 0))
@@ -102,12 +110,14 @@ static int persistence_check(const char *dir)
 		return -1;
 
 	FILE *file = fopen(path, "r");
+
 	if (!CHECK(file != NULL))
 		return -1;
 	char text[4096];
 	size_t length = fread(text, 1, sizeof(text) - 1, file);
 	int read_error = ferror(file);
 	int close_error = fclose(file);
+
 	if (!CHECK(!read_error && !close_error))
 		return -1;
 	text[length] = '\0';
@@ -126,6 +136,7 @@ int main(int argc, char **argv)
 		return 2;
 
 	unsigned char random[32];
+
 	if (!CHECK(getrandom(random, sizeof(random), 0) ==
 		   (ssize_t)sizeof(random)))
 		return -1;

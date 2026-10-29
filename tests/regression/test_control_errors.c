@@ -99,12 +99,15 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 3);
 	int use_default = !strcmp(argv[1], "default");
+
 	CHECK(use_default || !strcmp(argv[1], "instance"));
 	const char *mode = argv[2];
 	char path[] = "/tmp/logger-control-error-XXXXXX";
+
 	enter_temp(path);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -115,6 +118,7 @@ int main(int argc, char **argv)
 
 	int is_reopen = strstr(mode, "reopen") != NULL;
 	int expected = 0;
+
 	if (!strcmp(mode, "setup")) {
 		expected = EAGAIN;
 		setup_error = expected;
@@ -159,6 +163,7 @@ int main(int argc, char **argv)
 			     (use_default ? logger_default_flush() :
 					    logger_flush(owner));
 	int saved = errno;
+
 	active = 0;
 	CHECK(rc == -expected && saved == EDOM);
 	if (setup_error || read_error || emit_lock_error)
@@ -178,6 +183,7 @@ int main(int argc, char **argv)
 		CHECK(!logger_scope_busy());
 		CHECK(logger_default_set(owner, NULL) == 0);
 		int close_rc = logger_destroy(&owner);
+
 		CHECK(close_rc == -(sync_error ? sync_error : reopen_error));
 		CHECK(!owner && logger_process_object_count() == 0);
 	}

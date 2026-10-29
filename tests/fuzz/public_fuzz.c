@@ -23,6 +23,7 @@ static void mask_property(const uint8_t *data, size_t size)
 		return;
 	char secret[97];
 	size_t n = size - 5;
+
 	if (n > sizeof(secret) - 1)
 		n = sizeof(secret) - 1;
 	for (size_t i = 0; i < n; ++i)
@@ -36,12 +37,15 @@ static void mask_property(const uint8_t *data, size_t size)
 
 	/* 前后两侧的哨兵字节不能被用户提供的 cap 越界写坏。 */
 	unsigned char result[144];
+
 	memset(result, 0xa5, sizeof(result));
 	char *out = (char *)&result[8];
+
 	errno = EDOM;
 	int rc = logger_mask_secret(value, out, cap, pre, suf);
 	size_t expected_length;
 	char expected[128];
+
 	if (!value) {
 		memcpy(expected, "[REDACTED]", sizeof("[REDACTED]"));
 		expected_length = sizeof("[REDACTED]");
@@ -78,6 +82,7 @@ static void mask_property(const uint8_t *data, size_t size)
 		REQUIRE(result[i] == 0xa5);
 	/* 成功只允许写结果及 NUL，不能修改余下的可用容量。 */
 	size_t written = rc ? 0 : expected_length;
+
 	for (size_t i = 8 + written; i < sizeof(result); ++i)
 		REQUIRE(result[i] == 0xa5);
 
@@ -85,6 +90,7 @@ static void mask_property(const uint8_t *data, size_t size)
 	unsigned char arena[384];
 	unsigned char before[384];
 	size_t offset = 80u + data[0] % 161u;
+
 	memset(arena, 0xa5, sizeof(arena));
 	if (value)
 		memcpy(arena + 160, secret, n + 1);
@@ -95,6 +101,7 @@ static void mask_property(const uint8_t *data, size_t size)
 	const char *source = value ? (const char *)arena + 160 : NULL;
 	char *target = (char *)arena + offset;
 	int overlap = logger_mask_secret(source, target, cap, data[2], data[3]);
+
 	REQUIRE(overlap == rc && errno == EDOM);
 	REQUIRE(!memcmp(arena, before, sizeof(arena)));
 }
@@ -103,10 +110,12 @@ static void config_property(const uint8_t *data, size_t size)
 {
 	if (size < 3)
 		return;
+
 	struct {
 		logger_config_t config;
 		unsigned char tail[16];
 	} future = { 0 };
+
 	future.config = LOGGER_DEFAULT_CONFIG();
 	future.config.outputs = LOGGER_OUT_STDERR;
 	future.config.async_mode = 0;
@@ -170,6 +179,7 @@ static void config_property(const uint8_t *data, size_t size)
 	errno = 0;
 	logger_t *instance = NULL;
 	int create_rc = logger_create(&future.config, &instance);
+
 	if (expected_error) {
 		REQUIRE(instance == NULL);
 		REQUIRE(create_rc == -expected_error);
@@ -206,6 +216,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 static uint32_t next_random(uint32_t *state)
 {
 	uint32_t x = *state;
+
 	x ^= x << 13;
 	x ^= x >> 17;
 	x ^= x << 5;
@@ -218,13 +229,16 @@ int main(int argc, char **argv)
 	REQUIRE(LLVMFuzzerInitialize(&argc, &argv) == 0);
 	char *end = NULL;
 	unsigned long seed = strtoul(argv[1], &end, 10);
+
 	REQUIRE(end && end != argv[1] && *end == '\0');
 	uint32_t state = (uint32_t)seed;
+
 	if (!state)
 		state = UINT32_C(0x9e3779b9);
 	for (unsigned int i = 0; i < 2048; ++i) {
 		uint8_t bytes[128];
 		size_t length = 5 + next_random(&state) % 120u;
+
 		for (size_t j = 0; j < length; ++j)
 			bytes[j] = (uint8_t)next_random(&state);
 		bytes[0] = (uint8_t)((bytes[0] & ~1u) | (i & 1u));

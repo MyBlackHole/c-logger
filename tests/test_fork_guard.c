@@ -5,12 +5,14 @@ static logger_t *default_owner;
 #include <errno.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 int main(void)
 {
 	if (logger_process_init() != 0)
 		return 1;
 	unlink("./guard.log");
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
+
 	l.outputs = LOGGER_OUT_FILE;
 	l.file_path = "./guard.log";
 	l.rotation.mode = LOGGER_ROTATE_NONE;
@@ -18,6 +20,7 @@ int main(void)
 		return 1;
 	/* 运行时存活时 fork：内部 atfork/PID 守卫提供安全保障。 */
 	pid_t p = fork();
+
 	if (p < 0)
 		return 3;
 	if (p == 0) {
@@ -32,6 +35,7 @@ int main(void)
 		_exit(0);
 	}
 	int st = 0;
+
 	if (waitpid(p, &st, 0) < 0)
 		return 4;
 	fixture_default_destroy(&default_owner);

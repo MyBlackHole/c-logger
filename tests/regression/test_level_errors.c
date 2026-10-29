@@ -23,6 +23,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 		++cancel_calls;
 		if (state == PTHREAD_CANCEL_DISABLE && fail_setup) {
 			int error = fail_setup;
+
 			fail_setup = 0;
 			errno = ERANGE;
 			return error;
@@ -32,6 +33,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 	/* 先实际恢复调用线程的取消策略，再模拟恢复错误。 */
 	if (active && !rc && state == PTHREAD_CANCEL_ENABLE && fail_restore) {
 		int error = fail_restore;
+
 		fail_restore = 0;
 		errno = ERANGE;
 		return error;
@@ -45,6 +47,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 		++read_calls;
 		if (fail_read) {
 			int error = fail_read;
+
 			fail_read = 0;
 			errno = ERANGE;
 			return error;
@@ -56,10 +59,12 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	int rc = __real_pthread_rwlock_unlock(rw);
+
 	if (active && rw == &logger_runtime_current()->global_lifetime_lock) {
 		++release_calls;
 		if (!rc && fail_release) {
 			int error = fail_release;
+
 			fail_release = 0;
 			errno = ERANGE;
 			return error;
@@ -71,6 +76,7 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 static void expect_level(logger_level_t level)
 {
 	logger_diagnostics_t diag;
+
 	errno = EDOM;
 	CHECK(logger_get_diagnostics(owner, &diag) == 0 && errno == EDOM);
 	CHECK(diag.level == level);
@@ -79,6 +85,7 @@ static void expect_level(logger_level_t level)
 static void expect_default_level(logger_level_t level)
 {
 	logger_diagnostics_t diag;
+
 	errno = EDOM;
 	CHECK(logger_get_global_diagnostics(&diag) == 0 && errno == EDOM);
 	CHECK(diag.level == level);
@@ -87,6 +94,7 @@ static void expect_default_level(logger_level_t level)
 static void *concurrent_setter(void *data)
 {
 	logger_level_t level = *(logger_level_t *)data;
+
 	for (unsigned int i = 0; i < 1000; ++i) {
 		errno = EDOM;
 		CHECK(logger_set_instance_level(owner, level) == 0);
@@ -98,6 +106,7 @@ static void *concurrent_setter(void *data)
 static void start_setter(pthread_t *thread, logger_level_t *level)
 {
 	int rc = pthread_create(thread, NULL, concurrent_setter, level);
+
 	CHECK(rc == 0);
 }
 
@@ -106,6 +115,7 @@ static void check_instance_range(void)
 	for (int level = LOGGER_TRACE; level <= LOGGER_OFF; ++level) {
 		errno = EDOM;
 		logger_level_t value = (logger_level_t)level;
+
 		CHECK(logger_set_instance_level(owner, value) == 0);
 		CHECK(errno == EDOM);
 		expect_level((logger_level_t)level);
@@ -113,6 +123,7 @@ static void check_instance_range(void)
 	CHECK(logger_set_instance_level(owner, LOGGER_INFO) == 0);
 	errno = EDOM;
 	logger_level_t invalid = (logger_level_t)-1;
+
 	CHECK(logger_set_instance_level(owner, invalid) == -EINVAL);
 	CHECK(errno == EDOM);
 	invalid = (logger_level_t)(LOGGER_OFF + 1);
@@ -165,6 +176,7 @@ static void check_fault(const char *scenario)
 {
 	int expected = 0;
 	logger_level_t requested = LOGGER_WARN;
+
 	if (!strcmp(scenario, "setup")) {
 		expected = EAGAIN;
 		fail_setup = expected;
@@ -188,6 +200,7 @@ static void check_fault(const char *scenario)
 	active = 1;
 	int rc = logger_set_level(requested);
 	int saved = errno;
+
 	active = 0;
 	CHECK(rc == -expected && saved == EDOM);
 	CHECK(!fail_setup && !fail_restore && !fail_read && !fail_release);
@@ -210,6 +223,7 @@ static void check_fault(const char *scenario)
 		CHECK(atomic_load(&owner->level) == LOGGER_WARN);
 		CHECK(atomic_load(&owner->default_borrowed) == 1);
 		struct logger_runtime *runtime = logger_runtime_current();
+
 		CHECK(atomic_load(&runtime->global_lock_error) == EPROTO);
 		CHECK(logger_set_level(LOGGER_INFO) == -EDEADLK);
 		return;
@@ -223,6 +237,7 @@ static void check_cancel_disabled(void)
 	int old_state;
 	int old_type;
 	int observed;
+
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state) == 0);
 	CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_type) ==
 	      0);
@@ -236,6 +251,7 @@ static void check_cancel_disabled(void)
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &observed) == 0);
 	CHECK(observed == PTHREAD_CANCEL_DISABLE);
 	int type = PTHREAD_CANCEL_ASYNCHRONOUS;
+
 	CHECK(pthread_setcanceltype(type, &observed) == 0);
 	CHECK(observed == PTHREAD_CANCEL_ASYNCHRONOUS);
 	CHECK(pthread_setcanceltype(old_type, NULL) == 0);
@@ -248,6 +264,7 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	const char *scenario = argv[1];
+
 	if (!strcmp(scenario, "cold")) {
 		errno = EDOM;
 		CHECK(logger_set_instance_level((logger_t *)(uintptr_t)1,
@@ -267,6 +284,7 @@ int main(int argc, char **argv)
 			CHECK(errno == EDOM);
 		} else {
 			logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 			cfg.async_mode = 0;
 			CHECK(logger_create(&cfg, &owner) == 0 && owner);
 			int bound = strcmp(scenario, "instance") &&
@@ -280,9 +298,11 @@ int main(int argc, char **argv)
 				check_stopped_instance();
 			} else if (!strcmp(scenario, "concurrent")) {
 				logger_level_t levels[2];
+
 				levels[0] = LOGGER_DEBUG;
 				levels[1] = LOGGER_WARN;
 				pthread_t threads[2];
+
 				for (int i = 0; i < 2; ++i)
 					start_setter(&threads[i], &levels[i]);
 				for (int i = 0; i < 2; ++i)

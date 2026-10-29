@@ -90,6 +90,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	int rc = __real_pthread_rwlock_unlock(rw);
+
 	if (!rc && rw_unlock_error) {
 		rw_unlock_error = 0;
 		return EIO;
@@ -100,6 +101,7 @@ int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 {
 	int rc = __real_pthread_mutex_unlock(mu);
+
 	if (!rc && mu_unlock_error &&
 	    mu == &logger_runtime_current()->global_control_mu) {
 		mu_unlock_error = 0;
@@ -111,6 +113,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
 	int rc = __real_pthread_setcancelstate(state, old);
+
 	if (!rc && state == PTHREAD_CANCEL_ENABLE && restore_error) {
 		restore_error = 0;
 		return EIO;
@@ -122,6 +125,7 @@ int __wrap_logger_runtime_free(void *p)
 {
 	uintptr_t address = (uintptr_t)p;
 	int rc = __real_logger_runtime_free(p);
+
 	if (!rc && address == tracked)
 		atomic_fetch_add(&frees, 1);
 	return rc;
@@ -148,11 +152,13 @@ int __wrap_logger_vlog_internal(logger_t *l, logger_level_t level,
 static logger_t *create(const char *path)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = path;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	cfg.async_mode = 0;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&cfg, &l) == 0);
 	return l;
 }
@@ -206,6 +212,7 @@ static void race_case(const char *mode)
 	pthread_t control;
 	int delayed = !strcmp(mode, "stale-reader");
 	int stale = !strcmp(mode, "stale-control") || !strcmp(mode, "aba");
+
 	atomic_store(&setter_waiting, 0);
 	cancel_setter = !strcmp(mode, "cancel");
 	CHECK(pthread_create(&thread, NULL, stale ? stale_setter : reader,
@@ -221,6 +228,7 @@ static void race_case(const char *mode)
 		CHECK(!atomic_load(&setter_done));
 		CHECK(logger_destroy(&a) == -EBUSY && a);
 		int touched = 42;
+
 		errno = EDOM;
 		CHECK(LOG_INFO("GATE%n", &touched) == -EAGAIN);
 		CHECK(errno == EDOM && touched == 42);
@@ -229,12 +237,13 @@ static void race_case(const char *mode)
 	}
 	atomic_store(&resume_call, 1);
 	CHECK(pthread_join(thread, NULL) == 0);
-	if (stale)
+	if (stale) {
 		CHECK(setter_rc == -ESTALE);
-	else if (delayed)
+	} else if (delayed) {
 		CHECK(read_rc == -ESHUTDOWN && read_errno == EDOM);
-	else {
+	} else {
 		void *result;
+
 		CHECK(pthread_join(control, &result) == 0);
 		CHECK(setter_rc == 0 && setter_errno == EDOM);
 		CHECK(read_rc == 0 && read_errno == EDOM);
@@ -242,11 +251,11 @@ static void race_case(const char *mode)
 			CHECK(result == PTHREAD_CANCELED &&
 			      atomic_load(&cancel_cleaned) && !b);
 	}
-	if (!strcmp(mode, "aba")) {
+	if (!strcmp(mode, "aba"))
 		CHECK(logger_default_set(a, NULL) == 0);
-	} else if (b) {
+	else if (b)
 		CHECK(logger_default_set(b, NULL) == 0);
-	}
+
 	CHECK(!atomic_load(&a->default_borrowed));
 	CHECK(atomic_load(&frees) == 0);
 }
@@ -254,6 +263,7 @@ static void race_case(const char *mode)
 static void *failing_setter(void *arg)
 {
 	const char *mode = arg;
+
 	if (!strcmp(mode, "lifetime-unlock"))
 		rw_unlock_error = 1;
 	else
@@ -379,6 +389,7 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	(void)alarm(20);
 	char path[] = "/tmp/logger-default-regression-XXXXXX";
+
 	enter_temp(path);
 	CHECK(logger_process_init() == 0);
 	a = create("a.log");
@@ -386,6 +397,7 @@ int main(int argc, char **argv)
 	tracked = (uintptr_t)a;
 	CHECK(logger_default_set(NULL, a) == 0);
 	const char *mode = argv[1];
+
 	if (!strcmp(mode, "held-reader") || !strcmp(mode, "stale-reader") ||
 	    !strcmp(mode, "stale-control") || !strcmp(mode, "aba") ||
 	    !strcmp(mode, "cancel")) {
@@ -397,6 +409,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "lifetime-unlock") ||
 		   !strcmp(mode, "control-unlock")) {
 		pthread_t thread;
+
 		CHECK(pthread_create(&thread, NULL, failing_setter, argv[1]) ==
 		      0);
 		CHECK(pthread_join(thread, NULL) == 0);
@@ -415,11 +428,11 @@ int main(int argc, char **argv)
 		printf("DEFAULT_BORROW_PASS=%s retained=2\n", mode);
 		return 0;
 	} else {
-		if (!strcmp(mode, "control-error"))
+		if (!strcmp(mode, "control-error")) {
 			control_error = 1;
-		else if (!strcmp(mode, "writer-error"))
+		} else if (!strcmp(mode, "writer-error")) {
 			writer_error = 1;
-		else if (!strcmp(mode, "read-error")) {
+		} else if (!strcmp(mode, "read-error")) {
 			read_error = 1;
 			errno = EDOM;
 			CHECK(LOG_INFO("NOT_WRITTEN") == -EAGAIN);
@@ -464,6 +477,7 @@ int main(int argc, char **argv)
 		}
 		errno = EDOM;
 		int rc = logger_default_set(a, b);
+
 		if (strstr(mode, "-error") && (!strcmp(mode, "control-error") ||
 					       !strcmp(mode, "writer-error"))) {
 			CHECK(rc == -EAGAIN && errno == EDOM);
