@@ -117,7 +117,7 @@ class CasOrderTests(unittest.TestCase):
     def test_legal_but_unreviewed_order_change(self):
         call = ("atomic_compare_exchange_strong_explicit(&l->lifecycle_error, "
                 "&expected, wait_rc, memory_order_release, memory_order_relaxed)")
-        tokens = re.findall(r"\w+|[^\w\s]", call)
+        tokens = re.findall(r"->|\w+|[^\w\s]", call)
         pattern = r"\s*".join(re.escape(token) for token in tokens)
         for layout in ("原始", "单行", "逐词换行"):
             with self.subTest(layout=layout):
