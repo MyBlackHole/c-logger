@@ -90,7 +90,10 @@ int main(int argc, char **argv)
 	if (p < 0)
 		return 3;
 	if (!p) {
-		/* exec 前不使用 malloc、stdio、logger 重置或初始化，也不创建线程。 */
+		/*
+		 * exec 前不使用 malloc、stdio、logger 重置或初始化，也不创建线
+		 * 程。
+		 */
 		execve(exe, args, environ);
 		static const char message[] = "execve failed\n";
 		ssize_t ignored =

@@ -8,7 +8,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* 独立诊断探针：不链接 logger，不读取或修改检测器内部状态。
+/*
+ * 独立诊断探针：不链接 logger，不读取或修改检测器内部状态。
  * 多线程 fork 后创建线程是本次研究的 Linux 扩展场景，不声称可移植 POSIX。
  */
 static _Atomic int stop;

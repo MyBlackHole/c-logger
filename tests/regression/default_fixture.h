@@ -3,7 +3,8 @@
 #include "logger.h"
 #include <errno.h>
 
-/* 仅测试使用的宿主动作组合；拥有者始终显式传入，不属于生产兼容 API。
+/*
+ * 仅测试使用的宿主动作组合；拥有者始终显式传入，不属于生产兼容 API。
  * 默认层只借用，资源创建/最终错误回执由测试宿主承担。
  */
 static inline int fixture_default_create(const logger_config_t *config,

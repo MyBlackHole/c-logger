@@ -40,7 +40,8 @@ static int rotates(const char *point)
 	       !strcmp(point, "rotation_after_file_fsync");
 }
 
-/* 固定测试时钟允许对整条格式化日志逐字节检查，包括其元数据。
+/*
+ * 固定测试时钟允许对整条格式化日志逐字节检查，包括其元数据。
  * 真实单调时钟与超时保持不变。
  */
 int __real_clock_gettime(clockid_t clock, struct timespec *value);
@@ -102,7 +103,8 @@ int __wrap_fsync(int fd)
 		char line[RECORD_CAPACITY];
 		size_t size = record_line(TARGET_SEQUENCE, line, sizeof(line));
 		size *= rotates(cut_point) ? 1u : BASELINE_RECORDS + 1u;
-		/* 绝不把目录 fsync、已退役归档或轮转中新空 inode 的 fsync
+		/*
+		 * 绝不把目录 fsync、已退役归档或轮转中新空 inode 的 fsync
 		 * 计为目标记录的数据 fsync。
 		 */
 		match = S_ISREG(data.st_mode) && data.st_nlink == 1 &&
@@ -162,7 +164,8 @@ void crash_fixture_write(const char *point)
 		emit(logger, i);
 	CHECK(logger_flush(logger) == 0);
 	verify_records(point, 0, 1);
-	/* 强制终止前不进行优雅关闭：控制方只在基线成功写入并刷新确认后
+	/*
+	 * 强制终止前不进行优雅关闭：控制方只在基线成功写入并刷新确认后
 	 * 才收到切断标记。
 	 */
 	if (!strcmp(point, "acknowledged"))
@@ -249,7 +252,8 @@ static void verify_records(const char *point, unsigned int recovered,
 	if (!baseline_only && !strcmp(point, "file_after_active_dirsync"))
 		CHECK(active_present); /* 新活动 inode 与目录已持久化 */
 	for (int i = 0; i < count; ++i) {
-		/* 对严格且唯一的 UTC 名称排序可重建串行写者的顺序。
+		/*
+		 * 对严格且唯一的 UTC 名称排序可重建串行写者的顺序。
 		 * 单记录分段绝不能包含部分记录或额外记录。
 		 */
 		size_t size = read_segment(archives[i]->d_name, bytes + used,
@@ -270,7 +274,8 @@ static void verify_records(const char *point, unsigned int recovered,
 		      !memcmp(bytes + offset, line, length));
 		offset += length;
 	}
-	/* 被中断记录未经确认。fsync 前只允许记录缺失或为此精确目标的字节前缀。
+	/*
+	 * 被中断记录未经确认。fsync 前只允许记录缺失或为此精确目标的字节前缀。
 	 * 不接受任意垃圾、重复基线或无关尾部。
 	 * 读取原始字节而不是行：撕裂尾部不一定以换行符结束。
 	 */
@@ -310,7 +315,8 @@ void crash_fixture_verify(const char *point, unsigned int recovered)
 void crash_fixture_recover(const char *point)
 {
 	initialize();
-	/* 初次恢复时也要求存在 fsync 后的目标；应用未收到其返回，
+	/*
+	 * 初次恢复时也要求存在 fsync 后的目标；应用未收到其返回，
 	 * 但精确的数据 fsync 已成功。
 	 */
 	crash_fixture_verify(point, 0);

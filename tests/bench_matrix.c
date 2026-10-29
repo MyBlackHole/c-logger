@@ -88,7 +88,8 @@ int main(int argc, char **argv)
 	for (uint64_t i = 0; i < started; ++i)
 		pthread_join(threads[i], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &producer_end);
-	/* 不轮询出队计数器，也不重复统计回退；/dev/null 不执行 fsync。
+	/*
+	 * 不轮询出队计数器，也不重复统计回退；/dev/null 不执行 fsync。
 	 * 这里等待实际后端尝试全部完成。
 	 */
 	int rc = logger_wait_for_output(l);

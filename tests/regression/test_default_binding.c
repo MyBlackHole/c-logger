@@ -253,7 +253,8 @@ static void *failing_setter(void *arg)
 	return NULL;
 }
 
-/* 以下边界场景没有并发调用者或工作线程，可以直接检查默认槽。
+/*
+ * 以下边界场景没有并发调用者或工作线程，可以直接检查默认槽。
  * 期望编码独立于生产 helper：低 3 位为阶段，其余 61 位为代次。
  */
 static void check_generation_binding(uint64_t ticket, uint64_t generation,

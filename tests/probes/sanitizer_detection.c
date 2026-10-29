@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 仅检测器自检：健康、ASan 越界、UBSan 溢出必须得出不同结果。
+/*
+ * 仅检测器自检：健康、ASan 越界、UBSan 溢出必须得出不同结果。
  * 不链接 Logger、不安装；不能把错误样本的非零退出当作运行失败后忽略。
  */
 int main(int argc, char **argv)

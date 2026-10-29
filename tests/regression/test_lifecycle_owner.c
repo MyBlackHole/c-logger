@@ -26,7 +26,10 @@ int __real_munmap(void *base, size_t bytes);
 void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
 	void *allocation = __real_logger_runtime_calloc(count, size);
-	/* 恢复失败场景的第一次真实映射是未发布的实例；同步实例没有 worker 可观察。 */
+	/*
+	 * 恢复失败场景的第一次真实映射是未发布的实例；同步实例没有 worker 可观
+	 * 察。
+	 */
 	if (caller && create_restore && !subject)
 		subject = allocation;
 	return allocation;
@@ -165,7 +168,10 @@ int main(int argc, char **argv)
 		CHECK(subject == NULL && freed == 1);
 		CHECK(logger_runtime_current()->allocation_count == 0);
 		CHECK(logger_process_object_count() == 0);
-		/* 注入拒绝未恢复取消状态；测试自行恢复后再检查同进程可重新创建。 */
+		/*
+		 * 注入拒绝未恢复取消状态；测试自行恢复后再检查同进程可重新创
+		 * 建。
+		 */
 		CHECK(__real_pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,
 						    NULL) == 0);
 		create_restore = 0;

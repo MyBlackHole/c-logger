@@ -10,7 +10,8 @@
 struct logger;
 struct logger_allocation;
 
-/* 整个对象采用独立 MADV_DONTFORK 映射。只有 READY 发布后才可借用；
+/*
+ * 整个对象采用独立 MADV_DONTFORK 映射。只有 READY 发布后才可借用；
  * 进程存续期间地址不变，销毁单个实例不会释放这个域。
  */
 struct logger_runtime {
@@ -42,7 +43,8 @@ struct logger_runtime *logger_runtime_current(void);
 void logger_runtime_publish(struct logger_runtime *runtime);
 void logger_runtime_invalidate_child(void);
 
-/* 私有映射分配器：取得、配置 DONTFORK 和登记由资源锁串行化。
+/*
+ * 私有映射分配器：取得、配置 DONTFORK 和登记由资源锁串行化。
  * 返回存储具备 max_align_t 对齐；不使用宿主堆页或替换宿主分配器。
  * 释放失败保留登记、毒化域；返回值描述映射是否已消费。
  * 实际释放后的解锁错误由域粘滞诊断报告，不返回未消费的假回执。

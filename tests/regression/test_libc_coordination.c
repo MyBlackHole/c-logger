@@ -156,7 +156,8 @@ static void exercise_failure(const char *mode)
 	}
 }
 
-/* 两个后端只有在 snprintf 成功且确实溢出时才能报告容量错误。
+/*
+ * 两个后端只有在 snprintf 成功且确实溢出时才能报告容量错误。
  * libc 封装因锁或格式失败返回 -1 时，其真实 errno 必须穿过后端。
  */
 static void syslog_prefix_failure(int lock_failure)
@@ -254,7 +255,8 @@ static void archive_format_failure(void)
 	CHECK(!rmdir(directory));
 }
 
-/* 进程域的格式协调失败不能伪装成时间值超界。
+/*
+ * 进程域的格式协调失败不能伪装成时间值超界。
  * 首次构造和按日期写入使用同一生产函数，均需能恢复。
  */
 static void calendar_error(int during_init, int lock_failure)

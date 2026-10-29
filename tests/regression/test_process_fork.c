@@ -14,11 +14,13 @@ static logger_t *default_owner;
 #include <sys/syscall.h>
 #include <sys/wait.h>
 
-/* 错误的子进程 API 调用必须在锁、once、分配或 I/O 前返回。
+/*
+ * 错误的子进程 API 调用必须在锁、once、分配或 I/O 前返回。
  * 这些包装函数仅链接到此可执行文件。_exit 代码 90..93
  * 用于区分被禁止操作与 errno 或返回值断言。
  */
-/* 即使原始 SYS_fork 防御实验也保持探针标志为原子变量；
+/*
+ * 即使原始 SYS_fork 防御实验也保持探针标志为原子变量；
  * 该实验也有意绕过 Sanitizer 的 fork 拦截器。
  */
 static _Atomic int strict_child;
@@ -38,7 +40,8 @@ static logger_config_t cfg;
 int __real_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void));
 int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 {
-	/* 只观测本库的真实注册；宿主及检测器的处理函数不属于注入目标。
+	/*
+	 * 只观测本库的真实注册；宿主及检测器的处理函数不属于注入目标。
 	 * 必须在故障和暂停开关之前分流，不能仅修正最终计数。
 	 */
 	if (c != logger_process_invalidate_child) {
@@ -62,7 +65,8 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 {
 	if (atomic_load(&release_console_at_prepare) &&
 	    p == &logger_runtime_current()->format_mu) {
-		/* 新协议在 fork 前等待 libc 格式敏感区间结束；精确到达
+		/*
+		 * 新协议在 fork 前等待 libc 格式敏感区间结束；精确到达
 		 * prepare 的锁入口后释放夹具，不再等 fork 返回才放行。
 		 */
 		atomic_store(&release_console_at_prepare, 0);
@@ -71,7 +75,8 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 	if (strict_child)
 		_exit(90);
 	int rc = __real_pthread_mutex_lock(p);
-	/* console_print 在正文格式化之后还会为 fflush 再次取锁。
+	/*
+	 * console_print 在正文格式化之后还会为 fflush 再次取锁。
 	 * 只暂停这个最后区间，避免 prepare 持锁 join 时等待再次取锁。
 	 */
 	if (!rc && pause_console_flush_lock &&
@@ -233,7 +238,8 @@ static void child_guard_matrix(void)
 	if (dropped != UINT64_C(777))
 		_exit(22);
 
-	/* 仅检查来源的情形中，此毒化指针检查在任何解引用前拒绝。
+	/*
+	 * 仅检查来源的情形中，此毒化指针检查在任何解引用前拒绝。
 	 * 显式实例情形使用真实继承的已分配实例。
 	 */
 	logger_t *l = instance ? instance : (logger_t *)(uintptr_t)1;
@@ -315,12 +321,16 @@ static void early_child(void)
 {
 	int previous = strict_child;
 	strict_child = 1;
-	/* 在库处理函数之前注册：必须由不可变 PID 所有权，
+	/*
+	 * 在库处理函数之前注册：必须由不可变 PID 所有权，
 	 * 而非处理函数顺序，阻止默认绑定接触继承的运行域。
 	 */
 	if (logger_default_set(NULL, NULL) != -ECHILD)
 		_exit(70);
-	/* 库后续 child handler 允许 close 已登记引用；拒绝的 API 本身仍禁止 I/O。 */
+	/*
+	 * 库后续 child handler 允许 close 已登记引用；拒绝的 API 本身仍禁止
+	 * I/O。
+	 */
 	strict_child = previous;
 }
 static void *global_writer(void *p)
@@ -337,7 +347,8 @@ static void *console_writer(void *p)
 	atomic_store(&console_completed, 1);
 	return NULL;
 }
-/* 先于 Logger 注册，因 prepare 逆序执行而后于 Logger prepare 运行。
+/*
+ * 先于 Logger 注册，因 prepare 逆序执行而后于 Logger prepare 运行。
  * 保留进入 prepare 时 Console 正在格式化的真实交错；只有 Logger
  * 完成格式区间协调后才回收夹具线程。不能让已退出但未 join 的线程
  * 记录进入子进程，也不能通过保持线程存活触发 TSan 的忽略模式。

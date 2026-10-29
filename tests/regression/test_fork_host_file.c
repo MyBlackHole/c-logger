@@ -4,7 +4,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 
-/* 宿主FILE不由Logger登记、关闭或解锁。子方不使用继承的FILE*；
+/*
+ * 宿主FILE不由Logger登记、关闭或解锁。子方不使用继承的FILE*；
  * 只验证外部fd存活，并在新的独立运行域使用自己的日志实例。
  */
 static FILE *foreign;

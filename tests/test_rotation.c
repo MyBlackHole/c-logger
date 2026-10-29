@@ -46,8 +46,10 @@ static int verify_file(const char *path, unsigned int *next)
 	return rc;
 }
 
-/* 归档名包含 UTC 时间戳，alphasort 因而给出轮转顺序。
- * 先检查归档，再检查活动文件尾部，要求记录序号连续。 */
+/*
+ * 归档名包含 UTC 时间戳，alphasort 因而给出轮转顺序。
+ * 先检查归档，再检查活动文件尾部，要求记录序号连续。
+ */
 static int select_archive(const struct dirent *entry)
 {
 	const char *name = entry->d_name;

@@ -14,7 +14,8 @@
 #include <stdlib.h>
 #endif
 
-/* 本地数据报保留记录边界。短发送时绝不能模拟 write_all()：
+/*
+ * 本地数据报保留记录边界。短发送时绝不能模拟 write_all()：
  * 交付结果不确定，且后缀会成为新记录。
  * 此后端不等待、轮询或休眠，也不进行无界 EINTR 循环。
  */
@@ -67,7 +68,8 @@ static int broken_association(int error)
 	       error == EDESTADDRREQ || error == EIO;
 }
 
-/* 长期 fd 的唯一退役入口。调用方持有后端独占访问权。
+/*
+ * 长期 fd 的唯一退役入口。调用方持有后端独占访问权。
  * 先使字段失效，再消费 fork 位图并完成一次 Linux close；
  * 即使 close 报 EINTR，也绝不能重试原 fd 整数。
  */
@@ -104,8 +106,10 @@ static int copy_path(struct logger_syslog *s, const char *path)
 		memcpy(s->path, path, n + 1);
 		return 0;
 	}
-	/* 固定相对路径的含义，使其不受宿主后续 chdir() 影响。
-	 * 不使用 procfs、不绑定套接字、不修改环境、不创建目录，也不改写符号链接。
+	/*
+	 * 固定相对路径的含义，使其不受宿主后续 chdir() 影响。
+	 * 不使用 procfs、不绑定套接字、不修改环境、不创建目录，也不改写符号链
+	 * 接。
 	 */
 	char cwd[sizeof(s->path)];
 	if (!getcwd(cwd, sizeof(cwd))) {
@@ -124,7 +128,8 @@ static int copy_path(struct logger_syslog *s, const char *path)
 	return 0;
 }
 
-/* 恰好新建一个套接字并调用一次 connect。任何连接失败都丢弃候选对象；
+/*
+ * 恰好新建一个套接字并调用一次 connect。任何连接失败都丢弃候选对象；
  * 不假定出现 EINTR/EAGAIN 的套接字可用。
  */
 static int connect_once(struct logger_syslog *s, int *deferable)
@@ -191,7 +196,8 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	size_t n = strnlen(ident, sizeof(s->ident));
 	if (n >= sizeof(s->ident))
 		return fail(ENAMETOOLONG);
-	/* 保留可解析的本地标签，避免静默截断标识符，
+	/*
+	 * 保留可解析的本地标签，避免静默截断标识符，
 	 * 也不允许调用者提供的换行符或分隔符伪造封装。
 	 */
 	for (size_t i = 0; i < n; ++i) {
@@ -203,7 +209,8 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	if (copy_path(s, config->path) != 0)
 		return -1;
 #if defined(LOGGER_ENABLE_FAULT_INJECTION) && LOGGER_ENABLE_FAULT_INJECTION
-	/* 仅供旧测试夹具使用。生产代码不包含此字符串或 getenv。
+	/*
+	 * 仅供旧测试夹具使用。生产代码不包含此字符串或 getenv。
 	 * 应用显式设置始终优先。
 	 */
 	const char *override = getenv("LOGGER_SYSLOG_PATH");
@@ -219,8 +226,11 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 	int deferable;
 	if (connect_once(s, &deferable) == 0)
 		return 0;
+	/*
+	 * 显式降级启动；指标和不会自动清除的 I/O 错误状态会反映此情况
+	 */
 	if (config->startup == LOGGER_SYSLOG_START_DEFERRED && deferable)
-		return 0; /* 显式降级启动；指标和不会自动清除的 I/O 错误状态会反映此情况 */
+		return 0;
 	return -1;
 }
 
@@ -243,7 +253,8 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 	++s->metrics.submitted_records;
 	if (!line || (unsigned int)level >= LOGGER_OFF)
 		return record_failure(s, EINVAL);
-	/* 访问 line[n-1] 前先验证大小。不静默截断，也不将一条记录
+	/*
+	 * 访问 line[n-1] 前先验证大小。不静默截断，也不将一条记录
 	 * 拆分为多个数据报。普通日志记录的尺寸更小。
 	 */
 	if (n > SYSLOG_PACKET_MAX)
@@ -253,7 +264,8 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 		packet, sizeof(packet),
 		"<%u>%s[%ld]: ", s->facility | priority(level), s->ident,
 		(long)getpid());
-	/* 格式化/锁错误须保留原 errno；只有确定的容量溢出
+	/*
+	 * 格式化/锁错误须保留原 errno；只有确定的容量溢出
 	 * 才能报告 EOVERFLOW，避免污染真实失败指标。
 	 */
 	if (prefix < 0)
@@ -273,7 +285,8 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 			return record_failure(s, errno);
 		if (s->retry_clock_pending ||
 		    logger_monotonic_ms_before(now, s->retry_from_ms)) {
-			/* 断开连接时发生时钟失败，或读数异常倒退：
+			/*
+			 * 断开连接时发生时钟失败，或读数异常倒退：
 			 * 重新设置冷却期，避免引发重连风暴。
 			 */
 			s->retry_from_ms = now;
@@ -318,7 +331,8 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 		if (monotonic_ms(&s->retry_from_ms) != 0)
 			s->retry_clock_pending = 1;
 	}
-	/* 连接丢失后不重试或重放本条记录；只有后续记录可以重连。
+	/*
+	 * 连接丢失后不重试或重放本条记录；只有后续记录可以重连。
 	 * 这不会重复已成功输出到文件或 stderr 的内容。
 	 */
 	return record_failure(s, error);

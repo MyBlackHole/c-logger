@@ -18,7 +18,8 @@ const char *logger_basename(const char *path)
 	return slash ? slash + 1 : (path ? path : "?");
 }
 
-/* cap 为 LF 预留空间；used 统计已存入的字节，而非原本需要写入的字节。
+/*
+ * cap 为 LF 预留空间；used 统计已存入的字节，而非原本需要写入的字节。
  * 普通输出标记截断；带确认的输出拒绝截断。
  */
 static int append(char *out, size_t cap, size_t *used, const char *fmt, ...)
@@ -54,7 +55,8 @@ struct timestamp_cache {
 
 static _Thread_local struct timestamp_cache timestamp;
 
-/* 也要验证缓存字节：普通调用可以填充同一缓存。
+/*
+ * 也要验证缓存字节：普通调用可以填充同一缓存。
  * 仅 strftime 成功并不意味着符合严格的四位年份时间戳语法。
  */
 static int canonical_time(const struct timestamp_cache *cache)
@@ -123,7 +125,8 @@ static int format_line(const logger_t *l, const struct logger_message *m,
 	if (!timestamp.valid || timestamp.sec != sec) {
 		struct tm tm;
 
-		/* 操作缓冲区前先使缓存失效。刷新失败不能让部分新字节
+		/*
+		 * 操作缓冲区前先使缓存失效。刷新失败不能让部分新字节
 		 * 看起来像有效的旧秒缓存命中。
 		 */
 		timestamp.valid = 0;
@@ -133,7 +136,8 @@ static int format_line(const logger_t *l, const struct logger_message *m,
 					  "%Y-%m-%dT%H:%M:%S", &tm) ||
 		    !logger_libc_strftime(timestamp.zone,
 					  sizeof(timestamp.zone), "%z", &tm)) {
-			/* 普通诊断输出保留原有的可见回退文本。
+			/*
+			 * 普通诊断输出保留原有的可见回退文本。
 			 * 严格输出会在下方、任何后端操作之前拒绝该情况。
 			 */
 			memcpy(timestamp.date, "time-unavailable",

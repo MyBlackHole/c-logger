@@ -99,7 +99,10 @@ int __wrap_close(int fd)
 	int rc = __real_close(fd);
 	if (watch && inject_close) {
 		if (reuse_during_close) {
-			/* 真正 close 已消费旧整数；马上以外部 socket 占用该编号。 */
+			/*
+			 * 真正 close 已消费旧整数；马上以外部 socket 占用该编
+			 * 号。
+			 */
 			CHECK(reused_fd == -1);
 			int flags = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 			int replacement = __real_socket(AF_UNIX, flags, 0);

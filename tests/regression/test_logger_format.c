@@ -269,7 +269,8 @@ int main(int argc, char **argv)
 		CHECK(0);
 
 	if (cached_bad) {
-		/* 普通成功的 strftime 可能缓存不规范字节。
+		/*
+		 * 普通成功的 strftime 可能缓存不规范字节。
 		 * 即使没有新的转换，严格日志也必须验证这些字节。
 		 */
 		snapshot(log_path, &before);
@@ -306,7 +307,8 @@ int main(int argc, char **argv)
 		if (!strcmp(scenario, "bad-date") ||
 		    !strcmp(scenario, "bad-zone") || cached_bad) {
 			fault = NONE;
-			/* 移除“格式畸形但成功”的故障不会刷新有效的同秒缓存。
+			/*
+			 * 移除“格式畸形但成功”的故障不会刷新有效的同秒缓存。
 			 * 它必须继续被拒绝且不输出。
 			 */
 			CHECK(strict_record(l, "cached-rejection") ==
@@ -316,7 +318,8 @@ int main(int argc, char **argv)
 			      zone_calls == 2);
 			CHECK(hits == observed_hits);
 		} else {
-			/* 也通过普通输出检查每种转换失败：
+			/*
+			 * 也通过普通输出检查每种转换失败：
 			 * 即使 strftime 缓冲区被污染，也必须产生可见回退文本。
 			 */
 			logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL,
@@ -327,7 +330,8 @@ int main(int argc, char **argv)
 			CHECK(hits == observed_hits + 1);
 			fault = NONE;
 
-			/* 刷新失败也必须使前一秒失效。
+			/*
+			 * 刷新失败也必须使前一秒失效。
 			 * 恢复前再次访问它，以捕获部分或陈旧缓存命中。
 			 */
 			--now;
@@ -359,7 +363,8 @@ int main(int argc, char **argv)
 	check_record(log_path, &before, NULL, "next-second-recovery");
 	CHECK(localtime_calls == old_localtime + 1);
 
-	/* 严格时间失败后，普通日志保持可见回退文本，
+	/*
+	 * 严格时间失败后，普通日志保持可见回退文本，
 	 * 回退本身也绝不能成为有效的同秒缓存命中。
 	 */
 	++now;

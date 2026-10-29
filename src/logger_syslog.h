@@ -7,8 +7,12 @@
 #include <stdint.h>
 #include <sys/un.h>
 
-/* 单一所有者；所有写入与指标访问由 logger_t.emit_mu 串行化。
+/*
+ * 单一所有者；所有写入与指标访问由 logger_t.emit_mu 串行化。
  * 初始化成功后配置不再变化，也不存在后台重连线程。
+ * init 的 s 须为尚未拥有资源的独占存储，config/ident 仅在初始化期间借用。
+ * init/write 返回 0 或 -1+errno，close_status 返回 0/-errno。
+ * 写入成功仅表示本地发送成功；失败不授权调用方重试或重建失效的 fd 拥有者。
  */
 struct logger_syslog {
 	struct logger_owned_fd fd; /* 私有唯一所有者；无 fd 时 value=-1 */

@@ -7,7 +7,8 @@
 #include <errno.h>
 #include <unistd.h>
 
-/* 私有单所有者 fd；只接管已通过 logger_fork_* 登记的资源。
+/*
+ * 私有单所有者 fd；只接管已通过 logger_fork_* 登记的资源。
  * 取得失败/移交/关闭后均为 -1，不能用零初始化。
  * 不得复制拥有者或改写 value 绕过移交；C 不提供线性类型保证。
  * 借用不 dup、不固定生命周期；只在拥有者仍存活且未移交时有效。
@@ -54,7 +55,8 @@ static inline int LOGGER_MUST_CHECK logger_fd_take(struct logger_owned_fd *owner
 	return fd;
 }
 
-/* 保持类型的拥有权转移：源先失效，再返回新的唯一拥有者。
+/*
+ * 保持类型的拥有权转移：源先失效，再返回新的唯一拥有者。
  * 只可移入已为空的目的位置；C 仍允许复制和字段裸访问，调用方必须独占。
  */
 static inline struct logger_owned_fd LOGGER_MUST_CHECK
@@ -63,7 +65,8 @@ logger_fd_move(struct logger_owned_fd *owner)
 	return logger_fd_own(logger_fd_take(owner));
 }
 
-/* 返回 0/-errno；先失效源，再经过 fork 登记表完成单次关闭。
+/*
+ * 返回 0/-errno；先失效源，再经过 fork 登记表完成单次关闭。
  * Linux close 即使报 EINTR，也不得恢复源或重试，因为整数可能已被复用。
  * fork 资源锁取得/释放的错误同样由调用者显式处理或上层粘滞诊断保留。
  */
@@ -88,7 +91,8 @@ static inline void logger_fd_cleanup(struct logger_owned_fd *owner)
 	errno = saved;
 }
 
-/* 条件移交：失败后拥有者不变；成功时转给带 fork 资源租约的 DIR。
+/*
+ * 条件移交：失败后拥有者不变；成功时转给带 fork 资源租约的 DIR。
  * 整段目录遍历必须由同线程 logger_fork_closedir 结束，绝不能直接 closedir，
  * 否则会留下资源协调锁和 fd 位图登记。显式处理关闭错误，不用 cleanup 隐藏。
  */

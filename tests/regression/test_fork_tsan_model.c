@@ -52,7 +52,8 @@ static void child_case(const char *mode)
 	logger_t *owner = bind();
 	if (!strcmp(mode, "order-error")) {
 		struct logger_runtime *r = logger_runtime_current();
-		/* 同一新域的真实协调锁：先建立正确边，再故意反转。
+		/*
+		 * 同一新域的真实协调锁：先建立正确边，再故意反转。
 		 * 没有并发死锁，但检测器必须保留此实际 ABBA 诊断。
 		 */
 		CHECK(pthread_mutex_lock(&r->format_mu) == 0);

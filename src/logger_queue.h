@@ -21,7 +21,8 @@ _Static_assert(sizeof(unsigned int) * CHAR_BIT == LOGGER_QUEUE_SPILL_WORD_BITS,
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2,
 	       "spill bitmap requires lock-free unsigned atomics");
 
-/* 队列槽位不内嵌完整 struct logger_message。
+/*
+ * 队列槽位不内嵌完整 struct logger_message。
  * 来源和上下文使用固定快照；正文 <= 512B 直接内嵌，
  * 更长正文保存溢出区索引，由预分配溢出池持有。
  */
@@ -55,12 +56,16 @@ struct logger_queue_spill {
 };
 
 struct logger_queue {
-	/* logger_queue_init() 成功后为 OWNED；由 logger_queue_destroy() 最终释放。 */
+	/*
+	 * logger_queue_init() 成功后为 OWNED；由 logger_queue_destroy() 最终释
+	 * 放。
+	 */
 	struct logger_queue_slot *slots;
 	size_t cap;
 	size_t mask;
 
-	/* 长消息溢出池：队列在结构上拥有全部块。
+	/*
+	 * 长消息溢出池：队列在结构上拥有全部块。
 	 * spill_used 是无锁位图；生产者通过 0->1 CAS 独占块，
 	 * 消费者完成复制后通过原子清位归还。
 	 */
@@ -74,8 +79,10 @@ struct logger_queue {
 	_Atomic size_t enqueue_pos;
 	_Atomic size_t dequeue_pos;
 
-	/* 工作线程睡眠与唤醒协议。
-	 * consumer_waiting=1 表示工作线程已进入 wait_mu 保护的“准备睡眠/已睡眠”状态；
+	/*
+	 * 工作线程睡眠与唤醒协议。
+	 * consumer_waiting=1 表示工作线程已进入 wait_mu 保护的“准备睡眠/已睡眠”
+	 * 状态；
 	 * 生产者只有观察到 1 才进入 wait_mu + cond_signal 慢路径。
 	 */
 	_Atomic unsigned int consumer_waiting;
@@ -88,7 +95,8 @@ struct logger_queue {
 	pthread_cond_t wait_cv;
 };
 
-/* 防止单消费者丢失唤醒的交接协议。
+/*
+ * 防止单消费者丢失唤醒的交接协议。
  *
  * 初始化后，对 consumer_waiting 的所有并发写入都是 acq_rel 读改写操作。
  * 这是有意为之：生产者只在 slot.seq 发布后探测，
@@ -121,13 +129,28 @@ static inline void logger_queue_wait_disarm(struct logger_queue *q)
 				       memory_order_acq_rel);
 }
 
+/*
+ * q 须为尚未拥有队列资源的独占存储；requested 的单位为记录数。
+ * 初始化成功返回 0，失败返回 -1 并设置 errno；失败对象不可按完整队列销毁。
+ * wait_mu_error 仍可用于判断构造回滚是否缺少同步对象释放证明。
+ */
 int logger_queue_init(struct logger_queue *q, size_t requested);
+/*
+ * 销毁完整初始化的队列前，调用方须停止全部生产者并等待消费者退出。
+ * 返回 0/-errno；失败可能已完成部分销毁，不能据此恢复使用或假设可直接重试。
+ */
 int logger_queue_destroy(struct logger_queue *q);
 /* 返回 1 表示入队成功，0 表示未入队，负值表示已发布但唤醒失败。 */
 int logger_queue_push(struct logger_queue *q, const struct logger_message *m);
+/*
+ * 仅单消费者调用：try_pop 返回 1 表示已复制到独占可写的 m，0 表示当前无可取槽。
+ * drain 把最多 max 条记录复制到 out，返回实际条数；out 须容纳 max 个元素。
+ * 出队会归还槽位和溢出块，不代表后端输出已完成；调用方须保护 q 的存活。
+ */
 int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m);
 size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
 			  size_t max);
+/* 只探测下一消费槽是否已发布；空不证明没有在途预留或并发生产者。 */
 int logger_queue_empty(struct logger_queue *q);
 /* 通知和强制唤醒均返回 0 或负 errno；负值不能被当作入队失败回滚。 */
 int logger_queue_notify_if_waiting(struct logger_queue *q);

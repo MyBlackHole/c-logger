@@ -9,7 +9,8 @@
 #ifdef __cplusplus
 #define ABI_ASSERT(expr) static_assert((expr), #expr)
 #define ABI_ALIGNOF(type) alignof(type)
-/* 导出 ABI 为 C。声明上的 GCC 格式属性不是 C 函数类型的一部分，
+/*
+ * 导出 ABI 为 C。声明上的 GCC 格式属性不是 C 函数类型的一部分，
  * 但 C++ 类型特征比较会在这些属性被丢弃时发出警告。
  * 因此 ABI_FN 的精确类型断言由 C11 编译单元冻结；C++11 独立冻结
  * 布局、数值常量与默认初始化器，并通过下方 16 个记录与查询入口的

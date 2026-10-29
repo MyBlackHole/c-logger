@@ -6,7 +6,8 @@
 #include <errno.h>
 #include <string.h>
 
-/* 调用方提供 CHECK。只使用公开接口；普通返回风格仍分别验收。
+/*
+ * 调用方提供 CHECK。只使用公开接口；普通返回风格仍分别验收。
  * %n 是未格式化的见证，不能通过仅丢弃最终输出来通过本测试。
  */
 static void check_process_rejection(int error)

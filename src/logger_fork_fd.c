@@ -15,7 +15,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-/* fd 是内核分配的非负整数。按 fd 索引的位图不包含候选对象地址，
+/*
+ * fd 是内核分配的非负整数。按 fd 索引的位图不包含候选对象地址，
  * 因而构造栈退出、后端整体移动和实例最终 free 不会留下悬垂登记项。
  * 初始映射覆盖 32768 个 fd；高 fd 才扩容，最后一个引用关闭后归还映射。
  * 映射失败必须在交出新 fd 前回滚，不能留下未登记的描述符。
@@ -39,7 +40,8 @@ static size_t child_bitmap_bytes;
 
 void logger_fork_resource_poison(int error)
 {
-	/* 不确定的同步状态不可重用；不再遍历或释放旧登记映射。
+	/*
+	 * 不确定的同步状态不可重用；不再遍历或释放旧登记映射。
 	 * 已经等待未知锁的线程不具备活性保证，不能冒称错误后的自动恢复。
 	 */
 	atomic_store_explicit(&gate_error, error, memory_order_release);
@@ -155,7 +157,8 @@ static int acquired(int fd)
 	if (fd >= 0) {
 		error = register_fd(fd);
 		if (error) {
-			/* fd 还没有交出；Linux close 消耗引用，失败也不重试。
+			/*
+			 * fd 还没有交出；Linux close 消耗引用，失败也不重试。
 			 * 关闭回执不能覆盖登记失败这一主错误。
 			 */
 			(void)close(fd);
@@ -207,7 +210,9 @@ int logger_fork_close(int fd)
 	if (!is_owned(fd)) {
 		error = EBADF;
 	} else {
-		/* 先消费登记再 close，fork 不可能看见已关闭、被宿主复用的 fd。 */
+		/*
+		 * 先消费登记再 close，fork 不可能看见已关闭、被宿主复用的 fd。
+		 */
 		unregister_fd(fd);
 		if (close(fd))
 			error = errno;
@@ -237,7 +242,8 @@ DIR *logger_fork_fdopendir(int fd)
 			error = errno;
 	}
 	if (dir) {
-		/* DIR 内含 libc 锁/堆缓冲。整个遍历保持资源租约，fork 等待
+		/*
+		 * DIR 内含 libc 锁/堆缓冲。整个遍历保持资源租约，fork 等待
 		 * closedir 完成，避免子方拥有无法安全析构的半使用 DIR。
 		 */
 		directory_lease = dir;
@@ -341,7 +347,8 @@ void logger_fork_fd_child(void)
 	child_error = child_valid ? 0 :
 				    (prepare_error ? prepare_error : ECHILD);
 	if (child_valid) {
-		/* 旧进程域已不在子方地址空间；这里只能使用 prepare 的 TLS
+		/*
+		 * 旧进程域已不在子方地址空间；这里只能使用 prepare 的 TLS
 		 * 数值快照，不借用宏指向的旧域或任何 DIR/实例内存。
 		 */
 		child_bitmap = snapshot_fds;

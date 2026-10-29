@@ -52,7 +52,8 @@ int main(int argc, char **argv)
 	}
 	result = 0;
 cleanup:
-	/* 此示例没有业务线程。真实宿主先停止并回收调用线程。
+	/*
+	 * 此示例没有业务线程。真实宿主先停止并回收调用线程。
 	 * 插件实例借用 logger，绝不销毁它。
 	 */
 	plugin.destroy(second);

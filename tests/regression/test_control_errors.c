@@ -160,7 +160,8 @@ int main(int argc, char **argv)
 		CHECK(sync_calls > 0);
 
 	if (read_unlock_error || emit_unlock_error) {
-		/* 同步证明失败不能通过测试强制重置后再清理；进程退出归还资源。
+		/*
+		 * 同步证明失败不能通过测试强制重置后再清理；进程退出归还资源。
 		 * 这不是普通健康销毁证据，也不声称未知解锁状态可继续使用。
 		 */
 		CHECK(atomic_load(&owner->default_borrowed) == 1);

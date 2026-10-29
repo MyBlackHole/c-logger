@@ -47,7 +47,8 @@ int logger_mask_secret(const char *v, char *out, size_t cap, size_t pre,
 		rc = -ENOSPC;
 		goto done;
 	}
-	/* Linux 平坦地址空间：按目的地址方向保全尚未读取的首尾片段。
+	/*
+	 * Linux 平坦地址空间：按目的地址方向保全尚未读取的首尾片段。
 	 * 向低地址移动先复制前缀；向高地址移动先复制后缀。
 	 * 两段目标区不重叠，最后写遮挡串和终止符，避免覆盖源后缀。
 	 */

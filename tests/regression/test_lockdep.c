@@ -3,7 +3,8 @@
 #include "logger_cleanup.h"
 #include "support.h"
 
-/* 测试翻译单元和回归支持库都必须启用真实锁跟踪。
+/*
+ * 测试翻译单元和回归支持库都必须启用真实锁跟踪。
  * 默认的无操作内联会造成错误的验收结论；构建时直接拒绝。
  */
 #if LOGGER_ENABLE_LOCKDEP != 1

@@ -1,7 +1,8 @@
 #ifndef LOGGER_SCOPE_H
 #define LOGGER_SCOPE_H
 
-/* 私有、线程局部的重入与取消作用域。不进行引用计数，
+/*
+ * 私有、线程局部的重入与取消作用域。不进行引用计数，
  * 也不拥有调用者的 logger_t。绝不能从信号处理函数使用。
  */
 struct logger_scope {

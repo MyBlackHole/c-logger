@@ -1,7 +1,8 @@
 #ifndef LOGGER_CLEANUP_H
 #define LOGGER_CLEANUP_H
 
-/* c-logger 内部的 Linux 风格词法资源管理。
+/*
+ * c-logger 内部的 Linux 风格词法资源管理。
  *
  * 这里独立实现与 Linux 清理辅助机制相同的所有权模型，仅供项目内部使用：
  * 安装头文件、公开符号、公开结构体布局和 ABI 都不依赖本文件。
@@ -26,7 +27,8 @@
 #define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
 #define CLEANUP_MUST_CHECK LOGGER_MUST_CHECK
 #define CLEANUP_MAYBE_UNUSED LOGGER_MAYBE_UNUSED
-/* cleanup/class 辅助机制依靠内联，使生成的所有权辅助代码保持局部且不触发警告。
+/*
+ * cleanup/class 辅助机制依靠内联，使生成的所有权辅助代码保持局部且不触发警告。
  * 新增普通辅助函数应优先使用一般的 static inline。
  */
 #define CLEANUP_ALWAYS_INLINE LOGGER_ALWAYS_INLINE
@@ -66,7 +68,8 @@ __cleanup_must_check_ptr(const volatile void *value)
 #define return_ptr(_ptr) return no_free_ptr(_ptr)
 #define retain_and_null_ptr(_ptr) ((void)__get_and_null((_ptr), NULL))
 
-/* 用户态 fd 所有权使用 -1 表示“已释放/无效”。
+/*
+ * 用户态 fd 所有权使用 -1 表示“已释放/无效”。
  * Linux 的 get_unused_fd 类使用 -EBADF，是因为其内部会携带 errno；
  * c-logger 的普通 POSIX fd 不采用这种内核内联错误表示。
  */
@@ -106,7 +109,8 @@ __cleanup_must_check_ptr(const volatile void *value)
 #define EXTEND_CLASS(_name, _ext, _init, ...) \
 	EXTEND_CLASS_COND(_name, _ext, false, _init, __VA_ARGS__)
 
-/* cleanup 属性是变量的语义使用；Clang 10 仍会对隐藏的守卫存储报
+/*
+ * cleanup 属性是变量的语义使用；Clang 10 仍会对隐藏的守卫存储报
  * unused-variable，因此类存储显式标记 LOGGER_MAYBE_UNUSED。
  */
 #define CLASS(_name, _var)                                       \
@@ -125,7 +129,8 @@ __cleanup_must_check_ptr(const volatile void *value)
 	__scoped_class(_name, _var, __cleanup_unique(__cleanup_once_), \
 		       __VA_ARGS__)
 
-/* 守卫类使用独立结构保存资源和错误，而不是编码成错误指针。
+/*
+ * 守卫类使用独立结构保存资源和错误，而不是编码成错误指针。
  * 这样保留 Linux 的源码级所有权语义，同时避免把内核 ERR_PTR 约定带入用户态。
  */
 /* DEFINE_GUARD 不检查获取表达式；仅可用于满足不可失败契约的资源。 */
@@ -375,7 +380,8 @@ __cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
 	return rc;
 }
 
-/* 实例锁和 Console 守卫必须显式携带锁类；获取与释放错误由调用点检查。
+/*
+ * 实例锁和 Console 守卫必须显式携带锁类；获取与释放错误由调用点检查。
  * cleanup 析构只作为早退兜底，不能替代 RELEASE_ERR 的错误传播。
  */
 #define DEFINE_LOCKDEP_MUTEX_GUARD(_name, _class_id)                         \

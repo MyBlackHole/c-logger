@@ -39,7 +39,8 @@ int logger_scope_begin(struct logger_scope *scope)
 
 int logger_scope_end(struct logger_scope *scope, int rc)
 {
-	/* 必须在 va_end、互斥锁释放、发布和全部资源清理之后执行。
+	/*
+	 * 必须在 va_end、互斥锁释放、发布和全部资源清理之后执行。
 	 * 此函数之后不得再解引用 logger：取消恢复后，调用者的取消清理
 	 * 可以立即释放其拥有的实例。
 	 */

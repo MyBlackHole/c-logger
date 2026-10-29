@@ -6,7 +6,8 @@
 #include <fcntl.h>
 #include <stdarg.h>
 
-/* 仅测试可执行文件包装生产归档里的实际资源取得/释放调用。
+/*
+ * 仅测试可执行文件包装生产归档里的实际资源取得/释放调用。
  * 模拟失败不构造假的 fd/DIR，也不触碰非法 pthread 对象。
  */
 enum fault {
@@ -238,7 +239,8 @@ int main(int argc, char **argv)
 		selected = FAULT_NONE;
 		struct timespec stamp = { 1700000000, 0 };
 		CHECK(!logger_file_write(&file, "c", 1, &stamp, 1));
-		/* 失败的轮转已经装入新的空活动 fd。先写满，再触发
+		/*
+		 * 失败的轮转已经装入新的空活动 fd。先写满，再触发
 		 * 一次正常轮转，验证 retention 及 DIR 所有权恢复。
 		 */
 		CHECK(!logger_file_write(&file, "d", 1, &stamp, 1));

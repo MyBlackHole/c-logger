@@ -91,7 +91,8 @@ int logger_file_close_status(struct logger_file *f)
 		return -EINVAL;
 	int error = 0;
 	struct logger_owned_fd *fds[] = { &f->fd, &f->lock_fd, &f->dir_fd };
-	/* 保持所有权直到数据 fd 关闭。不显式 LOCK_UN：fork/dup 引用共享 flock；
+	/*
+	 * 保持所有权直到数据 fd 关闭。不显式 LOCK_UN：fork/dup 引用共享 flock；
 	 * 只关闭此所有者的引用。
 	 */
 	for (unsigned int i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
@@ -199,8 +200,11 @@ static int bind_path(struct logger_file *f, const char *path)
 			return -ELOOP;
 		if (S_ISCHR(st.st_mode) &&
 		    f->rotation.mode == LOGGER_ROTATE_NONE) {
-			f->managed =
-				0; /* /dev/null 和 /dev/full 用于连通测试，不用于持久性验证 */
+			/*
+			 * /dev/null 和 /dev/full 用于连通测试，
+			 * 不用于持久性验证
+			 */
+			f->managed = 0;
 			return 0;
 		}
 		int rc = regular_single_link(&st);
@@ -279,7 +283,8 @@ static int logger_file_reserve(struct logger_file *f, const char *path,
 	return 0;
 }
 
-/* 不截断任何文件。O_NONBLOCK 使被替换的 FIFO 在验证时失败，
+/*
+ * 不截断任何文件。O_NONBLOCK 使被替换的 FIFO 在验证时失败，
  * 而不是让 logger_fork_open() 挂起。目录祖先必须可信。
  * out 指向调用方的空拥有者；失败不改变它，成功移交已登记的候选。
  */
@@ -308,11 +313,13 @@ static int open_candidate(struct logger_file *f, int exclusive,
 	if (rc)
 		return rc;
 
-	/* 所有权转移：词法作用域候选对象 -> 调用者。调用者要么
+	/*
+	 * 所有权转移：词法作用域候选对象 -> 调用者。调用者要么
 	 * 将其装入 struct logger_file，要么在失败时显式关闭。
 	 */
 	*out = logger_fd_move(&fd);
-	/* 之前不存在的活动文件可能已被创建。即使它原本存在，也保守地
+	/*
+	 * 之前不存在的活动文件可能已被创建。即使它原本存在，也保守地
 	 * 同步绑定目录；这绝不依赖当前工作目录。
 	 */
 	if (f->managed)
@@ -384,7 +391,8 @@ static int file_reopen_impl(struct logger_file *f)
 {
 	int day = 0;
 	struct stat st;
-	/* 旧 fd 同步期间，新候选仍由词法拥有者负责清理。
+	/*
+	 * 旧 fd 同步期间，新候选仍由词法拥有者负责清理。
 	 * 只有全部准备成功，才将它移交给长期 f->fd。
 	 */
 	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
@@ -525,7 +533,8 @@ static int retention(struct logger_file *f, time_t now)
 	DIR *d = logger_fd_fdopendir(&fd);
 	if (!d)
 		return -errno;
-	/* fork DIR 租约已持有资源锁且源已失效；必须由同线程
+	/*
+	 * fork DIR 租约已持有资源锁且源已失效；必须由同线程
 	 * logger_fork_closedir() 消费租约，不能直接调用 libc closedir。
 	 */
 	int rc = 0;
@@ -612,7 +621,8 @@ static int rotate_impl(struct logger_file *f)
 	}
 	if (attempt == LOGGER_ARCHIVE_ATTEMPTS)
 		return -EEXIST;
-	/* 旧 fd 现在属于归档。即使打开或同步新活动文件失败，也绝不向其追加。
+	/*
+	 * 旧 fd 现在属于归档。即使打开或同步新活动文件失败，也绝不向其追加。
 	 * 只有显式重新打开才可能恢复。
 	 */
 	f->detached = 1;
@@ -626,7 +636,8 @@ static int rotate_impl(struct logger_file *f)
 		logger_fault_crash_if_requested("file_after_archive_dirsync");
 	int day = 0;
 	struct stat st;
-	/* 已归档的旧 fd 不属于候选；新活动 fd 在安装前独占持有。
+	/*
+	 * 已归档的旧 fd 不属于候选；新活动 fd 在安装前独占持有。
 	 * 崩溃切点与数据/目录持久化顺序保持不变。
 	 */
 	struct logger_owned_fd candidate LOGGER_CLEANUP(logger_fd_cleanup) =
@@ -647,7 +658,8 @@ static int rotate_impl(struct logger_file *f)
 	if (!rc)
 		logger_fault_crash_if_requested("file_after_active_dirsync");
 	if (rc) {
-		/* 与旧路径相同：先回收新候选，随后记录切换错误；
+		/*
+		 * 与旧路径相同：先回收新候选，随后记录切换错误；
 		 * close(EINTR/EIO) 不能覆盖失败的 fsync/目录同步主错误。
 		 */
 		int close_rc LOGGER_MAYBE_UNUSED =

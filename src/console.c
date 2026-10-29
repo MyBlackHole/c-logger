@@ -14,7 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 
-/* 每次操作只读取一个配置快照：并发初始化不会把新 verbosity 与旧 color 混用。
+/*
+ * 每次操作只读取一个配置快照：并发初始化不会把新 verbosity 与旧 color 混用。
  * 独立设置函数只对自己负责的位做 CAS。
  */
 #define COLOR_BITS 2u
@@ -116,7 +117,8 @@ static int tty(int fd, int *out)
 	if (!out)
 		return finish(&scope, -EINVAL);
 
-	/* 只有 ENOTTY 表示成功取得“非终端”答案，EBADF 等仍是查询错误。
+	/*
+	 * 只有 ENOTTY 表示成功取得“非终端”答案，EBADF 等仍是查询错误。
 	 * 先清 errno，避免异常实现未设错误时把调用方旧 errno 当作本次错误。
 	 */
 	errno = 0;
@@ -160,7 +162,8 @@ static void stdio_error(int failed, int *first_error, int *saw_epipe)
 		*first_error = -error;
 }
 
-/* 作用域覆盖全部 libc 调用、本库互斥锁和 FILE 内部锁。
+/*
+ * 作用域覆盖全部 libc 调用、本库互斥锁和 FILE 内部锁。
  * 发生取消时不会回滚已经完成或部分完成的输出；
  * 也不承诺与宿主外部 flockfile() 建立额外锁顺序。
  */

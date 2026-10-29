@@ -320,7 +320,8 @@ static void allocation_failures(void)
 	const int errors[] = { ENOMEM, EIO };
 	unsigned int cases = 0;
 
-	/* 一个实例、两个队列数组、七个工作区映射，逐点拒绝真实系统调用。
+	/*
+	 * 一个实例、两个队列数组、七个工作区映射，逐点拒绝真实系统调用。
 	 * 非 ENOMEM 错误必须原样返回；首错后不再取得后续候选映射。
 	 */
 	for (unsigned int f = 0; f < sizeof(failures) / sizeof(failures[0]);

@@ -4,7 +4,8 @@
 #include "example_sdk.h"
 #include <limits.h>
 
-/* 编译进宿主，不是 SDK。回调 user 是借用的 logger_t *。
+/*
+ * 编译进宿主，不是 SDK。回调 user 是借用的 logger_t *。
  * logger_log 返回提交或同步输出状态；此 void 回调没有状态返回通道，
  * 适配器明确丢弃单次结果。所有者侧指标/刷新仍用于观察输出错误，
  * 不能重建已丢弃的单次提交结果。

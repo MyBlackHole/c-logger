@@ -5,7 +5,8 @@
 #include <stdint.h>
 #include <string.h>
 
-/* 包装仅存在于测试程序；正常调用仍使用真实运行域映射与释放。
+/*
+ * 包装仅存在于测试程序；正常调用仍使用真实运行域映射与释放。
  * 本测试不启动工作线程，运行域计数的直接读取不存在并发修改。
  */
 struct allocation_attempt {
@@ -186,7 +187,8 @@ static void healthy(size_t requested, size_t capacity, size_t spill_capacity)
 
 static size_t largest_capacity(void)
 {
-	/* 从存储字节上界向下取 2 的幂，与请求容量向上取整独立。
+	/*
+	 * 从存储字节上界向下取 2 的幂，与请求容量向上取整独立。
 	 * 不包含运行域的私有分配头，更不代表宿主能映射如此大的对象。
 	 */
 	size_t spill_bytes =

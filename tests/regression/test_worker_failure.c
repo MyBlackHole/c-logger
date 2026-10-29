@@ -5,7 +5,8 @@ static logger_t *default_owner;
 #include "logger_internal.h"
 #include "support.h"
 
-/* 全部门禁与注入失败都是链接时测试代码，绝非运行时钩子。
+/*
+ * 全部门禁与注入失败都是链接时测试代码，绝非运行时钩子。
  * 合成的 cond_wait EIO 保持有效的非健壮互斥锁处于持有状态。
  */
 enum scenario {
@@ -334,7 +335,8 @@ static void test_failure_or_gap(void)
 			atomic_store(&release_waiter, 1);
 	}
 
-	/* 即使生产者仍拥有其预留，失败也必须释放全部等待者。
+	/*
+	 * 即使生产者仍拥有其预留，失败也必须释放全部等待者。
 	 * 通知不得假装完成该槽位。
 	 */
 	for (unsigned int i = 0; i < count; ++i) {
@@ -446,7 +448,8 @@ int main(int argc, char **argv)
 		       selected == BACKEND_ERROR ? ENOSPC :
 						   0;
 
-	/* 销毁先消费公开槽，join/free 探针仍借用活实例观察真正释放。
+	/*
+	 * 销毁先消费公开槽，join/free 探针仍借用活实例观察真正释放。
 	 * Global 关闭尚为 POSIX 错误风格，显式销毁为负错误码并保留 errno。
 	 */
 	if (selected == GLOBAL) {
