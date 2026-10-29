@@ -2,7 +2,9 @@
 #include "host_support.h"
 #include "logger_internal.h"
 #include <fcntl.h>
-static int fail_join, fail_cond_destroy, fail_mutex_destroy;
+static int fail_join;
+static int fail_cond_destroy;
+static int fail_mutex_destroy;
 enum file_fd_slot { FILE_DATA, FILE_LOCK, FILE_DIRECTORY, FILE_FD_COUNT };
 struct close_probe {
 	int fd;

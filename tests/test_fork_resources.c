@@ -31,7 +31,8 @@ int main(void)
 		long number = strtol(entry->d_name, &end, 10);
 		if (*end || number < 0 || number > INT_MAX)
 			continue;
-		char link[128], target[4096];
+		char link[128];
+		char target[4096];
 		int n = snprintf(link, sizeof(link), "/proc/self/fd/%ld",
 				 number);
 		CHECK(n > 0 && (size_t)n < sizeof(link));
@@ -46,7 +47,8 @@ int main(void)
 	}
 	CHECK(!closedir(scan));
 	CHECK(count == 3);
-	int ready[2], finish[2];
+	int ready[2];
+	int finish[2];
 	CHECK(!pipe(ready) && !pipe(finish));
 	pid_t pid = fork();
 	CHECK(pid >= 0);

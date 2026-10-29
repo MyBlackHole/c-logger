@@ -91,7 +91,8 @@ static void run_model(uint32_t seed)
 	size_t requested = 2u << (seed % 4u);
 	CHECK(!logger_queue_init(&q, requested));
 	CHECK(q.cap == requested);
-	size_t front = 0, count = 0;
+	size_t front = 0;
+	size_t count = 0;
 	int serial = 0;
 	uint64_t exhaustion = logger_queue_spill_exhaustions(&q);
 	struct logger_message message;

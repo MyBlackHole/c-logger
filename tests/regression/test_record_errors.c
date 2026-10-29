@@ -433,15 +433,19 @@ static int simple_case(const char *mode)
 	unsigned int outer_restore = api == RECORD_DEFAULT ? 2 : 1;
 
 	if (!strcmp(mode, "clock")) {
-		clock_error = expected = EFAULT;
+		expected = EFAULT;
+		clock_error = expected;
 	} else if (!strcmp(mode, "format") || !strcmp(mode, "format-primary")) {
-		format_error = expected = EILSEQ;
+		expected = EILSEQ;
+		format_error = expected;
 		if (!strcmp(mode, "format-primary")) {
 			fail_restore_number = outer_restore;
 			++expected_injections;
 		}
 	} else if (!strcmp(mode, "write") || !strcmp(mode, "write-primary")) {
-		write_error = expected = sticky = ENOSPC;
+		sticky = ENOSPC;
+		expected = sticky;
+		write_error = expected;
 		if (!strcmp(mode, "write-primary")) {
 			fail_restore_number = outer_restore;
 			++expected_injections;
@@ -461,24 +465,31 @@ static int simple_case(const char *mode)
 		expected_injections = 0;
 		records = 1;
 	} else if (!strcmp(mode, "emit-lock")) {
-		emit_lock_error = expected = sticky = EBUSY;
+		sticky = EBUSY;
+		expected = sticky;
+		emit_lock_error = expected;
 	} else if (!strcmp(mode, "emit-unlock")) {
-		emit_unlock_error = expected = EPERM;
+		expected = EPERM;
+		emit_unlock_error = expected;
 		records = 1;
 		retain = 1;
 	} else if (!strcmp(mode, "format-lock")) {
-		format_lock_error = expected = EBUSY;
+		expected = EBUSY;
+		format_lock_error = expected;
 	} else if (!strcmp(mode, "format-unlock")) {
-		format_unlock_error = expected = EPERM;
+		expected = EPERM;
+		format_unlock_error = expected;
 		retain = 1;
 	} else if (!strcmp(mode, "read-lock")) {
 		CHECK(api == RECORD_DEFAULT);
-		read_lock_error = expected = EAGAIN;
+		expected = EAGAIN;
+		read_lock_error = expected;
 	} else {
 		CHECK(api == RECORD_DEFAULT);
 		CHECK(!strcmp(mode, "read-unlock") ||
 		      !strcmp(mode, "read-unlock-primary"));
-		read_unlock_error = expected = EPROTO;
+		expected = EPROTO;
+		read_unlock_error = expected;
 		retain = 1;
 		records = 1;
 		if (!strcmp(mode, "read-unlock-primary")) {

@@ -25,9 +25,14 @@ struct tracked_allocation {
 };
 
 static enum fault_kind fault;
-static unsigned int target, refused;
-static unsigned int calloc_calls, malloc_calls, mutex_calls, cond_calls;
-static unsigned int created_workers, destroyed_allocations;
+static unsigned int target;
+static unsigned int refused;
+static unsigned int calloc_calls;
+static unsigned int malloc_calls;
+static unsigned int mutex_calls;
+static unsigned int cond_calls;
+static unsigned int created_workers;
+static unsigned int destroyed_allocations;
 static struct tracked_allocation allocations[64];
 static unsigned int allocation_count;
 

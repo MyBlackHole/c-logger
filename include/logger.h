@@ -600,10 +600,12 @@ static inline logger_config_t logger_defaults_cpp(void)
 	c.async_mode = 1;
 	c.queue_capacity = 8192;
 	c.flush_level = LOGGER_ERROR;
-	c.include_pid = c.include_tid = c.include_source = 1;
+	c.include_source = 1;
+	c.include_tid = 1;
+	c.include_pid = 1;
 	c.ident = "app";
-	c.overflow[LOGGER_ERROR] = c.overflow[LOGGER_FATAL] =
-		LOGGER_OVERFLOW_SYNC;
+	c.overflow[LOGGER_FATAL] = LOGGER_OVERFLOW_SYNC;
+	c.overflow[LOGGER_ERROR] = LOGGER_OVERFLOW_SYNC;
 	c.syslog = LOGGER_SYSLOG_DEFAULT_CONFIG();
 	return c;
 }

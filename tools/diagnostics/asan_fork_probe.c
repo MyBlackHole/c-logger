@@ -49,7 +49,9 @@ int main(void)
 			return 2;
 	while (atomic_load(&ready) != 8)
 		usleep(10);
-	unsigned int completed = 0, timed_out = 0, failed = 0;
+	unsigned int completed = 0;
+	unsigned int timed_out = 0;
+	unsigned int failed = 0;
 	for (unsigned int i = 0; i < 96; ++i) {
 		pid_t pid = fork();
 		if (pid < 0) {

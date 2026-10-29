@@ -7,11 +7,15 @@
 
 /* 读锁真正释放以后才报告失败；写方不得用旧票据覆盖随后发布的 BROKEN。 */
 static _Thread_local int poisoned_reader;
-static _Atomic int reader_released, return_reader, reader_done;
-static _Atomic int writer_paused, return_writer;
+static _Atomic int reader_released;
+static _Atomic int return_reader;
+static _Atomic int reader_done;
+static _Atomic int writer_paused;
+static _Atomic int return_writer;
 static int fail_writer;
 static int setter_result;
-static logger_t *a, *b;
+static logger_t *a;
+static logger_t *b;
 
 int __real_pthread_rwlock_unlock(pthread_rwlock_t *rw);
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
@@ -91,7 +95,8 @@ int main(int argc, char **argv)
 	fail_writer = 0;
 	CHECK(logger_default_set(NULL, a) == 0);
 	fail_writer = inject;
-	pthread_t read_thread, write_thread;
+	pthread_t read_thread;
+	pthread_t write_thread;
 	CHECK(pthread_create(&read_thread, NULL, reader, NULL) == 0);
 	wait_flag(&reader_released);
 	CHECK(pthread_create(&write_thread, NULL, writer, NULL) == 0);

@@ -91,7 +91,8 @@ int main(void)
 	CHECK(pthread_barrier_init(&start_barrier, NULL, 3) == 0);
 	CHECK(pthread_barrier_init(&done_barrier, NULL, 3) == 0);
 
-	pthread_t worker, producer;
+	pthread_t worker;
+	pthread_t producer;
 	CHECK(pthread_create(&worker, NULL, worker_side, NULL) == 0);
 	CHECK(pthread_create(&producer, NULL, producer_side, NULL) == 0);
 

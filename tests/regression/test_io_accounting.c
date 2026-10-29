@@ -12,7 +12,11 @@ enum injection {
 	FILE_SYNC_ERROR,
 	DIR_SYNC_ERROR
 };
-static _Atomic int fault, calls, block_first, format_entered, release_format;
+static _Atomic int fault;
+static _Atomic int calls;
+static _Atomic int block_first;
+static _Atomic int format_entered;
+static _Atomic int release_format;
 static int output_fd = -1;
 static logger_t *instance;
 ssize_t __real_write(int fd, const void *p, size_t n);

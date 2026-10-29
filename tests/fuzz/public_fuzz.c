@@ -30,7 +30,8 @@ static void mask_property(const uint8_t *data, size_t size)
 	secret[n] = '\0';
 
 	const char *value = (data[1] & 1u) ? NULL : secret;
-	size_t pre = data[2], suf = data[3];
+	size_t pre = data[2];
+	size_t suf = data[3];
 	size_t cap = data[4] % 128u;
 
 	/* 前后两侧的哨兵字节不能被用户提供的 cap 越界写坏。 */
@@ -81,7 +82,8 @@ static void mask_property(const uint8_t *data, size_t size)
 		REQUIRE(result[i] == 0xa5);
 
 	/* 同一输入再验证左右偏移与原地重叠，比较整个存储区。 */
-	unsigned char arena[384], before[384];
+	unsigned char arena[384];
+	unsigned char before[384];
 	size_t offset = 80u + data[0] % 161u;
 	memset(arena, 0xa5, sizeof(arena));
 	if (value)

@@ -166,13 +166,17 @@ static void check_fault(const char *scenario)
 	int expected = 0;
 	logger_level_t requested = LOGGER_WARN;
 	if (!strcmp(scenario, "setup")) {
-		fail_setup = expected = EAGAIN;
+		expected = EAGAIN;
+		fail_setup = expected;
 	} else if (!strcmp(scenario, "restore")) {
-		fail_restore = expected = EIO;
+		expected = EIO;
+		fail_restore = expected;
 	} else if (!strcmp(scenario, "read-lock")) {
-		fail_read = expected = EBUSY;
+		expected = EBUSY;
+		fail_read = expected;
 	} else if (!strcmp(scenario, "read-unlock")) {
-		fail_release = expected = EPROTO;
+		expected = EPROTO;
+		fail_release = expected;
 	} else if (!strcmp(scenario, "invalid-restore")) {
 		fail_restore = EIO;
 		expected = EINVAL;
@@ -216,7 +220,9 @@ static void check_fault(const char *scenario)
 
 static void check_cancel_disabled(void)
 {
-	int old_state, old_type, observed;
+	int old_state;
+	int old_type;
+	int observed;
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state) == 0);
 	CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_type) ==
 	      0);

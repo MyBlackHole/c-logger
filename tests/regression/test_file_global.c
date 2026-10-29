@@ -3,7 +3,9 @@
 #include "logger_internal.h"
 #include <fcntl.h>
 
-static _Atomic int pause_close, entered, released;
+static _Atomic int pause_close;
+static _Atomic int entered;
+static _Atomic int released;
 static logger_t *owner;
 static int destroy_result;
 int __real_logger_destroy(logger_t **slot);

@@ -3,10 +3,17 @@
 #include "logger_runtime.h"
 
 /* 默认槽只借用宿主实例。以真实锁/后端窗口验证所有便利入口的代次与准入。 */
-static _Thread_local int delay_read, count_reads;
-static _Atomic int delayed, release_delayed, entered, release_backend;
-static _Atomic int writer_waiting, reads, pause_write;
-static logger_t *old_owner, *new_owner;
+static _Thread_local int delay_read;
+static _Thread_local int count_reads;
+static _Atomic int delayed;
+static _Atomic int release_delayed;
+static _Atomic int entered;
+static _Atomic int release_backend;
+static _Atomic int writer_waiting;
+static _Atomic int reads;
+static _Atomic int pause_write;
+static logger_t *old_owner;
+static logger_t *new_owner;
 static int setter_result;
 
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
@@ -118,7 +125,9 @@ static void closed_gate(void)
 	CHECK(logger_default_set(NULL, old_owner) == 0);
 	atomic_store(&writer_waiting, 0);
 	atomic_store(&pause_write, 1);
-	pthread_t w, s, readers[8];
+	pthread_t w;
+	pthread_t s;
+	pthread_t readers[8];
 	CHECK(pthread_create(&w, NULL, writer, NULL) == 0);
 	wait_flag(&entered);
 	CHECK(pthread_create(&s, NULL, setter, NULL) == 0);

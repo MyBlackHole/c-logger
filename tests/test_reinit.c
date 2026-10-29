@@ -2,7 +2,8 @@
 #include "regression/support.h"
 
 static logger_t *owner;
-static _Atomic int won, rejected;
+static _Atomic int won;
+static _Atomic int rejected;
 static pthread_barrier_t barrier;
 static void *bind_once(void *unused)
 {

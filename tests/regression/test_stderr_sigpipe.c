@@ -26,7 +26,8 @@ static void check_sigpipe_state(int blocked, int was_pending)
 	struct sigaction action;
 	CHECK(sigaction(SIGPIPE, NULL, &action) == 0);
 	CHECK(action.sa_handler == SIG_DFL);
-	sigset_t current, pending;
+	sigset_t current;
+	sigset_t pending;
 	CHECK(pthread_sigmask(SIG_SETMASK, NULL, &current) == 0);
 	CHECK(sigismember(&current, SIGPIPE) == blocked);
 	CHECK(sigpending(&pending) == 0);

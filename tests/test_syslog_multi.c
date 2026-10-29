@@ -37,9 +37,10 @@ int main(void)
 		return 3;
 	logger_log(A, LOGGER_INFO, "m", __FILE__, __LINE__, __func__, "one");
 	logger_log(B, LOGGER_ERROR, "m", __FILE__, __LINE__, __func__, "two");
-	char b1[8192], b2[8192];
-	ssize_t n1 = recv(fd, b1, sizeof(b1) - 1, 0),
-		n2 = recv(fd, b2, sizeof(b2) - 1, 0);
+	char b1[8192];
+	char b2[8192];
+	ssize_t n1 = recv(fd, b1, sizeof(b1) - 1, 0);
+	ssize_t n2 = recv(fd, b2, sizeof(b2) - 1, 0);
 	if (n1 < 0 || n2 < 0)
 		return 4;
 	b1[n1] = 0;

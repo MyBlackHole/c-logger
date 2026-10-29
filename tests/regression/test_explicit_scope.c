@@ -26,19 +26,31 @@ enum point {
 	P_FORMAT,
 	P_LOCK
 };
-static _Atomic int point, entered, release_call, cancel_disabled;
-static _Atomic int hold_worker, worker_entered, release_worker, cleanup_seen;
-static _Atomic int returned, create_fail, cancel_setup_fail, stdio_fail,
-	flush_fail;
+static _Atomic int point;
+static _Atomic int entered;
+static _Atomic int release_call;
+static _Atomic int cancel_disabled;
+static _Atomic int hold_worker;
+static _Atomic int worker_entered;
+static _Atomic int release_worker;
+static _Atomic int cleanup_seen;
+static _Atomic int returned;
+static _Atomic int create_fail;
+static _Atomic int cancel_setup_fail;
+static _Atomic int stdio_fail;
+static _Atomic int flush_fail;
 static _Atomic int file_metrics_calls;
 static _Atomic int file_metrics_locks;
 static _Thread_local int actor;
 static _Thread_local int in_file_metrics;
 static logger_t *log_instance;
-static const char *scenario, *nested;
+static const char *scenario;
+static const char *nested;
 static char socket_dir[] = "/tmp/logger-scope-XXXXXX";
 static char socket_path[108];
-static int reentry_mode, cleanup_new, use_console;
+static int reentry_mode;
+static int cleanup_new;
+static int use_console;
 static int count_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
@@ -544,7 +556,9 @@ static void contract_case(void)
 	CHECK(logger_create(&cfg, &log_instance) == 0);
 	CHECK(log_instance != NULL);
 	if (!strcmp(scenario, "restore-policy")) {
-		int old, observed, type;
+		int old;
+		int observed;
+		int type;
 		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
 					     &type));
@@ -656,7 +670,8 @@ int main(int argc, char **argv)
 	/* 隔离 stdio 输出。保留 stderr，供测试后的 CHECK 诊断使用。 */
 	FILE *sink = fopen("console.out", "w+");
 	CHECK(sink);
-	FILE *saved_out = stdout, *saved_err = stderr;
+	FILE *saved_out = stdout;
+	FILE *saved_err = stderr;
 	stdout = sink;
 	stderr = sink;
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();

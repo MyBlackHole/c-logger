@@ -2,7 +2,8 @@
 #include "support.h"
 #include "logger_internal.h"
 #include <sys/mman.h>
-static _Atomic int entered, proceed;
+static _Atomic int entered;
+static _Atomic int proceed;
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap);
@@ -34,10 +35,16 @@ int main(int argc, char **argv)
 					     .module = "module",
 					     .file = "dir/test.c",
 					     .func = "call" };
-		if (!strcmp(mode, "bounds"))
-			in.module = in.file = in.func = big;
-		if (!strcmp(mode, "null-source"))
-			in.module = in.file = in.func = NULL;
+		if (!strcmp(mode, "bounds")) {
+			in.func = big;
+			in.file = big;
+			in.module = big;
+		}
+		if (!strcmp(mode, "null-source")) {
+			in.func = NULL;
+			in.file = NULL;
+			in.module = NULL;
+		}
 		CHECK(logger_queue_push(&q, &in) == 1);
 		struct logger_message out;
 		CHECK(logger_queue_try_pop(&q, &out) == 1);

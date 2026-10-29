@@ -28,7 +28,8 @@ static const char *const operation_names[] = {
 };
 struct call_result {
 	enum operation op;
-	int rc, error;
+	int rc;
+	int error;
 	uint64_t value;
 	logger_metrics_t metrics;
 	logger_io_metrics_t io;

@@ -4,9 +4,14 @@
 
 #define WAITERS 4
 static logger_t *instance;
-static _Atomic int first_entered, first_release, second_entered, second_release;
-static _Atomic int waiting, flushed;
-static _Thread_local int flushing, counted;
+static _Atomic int first_entered;
+static _Atomic int first_release;
+static _Atomic int second_entered;
+static _Atomic int second_release;
+static _Atomic int waiting;
+static _Atomic int flushed;
+static _Thread_local int flushing;
+static _Thread_local int counted;
 static int results[WAITERS];
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,

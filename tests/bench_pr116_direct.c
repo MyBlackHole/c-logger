@@ -109,7 +109,10 @@ static uint64_t dropped_count(const logger_metrics_t *m)
 
 int main(int argc, char **argv)
 {
-	uint64_t nt, nr, bytes, cap;
+	uint64_t nt;
+	uint64_t nr;
+	uint64_t bytes;
+	uint64_t cap;
 	if (argc != 5 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &bytes) || number(argv[4], &cap)) {
 		fputs("usage: threads records bytes capacity\n", stderr);

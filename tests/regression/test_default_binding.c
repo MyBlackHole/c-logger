@@ -9,11 +9,20 @@
 
 static logger_t *a;
 static logger_t *b;
-static _Atomic int reached, resume_call, setter_waiting, setter_done;
+static _Atomic int reached;
+static _Atomic int resume_call;
+static _Atomic int setter_waiting;
+static _Atomic int setter_done;
 static _Atomic int cancel_cleaned;
-static _Thread_local int block_read, block_control, block_write;
-static _Thread_local int control_error, writer_error, read_error;
-static _Thread_local int rw_unlock_error, mu_unlock_error, restore_error;
+static _Thread_local int block_read;
+static _Thread_local int block_control;
+static _Thread_local int block_write;
+static _Thread_local int control_error;
+static _Thread_local int writer_error;
+static _Thread_local int read_error;
+static _Thread_local int rw_unlock_error;
+static _Thread_local int mu_unlock_error;
+static _Thread_local int restore_error;
 static _Thread_local int reenter;
 static int read_rc;
 static int read_errno;
@@ -193,7 +202,8 @@ static void *stale_setter(void *unused)
 
 static void race_case(const char *mode)
 {
-	pthread_t thread, control;
+	pthread_t thread;
+	pthread_t control;
 	int delayed = !strcmp(mode, "stale-reader");
 	int stale = !strcmp(mode, "stale-control") || !strcmp(mode, "aba");
 	atomic_store(&setter_waiting, 0);

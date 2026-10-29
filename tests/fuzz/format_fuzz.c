@@ -29,7 +29,9 @@ static void fail(const char *condition, int line)
 struct sample {
 	struct logger_message message;
 	logger_config_t config;
-	char module[513], path[520], function[257];
+	char module[513];
+	char path[520];
+	char function[257];
 	char expected[LIMIT];
 	size_t length;
 	int invalid_nsec;

@@ -442,6 +442,74 @@ static int logger_ctor_rollback(logger_t *l,
 	return cleanup_rc ? cleanup_rc : free_rc;
 }
 
+static void logger_ctor_init_fields(logger_t *l, const logger_config_t *cfg)
+{
+	l->file_backend = LOGGER_FILE_EMPTY;
+	l->syslog_backend.fd = logger_fd_own(-1);
+	logger_level_init(&l->level, cfg->level);
+	logger_state_init(&l->state, LOGGER_STATE_CREATED);
+	atomic_init(&l->default_borrowed, 0);
+	atomic_init(&l->running, 0);
+	atomic_init(&l->enqueued, 0);
+	atomic_init(&l->sync_fallbacks, 0);
+	atomic_init(&l->queue_high_watermark, 0);
+	atomic_init(&l->consumer_batches, 0);
+	atomic_init(&l->consumer_records, 0);
+	atomic_init(&l->async_completed, 0);
+	atomic_init(&l->sync_completed, 0);
+	atomic_init(&l->emitted_records, 0);
+	atomic_init(&l->failed_records, 0);
+	atomic_init(&l->first_error, 0);
+	atomic_init(&l->lifecycle_error, 0);
+	atomic_init(&l->synchronization_error, 0);
+	for (unsigned int i = 0; i < 6; ++i) {
+		atomic_init(&l->dropped_by_level[i], 0);
+		l->overflow[i] = cfg->overflow[i];
+	}
+	l->detail = cfg->detail;
+	l->outputs = cfg->outputs;
+	l->file_mode = (mode_t)(cfg->file_mode ? cfg->file_mode : 0640);
+	l->async_mode = !!cfg->async_mode;
+	l->flush_level = cfg->flush_level;
+	l->include_pid = cfg->include_pid;
+	l->include_tid = cfg->include_tid;
+	l->include_source = cfg->include_source;
+	l->capture_mask = capture_mask_from_config(cfg);
+	l->pid = (l->capture_mask & LOGGER_CAPTURE_PID) ? getpid() : 0;
+	copy_ctx(l->ident, sizeof(l->ident), cfg->ident ? cfg->ident : "app");
+}
+
+static int logger_ctor_start_worker(logger_t *l, const logger_config_t *cfg,
+				    struct logger_ctor_state *state)
+{
+	if (!l->async_mode)
+		return 0;
+	if (logger_queue_init(&l->q, cfg->queue_capacity ? cfg->queue_capacity :
+							   8192) != 0) {
+		int error = errno ? errno : EIO;
+		/*
+		 * 队列的部分构造可能留下未经证明的互斥锁。
+		 * 保留其容器和存活对象计数，不替换主要 errno。
+		 */
+		int proof_error = logger_queue_wait_error(&l->q);
+		if (proof_error)
+			logger_note_synchronization_error(l, proof_error);
+		return -error;
+	}
+	state->queue_ready = true;
+	l->worker_workspace = logger_worker_workspace_create(l->q.cap);
+	if (!l->worker_workspace)
+		return -(errno ? errno : ENOMEM);
+	atomic_store_explicit(&l->running, 1, memory_order_release);
+	int rc = pthread_create(&l->worker, NULL, logger_worker_main, l);
+	if (rc) {
+		atomic_store_explicit(&l->running, 0, memory_order_release);
+		return -rc;
+	}
+	state->worker_started = true;
+	return 0;
+}
+
 static logger_t *create_logger(const logger_config_t *input)
 {
 	logger_config_t cfg;
@@ -472,39 +540,7 @@ static logger_t *create_logger(const logger_config_t *input)
 		errno = primary;
 		return NULL;
 	}
-	l->file_backend = LOGGER_FILE_EMPTY;
-	l->syslog_backend.fd = logger_fd_own(-1);
-	logger_level_init(&l->level, cfg.level);
-	logger_state_init(&l->state, LOGGER_STATE_CREATED);
-	atomic_init(&l->default_borrowed, 0);
-	atomic_init(&l->running, 0);
-	atomic_init(&l->enqueued, 0);
-	atomic_init(&l->sync_fallbacks, 0);
-	atomic_init(&l->queue_high_watermark, 0);
-	atomic_init(&l->consumer_batches, 0);
-	atomic_init(&l->consumer_records, 0);
-	atomic_init(&l->async_completed, 0);
-	atomic_init(&l->sync_completed, 0);
-	atomic_init(&l->emitted_records, 0);
-	atomic_init(&l->failed_records, 0);
-	atomic_init(&l->first_error, 0);
-	atomic_init(&l->lifecycle_error, 0);
-	atomic_init(&l->synchronization_error, 0);
-	for (unsigned int i = 0; i < 6; ++i) {
-		atomic_init(&l->dropped_by_level[i], 0);
-		l->overflow[i] = cfg.overflow[i];
-	}
-	l->detail = cfg.detail;
-	l->outputs = cfg.outputs;
-	l->file_mode = (mode_t)(cfg.file_mode ? cfg.file_mode : 0640);
-	l->async_mode = !!cfg.async_mode;
-	l->flush_level = cfg.flush_level;
-	l->include_pid = cfg.include_pid;
-	l->include_tid = cfg.include_tid;
-	l->include_source = cfg.include_source;
-	l->capture_mask = capture_mask_from_config(&cfg);
-	l->pid = (l->capture_mask & LOGGER_CAPTURE_PID) ? getpid() : 0;
-	copy_ctx(l->ident, sizeof(l->ident), cfg.ident ? cfg.ident : "app");
+	logger_ctor_init_fields(l, &cfg);
 
 	rc = pthread_mutex_init(&l->emit_mu, NULL);
 	if (rc != 0)
@@ -539,35 +575,10 @@ static logger_t *create_logger(const logger_config_t *input)
 	if (l->outputs & LOGGER_OUT_SYSLOG)
 		logger_note_io_error(l, l->syslog_backend.metrics.last_error);
 
-	if (l->async_mode) {
-		if (logger_queue_init(&l->q, cfg.queue_capacity ?
-						     cfg.queue_capacity :
-						     8192) != 0) {
-			rc = errno ? errno : EIO;
-			/*
-			 * 队列的部分构造可能留下未经证明的互斥锁。
-			 * 保留其容器和存活对象计数，不替换主要 errno。
-			 */
-			int proof_error = logger_queue_wait_error(&l->q);
-			if (proof_error)
-				logger_note_synchronization_error(l,
-								  proof_error);
-			goto fail;
-		}
-		state.queue_ready = true;
-		l->worker_workspace = logger_worker_workspace_create(l->q.cap);
-		if (!l->worker_workspace) {
-			rc = errno ? errno : ENOMEM;
-			goto fail;
-		}
-		atomic_store_explicit(&l->running, 1, memory_order_release);
-		rc = pthread_create(&l->worker, NULL, logger_worker_main, l);
-		if (rc != 0) {
-			atomic_store_explicit(&l->running, 0,
-					      memory_order_release);
-			goto fail;
-		}
-		state.worker_started = true;
+	rc = logger_ctor_start_worker(l, &cfg, &state);
+	if (rc) {
+		rc = -rc;
+		goto fail;
 	}
 
 	/*

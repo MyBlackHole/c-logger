@@ -36,9 +36,11 @@ static void expect_clean(void)
 
 static _Atomic int running = 1;
 static _Atomic unsigned long calls;
-static pthread_barrier_t init_barrier, run_barrier;
+static pthread_barrier_t init_barrier;
+static pthread_barrier_t run_barrier;
 static _Atomic int ready[8];
-static _Atomic int succeeded, already;
+static _Atomic int succeeded;
+static _Atomic int already;
 static logger_config_t cfg;
 
 static void expect_concurrent_result(int rc)
