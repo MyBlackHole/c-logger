@@ -25,9 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: 准备工作区临时与缓存目录
-        run: |
-          install -d -m1777 "$TMPDIR"
-          mkdir -p "$PIP_CACHE_DIR"
+        run: mkdir -p "$TMPDIR" "$PIP_CACHE_DIR"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -35,12 +33,23 @@ jobs:
         run: python -m pip install 'clang-format==18.1.8'
       - name: 校验 gettext 翻译目录与语言回归
         run: |
-          namei -l "$TMPDIR"
-          sudo -u _apt test -r "$TMPDIR"
-          sudo -u _apt test -w "$TMPDIR"
-          sudo -u _apt test -x "$TMPDIR"
-          sudo env TMPDIR="$TMPDIR" TMP="$TMP" TEMP="$TEMP" apt-get update
-          sudo env TMPDIR="$TMPDIR" TMP="$TMP" TEMP="$TEMP" apt-get install -y gettext
+          set -euo pipefail
+          # runner 家目录不向 _apt 开放；以当前普通用户只读查询索引，
+          # 在工作区下载并解包 GNU gettext，不提权安装或修改宿主权限。
+          gettext_root="$GITHUB_WORKSPACE/build/source-format-gettext"
+          download_dir="$gettext_root/packages"
+          mkdir -p "$download_dir"
+          (cd "$download_dir" && apt-get download gettext)
+          packages=("$download_dir"/gettext_*.deb)
+          test "${#packages[@]}" -eq 1
+          dpkg-deb --field "${packages[0]}" Package Version Architecture
+          dpkg-deb -x "${packages[0]}" "$gettext_root/root"
+          multiarch="$(gcc -print-multiarch)"
+          test -n "$multiarch"
+          test -d "$gettext_root/root/usr/lib/$multiarch"
+          export MSGFMT="$gettext_root/root/usr/bin/msgfmt"
+          export LD_LIBRARY_PATH="$gettext_root/root/usr/lib/$multiarch${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          "$MSGFMT" --version
           python scripts/compile_tool_catalog.py --check
           python scripts/test_tool_i18n.py
           python scripts/test_checker_i18n.py
