@@ -115,10 +115,29 @@ class CasOrderTests(unittest.TestCase):
         self.run_gate(root, 1, "未获准的 C11 内存序组合 release/acquire")
 
     def test_legal_but_unreviewed_order_change(self):
-        root = self.fixture()
-        self.replace(root, "memory_order_release, memory_order_relaxed);",
-                     "memory_order_seq_cst, memory_order_relaxed);", "src/logger_worker.c")
-        self.run_gate(root, 1, "未经评审或已变更的 CAS")
+        call = ("atomic_compare_exchange_strong_explicit(&l->lifecycle_error, "
+                "&expected, wait_rc, memory_order_release, memory_order_relaxed)")
+        tokens = re.findall(r"\w+|[^\w\s]", call)
+        pattern = r"\s*".join(re.escape(token) for token in tokens)
+        for layout in ("原始", "单行", "逐词换行"):
+            with self.subTest(layout=layout):
+                root = self.fixture()
+                path = root / "src/logger_worker.c"
+                # 锚定真实错误发布调用，定位只允许 token 间空白变化。
+                matches = list(re.finditer(pattern, path.read_text()))
+                self.assertEqual(len(matches), 1, layout)
+                old = matches[0].group()
+                if layout != "原始":
+                    separator = " " if layout == "单行" else "\n\t"
+                    formatted = separator.join(tokens)
+                    self.replace(root, old, formatted, "src/logger_worker.c")
+                    old = formatted
+                self.run_gate(root, 0, "处已评审调用通过")
+                self.assertEqual(old.count("memory_order_release"), 1)
+                self.replace(root, old, old.replace("memory_order_release",
+                                                   "memory_order_seq_cst"),
+                             "src/logger_worker.c")
+                self.run_gate(root, 1, "未经评审或已变更的 CAS")
 
     def test_extra_and_duplicate_calls(self):
         for filename, call in (
