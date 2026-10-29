@@ -670,7 +670,8 @@ int main(int argc, char **argv)
 	/* 隔离 stdio 输出。保留 stderr，供测试后的 CHECK 诊断使用。 */
 	FILE *sink = fopen("console.out", "w+");
 	CHECK(sink);
-	FILE *saved_out = stdout, *saved_err = stderr;
+	FILE *saved_out = stdout;
+	FILE *saved_err = stderr;
 	stdout = sink;
 	stderr = sink;
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();

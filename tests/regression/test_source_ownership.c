@@ -35,12 +35,16 @@ int main(int argc, char **argv)
 					     .module = "module",
 					     .file = "dir/test.c",
 					     .func = "call" };
-		if (!strcmp(mode, "bounds"))
+		if (!strcmp(mode, "bounds")) {
 			in.func = big;
-		in.file = big;
-		in.module = big;
-		if (!strcmp(mode, "null-source"))
-			in.module = in.file = in.func = NULL;
+			in.file = big;
+			in.module = big;
+		}
+		if (!strcmp(mode, "null-source")) {
+			in.func = NULL;
+			in.file = NULL;
+			in.module = NULL;
+		}
 		CHECK(logger_queue_push(&q, &in) == 1);
 		struct logger_message out;
 		CHECK(logger_queue_try_pop(&q, &out) == 1);

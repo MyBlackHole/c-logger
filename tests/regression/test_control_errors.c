@@ -116,29 +116,38 @@ int main(int argc, char **argv)
 	int is_reopen = strstr(mode, "reopen") != NULL;
 	int expected = 0;
 	if (!strcmp(mode, "setup")) {
-		setup_error = expected = EAGAIN;
+		expected = EAGAIN;
+		setup_error = expected;
 	} else if (!strcmp(mode, "restore")) {
-		restore_error = expected = EIO;
+		expected = EIO;
+		restore_error = expected;
 	} else if (!strcmp(mode, "sync") || !strcmp(mode, "primary")) {
-		sync_error = expected = ENOSPC;
+		expected = ENOSPC;
+		sync_error = expected;
 		if (!strcmp(mode, "primary"))
 			restore_error = EIO;
 	} else if (!strcmp(mode, "reopen") || !strcmp(mode, "reopen-primary")) {
-		reopen_error = expected = EACCES;
+		expected = EACCES;
+		reopen_error = expected;
 		if (!strcmp(mode, "reopen-primary"))
 			restore_error = EIO;
 	} else if (!strcmp(mode, "reopen-restore")) {
-		restore_error = expected = EIO;
+		expected = EIO;
+		restore_error = expected;
 	} else if (!strcmp(mode, "lock")) {
-		emit_lock_error = expected = EAGAIN;
+		expected = EAGAIN;
+		emit_lock_error = expected;
 	} else if (!strcmp(mode, "unlock")) {
-		emit_unlock_error = expected = EIO;
+		expected = EIO;
+		emit_unlock_error = expected;
 	} else if (!strcmp(mode, "read-lock")) {
 		CHECK(use_default);
-		read_error = expected = EAGAIN;
+		expected = EAGAIN;
+		read_error = expected;
 	} else if (!strcmp(mode, "read-unlock")) {
 		CHECK(use_default);
-		read_unlock_error = expected = EPROTO;
+		expected = EPROTO;
+		read_unlock_error = expected;
 	} else {
 		CHECK(!strcmp(mode, "healthy"));
 	}

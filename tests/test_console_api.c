@@ -44,7 +44,8 @@ static void config_and_output(void)
 	CHECK(sink);
 	FILE *old_out = stdout;
 	FILE *old_err = stderr;
-	stdout = stderr = sink;
+	stderr = sink;
+	stdout = stderr;
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
 	cfg.verbosity = CONSOLE_QUIET;
 	cfg.color = CONSOLE_COLOR_NEVER;

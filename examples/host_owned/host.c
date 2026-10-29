@@ -21,7 +21,8 @@ int main(int argc, char **argv)
 	}
 	int result = 1;
 	logger_t *logger = NULL;
-	example_sdk_t *first = NULL, *second = NULL;
+	example_sdk_t *first = NULL;
+	example_sdk_t *second = NULL;
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = argv[2];

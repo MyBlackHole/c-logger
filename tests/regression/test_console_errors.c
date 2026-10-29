@@ -237,7 +237,8 @@ int main(int argc, char **argv)
 	CHECK(sink);
 	FILE *saved_out = stdout;
 	FILE *saved_err = stderr;
-	stdout = stderr = sink;
+	stderr = sink;
+	stdout = stderr;
 	armed = 1;
 	tty_answer = 0;
 	tty_error = ENOTTY;

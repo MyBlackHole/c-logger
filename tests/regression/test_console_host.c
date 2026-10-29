@@ -86,7 +86,8 @@ int main(int argc, char **argv)
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
 	CHECK(logger_create(&cfg, &log_instance) == 0);
 	CHECK(log_instance != NULL);
-	FILE *old_stdout = stdout, *old_stderr = stderr;
+	FILE *old_stdout = stdout;
+	FILE *old_stderr = stderr;
 	cookie_io_functions_t ops = { .write = host_write };
 	FILE *stream = fopencookie(NULL, "w", ops);
 	CHECK(stream);
