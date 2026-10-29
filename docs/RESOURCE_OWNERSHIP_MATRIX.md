@@ -74,8 +74,10 @@ AUTO/EXPLICIT 描述清理方式，SHARED/BORROWED/REFCOUNTED 描述访问或生
 
 文件关闭、fsync、目录同步以及事务式替换错误都属于行为契约的一部分，
 不能隐藏在“尽力清理”的析构器后面。
-长期 fd 使用 `struct logger_owned_fd`，借用整数不携带释放权。关闭先使拥有者失效，
-再经 fork 登记表单次消费；Linux close 即使报 EINTR 也不恢复源或重试。
+长期 fd 使用 `struct logger_owned_fd`，借用整数不携带释放权。关闭先使拥有者失效；
+只有资源门禁/锁获取成功且登记有效，才注销登记并执行单次 close。门禁或锁获取失败时，
+底层 fd 与登记仍可能保留在域内，字段已空不证明关闭完成，也不能凭旧整数重试。
+实际执行 Linux close 即使报 EINTR，也不恢复源或重试。
 重开/轮转在新 fd 已装入后仍可能因旧 fd 关闭失败返回错误，不能把负返回当成未发生切换。
 轮转中已归档的旧 fd 不再追加；新候选失败则保留 detached/切换错误，等待显式重开恢复。
 
@@ -88,6 +90,7 @@ AUTO/EXPLICIT 描述清理方式，SHARED/BORROWED/REFCOUNTED 描述访问或生
 
 候选套接字清理有意保持显式，因为关闭失败需要更新 Syslog 指标。
 若替换为通用 `__free(close_fd)`，会丢失可观察的记账信息。
+带类型拥有者的先失效及资源门禁失败时的保留规则与文件 fd 相同。
 
 ## Audit 子系统
 
