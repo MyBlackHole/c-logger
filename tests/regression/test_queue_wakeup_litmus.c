@@ -28,9 +28,8 @@ static void *worker_side(void *arg)
 	for (unsigned i = 0; i < ROUNDS; ++i) {
 		wait_barrier(&start_barrier);
 		logger_queue_wait_arm_recheck(&queue);
-		unsigned seen =
-			atomic_load_explicit(&queue.slots[0].seq,
-					     memory_order_acquire) == 1;
+		unsigned seen = atomic_load_explicit(&queue.slots[0].seq,
+						     memory_order_acquire) == 1;
 		atomic_store_explicit(&worker_saw_record, seen,
 				      memory_order_relaxed);
 		wait_barrier(&done_barrier);
@@ -110,12 +109,10 @@ int main(void)
 		wait_barrier(&start_barrier);
 		wait_barrier(&done_barrier);
 
-		unsigned saw_record =
-			atomic_load_explicit(&worker_saw_record,
-					     memory_order_relaxed);
-		unsigned saw_waiting =
-			atomic_load_explicit(&producer_saw_waiting,
-					     memory_order_relaxed);
+		unsigned saw_record = atomic_load_explicit(
+			&worker_saw_record, memory_order_relaxed);
+		unsigned saw_waiting = atomic_load_explicit(
+			&producer_saw_waiting, memory_order_relaxed);
 
 		/* 禁止结果：
 		 *   工作线程未观察到以 release 发布的记录

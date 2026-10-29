@@ -74,8 +74,8 @@ static int test_normal_lock_path(void)
 	logger_t *logger = NULL;
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
-	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-normal", NULL,
-					0, NULL, "normal-lock-path");
+	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-normal",
+					NULL, 0, NULL, "normal-lock-path");
 	logger_io_metrics_t metrics;
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	int bytes = (int)file_size("out.log");
@@ -101,8 +101,8 @@ static int test_emit_lock_failure(void)
 
 	fail_mutex = &logger->emit_mu;
 	errno = EDOM;
-	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-failure", NULL,
-					0, NULL, "must-not-be-written");
+	int rc = logger_log_sync_status(logger, LOGGER_INFO, "lock-failure",
+					NULL, 0, NULL, "must-not-be-written");
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
@@ -150,7 +150,8 @@ static int test_emit_unlock_failure(void)
 	fail_unlock_once = 1;
 	errno = EDOM;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "unlock-failure",
-					NULL, 0, NULL, "write-may-have-committed");
+					NULL, 0, NULL,
+					"write-may-have-committed");
 	int error = errno;
 	int bytes = (int)file_size("out.log");
 	logger_io_metrics_t metrics;
@@ -231,7 +232,8 @@ static int test_queue_notify_lock_failure(void)
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
 	int bytes = (int)file_size("out.log");
-	int content_ok = file_contains("out.log", "published-before-notify-error");
+	int content_ok =
+		file_contains("out.log", "published-before-notify-error");
 	leave_temp(dir);
 
 	CHECK(had_lock_failure && !had_invalid_unlock &&
@@ -271,7 +273,8 @@ static int test_queue_notify_signal_failure(void)
 	int destroy_rc = logger_destroy(&logger);
 	int destroy_error = -destroy_rc;
 	int bytes = (int)file_size("out.log");
-	int content_ok = file_contains("out.log", "published-before-signal-error");
+	int content_ok =
+		file_contains("out.log", "published-before-signal-error");
 	leave_temp(dir);
 
 	CHECK(signal_failed && force_wakes == 1 && metrics.first_error == EIO &&

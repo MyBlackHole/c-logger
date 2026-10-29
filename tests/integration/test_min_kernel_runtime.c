@@ -8,13 +8,13 @@
 #include <sys/random.h>
 #include <unistd.h>
 
-#define CHECK(expr)                                                        \
-	do {                                                               \
-		if (!(expr)) {                                             \
+#define CHECK(expr)                                                            \
+	do {                                                                   \
+		if (!(expr)) {                                                 \
 			fprintf(stderr, "CHECK failed: %s line=%d errno=%d\n", \
 				#expr, __LINE__, errno);                       \
-			return -1;                                         \
-		}                                                          \
+			return -1;                                             \
+		}                                                              \
 	} while (0)
 
 static int rotation_check(const char *path)
@@ -35,10 +35,10 @@ static int rotation_check(const char *path)
 	logger_t *log = NULL;
 	CHECK(logger_create(&c, &log) == 0);
 	CHECK(log != NULL);
-	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
-				     __FILE__, __LINE__, __func__, "first") == 0);
-	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel",
-				     __FILE__, __LINE__, __func__, "second") == 0);
+	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel", __FILE__,
+				     __LINE__, __func__, "first") == 0);
+	CHECK(logger_log_sync_status(log, LOGGER_INFO, "min-kernel", __FILE__,
+				     __LINE__, __func__, "second") == 0);
 	logger_file_metrics_t m;
 	CHECK(logger_get_file_metrics(log, &m) == 0);
 	CHECK(m.rotation_attempts >= 1 && m.rotation_successes >= 1);

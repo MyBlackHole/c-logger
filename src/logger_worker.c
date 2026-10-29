@@ -29,7 +29,8 @@ static char *workspace_line(logger_worker_workspace_t *workspace, size_t index)
 
 logger_worker_workspace_t *logger_worker_workspace_create(size_t queue_capacity)
 {
-	size_t capacity = queue_capacity < BATCH_MAX ? queue_capacity : BATCH_MAX;
+	size_t capacity = queue_capacity < BATCH_MAX ? queue_capacity :
+						       BATCH_MAX;
 	if (!capacity)
 		capacity = 1;
 
@@ -88,7 +89,6 @@ void logger_worker_workspace_destroy(logger_worker_workspace_t *workspace)
 	logger_runtime_free(workspace->batch);
 	logger_runtime_free(workspace);
 }
-
 
 int logger_stderr_writev_all(struct iovec *v, int count)
 {
@@ -149,7 +149,7 @@ int logger_emit_status(logger_t *l, const logger_message_t *m, int force_sync)
 		}
 	}
 	int sync_error = atomic_load_explicit(&l->synchronization_error,
-					     memory_order_acquire);
+					      memory_order_acquire);
 	if (sync_error) {
 		logger_note_io_error(l, sync_error);
 		atomic_fetch_add_explicit(&l->failed_records, 1,
@@ -210,9 +210,8 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 	int format_error = 0;
 	for (size_t i = 0; i < count; ++i) {
 		char *line = workspace_line(workspace, i);
-		workspace->lens[i] =
-			logger_format_line(l, &workspace->batch[i], line,
-					   LOGGER_LINE_MAX);
+		workspace->lens[i] = logger_format_line(l, &workspace->batch[i],
+							line, LOGGER_LINE_MAX);
 		if (!workspace->lens[i] && !format_error)
 			format_error = errno ? errno : EILSEQ;
 		workspace->vec[i].iov_base = line;
@@ -288,8 +287,7 @@ static void emit_batch(logger_t *l, logger_worker_workspace_t *workspace,
 		}
 	}
 
-account_batch:
-	;
+account_batch:;
 	uint64_t bad = 0;
 	for (size_t i = 0; i < count; ++i)
 		bad += workspace->failed[i];
@@ -323,24 +321,27 @@ void *logger_worker_main(void *p)
 				break;
 
 			{
-				ACQUIRE(pthread_mutex_progress_checked, progress_guard)(
-					&l->progress_mu);
+				ACQUIRE(pthread_mutex_progress_checked,
+					progress_guard)
+				(&l->progress_mu);
 				int lock_rc = ACQUIRE_ERR(
 					pthread_mutex_progress_checked,
 					&progress_guard);
 				if (lock_rc) {
-					logger_note_lifecycle_error(l, -lock_rc);
+					logger_note_lifecycle_error(l,
+								    -lock_rc);
 					continue;
 				}
 				l->completed_pos = atomic_load_explicit(
-					&l->q.dequeue_pos, memory_order_acquire);
+					&l->q.dequeue_pos,
+					memory_order_acquire);
 				pthread_cond_broadcast(&l->progress_cv);
-				int unlock_rc = RELEASE_ERR(
-					pthread_mutex_progress,
-					&progress_guard);
+				int unlock_rc =
+					RELEASE_ERR(pthread_mutex_progress,
+						    &progress_guard);
 				if (unlock_rc) {
-					logger_note_synchronization_error(l,
-								  unlock_rc);
+					logger_note_synchronization_error(
+						l, unlock_rc);
 					break;
 				}
 			}
@@ -348,8 +349,8 @@ void *logger_worker_main(void *p)
 		}
 		int stop;
 		{
-			ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(
-				&l->q.wait_mu);
+			ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)
+			(&l->q.wait_mu);
 			int lock_rc = ACQUIRE_ERR(
 				pthread_mutex_queue_wait_checked, &wait_guard);
 			if (lock_rc) {
@@ -371,22 +372,24 @@ void *logger_worker_main(void *p)
 				logger_queue_wait_arm_recheck(&l->q);
 				if (!logger_queue_empty(&l->q) ||
 				    !atomic_load_explicit(&l->running,
-							 memory_order_acquire))
+							  memory_order_acquire))
 					break;
 				atomic_fetch_add_explicit(&l->q.wait_count, 1,
 							  memory_order_relaxed);
-				int wait_rc =
-					pthread_cond_wait(&l->q.wait_cv, &l->q.wait_mu);
+				int wait_rc = pthread_cond_wait(&l->q.wait_cv,
+								&l->q.wait_mu);
 				if (wait_rc) {
 					int expected = 0;
 					(void)atomic_compare_exchange_strong_explicit(
-						&l->lifecycle_error, &expected, wait_rc,
-						memory_order_release, memory_order_relaxed);
+						&l->lifecycle_error, &expected,
+						wait_rc, memory_order_release,
+						memory_order_relaxed);
 					logger_state_store_release(
 						&l->state,
 						LOGGER_STATE_STOPPING);
-					atomic_store_explicit(&l->running, 0,
-							      memory_order_release);
+					atomic_store_explicit(
+						&l->running, 0,
+						memory_order_release);
 					break;
 				}
 			}
@@ -394,8 +397,8 @@ void *logger_worker_main(void *p)
 			stop = !atomic_load_explicit(&l->running,
 						     memory_order_acquire) &&
 			       logger_queue_empty(&l->q);
-			int unlock_rc = RELEASE_ERR(
-				pthread_mutex_queue_wait, &wait_guard);
+			int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait,
+						    &wait_guard);
 			if (unlock_rc) {
 				logger_note_synchronization_error(l, unlock_rc);
 				break;
@@ -409,14 +412,16 @@ void *logger_worker_main(void *p)
 	 * 此处不再持有 wait_mu，也不允许嵌套实例锁；销毁仍必须等待工作线程退出并回收。
 	 */
 	if (atomic_load_explicit(&l->lifecycle_error, memory_order_acquire)) {
-		ACQUIRE(pthread_mutex_progress_checked, progress_guard)(&l->progress_mu);
-		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked, &progress_guard);
+		ACQUIRE(pthread_mutex_progress_checked, progress_guard)
+		(&l->progress_mu);
+		int rc = ACQUIRE_ERR(pthread_mutex_progress_checked,
+				     &progress_guard);
 
 		/* 后续同步失败不能覆盖原错误；未取得锁时绝不广播。 */
 		if (!rc) {
 			(void)pthread_cond_broadcast(&l->progress_cv);
-			int unlock_rc = RELEASE_ERR(
-				pthread_mutex_progress, &progress_guard);
+			int unlock_rc = RELEASE_ERR(pthread_mutex_progress,
+						    &progress_guard);
 			if (unlock_rc)
 				logger_note_synchronization_error(l, unlock_rc);
 		} else {

@@ -5,6 +5,5 @@ int main()
 	auto l = LOGGER_DEFAULT_CONFIG();
 	auto c = CONSOLE_DEFAULT_CONFIG();
 	auto s = LOGGER_SOURCE();
-	return l.version != 1 || c.version != 1 ||
-	       s.line <= 0;
+	return l.version != 1 || c.version != 1 || s.line <= 0;
 }

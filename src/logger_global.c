@@ -89,9 +89,10 @@ static void global_lock_poison(int error)
 	if (!error)
 		return;
 	int expected = 0;
-	(void)atomic_compare_exchange_strong_explicit(
-		&g_lock_error, &expected, error,
-		memory_order_release, memory_order_relaxed);
+	(void)atomic_compare_exchange_strong_explicit(&g_lock_error, &expected,
+						      error,
+						      memory_order_release,
+						      memory_order_relaxed);
 	struct global_ticket ticket = { atomic_load_explicit(
 		&g_ticket, memory_order_acquire) };
 	while (phase_of(ticket) != G_BROKEN &&
@@ -187,8 +188,8 @@ static int begin(global_scope_t *scope)
 
 static int lock_control(global_scope_t *scope)
 {
-	int rc = __cleanup_lockdep_mutex_lock(
-		&g_control_mu, LOGGER_LOCK_GLOBAL_CONTROL);
+	int rc = __cleanup_lockdep_mutex_lock(&g_control_mu,
+					      LOGGER_LOCK_GLOBAL_CONTROL);
 	if (!rc) {
 		scope->control_locked = 1;
 		int poison = global_lock_error();

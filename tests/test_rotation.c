@@ -136,8 +136,7 @@ int main(void)
 		goto out;
 	}
 	if (verify_directory(directory)) {
-		fprintf(stderr,
-			"轮转测试：缺少归档或记录集合不符合要求\n");
+		fprintf(stderr, "轮转测试：缺少归档或记录集合不符合要求\n");
 		rc = 3;
 	}
 out:

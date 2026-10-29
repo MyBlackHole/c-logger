@@ -8,13 +8,14 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CHECK(test) do { \
-	if (!(test)) { \
-		fprintf(stderr, "%s:%d: %s (errno=%d)\n", \
-			__FILE__, __LINE__, #test, errno); \
-		exit(1); \
-	} \
-} while (0)
+#define CHECK(test)                                                         \
+	do {                                                                \
+		if (!(test)) {                                              \
+			fprintf(stderr, "%s:%d: %s (errno=%d)\n", __FILE__, \
+				__LINE__, #test, errno);                    \
+			exit(1);                                            \
+		}                                                           \
+	} while (0)
 
 enum fault_kind { NONE, LOCALTIME, DATE, ZONE, BAD_DATE, BAD_ZONE };
 static enum fault_kind fault;
@@ -53,7 +54,7 @@ struct tm *__wrap_localtime_r(const time_t *sec, struct tm *out)
 }
 
 size_t __wrap_strftime(char *out, size_t cap, const char *fmt,
-		      const struct tm *tm)
+		       const struct tm *tm)
 {
 	int date = !strcmp(fmt, "%Y-%m-%dT%H:%M:%S");
 	int zone = !strcmp(fmt, "%z");
@@ -112,12 +113,15 @@ static void check_record(const char *path, const struct snapshot *before,
 
 	if (!stamp) {
 		CHECK(__real_localtime_r(&now, &tm));
-		CHECK(__real_strftime(date, sizeof(date), "%Y-%m-%dT%H:%M:%S", &tm));
+		CHECK(__real_strftime(date, sizeof(date), "%Y-%m-%dT%H:%M:%S",
+				      &tm));
 		CHECK(__real_strftime(zone, sizeof(zone), "%z", &tm));
-		CHECK(snprintf(timestamp, sizeof(timestamp), "%s.123456%s", date, zone) > 0);
+		CHECK(snprintf(timestamp, sizeof(timestamp), "%s.123456%s",
+			       date, zone) > 0);
 		stamp = timestamp;
 	}
-	int n = snprintf(expected, sizeof(expected), "%s INFO  [formatter] %s\n", stamp, body);
+	int n = snprintf(expected, sizeof(expected),
+			 "%s INFO  [formatter] %s\n", stamp, body);
 	CHECK(n > 0 && (size_t)n < sizeof(expected));
 	snapshot(path, &after);
 	CHECK(after.size == before->size + (size_t)n);
@@ -174,10 +178,12 @@ static void check_truncated(const char *path, const struct snapshot *before)
 	snapshot(path, &after);
 	CHECK(after.size > before->size + sizeof(marker) - 1);
 	CHECK(!memcmp(after.bytes, before->bytes, before->size));
-	CHECK(!memcmp(after.bytes + after.size - (sizeof(marker) - 1),
-		      marker, sizeof(marker) - 1));
-	CHECK(!memchr(after.bytes + before->size, '\0', after.size - before->size));
-	CHECK(!memchr(after.bytes + before->size, '\n', after.size - before->size - 1));
+	CHECK(!memcmp(after.bytes + after.size - (sizeof(marker) - 1), marker,
+		      sizeof(marker) - 1));
+	CHECK(!memchr(after.bytes + before->size, '\0',
+		      after.size - before->size));
+	CHECK(!memchr(after.bytes + before->size, '\n',
+		      after.size - before->size - 1));
 }
 
 static void check_truncation(const char *path)
@@ -191,8 +197,8 @@ static void check_truncation(const char *path)
 	oversized[32767] = 0;
 	snapshot(path, &before);
 	CHECK(!before.size);
-	CHECK(logger_log_sync_status(l, LOGGER_INFO, oversized, NULL, 0,
-				     NULL, "body") == -EOVERFLOW);
+	CHECK(logger_log_sync_status(l, LOGGER_INFO, oversized, NULL, 0, NULL,
+				     "body") == -EOVERFLOW);
 	unchanged(path, &before);
 	logger_log(l, LOGGER_INFO, oversized, NULL, 0, NULL, "body");
 	check_truncated(path, &before);
@@ -267,11 +273,14 @@ int main(int argc, char **argv)
 		 * 即使没有新的转换，严格日志也必须验证这些字节。
 		 */
 		snapshot(log_path, &before);
-		logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "warm-bad-cache");
-		check_record(log_path, &before, "0000-01-01T00:00:00.123456+0000",
+		logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL,
+			   "warm-bad-cache");
+		check_record(log_path, &before,
+			     "0000-01-01T00:00:00.123456+0000",
 			     "warm-bad-cache");
 		CHECK(hits == 1);
-		CHECK(localtime_calls == 2 && date_calls == 2 && zone_calls == 2);
+		CHECK(localtime_calls == 2 && date_calls == 2 &&
+		      zone_calls == 2);
 		fault = NONE;
 	}
 
@@ -283,29 +292,38 @@ int main(int argc, char **argv)
 		check_record(log_path, &before, NULL, "strict-probe");
 		unsigned expected_calls = cache_hit ? 1 : 2;
 		CHECK(localtime_calls == expected_calls);
-		CHECK(date_calls == expected_calls && zone_calls == expected_calls);
+		CHECK(date_calls == expected_calls &&
+		      zone_calls == expected_calls);
 	} else {
 		CHECK(rc == -EOVERFLOW && observed_hits == 1);
 		unchanged(log_path, &before);
 		CHECK(localtime_calls == 2);
 		CHECK(date_calls == (!strcmp(scenario, "localtime") ? 1u : 2u));
 		CHECK(zone_calls == (!strcmp(scenario, "localtime") ||
-				     !strcmp(scenario, "date") ? 1u : 2u));
-		if (!strcmp(scenario, "bad-date") || !strcmp(scenario, "bad-zone") || cached_bad) {
+						     !strcmp(scenario, "date") ?
+					     1u :
+					     2u));
+		if (!strcmp(scenario, "bad-date") ||
+		    !strcmp(scenario, "bad-zone") || cached_bad) {
 			fault = NONE;
 			/* 移除“格式畸形但成功”的故障不会刷新有效的同秒缓存。
 			 * 它必须继续被拒绝且不输出。
 			 */
-			CHECK(strict_record(l, "cached-rejection") == -EOVERFLOW);
+			CHECK(strict_record(l, "cached-rejection") ==
+			      -EOVERFLOW);
 			unchanged(log_path, &before);
-			CHECK(localtime_calls == 2 && date_calls == 2 && zone_calls == 2);
+			CHECK(localtime_calls == 2 && date_calls == 2 &&
+			      zone_calls == 2);
 			CHECK(hits == observed_hits);
 		} else {
 			/* 也通过普通输出检查每种转换失败：
 			 * 即使 strftime 缓冲区被污染，也必须产生可见回退文本。
 			 */
-			logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "fault-fallback");
-			check_record(log_path, &before, "time-unavailable.123456", "fault-fallback");
+			logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL,
+				   "fault-fallback");
+			check_record(log_path, &before,
+				     "time-unavailable.123456",
+				     "fault-fallback");
 			CHECK(hits == observed_hits + 1);
 			fault = NONE;
 
@@ -316,13 +334,15 @@ int main(int argc, char **argv)
 			snapshot(log_path, &before);
 			unsigned old_localtime = localtime_calls;
 			CHECK(!strict_record(l, "old-second-recovery"));
-			check_record(log_path, &before, NULL, "old-second-recovery");
+			check_record(log_path, &before, NULL,
+				     "old-second-recovery");
 			CHECK(localtime_calls == old_localtime + 1);
 			++now;
 			snapshot(log_path, &before);
 			old_localtime = localtime_calls;
 			CHECK(!strict_record(l, "same-second-recovery"));
-			check_record(log_path, &before, NULL, "same-second-recovery");
+			check_record(log_path, &before, NULL,
+				     "same-second-recovery");
 			CHECK(localtime_calls == old_localtime + 1);
 		}
 	}
@@ -359,6 +379,7 @@ int main(int argc, char **argv)
 	CHECK(localtime_calls == old_localtime + 1);
 	CHECK(!logger_destroy(&l));
 	clean_dir(dir);
-	printf("logger format: %s PASS (fault_hits=%u)\n", scenario, observed_hits);
+	printf("logger format: %s PASS (fault_hits=%u)\n", scenario,
+	       observed_hits);
 	return 0;
 }

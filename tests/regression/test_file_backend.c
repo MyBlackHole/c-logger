@@ -442,7 +442,7 @@ static void reopen_case(const char *scenario)
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.reopen_attempts == 1);
 	CHECK(file_metrics.reopen_successes == (uint64_t)!expected);
-	CHECK(file_metrics.reopen_failures == (uint64_t)!!expected);
+	CHECK(file_metrics.reopen_failures == (uint64_t) !!expected);
 	CHECK(file_metrics.last_reopen_error == (expected ? expected : 0));
 	CHECK(file_metrics.last_error == (expected ? expected : 0));
 	CHECK(fds() == count);
@@ -544,7 +544,7 @@ static void collision(const char *scenario)
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.rotation_attempts == 1);
 	CHECK(file_metrics.rotation_successes == (uint64_t)!rename_error);
-	CHECK(file_metrics.rotation_failures == (uint64_t)!!rename_error);
+	CHECK(file_metrics.rotation_failures == (uint64_t) !!rename_error);
 	CHECK(file_metrics.last_rotation_error ==
 	      (rename_error ? rename_error : 0));
 	CHECK(file_metrics.last_write_error ==
@@ -596,7 +596,8 @@ static void rotation_failure(const char *scenario)
 	logger_file_metrics_t file_metrics;
 	CHECK(logger_get_file_metrics(l, &file_metrics) == 0);
 	CHECK(file_metrics.rotation_attempts == 1);
-	CHECK(!file_metrics.rotation_successes && file_metrics.rotation_failures == 1);
+	CHECK(!file_metrics.rotation_successes &&
+	      file_metrics.rotation_failures == 1);
 	CHECK(file_metrics.last_rotation_error == expected);
 	CHECK(file_metrics.last_write_error == expected);
 	CHECK(file_metrics.last_error == expected);

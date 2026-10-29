@@ -15,7 +15,8 @@ static inline void logger_text_mark_truncated(char *text, size_t capacity)
 {
 	static const char marker[] = " [truncated]";
 	if (capacity >= sizeof(marker))
-		memcpy(text + capacity - sizeof(marker), marker, sizeof(marker));
+		memcpy(text + capacity - sizeof(marker), marker,
+		       sizeof(marker));
 	else if (capacity >= 2) {
 		text[capacity - 2] = '~';
 		text[capacity - 1] = '\0';

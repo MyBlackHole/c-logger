@@ -15,9 +15,9 @@
  * 这是用户态库，不是内核 copy_from_user() 边界。
  */
 static inline int logger_uapi_copy_struct(void *dst, size_t known_size,
-					 const void *src, uint32_t struct_size,
-					 uint32_t version,
-					 uint32_t expected_version)
+					  const void *src, uint32_t struct_size,
+					  uint32_t version,
+					  uint32_t expected_version)
 {
 	if (!dst || !src)
 		return -EINVAL;

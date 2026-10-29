@@ -90,9 +90,8 @@ static int auto_file_scope(void)
 	return fd;
 }
 
-DEFINE_CLASS(test_resource, int,
-	     if (_T > 0) class_release_total += _T,
-	     value, int value)
+DEFINE_CLASS(test_resource, int, if (_T > 0) class_release_total += _T, value,
+	     int value)
 
 static void fake_lock(int *state)
 {
@@ -159,7 +158,8 @@ static void class_and_guard_scope(void)
 	}
 	CHECK(class_release_total == 3);
 
-	scoped_class(test_resource, resource, 4) {
+	scoped_class(test_resource, resource, 4)
+	{
 		CHECK(resource == 4);
 	}
 	CHECK(class_release_total == 7);
@@ -171,7 +171,8 @@ static void class_and_guard_scope(void)
 	}
 	CHECK(lock == 0);
 
-	scoped_guard(test_lock, &lock) {
+	scoped_guard(test_lock, &lock)
+	{
 		CHECK(lock == 1);
 	}
 	CHECK(lock == 0);
@@ -191,13 +192,15 @@ static void class_and_guard_scope(void)
 	CHECK(lock == 1);
 
 	int entered = 0;
-	scoped_guard(test_lock_try, &lock) {
+	scoped_guard(test_lock_try, &lock)
+	{
 		entered = 1;
 	}
 	CHECK(!entered && lock == 1);
 
 	int failed = 0;
-	scoped_cond_guard(test_lock_try, failed = 1, &lock) {
+	scoped_cond_guard(test_lock_try, failed = 1, &lock)
+	{
 		CHECK(!"busy conditional guard entered");
 	}
 	CHECK(failed == 1 && lock == 1);
@@ -207,28 +210,32 @@ static void class_and_guard_scope(void)
 int main(void)
 {
 	CHECK(logger_process_init() == 0);
-	unsigned before = atomic_load_explicit(&free_calls, memory_order_relaxed);
+	unsigned before =
+		atomic_load_explicit(&free_calls, memory_order_relaxed);
 	auto_free_scope();
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
 	      before + 1);
 
 	before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	char *owned = no_free_scope();
-	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) == before);
+	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
+	      before);
 	free(owned);
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
 	      before + 1);
 
 	before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	owned = return_ptr_scope();
-	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) == before);
+	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
+	      before);
 	free(owned);
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
 	      before + 1);
 
 	before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	retain_scope();
-	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) == before);
+	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
+	      before);
 	CHECK(consumed_ptr);
 	free(consumed_ptr);
 	consumed_ptr = NULL;

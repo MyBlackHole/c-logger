@@ -146,7 +146,8 @@ int main(int argc, char **argv)
 		close_probes[FILE_LOCK].error = EINTR;
 		close_probes[FILE_DIRECTORY].error = EBADF;
 	}
-	int lifecycle_error = fail_join || fail_cond_destroy || fail_mutex_destroy;
+	int lifecycle_error = fail_join || fail_cond_destroy ||
+			      fail_mutex_destroy;
 	int expected = 0;
 	if (io_error)
 		expected = ENOSPC;

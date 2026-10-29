@@ -66,8 +66,8 @@ static inline void logger_sigpipe_consume_new(int was_pending)
 /* saw_epipe 与首个错误分开记录：格式化因其他原因失败后，
  * 后续 fflush 仍可能因 EPIPE 失败。
  */
-static inline int logger_sigpipe_end(logger_sigpipe_guard_t *guard,
-				     int result, int saw_epipe)
+static inline int logger_sigpipe_end(logger_sigpipe_guard_t *guard, int result,
+				     int saw_epipe)
 {
 	int saved_errno = errno;
 	if (saw_epipe)

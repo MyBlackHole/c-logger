@@ -21,9 +21,10 @@ enum operation {
 	OP_FILE_METRICS,
 	OP_COUNT
 };
-static const char *const operation_names[] = { "write",	  "flush", "flush-void",
-					       "reopen",  "level", "dropped",
-					       "metrics", "io", "diagnostics", "file-metrics" };
+static const char *const operation_names[] = {
+	"write",   "flush",   "flush-void", "reopen",	   "level",
+	"dropped", "metrics", "io",	    "diagnostics", "file-metrics"
+};
 typedef struct {
 	enum operation op;
 	int rc, error;
