@@ -43,7 +43,8 @@ class VersionIdentityTests(unittest.TestCase):
         env.pop('XMAKE_PROJECT_DIR', None)
         if exported is not None:
             env['LOGGER_PROJECT_VERSION'] = exported
-        command = [XMAKE, 'f']
+        # 工作区内的副本必须显式指定项目，避免选择祖先项目或等待外层项目锁。
+        command = [XMAKE, 'f', '-P', str(self.source)]
         if ARGS.xmake_root:
             command.append('--root')
         return subprocess.run(command + ['-c', '-m', 'release', '-o', str(self.build),
