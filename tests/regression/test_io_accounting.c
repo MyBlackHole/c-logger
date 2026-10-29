@@ -15,11 +15,12 @@ enum injection {
 static _Atomic int fault, calls, block_first, format_entered, release_format;
 static int output_fd = -1;
 static logger_t *instance;
-ssize_t __real_write(int, const void *, size_t);
-ssize_t __real_writev(int, const struct iovec *, int);
-int __real_fsync(int);
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
+ssize_t __real_write(int fd, const void *p, size_t n);
+ssize_t __real_writev(int fd, const struct iovec *v, int count);
+int __real_fsync(int fd);
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
 
 ssize_t __wrap_write(int fd, const void *p, size_t n)
 {
@@ -71,8 +72,9 @@ int __wrap_fsync(int fd)
 	}
 	return __real_fsync(fd);
 }
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	if (atomic_exchange(&block_first, 0)) {
 		atomic_store(&format_entered, 1);
@@ -83,7 +85,7 @@ size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
 static uint64_t dropped(const logger_metrics_t *m)
 {
 	uint64_t n = 0;
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		n += m->dropped[i];
 	return n;
 }

@@ -20,8 +20,8 @@
 enum fault_kind { NONE, LOCALTIME, DATE, ZONE, BAD_DATE, BAD_ZONE };
 static enum fault_kind fault;
 static time_t now = 1700000000;
-static unsigned hits;
-static unsigned localtime_calls, date_calls, zone_calls;
+static unsigned int hits;
+static unsigned int localtime_calls, date_calls, zone_calls;
 
 int __real_clock_gettime(clockid_t id, struct timespec *ts);
 struct tm *__real_localtime_r(const time_t *sec, struct tm *out);
@@ -59,8 +59,8 @@ size_t __wrap_strftime(char *out, size_t cap, const char *fmt,
 	int date = !strcmp(fmt, "%Y-%m-%dT%H:%M:%S");
 	int zone = !strcmp(fmt, "%z");
 
-	date_calls += (unsigned)date;
-	zone_calls += (unsigned)zone;
+	date_calls += (unsigned int)date;
+	zone_calls += (unsigned int)zone;
 	if ((fault == DATE && date) || (fault == ZONE && zone)) {
 		++hits;
 		/* strftime 失败时输出未指定；有意污染它。 */
@@ -286,11 +286,11 @@ int main(int argc, char **argv)
 
 	snapshot(log_path, &before);
 	int rc = strict_record(l, "strict-probe");
-	unsigned observed_hits = hits;
+	unsigned int observed_hits = hits;
 	if (normal || cache_hit) {
 		CHECK(!rc && !observed_hits);
 		check_record(log_path, &before, NULL, "strict-probe");
-		unsigned expected_calls = cache_hit ? 1 : 2;
+		unsigned int expected_calls = cache_hit ? 1 : 2;
 		CHECK(localtime_calls == expected_calls);
 		CHECK(date_calls == expected_calls &&
 		      zone_calls == expected_calls);
@@ -332,7 +332,7 @@ int main(int argc, char **argv)
 			 */
 			--now;
 			snapshot(log_path, &before);
-			unsigned old_localtime = localtime_calls;
+			unsigned int old_localtime = localtime_calls;
 			CHECK(!strict_record(l, "old-second-recovery"));
 			check_record(log_path, &before, NULL,
 				     "old-second-recovery");
@@ -354,7 +354,7 @@ int main(int argc, char **argv)
 	fault = NONE;
 	++now;
 	snapshot(log_path, &before);
-	unsigned old_localtime = localtime_calls;
+	unsigned int old_localtime = localtime_calls;
 	CHECK(!strict_record(l, "next-second-recovery"));
 	check_record(log_path, &before, NULL, "next-second-recovery");
 	CHECK(localtime_calls == old_localtime + 1);
@@ -365,7 +365,7 @@ int main(int argc, char **argv)
 	++now;
 	fault = LOCALTIME;
 	snapshot(log_path, &before);
-	unsigned old_hits = hits;
+	unsigned int old_hits = hits;
 	CHECK(strict_record(l, "no-partial-fallback") == -EOVERFLOW);
 	unchanged(log_path, &before);
 	logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "fallback");

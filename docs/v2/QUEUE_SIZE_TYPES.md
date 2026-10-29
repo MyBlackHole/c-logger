@@ -21,7 +21,7 @@
 - `queue_storage_size` 接受两种存储的记录数，只向字节数槽写出合计。
 
 `logger_queue_init` 在进入计算链时显式构造请求记录数；局部结果保持类型，
-到现有 `logger_queue_t` 字段和 `logger_runtime_calloc` 接口时显式提取 `.value`。
+到现有 `struct logger_queue` 字段和 `logger_runtime_calloc` 接口时显式提取 `.value`。
 新头不安装，三个计算接口仍为文件私有，不新增公开符号。
 
 主槽位与溢出块在本层使用同一种计数类型，二者对调不由类型本身拒绝。
@@ -40,7 +40,7 @@
 字节结果。`queue_storage_size` 返回负错误码，私有构造接口继续返回
 `-1` 并设置 `errno`。这些是既有数值与错误语义。
 
-`logger_queue_t`、槽位和消息的布局不变。入队／出队位置、槽位序列、位图、
+`struct logger_queue`、槽位和消息的布局不变。入队／出队位置、槽位序列、位图、
 原子内存序、唤醒和完成水位协议均沿用既有实现。记录成功入队后的语义见
 [队列存储](../QUEUE_STORAGE.md)和[唤醒协议](QUEUE_WAKEUP_PROOF.md)。
 

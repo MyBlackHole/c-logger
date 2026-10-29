@@ -288,37 +288,43 @@ static int query_sentinel(const void *out, size_t size)
 /* C 与 C++11 都实际调用全部记录/查询类型，不以导出名称代替函数类型。 */
 static int record_query_contract(logger_t *owner, int cold)
 {
-	int (*record)(logger_t *, logger_level_t, const char *, const char *,
-		      int, const char *, const char *, ...) = logger_log;
-	int (*source_record)(logger_t *, logger_level_t, logger_source_t,
-			     const char *, ...) = logger_log_source;
-	int (*global_record)(logger_level_t, const char *, const char *, int,
-			     const char *, const char *,
-			     ...) = logger_global_write;
-	int (*strict_record)(logger_t *, logger_level_t, const char *,
-			     const char *, int, const char *, const char *,
+	int (*record)(logger_t *logger, logger_level_t level,
+		      const char *module, const char *file, int line,
+		      const char *function, const char *format,
+		      ...) = logger_log;
+	int (*source_record)(logger_t *logger, logger_level_t level,
+			     logger_source_t source, const char *format,
+			     ...) = logger_log_source;
+	int (*global_record)(logger_level_t level, const char *module,
+			     const char *file, int line, const char *function,
+			     const char *format, ...) = logger_global_write;
+	int (*strict_record)(logger_t *logger, logger_level_t level,
+			     const char *module, const char *file, int line,
+			     const char *function, const char *format,
 			     ...) = logger_log_sync_status;
-	int (*state_query)(const logger_t *, logger_state_t *) =
+	int (*state_query)(const logger_t *logger, logger_state_t *out) =
 		logger_get_state;
-	int (*dropped_query)(const logger_t *, uint64_t *) = logger_dropped;
-	int (*global_dropped_query)(uint64_t *) = logger_global_dropped;
-	int (*metrics_query)(const logger_t *, logger_metrics_t *) =
+	int (*dropped_query)(const logger_t *logger, uint64_t *out) =
+		logger_dropped;
+	int (*global_dropped_query)(uint64_t *out) = logger_global_dropped;
+	int (*metrics_query)(const logger_t *logger, logger_metrics_t *out) =
 		logger_get_metrics;
-	int (*io_query)(const logger_t *, logger_io_metrics_t *) =
+	int (*io_query)(const logger_t *logger, logger_io_metrics_t *out) =
 		logger_get_io_metrics;
-	int (*diagnostics_query)(const logger_t *, logger_diagnostics_t *) =
+	int (*diagnostics_query)(const logger_t *logger,
+				 logger_diagnostics_t *out) =
 		logger_get_diagnostics;
-	int (*global_metrics_query)(logger_metrics_t *) =
+	int (*global_metrics_query)(logger_metrics_t *out) =
 		logger_get_global_metrics;
-	int (*global_io_query)(logger_io_metrics_t *) =
+	int (*global_io_query)(logger_io_metrics_t *out) =
 		logger_get_global_io_metrics;
-	int (*global_diagnostics_query)(logger_diagnostics_t *) =
+	int (*global_diagnostics_query)(logger_diagnostics_t *out) =
 		logger_get_global_diagnostics;
-	int (*file_query)(logger_t *, logger_file_metrics_t *) =
+	int (*file_query)(logger_t *logger, logger_file_metrics_t *out) =
 		logger_get_file_metrics;
-	int (*global_file_query)(logger_file_metrics_t *) =
+	int (*global_file_query)(logger_file_metrics_t *out) =
 		logger_get_global_file_metrics;
-	int (*syslog_query)(logger_t *, logger_syslog_metrics_t *) =
+	int (*syslog_query)(logger_t *logger, logger_syslog_metrics_t *out) =
 		logger_get_syslog_metrics;
 	logger_source_t source = LOGGER_SOURCE();
 	int expected = cold ? -ENODEV : 0;
@@ -394,9 +400,9 @@ static int record_query_contract(logger_t *owner, int cold)
 /* 安装包 C/C++11 消费者不仅检查函数指针类型，还实际执行 TLS 合同。 */
 static int context_contract(int cold)
 {
-	int (*set)(const logger_context_t *) = logger_context_set;
+	int (*set)(const logger_context_t *context) = logger_context_set;
 	int (*clear)(void) = logger_context_clear;
-	int (*get)(logger_context_t *) = logger_context_get;
+	int (*get)(logger_context_t *out) = logger_context_get;
 	logger_context_t input = { "installed-context", "installed-session",
 				   NULL };
 	logger_context_t output = { "unchanged", "unchanged", "unchanged" };
@@ -430,9 +436,9 @@ static int context_contract(int cold)
 /* 安装消费同时执行类型及真实行为，不以旧 ABI 的导出名称替代签名。 */
 static int level_contract(logger_t *owner, int cold)
 {
-	int (*set_instance)(logger_t *, logger_level_t) =
+	int (*set_instance)(logger_t *logger, logger_level_t level) =
 		logger_set_instance_level;
-	int (*set_default)(logger_level_t) = logger_set_level;
+	int (*set_default)(logger_level_t level) = logger_set_level;
 	errno = EDOM;
 	if (cold) {
 		if (set_instance((logger_t *)(uintptr_t)1, LOGGER_INFO) !=
@@ -487,7 +493,7 @@ static int defaults_match(void)
 		LOGGER_OVERFLOW_DROP, LOGGER_OVERFLOW_DROP,
 		LOGGER_OVERFLOW_SYNC, LOGGER_OVERFLOW_SYNC
 	};
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		if (l.overflow[i] != overflow[i])
 			return 2;
 	if (l.syslog.path != NULL ||
@@ -530,11 +536,12 @@ int main(void)
 		return 32;
 	/* Console 配置返回状态，TTY 用独立输出槽，不再混淆错误与 false。 */
 	console_config_t console = CONSOLE_DEFAULT_CONFIG();
-	int (*configure_console)(const console_config_t *) = console_init;
-	int (*set_color)(console_color_mode_t) = console_set_color;
-	int (*set_verbosity)(console_verbosity_t) = console_set_verbosity;
-	int (*is_stdout_tty)(int *) = console_stdout_is_tty;
-	int (*is_stderr_tty)(int *) = console_stderr_is_tty;
+	int (*configure_console)(const console_config_t *config) = console_init;
+	int (*set_color)(console_color_mode_t mode) = console_set_color;
+	int (*set_verbosity)(console_verbosity_t verbosity) =
+		console_set_verbosity;
+	int (*is_stdout_tty)(int *out) = console_stdout_is_tty;
+	int (*is_stderr_tty)(int *out) = console_stderr_is_tty;
 	int tty = 7;
 	errno = EDOM;
 	if (configure_console(&console) != -ENODEV || errno != EDOM ||
@@ -560,12 +567,13 @@ int main(void)
 	if (is_stdout_tty(&tty) || (tty != 0 && tty != 1) || errno != EDOM ||
 	    is_stderr_tty(&tty) || (tty != 0 && tty != 1) || errno != EDOM)
 		return 26;
-	int (*print_console)(const char *, ...) = console_print;
+	int (*print_console)(const char *format, ...) = console_print;
 	if (print_console(NULL) != -EINVAL || errno != EDOM ||
 	    console_info("filtered-installed-console") || errno != EDOM)
 		return 27;
-	int (*create)(const logger_config_t *, logger_t **) = logger_create;
-	int (*destroy)(logger_t **) = logger_destroy;
+	int (*create)(const logger_config_t *config, logger_t **out) =
+		logger_create;
+	int (*destroy)(logger_t **owner) = logger_destroy;
 	logger_t *owner = NULL;
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.async_mode = 0;
@@ -573,7 +581,8 @@ int main(void)
 		return 12;
 	if (create(&cfg, &owner) != -EBUSY || !owner || errno != EDOM)
 		return 13;
-	int (*set_default)(logger_t *, logger_t *) = logger_default_set;
+	int (*set_default)(logger_t *expected, logger_t *replacement) =
+		logger_default_set;
 	if (set_default(NULL, owner) || errno != EDOM)
 		return 18;
 	if (record_query_contract(owner, 0))
@@ -581,8 +590,8 @@ int main(void)
 	if (level_contract(owner, 0))
 		return 33;
 	/* 安装后的 C/C++ 使用全部四个新控制签名；stderr 无文件可重开。 */
-	int (*flush)(logger_t *) = logger_flush;
-	int (*reopen)(logger_t *) = logger_reopen;
+	int (*flush)(logger_t *logger) = logger_flush;
+	int (*reopen)(logger_t *logger) = logger_reopen;
 	int (*default_flush)(void) = logger_default_flush;
 	int (*default_reopen)(void) = logger_default_reopen;
 	if (flush(owner) || errno != EDOM || default_flush() || errno != EDOM ||

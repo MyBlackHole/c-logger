@@ -14,7 +14,7 @@
  */
 #if LOGGER_TEST_HANDOFF_VARIANT != 0
 static int copy_active;
-static unsigned copy_calls;
+static unsigned int copy_calls;
 
 static struct logger_owned_fd copy_or_move(struct logger_owned_fd *owner)
 {
@@ -44,7 +44,7 @@ static int result(const char *stage, int code)
 
 int main(void)
 {
-	logger_file_t file = LOGGER_FILE_EMPTY;
+	struct logger_file file = LOGGER_FILE_EMPTY;
 	logger_rotation_config_t rotation = { .mode = LOGGER_ROTATE_NONE };
 	struct logger_owned_fd candidate = logger_fd_own(-1);
 	struct stat st;

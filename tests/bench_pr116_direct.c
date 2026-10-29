@@ -102,7 +102,7 @@ static uint64_t dropped_count(const logger_metrics_t *m)
 {
 	uint64_t count = 0;
 
-	for (unsigned i = 0; i < 6; ++i)
+	for (unsigned int i = 0; i < 6; ++i)
 		count += m->dropped[i];
 	return count;
 }

@@ -7,9 +7,10 @@
 #ifndef DROP_SANITIZER_ATFORK
 #define DROP_SANITIZER_ATFORK 0
 #endif
-unsigned sanitizer_atfork_registrations;
-unsigned sanitizer_atfork_dropped;
-int __real_pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
+unsigned int sanitizer_atfork_registrations;
+unsigned int sanitizer_atfork_dropped;
+int __real_pthread_atfork(void (*prepare)(void), void (*parent)(void),
+			  void (*child)(void));
 __attribute__((no_sanitize("address", "undefined"))) int
 __wrap_pthread_atfork(void (*prepare)(void), void (*parent)(void),
 		      void (*child)(void))

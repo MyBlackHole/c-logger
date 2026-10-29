@@ -18,6 +18,6 @@ void logger_process_invalidate_child(void);
  */
 int logger_process_object_acquire(void);
 int logger_process_object_release(void);
-unsigned logger_process_object_count(void);
+unsigned int logger_process_object_count(void);
 int logger_process_ready(void);
 #endif

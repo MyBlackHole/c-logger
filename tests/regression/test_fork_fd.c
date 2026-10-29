@@ -18,7 +18,7 @@
 static pid_t parent_pid;
 static int descriptors[128];
 static int closed_flags[128];
-static unsigned descriptor_count;
+static unsigned int descriptor_count;
 static int host_fd = -1;
 static int reused_fd = -1;
 static int watched_close = -1;
@@ -37,16 +37,16 @@ static logger_t *created;
 static int thread_result;
 static int handler_hits;
 
-int __real_open(const char *, int, ...);
-int __real_openat(int, const char *, int, ...);
-int __real_close(int);
-int __real_socket(int, int, int);
-int __real_closedir(DIR *);
-void *__real_mmap(void *, size_t, int, int, int, off_t);
-void *__real_mremap(void *, size_t, size_t, int, ...);
-int __real_munmap(void *, size_t);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
+int __real_open(const char *path, int flags, ...);
+int __real_openat(int dir, const char *name, int flags, ...);
+int __real_close(int fd);
+int __real_socket(int domain, int type, int protocol);
+int __real_closedir(DIR *dir);
+void *__real_mmap(void *p, size_t n, int prot, int flags, int fd, off_t off);
+void *__real_mremap(void *p, size_t old, size_t next, int flags, ...);
+int __real_munmap(void *p, size_t n);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
 
 static void acquired_fd(int fd)
 {
@@ -59,7 +59,7 @@ static void acquired_fd(int fd)
 
 static void consumed_fd(int fd)
 {
-	for (unsigned n = descriptor_count; n; --n) {
+	for (unsigned int n = descriptor_count; n; --n) {
 		if (descriptors[n - 1] == fd && !closed_flags[n - 1]) {
 			closed_flags[n - 1] = 1;
 			return;
@@ -208,12 +208,12 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 	return rc;
 }
 
-void *__real_malloc(size_t);
-void *__real_calloc(size_t, size_t);
-void __real_free(void *);
-int __real_vsnprintf(char *, size_t, const char *, va_list);
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
+void *__real_malloc(size_t n);
+void *__real_calloc(size_t n, size_t size);
+void __real_free(void *p);
+int __real_vsnprintf(char *p, size_t size, const char *fmt, va_list ap);
+int __real_pthread_create(pthread_t *t, const pthread_attr_t *a,
+			  void *(*start)(void *arg), void *arg);
 
 static void reject_child_unsafe(void)
 {
@@ -246,7 +246,7 @@ int __wrap_vsnprintf(char *p, size_t size, const char *fmt, va_list ap)
 }
 
 int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
-			  void *(*start)(void *), void *arg)
+			  void *(*start)(void *arg), void *arg)
 {
 	reject_child_unsafe();
 	return __real_pthread_create(t, a, start, arg);
@@ -277,7 +277,7 @@ static void wait_ok(pid_t pid)
 static void child_probe(void)
 {
 	/* fork 子方不调用 CHECK/stdio/分配器或旧实例 API。 */
-	for (unsigned i = 0; i < descriptor_count; ++i) {
+	for (unsigned int i = 0; i < descriptor_count; ++i) {
 		int fd = descriptors[i];
 		if (!closed_flags[i] && fd != reused_fd &&
 		    fcntl(fd, F_GETFD) >= 0)
@@ -450,7 +450,7 @@ static void file_lock_case(void)
 	CHECK(write(leave[1], &c, 1) == 1);
 	wait_ok(pid);
 	CHECK(!__real_close(check));
-	for (unsigned i = 0; i < 2; ++i) {
+	for (unsigned int i = 0; i < 2; ++i) {
 		CHECK(!__real_close(ready[i]));
 		CHECK(!__real_close(leave[i]));
 	}

@@ -22,8 +22,8 @@ enum failure {
 };
 static int fault;
 static int allocation_errno = ENOMEM;
-static _Atomic unsigned mapping_calls;
-static unsigned countdown;
+static _Atomic unsigned int mapping_calls;
+static unsigned int countdown;
 static _Atomic int entered;
 static _Atomic int release_holder;
 static _Atomic int fork_waiting;
@@ -39,15 +39,16 @@ static const char *hold_mode;
 static logger_t *parent_logger;
 static void *old_regions[5];
 
-void *__real_mmap(void *, size_t, int, int, int, off_t);
-int __real_madvise(void *, size_t, int);
-int __real_munmap(void *, size_t);
-int __real_pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *);
-int __real_pthread_rwlock_init(pthread_rwlock_t *,
-			       const pthread_rwlockattr_t *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-struct tm *__real_localtime_r(const time_t *, struct tm *);
+void *__real_mmap(void *p, size_t n, int prot, int flags, int fd, off_t off);
+int __real_madvise(void *p, size_t n, int advice);
+int __real_munmap(void *p, size_t n);
+int __real_pthread_mutex_init(pthread_mutex_t *p,
+			      const pthread_mutexattr_t *attr);
+int __real_pthread_rwlock_init(pthread_rwlock_t *p,
+			       const pthread_rwlockattr_t *attr);
+int __real_pthread_mutex_lock(pthread_mutex_t *p);
+int __real_pthread_mutex_unlock(pthread_mutex_t *p);
+struct tm *__real_localtime_r(const time_t *time, struct tm *out);
 
 static int failing(int which)
 {
@@ -185,8 +186,8 @@ static void check_unmapped(void)
 	/* 在创建任何新域前确认旧页不存在，避免地址复用造成伪阳性。 */
 	long page = sysconf(_SC_PAGESIZE);
 	child_check(page > 0, 45);
-	for (unsigned i = 0; i < sizeof(old_regions) / sizeof(old_regions[0]);
-	     ++i) {
+	for (unsigned int i = 0;
+	     i < sizeof(old_regions) / sizeof(old_regions[0]); ++i) {
 		unsigned char resident;
 		uintptr_t address = (uintptr_t)old_regions[i];
 		address -= address % (uintptr_t)page;
@@ -216,7 +217,7 @@ static void mapped_and_retry(const char *mode)
 			fault = FAIL_UNMAP;
 		if (fault) {
 			countdown = fault == FAIL_MUTEX ?
-					    (unsigned)(mode[6] - '0') :
+					    (unsigned int)(mode[6] - '0') :
 					    1;
 			errno = EDOM;
 			int rc = logger_process_init();
@@ -317,15 +318,16 @@ static void allocation_failures(void)
 	logger_config_t cfg = cfg_for("failed.log");
 	const int failures[] = { FAIL_MAP, FAIL_ADVICE };
 	const int errors[] = { ENOMEM, EIO };
-	unsigned cases = 0;
+	unsigned int cases = 0;
 
 	/* 一个实例、两个队列数组、七个工作区映射，逐点拒绝真实系统调用。
 	 * 非 ENOMEM 错误必须原样返回；首错后不再取得后续候选映射。
 	 */
-	for (unsigned f = 0; f < sizeof(failures) / sizeof(failures[0]); ++f) {
-		for (unsigned e = 0; e < sizeof(errors) / sizeof(errors[0]);
+	for (unsigned int f = 0; f < sizeof(failures) / sizeof(failures[0]);
+	     ++f) {
+		for (unsigned int e = 0; e < sizeof(errors) / sizeof(errors[0]);
 		     ++e) {
-			for (unsigned i = 1; i <= 10; ++i) {
+			for (unsigned int i = 1; i <= 10; ++i) {
 				allocation_errno = errors[e];
 				fault = failures[f];
 				countdown = i;
@@ -466,7 +468,7 @@ int main(int argc, char **argv)
 	const char *extra[] = { "child.log", "child.log.logger.lock",
 				"failed.log", "failed.log.logger.lock",
 				"never-created.log.logger.lock" };
-	for (unsigned i = 0; i < sizeof(extra) / sizeof(extra[0]); ++i)
+	for (unsigned int i = 0; i < sizeof(extra) / sizeof(extra[0]); ++i)
 		CHECK(unlink(extra[i]) == 0 || errno == ENOENT);
 	leave_temp(path);
 	printf("FORK_RUNTIME_PASS=%s child_async=%d\n", argv[1], child_async);

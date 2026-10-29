@@ -5,12 +5,14 @@
 static _Atomic int formatting, release_format, flush_waiting, premature_fsync;
 static _Thread_local int in_flush;
 static off_t size_after_flush;
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-int __real_fsync(int);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+int __real_fsync(int fd);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	atomic_store(&formatting, 1);
 	wait_flag(&release_format);

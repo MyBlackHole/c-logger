@@ -8,14 +8,14 @@
 
 #define PRODUCERS 8
 #define RECORDS 3000
-static logger_queue_t queue;
+static struct logger_queue queue;
 static _Atomic int running = 1, producers_done;
 static int last[PRODUCERS];
-static unsigned consumed;
+static unsigned int consumed;
 static void *produce(void *arg)
 {
 	int id = *(int *)arg;
-	logger_message_t m = { 0 };
+	struct logger_message m = { 0 };
 	m.pid = id;
 	/* 让并发 MPSC 回归真实覆盖长消息位图分配器。 */
 	memset(m.text, 'P', 700);
@@ -40,7 +40,7 @@ static void *observe(void *arg)
 static void *consume(void *arg)
 {
 	(void)arg;
-	logger_message_t m;
+	struct logger_message m;
 	for (;;) {
 		if (logger_queue_try_pop(&queue, &m)) {
 			CHECK(m.pid >= 0 && m.pid < PRODUCERS);
@@ -70,24 +70,25 @@ static void *consume(void *arg)
 }
 static void check_compact_storage(void)
 {
-	CHECK(sizeof(logger_queue_slot_t) < sizeof(logger_message_t));
+	CHECK(sizeof(struct logger_queue_slot) < sizeof(struct logger_message));
 
-	logger_queue_t q;
+	struct logger_queue q;
 	CHECK(logger_queue_init(&q, LOGGER_QUEUE_SPILL_LIMIT * 2u) == 0);
 	CHECK(q.spill_cap == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_storage_bytes(&q) ==
-	      q.cap * sizeof(logger_queue_slot_t) +
-		      q.spill_cap * sizeof(logger_queue_spill_t));
+	      q.cap * sizeof(struct logger_queue_slot) +
+		      q.spill_cap * sizeof(struct logger_queue_spill));
 	CHECK(logger_queue_storage_bytes(&q) <
-	      q.cap * sizeof(logger_message_t));
+	      q.cap * sizeof(struct logger_message));
 
-	logger_message_t in = { .level = LOGGER_INFO,
-				.metadata_mask = LOGGER_RECORD_META_MODULE |
-						 LOGGER_RECORD_META_SOURCE,
-				.module = "compact",
-				.file = "dir/compact.c",
-				.func = "push" },
-			 out;
+	struct logger_message in = { .level = LOGGER_INFO,
+				     .metadata_mask =
+					     LOGGER_RECORD_META_MODULE |
+					     LOGGER_RECORD_META_SOURCE,
+				     .module = "compact",
+				     .file = "dir/compact.c",
+				     .func = "push" },
+			      out;
 	memset(in.text, 'L', 700);
 	in.text[700] = '\0';
 
@@ -136,14 +137,14 @@ static void check_compact_storage(void)
 
 static void check_wrap(void)
 {
-	logger_queue_t q;
+	struct logger_queue q;
 	CHECK(logger_queue_init(&q, 8) == 0);
 	size_t start = SIZE_MAX - 3;
 	for (size_t i = 0; i < q.cap; ++i)
 		atomic_store(&q.slots[(start + i) & q.mask].seq, start + i);
 	atomic_store(&q.enqueue_pos, start);
 	atomic_store(&q.dequeue_pos, start);
-	logger_message_t in = { 0 }, out;
+	struct logger_message in = { 0 }, out;
 	for (int pass = 0; pass < 3; ++pass) {
 		for (int i = 0; i < 8; ++i) {
 			in.line = pass * 8 + i;

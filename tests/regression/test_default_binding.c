@@ -22,16 +22,16 @@ static int cancel_setter;
 static uintptr_t tracked;
 static _Atomic int frees;
 
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
-int __real_pthread_setcancelstate(int, int *);
-int __real_logger_runtime_free(void *);
-int __real_logger_vlog_internal(logger_t *, logger_level_t, const char *,
-				const char *, int, const char *, const char *,
-				va_list);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *rw);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_logger_runtime_free(void *p);
+int __real_logger_vlog_internal(logger_t *l, logger_level_t level,
+				const char *module, const char *file, int line,
+				const char *func, const char *fmt, va_list ap);
 
 static void pause_call(void)
 {
@@ -472,7 +472,7 @@ int main(int argc, char **argv)
 	CHECK(logger_runtime_current()->allocation_count == 0);
 	const char *files[] = { "a.log", "b.log", "a.log.logger.lock",
 				"b.log.logger.lock" };
-	for (unsigned i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
+	for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
 		CHECK(unlink(files[i]) == 0);
 	CHECK(chdir("/") == 0 && rmdir(path) == 0);
 	printf("DEFAULT_BORROW_PASS=%s\n", mode);

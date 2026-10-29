@@ -12,7 +12,7 @@ enum logger_fault_point {
  * 不存在可启用生产故障钩子的运行时环境开关。
  */
 #if defined(LOGGER_ENABLE_FAULT_INJECTION) && LOGGER_ENABLE_FAULT_INJECTION
-int logger_fault_should_fail(enum logger_fault_point);
+int logger_fault_should_fail(enum logger_fault_point p);
 ssize_t logger_fault_short_write(size_t requested);
 void logger_fault_crash_if_requested(const char *point);
 #else

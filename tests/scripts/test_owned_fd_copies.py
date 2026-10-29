@@ -22,12 +22,12 @@ typedef owner_alias owner_alias2;
 struct embedded { owner_alias2 slots[2]; };
 struct outer { struct embedded inner; };
 struct borrowed_wrapper { struct logger_owned_fd *pointer; };
-void sink(struct logger_owned_fd);
+void sink(struct logger_owned_fd owner);
 #define COPY(dst, src) ((dst) = (src))
 #define COPY_BYTES(dst, src) memcpy(((void *)(dst)), ((const void *)(src)), sizeof(*(src)))
 int probe(struct logger_owned_fd *dst, struct logger_owned_fd *src,
-          logger_file_t *file, logger_file_t *other,
-          logger_syslog_t *syslog, logger_syslog_t *other_syslog,
+          struct logger_file *file, struct logger_file *other,
+          struct logger_syslog *syslog, struct logger_syslog *other_syslog,
           struct outer *container, struct outer *other_container,
           int condition)
 {
@@ -49,19 +49,19 @@ CASES = {
     "if_assignment": ("if (condition) *dst = *src;", "if (condition) *dst = logger_fd_move(src);"),
     "macro": ("COPY(*dst, *src);", "COPY(*dst, logger_fd_move(src));"),
     "argument": ("sink(*src);", "sink(logger_fd_move(src));"),
-    "indirect_argument": ("void (*send_owner)(struct logger_owned_fd) = sink; send_owner(*src);",
-                          "void (*send_owner)(struct logger_owned_fd) = sink; send_owner(logger_fd_move(src));"),
+    "indirect_argument": ("void (*send_owner)(struct logger_owned_fd owner) = sink; send_owner(*src);",
+                          "void (*send_owner)(struct logger_owned_fd owner) = sink; send_owner(logger_fd_move(src));"),
     "file_container": ("*file = *other;", "*file = LOGGER_FILE_EMPTY;"),
     "syslog_container": ("*syslog = *other_syslog;",
-                         "*syslog = (logger_syslog_t){.fd = {-1}};"),
+                         "*syslog = (struct logger_syslog){.fd = {-1}};"),
     "nested_array": ("*container = *other_container;",
                      "*container = (struct outer){.inner = {.slots = {{-1}, {-1}}}};"),
     "const_source": ("const struct logger_owned_fd *view = src; *dst = *view;",
                      "const struct logger_owned_fd *view = src; (void)logger_fd_valid(view);"),
     "conditional": ("*dst = condition ? *src : logger_fd_own(-1);",
                     "*dst = condition ? logger_fd_move(src) : logger_fd_own(-1);"),
-    "compound_member": ("*syslog = (logger_syslog_t){.fd = *src};",
-                        "*syslog = (logger_syslog_t){.fd = logger_fd_move(src)};"),
+    "compound_member": ("*syslog = (struct logger_syslog){.fd = *src};",
+                        "*syslog = (struct logger_syslog){.fd = logger_fd_move(src)};"),
     "statement_expression": ("*dst = ({ *src; });",
                              "*dst = ({ logger_fd_move(src); });"),
     "generic_selected": ("*dst = _Generic(condition, int: *src);",

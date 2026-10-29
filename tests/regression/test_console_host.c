@@ -7,7 +7,7 @@
  * 共享构建链接并执行生产 DSO。
  */
 static _Atomic int entered, release_io, cleanup_seen, arm, config_run;
-static _Atomic unsigned writes, escapes;
+static _Atomic unsigned int writes, escapes;
 static int reentry;
 static logger_t *log_instance;
 static ssize_t host_write(void *user, const char *text, size_t size)

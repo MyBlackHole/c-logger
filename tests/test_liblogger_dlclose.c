@@ -23,11 +23,11 @@ int main(int argc, char **argv)
 		void *handle = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
 		CHECK(handle != NULL);
 		int (*initialize_fn)(void);
-		int (*create_fn)(const logger_config_t *, logger_t **);
-		int (*log_fn)(logger_t *, logger_level_t, const char *,
-			      const char *, int, const char *, const char *,
-			      ...);
-		int (*destroy_fn)(logger_t **);
+		int (*create_fn)(const logger_config_t *config, logger_t **out);
+		int (*log_fn)(logger_t *logger, logger_level_t level,
+			      const char *module, const char *file, int line,
+			      const char *function, const char *format, ...);
+		int (*destroy_fn)(logger_t **owner);
 #define GET(function, symbol)                                   \
 	do {                                                    \
 		void *p = dlsym(handle, symbol);                \
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 	FILE *f = fopen("dlclose.log", "rb");
 	CHECK(f != NULL);
 	int c;
-	unsigned records = 0;
+	unsigned int records = 0;
 	while ((c = fgetc(f)) != EOF)
 		records += c == '\n';
 	CHECK(!ferror(f));

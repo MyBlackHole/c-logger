@@ -22,7 +22,7 @@ static void *boundary(const void *data, size_t n, size_t *allocated)
 	return p;
 }
 static int connects;
-int __real_connect(int, const struct sockaddr *, socklen_t);
+int __real_connect(int fd, const struct sockaddr *addr, socklen_t size);
 int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t size)
 {
 	(void)fd;

@@ -13,7 +13,6 @@ static logger_t *default_owner;
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern char **environ;
 #define CHECK(x)                    \
 	do {                        \
 		if (!(x)) {         \

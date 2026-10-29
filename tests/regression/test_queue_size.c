@@ -12,21 +12,21 @@ struct allocation_attempt {
 	size_t count;
 	size_t size;
 	void *pointer;
-	unsigned allocated;
-	unsigned released;
+	unsigned int allocated;
+	unsigned int released;
 };
 
 static struct allocation_attempt attempts[2];
 static struct logger_runtime *runtime;
 static size_t baseline_allocations;
-static unsigned allocation_calls;
-static unsigned successful_allocations;
-static unsigned actual_frees;
-static unsigned fail_at;
-static unsigned refused;
+static unsigned int allocation_calls;
+static unsigned int successful_allocations;
+static unsigned int actual_frees;
+static unsigned int fail_at;
+static unsigned int refused;
 static int watch;
 
-void *__real_logger_runtime_calloc(size_t, size_t);
+void *__real_logger_runtime_calloc(size_t count, size_t size);
 void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
 	if (!watch)
@@ -55,13 +55,13 @@ void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 	return pointer;
 }
 
-int __real_logger_runtime_free(void *);
+int __real_logger_runtime_free(void *pointer);
 int __wrap_logger_runtime_free(void *pointer)
 {
 	if (!watch || !pointer)
 		return __real_logger_runtime_free(pointer);
 	struct allocation_attempt *attempt = NULL;
-	for (unsigned i = 0; i < allocation_calls; ++i) {
+	for (unsigned int i = 0; i < allocation_calls; ++i) {
 		if (attempts[i].pointer == pointer) {
 			attempt = &attempts[i];
 			break;
@@ -86,13 +86,13 @@ static void no_allocations_left(void)
 {
 	CHECK(runtime->allocation_count == baseline_allocations);
 	CHECK(successful_allocations == actual_frees);
-	for (unsigned i = 0; i < allocation_calls; ++i) {
+	for (unsigned int i = 0; i < allocation_calls; ++i) {
 		CHECK(!attempts[i].pointer);
 		CHECK(attempts[i].allocated == attempts[i].released);
 	}
 }
 
-static void begin_tracking(unsigned failure)
+static void begin_tracking(unsigned int failure)
 {
 	no_allocations_left();
 	memset(attempts, 0, sizeof(attempts));
@@ -104,14 +104,15 @@ static void begin_tracking(unsigned failure)
 	watch = 1;
 }
 
-static void check_geometry(const logger_queue_t *q, size_t capacity,
+static void check_geometry(const struct logger_queue *q, size_t capacity,
 			   size_t spill_capacity)
 {
-	CHECK(spill_capacity <= SIZE_MAX / sizeof(logger_queue_spill_t));
-	size_t spill_bytes = spill_capacity * sizeof(logger_queue_spill_t);
+	CHECK(spill_capacity <= SIZE_MAX / sizeof(struct logger_queue_spill));
+	size_t spill_bytes = spill_capacity * sizeof(struct logger_queue_spill);
 	CHECK(capacity <=
-	      (SIZE_MAX - spill_bytes) / sizeof(logger_queue_slot_t));
-	size_t total = capacity * sizeof(logger_queue_slot_t) + spill_bytes;
+	      (SIZE_MAX - spill_bytes) / sizeof(struct logger_queue_slot));
+	size_t total =
+		capacity * sizeof(struct logger_queue_slot) + spill_bytes;
 	CHECK(q->cap == capacity && q->mask == capacity - 1);
 	CHECK(q->spill_cap == spill_capacity && q->storage_bytes == total);
 	CHECK(logger_queue_storage_bytes(q) == total);
@@ -120,17 +121,17 @@ static void check_geometry(const logger_queue_t *q, size_t capacity,
 	CHECK(!logger_queue_wait_error(q));
 }
 
-static void check_attempt(unsigned index, size_t count, size_t size)
+static void check_attempt(unsigned int index, size_t count, size_t size)
 {
 	CHECK(index < allocation_calls);
 	CHECK(attempts[index].count == count && attempts[index].size == size);
 }
 
-static void check_records(logger_queue_t *q)
+static void check_records(struct logger_queue *q)
 {
 	static const char short_text[] = "queue-size-inline";
-	logger_message_t input = { 0 };
-	logger_message_t output = { 0 };
+	struct logger_message input = { 0 };
+	struct logger_message output = { 0 };
 	input.level = LOGGER_INFO;
 	input.line = 1;
 	input.text_len = (uint16_t)(sizeof(short_text) - 1u);
@@ -168,12 +169,12 @@ static void check_records(logger_queue_t *q)
 static void healthy(size_t requested, size_t capacity, size_t spill_capacity)
 {
 	begin_tracking(0);
-	logger_queue_t q;
+	struct logger_queue q;
 	CHECK(logger_queue_init(&q, requested) == 0);
 	check_geometry(&q, capacity, spill_capacity);
 	CHECK(allocation_calls == 2 && successful_allocations == 2 && !refused);
-	check_attempt(0, capacity, sizeof(logger_queue_slot_t));
-	check_attempt(1, spill_capacity, sizeof(logger_queue_spill_t));
+	check_attempt(0, capacity, sizeof(struct logger_queue_slot));
+	check_attempt(1, spill_capacity, sizeof(struct logger_queue_spill));
 	CHECK(q.slots == attempts[0].pointer &&
 	      q.spills == attempts[1].pointer);
 	CHECK(runtime->allocation_count == baseline_allocations + 2);
@@ -189,8 +190,9 @@ static size_t largest_capacity(void)
 	 * 不包含运行域的私有分配头，更不代表宿主能映射如此大的对象。
 	 */
 	size_t spill_bytes =
-		LOGGER_QUEUE_SPILL_LIMIT * sizeof(logger_queue_spill_t);
-	size_t limit = (SIZE_MAX - spill_bytes) / sizeof(logger_queue_slot_t);
+		LOGGER_QUEUE_SPILL_LIMIT * sizeof(struct logger_queue_spill);
+	size_t limit =
+		(SIZE_MAX - spill_bytes) / sizeof(struct logger_queue_slot);
 	size_t capacity = (SIZE_MAX / 2u + 1u) / 2u;
 	while (capacity > limit)
 		capacity /= 2u;
@@ -199,10 +201,10 @@ static size_t largest_capacity(void)
 }
 
 static void allocation_failure(size_t requested, size_t capacity,
-			       size_t spill_capacity, unsigned failure)
+			       size_t spill_capacity, unsigned int failure)
 {
 	begin_tracking(failure);
-	logger_queue_t q;
+	struct logger_queue q;
 	errno = EDOM;
 	CHECK(logger_queue_init(&q, requested) == -1 && errno == ENOMEM);
 	check_geometry(&q, capacity, spill_capacity);
@@ -210,9 +212,10 @@ static void allocation_failure(size_t requested, size_t capacity,
 	CHECK(allocation_calls == failure && refused == 1);
 	CHECK(successful_allocations == failure - 1u);
 	CHECK(actual_frees == failure - 1u);
-	check_attempt(0, capacity, sizeof(logger_queue_slot_t));
+	check_attempt(0, capacity, sizeof(struct logger_queue_slot));
 	if (failure == 2)
-		check_attempt(1, spill_capacity, sizeof(logger_queue_spill_t));
+		check_attempt(1, spill_capacity,
+			      sizeof(struct logger_queue_spill));
 	no_allocations_left();
 	/* 同进程恢复必须重新获得真实存储并完成短／长记录及真实释放。 */
 	healthy(3, 4, 4);
@@ -227,7 +230,7 @@ static void capacity_overflow(void)
 	};
 	for (size_t i = 0; i < sizeof(requests) / sizeof(requests[0]); ++i) {
 		begin_tracking(0);
-		logger_queue_t q;
+		struct logger_queue q;
 		errno = EDOM;
 		CHECK(logger_queue_init(&q, requests[i]) == -1 &&
 		      errno == EOVERFLOW);

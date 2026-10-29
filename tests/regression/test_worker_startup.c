@@ -23,20 +23,20 @@ enum scenario {
 static enum scenario selected;
 static logger_t *candidate;
 static pthread_t worker;
-static void *(*start_worker)(void *);
+static void *(*start_worker)(void *arg);
 static void *worker_arg;
 static _Thread_local int is_worker;
 static _Atomic int worker_returned;
 static _Atomic int allow_start;
 static _Atomic int allow_exit;
-static unsigned create_calls;
-static unsigned join_calls;
-static unsigned joined;
-static unsigned freed;
-static unsigned destroy_errors;
+static unsigned int create_calls;
+static unsigned int join_calls;
+static unsigned int joined;
+static unsigned int freed;
+static unsigned int destroy_errors;
 
 int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			  void *(*start)(void *), void *arg);
+			  void *(*start)(void *arg), void *arg);
 int __real_pthread_join(pthread_t thread, void **result);
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
 int __real_pthread_cond_destroy(pthread_cond_t *cv);
@@ -63,7 +63,7 @@ static void *worker_entry(void *unused)
 }
 
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			  void *(*start)(void *), void *arg)
+			  void *(*start)(void *arg), void *arg)
 {
 	++create_calls;
 	candidate = arg;
@@ -138,7 +138,7 @@ static enum scenario scenario_from_name(const char *name)
 		"destroy-error", "creator-first", "global-worker-first"
 	};
 
-	for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+	for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
 		if (!strcmp(name, names[i]))
 			return (enum scenario)i;
 	CHECK(!"unknown scenario");

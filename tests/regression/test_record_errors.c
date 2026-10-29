@@ -21,14 +21,14 @@ static int read_lock_error;
 static int read_unlock_error;
 static int notify_lock_error;
 static int notify_signal_error;
-static unsigned fail_setup_number;
-static unsigned fail_restore_number;
-static unsigned setup_calls;
-static unsigned restore_calls;
-static unsigned clock_calls;
-static unsigned format_calls;
-static unsigned read_calls;
-static unsigned injected;
+static unsigned int fail_setup_number;
+static unsigned int fail_restore_number;
+static unsigned int setup_calls;
+static unsigned int restore_calls;
+static unsigned int clock_calls;
+static unsigned int format_calls;
+static unsigned int read_calls;
+static unsigned int injected;
 static int contaminate_errno;
 static pthread_mutex_t *unowned_mutex;
 static int defer_worker;
@@ -38,23 +38,24 @@ static _Atomic int worker_entered;
 static _Atomic int release_worker;
 static _Atomic int wait_entered;
 static _Atomic int release_wait_return;
-static _Atomic unsigned wait_returns;
-static void *(*worker_function)(void *);
+static _Atomic unsigned int wait_returns;
+static void *(*worker_function)(void *arg);
 static void *worker_argument;
 
-int __real_clock_gettime(clockid_t, struct timespec *);
-int __real_vsnprintf(char *, size_t, const char *, va_list);
-int __real___vsnprintf_chk(char *, size_t, int, size_t, const char *, va_list);
-ssize_t __real_write(int, const void *, size_t);
-int __real_pthread_setcancelstate(int, int *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_rwlock_rdlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
-int __real_pthread_cond_signal(pthread_cond_t *);
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
+int __real_clock_gettime(clockid_t clock, struct timespec *time);
+int __real_vsnprintf(char *out, size_t cap, const char *fmt, va_list args);
+int __real___vsnprintf_chk(char *out, size_t cap, int flag, size_t size,
+			   const char *fmt, va_list args);
+ssize_t __real_write(int fd, const void *data, size_t length);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
+int __real_pthread_rwlock_rdlock(pthread_rwlock_t *lock);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *lock);
+int __real_pthread_cond_signal(pthread_cond_t *cond);
+int __real_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+			  void *(*function)(void *arg), void *argument);
 
 static int take_error(int *error)
 {
@@ -246,7 +247,7 @@ static void *controlled_worker(void *unused)
 }
 
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-			  void *(*function)(void *), void *argument)
+			  void *(*function)(void *arg), void *argument)
 {
 	if (defer_worker || gate_wait_return) {
 		worker_function = function;
@@ -336,7 +337,7 @@ static void cleanup(int error)
 
 static void wait_completed(void)
 {
-	for (unsigned i = 0; i < 5000; ++i) {
+	for (unsigned int i = 0; i < 5000; ++i) {
 		if (atomic_load_explicit(&owner->async_completed,
 					 memory_order_acquire) == 1)
 			return;
@@ -365,11 +366,11 @@ static void queue_case(const char *mode)
 	if (fallback)
 		write_error = ENOSPC;
 	CHECK(call("%s", body) == (fallback ? -ENOSPC : -EAGAIN));
-	CHECK(!write_error && injected == (unsigned)fallback);
+	CHECK(!write_error && injected == (unsigned int)fallback);
 	CHECK(atomic_load(&owner->enqueued) == accepted);
 	CHECK(atomic_load(&owner->dropped_by_level[LOGGER_INFO]) ==
-	      (unsigned)!fallback);
-	CHECK(atomic_load(&owner->sync_fallbacks) == (unsigned)fallback);
+	      (unsigned int)!fallback);
+	CHECK(atomic_load(&owner->sync_fallbacks) == (unsigned int)fallback);
 	if (spill) {
 		CHECK(atomic_load(&owner->q.spill_exhaustions) == 1);
 		/* 溢出池拒绝后短记录仍能入队，证明拒绝来自池容量而非队列满。 */
@@ -381,8 +382,8 @@ static void queue_case(const char *mode)
 	CHECK(logger_flush(owner) == (fallback ? -ENOSPC : 0));
 	expect_records(body, accepted, spill ? "short-after-spill" : NULL);
 	CHECK(atomic_load(&owner->emitted_records) ==
-	      accepted + (unsigned)spill);
-	CHECK(atomic_load(&owner->failed_records) == (unsigned)fallback);
+	      accepted + (unsigned int)spill);
+	CHECK(atomic_load(&owner->failed_records) == (unsigned int)fallback);
 	cleanup(fallback ? ENOSPC : 0);
 }
 
@@ -423,11 +424,11 @@ static void notify_case(const char *mode)
 static int simple_case(const char *mode)
 {
 	int expected = 0;
-	unsigned expected_injections = 1;
+	unsigned int expected_injections = 1;
 	size_t records = 0;
 	int retain = 0;
 	int sticky = 0;
-	unsigned outer_restore = api == RECORD_DEFAULT ? 2 : 1;
+	unsigned int outer_restore = api == RECORD_DEFAULT ? 2 : 1;
 
 	if (!strcmp(mode, "clock")) {
 		clock_error = expected = EFAULT;
@@ -507,7 +508,7 @@ static int simple_case(const char *mode)
 		CHECK(format_calls == 0);
 	if (contaminate_errno) {
 		CHECK(clock_calls == 1 && format_calls > 0 && setup_calls > 0);
-		CHECK(read_calls == (unsigned)(api == RECORD_DEFAULT));
+		CHECK(read_calls == (unsigned int)(api == RECORD_DEFAULT));
 	}
 	expect_records(body, records, NULL);
 	if (retain) {
@@ -534,7 +535,7 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 3);
 	const char *names[] = { "log", "source", "default", "sync" };
-	unsigned index;
+	unsigned int index;
 	for (index = 0; index < 4 && strcmp(argv[1], names[index]); ++index) {
 	}
 	CHECK(index < 4);

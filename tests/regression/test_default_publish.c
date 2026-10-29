@@ -13,8 +13,8 @@ static int fail_writer;
 static int setter_result;
 static logger_t *a, *b;
 
-int __real_pthread_rwlock_unlock(pthread_rwlock_t *);
-int __real_pthread_rwlock_wrlock(pthread_rwlock_t *);
+int __real_pthread_rwlock_unlock(pthread_rwlock_t *rw);
+int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
 
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
@@ -39,8 +39,9 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 }
 
 #if LOGGER_ENABLE_LOCKDEP
-void __real_logger_lockdep_assert_held(logger_lock_class_t, const void *);
-void __wrap_logger_lockdep_assert_held(logger_lock_class_t class_id,
+void __real_logger_lockdep_assert_held(enum logger_lock_class class_id,
+				       const void *lock);
+void __wrap_logger_lockdep_assert_held(enum logger_lock_class class_id,
 				       const void *lock)
 {
 	__real_logger_lockdep_assert_held(class_id, lock);

@@ -61,6 +61,11 @@ jobs:
   toolchain:
     name: ubuntu-20.04 / ${{ matrix.toolchain }}
     runs-on: ubuntu-24.04
+    env:
+      TMPDIR: ${{ github.workspace }}/build/ci-tmp
+      TMP: ${{ github.workspace }}/build/ci-tmp
+      TEMP: ${{ github.workspace }}/build/ci-tmp
+      XMAKE_TMPDIR: ${{ github.workspace }}/build/ci-tmp
     container:
       image: ubuntu:20.04
     strategy:
@@ -70,6 +75,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: 准备工作区临时目录
+        run: |
+          install -d -m1777 "$TMPDIR"
+          su -s /bin/sh -c 'test -r "$TMPDIR" && test -w "$TMPDIR" && test -x "$TMPDIR"' _apt
 
       - name: 安装构建工具
         shell: bash
@@ -91,7 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           real_xmake="$(command -v xmake)"
-          wrapper="$RUNNER_TEMP/xmake-root-bin"
+          wrapper="$TMPDIR/xmake-root-bin"
           mkdir -p "$wrapper"
           cat > "$wrapper/xmake" <<EOF
           #!/bin/sh

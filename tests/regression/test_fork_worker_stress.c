@@ -17,8 +17,8 @@ enum {
 	PARENT_LIMIT = 10000
 };
 struct parent_writer {
-	unsigned number;
-	_Atomic unsigned written;
+	unsigned int number;
+	_Atomic unsigned int written;
 };
 struct child_writer {
 	logger_t *logger;
@@ -43,7 +43,7 @@ static void *parent_write(void *arg)
 {
 	struct parent_writer *writer = arg;
 	atomic_fetch_add_explicit(&ready, 1, memory_order_release);
-	for (unsigned i = 0; i < PARENT_LIMIT; ++i) {
+	for (unsigned int i = 0; i < PARENT_LIMIT; ++i) {
 		if (atomic_load(&stop_writers))
 			break;
 		CHECK(LOGGER_INFO(parent_owner, "fork-stress",
@@ -62,7 +62,7 @@ static void *parent_write(void *arg)
 static void *child_write(void *arg)
 {
 	struct child_writer *writer = arg;
-	for (unsigned i = 0; i < CHILD_RECORDS; ++i) {
+	for (unsigned int i = 0; i < CHILD_RECORDS; ++i) {
 		int rc = LOGGER_INFO(writer->logger, "fork-child",
 				     "CHILD_WORKER=%u", i);
 		if (rc) {
@@ -76,18 +76,18 @@ static void *child_write(void *arg)
 /* 不是仅检查线程已启动：每次 fork 前后都要求两个业务写者
  * 确实完成了新日志调用。计数由 release 发布、acquire 观测。
  */
-static unsigned parent_written(const struct parent_writer *writer)
+static unsigned int parent_written(const struct parent_writer *writer)
 {
 	return atomic_load_explicit(&writer->written, memory_order_acquire);
 }
 
 static void wait_parent_progress(const struct parent_writer *writers,
-				 const unsigned baseline[PARENT_THREADS])
+				 const unsigned int baseline[PARENT_THREADS])
 {
-	for (unsigned retry = 0; retry < 5000; ++retry) {
+	for (unsigned int retry = 0; retry < 5000; ++retry) {
 		int advanced = 1;
-		for (unsigned i = 0; i < PARENT_THREADS; ++i) {
-			unsigned value = parent_written(&writers[i]);
+		for (unsigned int i = 0; i < PARENT_THREADS; ++i) {
+			unsigned int value = parent_written(&writers[i]);
 			if (value <= baseline[i])
 				advanced = 0;
 		}
@@ -104,7 +104,7 @@ static void child_expect(int valid, int code)
 		_exit(code);
 }
 
-static void child_run(unsigned number)
+static void child_run(unsigned int number)
 {
 	errno = EDOM;
 	child_expect(LOGGER_INFO(parent_owner, "old",
@@ -152,12 +152,12 @@ static void wait_child(pid_t pid)
 	CHECK(got == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-static unsigned count_lines(const char *path, const char *marker)
+static unsigned int count_lines(const char *path, const char *marker)
 {
 	FILE *file = fopen(path, "r");
 	CHECK(file != NULL);
 	char line[8192];
-	unsigned count = 0;
+	unsigned int count = 0;
 	while (fgets(line, sizeof(line), file)) {
 		CHECK(strstr(line, marker) != NULL);
 		++count;
@@ -187,30 +187,30 @@ int main(int argc, char **argv)
 	CHECK(LOGGER_INFO(parent_owner, "parent", "PARENT_BEGIN") == 0);
 
 	struct parent_writer writers[PARENT_THREADS] = { 0 };
-	for (unsigned i = 0; i < PARENT_THREADS; ++i)
+	for (unsigned int i = 0; i < PARENT_THREADS; ++i)
 		writers[i].number = i;
 	pthread_t threads[PARENT_THREADS];
-	for (unsigned i = 0; i < PARENT_THREADS; ++i)
+	for (unsigned int i = 0; i < PARENT_THREADS; ++i)
 		CHECK(pthread_create(&threads[i], NULL, parent_write,
 				     &writers[i]) == 0);
-	for (unsigned wait = 0; wait < 5000; ++wait) {
+	for (unsigned int wait = 0; wait < 5000; ++wait) {
 		if (atomic_load(&ready) == PARENT_THREADS)
 			break;
 		nap_ms();
 	}
 	CHECK(atomic_load(&ready) == PARENT_THREADS);
 	/* ready 只代表线程已启动；首次 fork 前必须有真实成功写入。 */
-	unsigned initial[PARENT_THREADS] = { 0 };
+	unsigned int initial[PARENT_THREADS] = { 0 };
 	wait_parent_progress(writers, initial);
 
 	pid_t children[CHILDREN];
-	unsigned progress_checks = 0;
+	unsigned int progress_checks = 0;
 	int parallel = !strcmp(argv[1], "parallel");
-	for (unsigned i = 0; i < CHILDREN; ++i) {
+	for (unsigned int i = 0; i < CHILDREN; ++i) {
 		CHECK(atomic_load(&ready) == PARENT_THREADS);
 		CHECK(!atomic_load(&stop_writers));
-		unsigned before[PARENT_THREADS];
-		for (unsigned j = 0; j < PARENT_THREADS; ++j) {
+		unsigned int before[PARENT_THREADS];
+		for (unsigned int j = 0; j < PARENT_THREADS; ++j) {
 			before[j] = parent_written(&writers[j]);
 			CHECK(before[j] > 0 && before[j] < PARENT_LIMIT);
 		}
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
 		char token = 'G';
 		CHECK(write(gate[1], &token, 1) == 1);
 		CHECK(close(gate[1]) == 0);
-		for (unsigned j = 0; j < PARENT_THREADS; ++j)
+		for (unsigned int j = 0; j < PARENT_THREADS; ++j)
 			before[j] = parent_written(&writers[j]);
 		wait_parent_progress(writers, before);
 		progress_checks += PARENT_THREADS;
@@ -247,17 +247,17 @@ int main(int argc, char **argv)
 			wait_child(children[i]);
 	}
 	if (parallel) {
-		for (unsigned i = 0; i < CHILDREN; ++i)
+		for (unsigned int i = 0; i < CHILDREN; ++i)
 			wait_child(children[i]);
 	}
 	atomic_store(&stop_writers, 1);
-	for (unsigned i = 0; i < PARENT_THREADS; ++i)
+	for (unsigned int i = 0; i < PARENT_THREADS; ++i)
 		CHECK(!pthread_join(threads[i], NULL));
 	CHECK(parent_written(&writers[0]) && parent_written(&writers[1]));
 	CHECK(LOGGER_INFO(parent_owner, "parent", "PARENT_END") == 0);
 	CHECK(logger_flush(parent_owner) == 0);
 	uint64_t emitted = 2;
-	for (unsigned i = 0; i < PARENT_THREADS; ++i)
+	for (unsigned int i = 0; i < PARENT_THREADS; ++i)
 		emitted += parent_written(&writers[i]);
 	logger_io_metrics_t io;
 	CHECK(logger_get_io_metrics(parent_owner, &io) == 0);
@@ -268,7 +268,7 @@ int main(int argc, char **argv)
 	CHECK(logger_destroy(&parent_owner) == 0 && !parent_owner);
 	CHECK(count_lines("parent.log", "PARENT_") == emitted);
 	CHECK(!file_contains("parent.log", "CHILD_"));
-	for (unsigned i = 0; i < CHILDREN; ++i) {
+	for (unsigned int i = 0; i < CHILDREN; ++i) {
 		char path[48];
 		CHECK(snprintf(path, sizeof(path), "child-%u.log", i) > 0);
 		CHECK(count_lines(path, "CHILD_") == CHILD_RECORDS + 2);

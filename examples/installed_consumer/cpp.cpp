@@ -6,8 +6,9 @@
 int main()
 {
 	char masked[16] = "abcd";
-	int (*mask)(const char *, char *, size_t, size_t, size_t) =
-		logger_mask_secret;
+	int (*mask)(const char *input, char *out, size_t cap,
+		    size_t keep_prefix,
+		    size_t keep_suffix) = logger_mask_secret;
 
 	errno = EDOM;
 	if (mask(masked, masked, sizeof(masked), 1, 1) || errno != EDOM)
@@ -35,11 +36,13 @@ int main()
 	int create_rc = logger_create(&cfg, &log);
 	if (create_rc)
 		return 2;
-	int (*record)(logger_t *, logger_level_t, logger_source_t, const char *,
+	int (*record)(logger_t *logger, logger_level_t level,
+		      logger_source_t source, const char *format,
 		      ...) = logger_log_source;
-	int (*state_query)(const logger_t *, logger_state_t *) =
+	int (*state_query)(const logger_t *logger, logger_state_t *out) =
 		logger_get_state;
-	int (*dropped_query)(const logger_t *, uint64_t *) = logger_dropped;
+	int (*dropped_query)(const logger_t *logger, uint64_t *out) =
+		logger_dropped;
 	logger_state_t state = LOGGER_STATE_CREATED;
 	uint64_t dropped = 7;
 	errno = EDOM;

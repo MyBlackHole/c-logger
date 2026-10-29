@@ -29,7 +29,7 @@ enum {
 	LOGGER_RECORD_META_SOURCE = 1u << 2
 };
 
-typedef struct logger_message {
+struct logger_message {
 	logger_level_t level;
 	struct timespec ts;
 	pid_t pid;
@@ -49,7 +49,7 @@ typedef struct logger_message {
 	char module_storage[128];
 	char file_storage[256];
 	char function_storage[128];
-} logger_message_t;
+};
 /* 只有队列拥有这些固定大小的快照。同步记录无需保留来源的生命周期。
  * 这种有界复制不会为每条记录增加堆分配。
  */
@@ -63,7 +63,7 @@ static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 	if (src[n] && n)
 		dst[n - 1] = '~';
 }
-static inline size_t logger_record_text_length(const logger_message_t *m)
+static inline size_t logger_record_text_length(const struct logger_message *m)
 {
 	size_t n = m->text_len;
 	/* 生产路径由 vsnprintf() 精确填充 text_len。
@@ -78,13 +78,13 @@ static inline size_t logger_record_text_length(const logger_message_t *m)
 	return n;
 }
 
-static inline void logger_record_rebase(logger_message_t *m)
+static inline void logger_record_rebase(struct logger_message *m)
 {
 	m->module = m->module_storage;
 	m->file = m->file_storage;
 	m->func = m->function_storage;
 }
-static inline void logger_record_own_source(logger_message_t *m)
+static inline void logger_record_own_source(struct logger_message *m)
 {
 	const char *file = m->file ? strrchr(m->file, '/') : NULL;
 	file = file ? file + 1 : (m->file ? m->file : "?");

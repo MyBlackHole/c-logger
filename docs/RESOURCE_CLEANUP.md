@@ -219,12 +219,12 @@ c-logger 的用户态条件守卫会把 pthread 风格的正 errno 结果统一�
 - 异步工作线程工作区分配回滚：
   创建者 = `calloc/malloc`；当前所有者 = 本地 `__free` 变量；
   转移 = `no_free_ptr()/return_ptr()`；持久所有者 =
-  `logger_worker_workspace_t` / `logger_t`；最终释放方 =
+  `struct logger_worker_workspace` / `logger_t`；最终释放方 =
   `logger_worker_workspace_destroy()`。
 - MPSC 队列存储分配回滚：
   创建者 = 两次 `calloc`；当前所有者 = 本地 `slots/spills __free(free)`；
-  转移 = `no_free_ptr()` 交给 `logger_queue_t`；持久所有者 =
-  `logger_queue_t`；最终释放方 = `logger_queue_destroy()`。
+  转移 = `no_free_ptr()` 交给 `struct logger_queue`；持久所有者 =
+  `struct logger_queue`；最终释放方 = `logger_queue_destroy()`。
 
 这些路径的构造所有权都是单线程的，并且不存在会影响返回语义的关闭错误。
 更复杂的文件和全局锁路径，只有在完整所有权图经过评审后才应迁移。

@@ -146,7 +146,7 @@ int logger_runtime_create(struct logger_runtime **out)
 	atomic_init(&runtime->global_ticket, 0);
 	atomic_init(&runtime->global_lock_error, 0);
 	atomic_init(&runtime->console_config,
-		    ((unsigned)CONSOLE_NORMAL << 2) | CONSOLE_COLOR_AUTO);
+		    ((unsigned int)CONSOLE_NORMAL << 2) | CONSOLE_COLOR_AUTO);
 	atomic_init(&runtime->console_lock_error, 0);
 	*out = runtime;
 	return 0;

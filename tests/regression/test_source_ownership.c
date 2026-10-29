@@ -3,10 +3,12 @@
 #include "logger_internal.h"
 #include <sys/mman.h>
 static _Atomic int entered, proceed;
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	atomic_store(&entered, 1);
 	wait_flag(&proceed);
@@ -20,24 +22,24 @@ int main(int argc, char **argv)
 	const char *mode = argv[1];
 	if (!strcmp(mode, "queue-copy") || !strcmp(mode, "bounds") ||
 	    !strcmp(mode, "null-source")) {
-		logger_queue_t q;
+		struct logger_queue q;
 		CHECK(logger_queue_init(&q, 2) == 0);
 		char big[600];
 		memset(big, 'M', sizeof(big));
 		big[599] = 0;
-		logger_message_t in = { .level = LOGGER_INFO,
-					.metadata_mask =
-						LOGGER_RECORD_META_MODULE |
-						LOGGER_RECORD_META_SOURCE,
-					.module = "module",
-					.file = "dir/test.c",
-					.func = "call" };
+		struct logger_message in = { .level = LOGGER_INFO,
+					     .metadata_mask =
+						     LOGGER_RECORD_META_MODULE |
+						     LOGGER_RECORD_META_SOURCE,
+					     .module = "module",
+					     .file = "dir/test.c",
+					     .func = "call" };
 		if (!strcmp(mode, "bounds"))
 			in.module = in.file = in.func = big;
 		if (!strcmp(mode, "null-source"))
 			in.module = in.file = in.func = NULL;
 		CHECK(logger_queue_push(&q, &in) == 1);
-		logger_message_t out;
+		struct logger_message out;
 		CHECK(logger_queue_try_pop(&q, &out) == 1);
 		CHECK(out.module != in.module && out.file != in.file &&
 		      out.func != in.func);
@@ -54,7 +56,7 @@ int main(int argc, char **argv)
 			in.file = "other.c";
 			in.func = "different";
 			for (int i = 0; i < 8; ++i) {
-				logger_message_t tmp;
+				struct logger_message tmp;
 				CHECK(logger_queue_push(&q, &in) == 1);
 				CHECK(logger_queue_try_pop(&q, &tmp) == 1);
 			}

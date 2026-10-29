@@ -179,50 +179,52 @@ static void probe(enum point p)
 	atomic_store(&entered, 1);
 	wait_flag(&release_call);
 }
-int __real_logger_file_write(logger_file_t *, const char *, size_t,
-			     const struct timespec *, int);
-int __wrap_logger_file_write(logger_file_t *f, const char *p, size_t n,
+int __real_logger_file_write(struct logger_file *f, const char *p, size_t n,
+			     const struct timespec *t, int sync);
+int __wrap_logger_file_write(struct logger_file *f, const char *p, size_t n,
 			     const struct timespec *t, int sync)
 {
 	probe(P_WRITE);
 	return __real_logger_file_write(f, p, n, t, sync);
 }
-int __real_logger_file_reopen(logger_file_t *);
-int __wrap_logger_file_reopen(logger_file_t *f)
+int __real_logger_file_reopen(struct logger_file *f);
+int __wrap_logger_file_reopen(struct logger_file *f)
 {
 	probe(P_REOPEN);
 	return __real_logger_file_reopen(f);
 }
-int __real_logger_queue_push(logger_queue_t *, const logger_message_t *);
-int __wrap_logger_queue_push(logger_queue_t *q, const logger_message_t *m)
+int __real_logger_queue_push(struct logger_queue *q,
+			     const struct logger_message *m);
+int __wrap_logger_queue_push(struct logger_queue *q,
+			     const struct logger_message *m)
 {
 	probe(P_QUEUE);
 	return __real_logger_queue_push(q, m);
 }
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (actor && log_instance && mu == &log_instance->progress_mu)
 		probe(P_WAIT);
 	return __real_pthread_cond_wait(cv, mu);
 }
-int __real_pthread_create(pthread_t *, const pthread_attr_t *,
-			  void *(*)(void *), void *);
+int __real_pthread_create(pthread_t *t, const pthread_attr_t *a,
+			  void *(*fn)(void *arg), void *u);
 int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
-			  void *(*fn)(void *), void *u)
+			  void *(*fn)(void *arg), void *u)
 {
 	probe(P_CREATE);
 	if (actor && atomic_exchange(&create_fail, 0))
 		return EAGAIN;
 	return __real_pthread_create(t, a, fn, u);
 }
-int __real_close(int);
+int __real_close(int fd);
 int __wrap_close(int fd)
 {
 	probe(P_CLOSE);
 	return __real_close(fd);
 }
-int __real_fflush(FILE *);
+int __real_fflush(FILE *f);
 int __wrap_fflush(FILE *f)
 {
 	probe(P_STDIO);
@@ -232,7 +234,7 @@ int __wrap_fflush(FILE *f)
 	}
 	return __real_fflush(f);
 }
-int __real_vfprintf(FILE *, const char *, va_list);
+int __real_vfprintf(FILE *f, const char *fmt, va_list ap);
 int __wrap_vfprintf(FILE *f, const char *fmt, va_list ap)
 {
 	if (actor && atomic_exchange(&stdio_fail, 0)) {
@@ -241,13 +243,13 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list ap)
 	}
 	return __real_vfprintf(f, fmt, ap);
 }
-int __real_vsnprintf(char *, size_t, const char *, va_list);
+int __real_vsnprintf(char *out, size_t n, const char *fmt, va_list ap);
 int __wrap_vsnprintf(char *out, size_t n, const char *fmt, va_list ap)
 {
 	probe(P_FORMAT);
 	return __real_vsnprintf(out, n, fmt, ap);
 }
-int __real_logger_get_file_metrics(logger_t *, logger_file_metrics_t *);
+int __real_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out);
 int __wrap_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
 {
 	atomic_fetch_add(&file_metrics_calls, 1);
@@ -256,7 +258,7 @@ int __wrap_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
 	in_file_metrics = 0;
 	return rc;
 }
-int __real_pthread_mutex_lock(pthread_mutex_t *);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	int rc = __real_pthread_mutex_lock(mu);
@@ -267,7 +269,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 	}
 	return rc;
 }
-int __real_pthread_setcancelstate(int, int *);
+int __real_pthread_setcancelstate(int state, int *old);
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
 	if (actor && state == PTHREAD_CANCEL_DISABLE &&
@@ -275,10 +277,12 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 		return EINVAL;
 	return __real_pthread_setcancelstate(state, old);
 }
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *out, size_t cap)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *out,
+				 size_t cap)
 {
 	if (atomic_exchange(&hold_worker, 0)) {
 		atomic_store(&worker_entered, 1);

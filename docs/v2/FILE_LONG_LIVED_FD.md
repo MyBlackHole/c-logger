@@ -1,7 +1,7 @@
 # 文件后端长期描述符拥有权类型化（#210，D1/T1 有限阶段）
 
 本阶段在 Syslog 长期 fd 类型化已合并的 ABI 2 主线上，将不安装的
-`logger_file_t.{fd,dir_fd,lock_fd}` 从裸整数迁至现有
+`struct logger_file.{fd,dir_fd,lock_fd}` 从裸整数迁至现有
 `struct logger_owned_fd`。范围限定活动数据 fd、协作锁 fd 与目录 fd；
 不改变公开头文件、ELF ABI、SONAME 或导出清单，不新增堆分配或锁。
 

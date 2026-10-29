@@ -11,12 +11,12 @@
  * 绝不改变进程级信号处置，也不消耗进入时已待处理的 SIGPIPE。
  * 成功设置后保留 printf %m 的语义。
  */
-typedef struct {
+struct logger_sigpipe_guard {
 	sigset_t old_mask;
 	int was_pending;
-} logger_sigpipe_guard_t;
+};
 
-static inline int logger_sigpipe_begin(logger_sigpipe_guard_t *guard)
+static inline int logger_sigpipe_begin(struct logger_sigpipe_guard *guard)
 {
 	int saved_errno = errno;
 	sigset_t block;
@@ -66,8 +66,8 @@ static inline void logger_sigpipe_consume_new(int was_pending)
 /* saw_epipe 与首个错误分开记录：格式化因其他原因失败后，
  * 后续 fflush 仍可能因 EPIPE 失败。
  */
-static inline int logger_sigpipe_end(logger_sigpipe_guard_t *guard, int result,
-				     int saw_epipe)
+static inline int logger_sigpipe_end(struct logger_sigpipe_guard *guard,
+				     int result, int saw_epipe)
 {
 	int saved_errno = errno;
 	if (saw_epipe)

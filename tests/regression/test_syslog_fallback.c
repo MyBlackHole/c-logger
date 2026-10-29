@@ -4,10 +4,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 static _Atomic int hold_worker, entered;
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
-size_t __wrap_logger_format_line(const logger_t *l, const logger_message_t *m,
-				 char *buf, size_t n)
+size_t __real_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *buf,
+				 size_t n);
+size_t __wrap_logger_format_line(const logger_t *l,
+				 const struct logger_message *m, char *buf,
+				 size_t n)
 {
 	if (atomic_load(&hold_worker) && !strcmp(m->text, "held")) {
 		atomic_store(&entered, 1);
@@ -36,7 +38,7 @@ int main(void)
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	int rc = 0;
-	unsigned tries = 0;
+	unsigned int tries = 0;
 	errno = EDOM;
 	do {
 		rc = logger_log_sync_status(l, LOGGER_INFO, "fill", NULL, 0,

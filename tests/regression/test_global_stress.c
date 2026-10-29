@@ -9,12 +9,12 @@ static logger_t *owner;
  */
 #ifdef LOGGER_PUBLIC_ABI_TEST
 #include <dirent.h>
-static unsigned initial_fds;
-static unsigned open_fds(void)
+static unsigned int initial_fds;
+static unsigned int open_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
 	CHECK(d);
-	unsigned n = 0;
+	unsigned int n = 0;
 	struct dirent *e;
 	while ((e = readdir(d)))
 		if (strcmp(e->d_name, ".") && strcmp(e->d_name, ".."))

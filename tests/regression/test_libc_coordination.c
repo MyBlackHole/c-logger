@@ -20,15 +20,15 @@ static _Atomic int reject_unlock;
 static _Atomic int reject_format;
 static _Atomic int reject_archive_format;
 static _Atomic int reject_localtime;
-static _Atomic unsigned format_locks;
-static _Atomic unsigned format_unlocks;
+static _Atomic unsigned int format_locks;
+static _Atomic unsigned int format_unlocks;
 static _Atomic int fail_line_once;
 static _Atomic int poison_after_lock;
 
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_vsnprintf(char *, size_t, const char *, va_list);
-struct tm *__real_localtime_r(const time_t *, struct tm *);
+int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
+int __real_vsnprintf(char *out, size_t cap, const char *fmt, va_list args);
+struct tm *__real_localtime_r(const time_t *seconds, struct tm *out);
 
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
@@ -84,11 +84,12 @@ struct tm *__wrap_localtime_r(const time_t *seconds, struct tm *out)
 	return __real_localtime_r(seconds, out);
 }
 
-size_t __real_logger_format_line(const logger_t *, const logger_message_t *,
-				 char *, size_t);
+size_t __real_logger_format_line(const logger_t *logger,
+				 const struct logger_message *message,
+				 char *out, size_t cap);
 size_t __wrap_logger_format_line(const logger_t *logger,
-				 const logger_message_t *message, char *out,
-				 size_t cap)
+				 const struct logger_message *message,
+				 char *out, size_t cap)
 {
 	if (atomic_exchange(&fail_line_once, 0))
 		atomic_store(&reject_unlock, 1);
@@ -173,7 +174,7 @@ static void syslog_prefix_failure(int lock_failure)
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
 	cfg.syslog.path = name;
-	logger_syslog_t backend;
+	struct logger_syslog backend;
 	CHECK(logger_syslog_init(&backend, "unit", &cfg.syslog) == 0);
 
 	if (lock_failure)
@@ -189,7 +190,8 @@ static void syslog_prefix_failure(int lock_failure)
 	      backend.metrics.sent_records == 0 &&
 	      backend.metrics.last_error == expected &&
 	      backend.metrics.send_attempts == 0);
-	CHECK(backend.metrics.backpressure_records == (unsigned)lock_failure);
+	CHECK(backend.metrics.backpressure_records ==
+	      (unsigned int)lock_failure);
 	char packet[512];
 	CHECK(recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT) == -1);
 	CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
@@ -217,7 +219,7 @@ static void archive_format_failure(void)
 	logger_rotation_config_t rotation = { 0 };
 	rotation.mode = LOGGER_ROTATE_SIZE;
 	rotation.max_file_size = 1;
-	logger_file_t backend = LOGGER_FILE_EMPTY;
+	struct logger_file backend = LOGGER_FILE_EMPTY;
 	CHECK(logger_file_init(&backend, "out.log", rotation, 0600) == 0);
 	struct timespec stamp = { 1700000000, 0 };
 	CHECK(logger_file_write(&backend, "a", 1, &stamp, 1) == 0);
@@ -261,7 +263,7 @@ static void calendar_error(int during_init, int lock_failure)
 	enter_temp(directory);
 	logger_rotation_config_t rotation = { 0 };
 	rotation.mode = LOGGER_ROTATE_DAILY;
-	logger_file_t backend = LOGGER_FILE_EMPTY;
+	struct logger_file backend = LOGGER_FILE_EMPTY;
 	int expected = lock_failure ? EAGAIN : EILSEQ;
 	struct timespec stamp = { .tv_sec = time(NULL), .tv_nsec = 0 };
 
@@ -384,7 +386,7 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[1], "errno-format")) {
 		char out[128];
 		/* 函数指针不带 ISO printf 属性：这里专门验证 GNU %m。 */
-		int (*format)(char *, size_t, const char *, ...) =
+		int (*format)(char *out, size_t cap, const char *fmt, ...) =
 			logger_libc_snprintf;
 		errno = EDOM;
 		CHECK(format(out, sizeof(out), "%m") > 0);

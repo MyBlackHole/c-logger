@@ -24,7 +24,7 @@ static void *race_writer(void *unused)
 	while (!atomic_load(&go))
 		sched_yield();
 	/* 仅诊断反例：必须由检测器拒绝，不链接到安装后的库。 */
-	for (unsigned i = 0; i < 10000; ++i)
+	for (unsigned int i = 0; i < 10000; ++i)
 		intentionally_racy = (int)i;
 	return NULL;
 }

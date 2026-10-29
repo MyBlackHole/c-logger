@@ -155,7 +155,7 @@ static void normal(const char *mode)
 	CHECK(lines_matching("second.log", "SECOND_ONLY") == count);
 }
 
-static int nested_child(unsigned depth)
+static int nested_child(unsigned int depth)
 {
 	child_check(logger_process_init() == 0, 30);
 	char path[64];
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
 		if (!pid)
 			_exit(nested_child(1));
 		wait_ok(pid);
-		for (unsigned i = 1; i <= 4; ++i) {
+		for (unsigned int i = 1; i <= 4; ++i) {
 			char name[64];
 			CHECK(snprintf(name, sizeof(name), "depth-%u.log", i) >
 			      0);
@@ -215,7 +215,7 @@ int main(int argc, char **argv)
 	const char *files[] = { "parent.log",  "child.log",   "second.log",
 				"depth-1.log", "depth-2.log", "depth-3.log",
 				"depth-4.log" };
-	for (unsigned i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
+	for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
 		CHECK(unlink(files[i]) == 0 || errno == ENOENT);
 		char lock[96];
 		CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", files[i]) >

@@ -6,9 +6,9 @@
 static _Thread_local int active;
 static _Thread_local int setup_error;
 static _Thread_local int restore_error;
-static _Thread_local unsigned cancel_calls;
+static _Thread_local unsigned int cancel_calls;
 
-int __real_pthread_setcancelstate(int, int *);
+int __real_pthread_setcancelstate(int state, int *old);
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
 	if (active) {

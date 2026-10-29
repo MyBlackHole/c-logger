@@ -4,7 +4,7 @@
 
 /* 无库钩子：在链接时包装真实 pthread 等待入口。 */
 static _Atomic int in_gap, release_wait, intercepted, fail_wait;
-int __real_pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
+int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (!atomic_exchange(&intercepted, 1)) {

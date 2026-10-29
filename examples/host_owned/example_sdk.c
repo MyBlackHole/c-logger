@@ -6,11 +6,11 @@
 
 struct example_sdk {
 	char name[64];
-	example_log_fn log;
+	void (*log)(void *user, const struct example_log_record *record);
 	void *log_user;
 };
 
-int example_sdk_create(const example_sdk_options_t *options,
+int example_sdk_create(const struct example_sdk_options *options,
 		       example_sdk_t **out)
 {
 	if (!out) {
@@ -37,7 +37,7 @@ int example_sdk_create(const example_sdk_options_t *options,
 	return 0;
 }
 
-int example_sdk_run(example_sdk_t *sdk, unsigned task)
+int example_sdk_run(example_sdk_t *sdk, unsigned int task)
 {
 	if (!sdk) {
 		errno = EINVAL;
@@ -52,7 +52,7 @@ int example_sdk_run(example_sdk_t *sdk, unsigned task)
 			errno = EOVERFLOW;
 			return -1;
 		}
-		const example_log_record_t record = {
+		const struct example_log_record record = {
 			EXAMPLE_LOG_INFO, sdk->name, __FILE__, __func__,
 			__LINE__,	  message,   (size_t)n
 		};

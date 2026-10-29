@@ -11,7 +11,7 @@ int logger_scope_busy(void)
 	return in_runtime || logger_fork_fd_preparing();
 }
 
-int logger_scope_begin(logger_scope_t *scope)
+int logger_scope_begin(struct logger_scope *scope)
 {
 	/* 在此之前不能接触任何继承的锁、实例指针或注册状态。 */
 	if (logger_process_is_child()) {
@@ -37,7 +37,7 @@ int logger_scope_begin(logger_scope_t *scope)
 	return 0;
 }
 
-int logger_scope_end(logger_scope_t *scope, int rc)
+int logger_scope_end(struct logger_scope *scope, int rc)
 {
 	/* 必须在 va_end、互斥锁释放、发布和全部资源清理之后执行。
 	 * 此函数之后不得再解引用 logger：取消恢复后，调用者的取消清理

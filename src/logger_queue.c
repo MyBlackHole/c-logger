@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static _Thread_local unsigned spill_probe_cursor;
+static _Thread_local unsigned int spill_probe_cursor;
 
 static int queue_capacity(struct logger_queue_records requested,
 			  struct logger_queue_records *capacity)
@@ -25,7 +25,8 @@ static int queue_capacity(struct logger_queue_records requested,
 		}
 		n *= 2;
 	}
-	if (n > SIZE_MAX / 2 || n > SIZE_MAX / sizeof(logger_queue_slot_t)) {
+	if (n > SIZE_MAX / 2 ||
+	    n > SIZE_MAX / sizeof(struct logger_queue_slot)) {
 		errno = EOVERFLOW;
 		return -1;
 	}
@@ -47,15 +48,15 @@ static int queue_storage_size(struct logger_queue_records queue_cap,
 			      struct logger_queue_records spill_cap,
 			      struct logger_queue_bytes *total)
 {
-	if (spill_cap.value > SIZE_MAX / sizeof(logger_queue_spill_t))
+	if (spill_cap.value > SIZE_MAX / sizeof(struct logger_queue_spill))
 		return -EOVERFLOW;
 	struct logger_queue_bytes spill_bytes = {
-		spill_cap.value * sizeof(logger_queue_spill_t)
+		spill_cap.value * sizeof(struct logger_queue_spill)
 	};
 	if (queue_cap.value >
-	    (SIZE_MAX - spill_bytes.value) / sizeof(logger_queue_slot_t))
+	    (SIZE_MAX - spill_bytes.value) / sizeof(struct logger_queue_slot))
 		return -EOVERFLOW;
-	total->value = queue_cap.value * sizeof(logger_queue_slot_t) +
+	total->value = queue_cap.value * sizeof(struct logger_queue_slot) +
 		       spill_bytes.value;
 	return 0;
 }
@@ -72,8 +73,8 @@ static uint8_t queue_source_copy(char *dst, size_t cap, const char *src)
 	return (uint8_t)n;
 }
 
-static void queue_copy_source(logger_queue_record_t *dst,
-			      const logger_message_t *src)
+static void queue_copy_source(struct logger_queue_record *dst,
+			      const struct logger_message *src)
 {
 	if (src->metadata_mask & LOGGER_RECORD_META_MODULE) {
 		dst->module_len = queue_source_copy(
@@ -100,8 +101,8 @@ static void queue_copy_source(logger_queue_record_t *dst,
 	}
 }
 
-static void queue_record_pack(logger_queue_record_t *dst,
-			      const logger_message_t *src, size_t text_len,
+static void queue_record_pack(struct logger_queue_record *dst,
+			      const struct logger_message *src, size_t text_len,
 			      uint32_t spill_index)
 {
 	dst->level = src->level;
@@ -127,9 +128,9 @@ static void queue_record_pack(logger_queue_record_t *dst,
 		memcpy(dst->inline_text, src->text, text_len + 1u);
 }
 
-static void queue_record_unpack(logger_queue_t *q,
-				const logger_queue_record_t *src,
-				logger_message_t *dst)
+static void queue_record_unpack(struct logger_queue *q,
+				const struct logger_queue_record *src,
+				struct logger_message *dst)
 {
 	dst->level = src->level;
 	dst->ts = src->ts;
@@ -165,7 +166,7 @@ static void queue_record_unpack(logger_queue_t *q,
 	dst->text_len = src->text_len;
 }
 
-static unsigned spill_valid_mask(size_t spill_cap, size_t word)
+static unsigned int spill_valid_mask(size_t spill_cap, size_t word)
 {
 	size_t first = word * LOGGER_QUEUE_SPILL_WORD_BITS;
 	size_t remaining = spill_cap - first;
@@ -174,7 +175,7 @@ static unsigned spill_valid_mask(size_t spill_cap, size_t word)
 	return (1u << remaining) - 1u;
 }
 
-static int queue_spill_take(logger_queue_t *q, const char *text,
+static int queue_spill_take(struct logger_queue *q, const char *text,
 			    size_t text_len, uint32_t *index)
 {
 	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
@@ -186,16 +187,17 @@ static int queue_spill_take(logger_queue_t *q, const char *text,
 
 	for (size_t n = 0; n < words; ++n) {
 		size_t word = (start + n) % words;
-		unsigned valid = spill_valid_mask(q->spill_cap, word);
-		unsigned used = atomic_load_explicit(&q->spill_used[word],
-						     memory_order_relaxed);
+		unsigned int valid = spill_valid_mask(q->spill_cap, word);
+		unsigned int used = atomic_load_explicit(&q->spill_used[word],
+							 memory_order_relaxed);
 		for (;;) {
-			unsigned available = ~used & valid;
+			unsigned int available = ~used & valid;
 			if (!available)
 				break;
-			unsigned bit = (unsigned)__builtin_ctz(available);
-			unsigned bit_mask = 1u << bit;
-			unsigned desired = used | bit_mask;
+			unsigned int bit =
+				(unsigned int)__builtin_ctz(available);
+			unsigned int bit_mask = 1u << bit;
+			unsigned int desired = used | bit_mask;
 			if (atomic_compare_exchange_weak_explicit(
 				    &q->spill_used[word], &used, desired,
 				    memory_order_acq_rel,
@@ -220,12 +222,12 @@ static int queue_spill_take(logger_queue_t *q, const char *text,
 	return 0;
 }
 
-static void queue_spill_put(logger_queue_t *q, uint32_t index)
+static void queue_spill_put(struct logger_queue *q, uint32_t index)
 {
 	if (index == LOGGER_QUEUE_SPILL_NONE)
 		return;
 	size_t word = index / LOGGER_QUEUE_SPILL_WORD_BITS;
-	unsigned bit = index % LOGGER_QUEUE_SPILL_WORD_BITS;
+	unsigned int bit = index % LOGGER_QUEUE_SPILL_WORD_BITS;
 	/* 消费者已经完成溢出区正文读取后才清除位。
 	 * 下一位生产者通过 acquire CAS 重新取得该位后才允许覆盖块。
 	 */
@@ -233,7 +235,7 @@ static void queue_spill_put(logger_queue_t *q, uint32_t index)
 					memory_order_release);
 }
 
-int logger_queue_init(logger_queue_t *q, size_t requested)
+int logger_queue_init(struct logger_queue *q, size_t requested)
 {
 	memset(q, 0, sizeof(*q));
 	/* 即使提前失败，构造函数也可以检查回滚证明。 */
@@ -254,11 +256,11 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 	}
 	q->storage_bytes = storage_bytes.value;
 
-	logger_queue_slot_t *slots __free(runtime_free) =
+	struct logger_queue_slot *slots __free(runtime_free) =
 		logger_runtime_calloc(capacity.value, sizeof(*slots));
 	if (!slots)
 		return -1;
-	logger_queue_spill_t *spills __free(runtime_free) =
+	struct logger_queue_spill *spills __free(runtime_free) =
 		logger_runtime_calloc(spill_capacity.value, sizeof(*spills));
 	if (!spills)
 		return -1;
@@ -290,13 +292,13 @@ int logger_queue_init(logger_queue_t *q, size_t requested)
 		return -1;
 	}
 
-	/* 所有权转移：两个预分配区域都交给 logger_queue_t。 */
+	/* 所有权转移：两个预分配区域都交给 struct logger_queue。 */
 	q->slots = no_free_ptr(slots);
 	q->spills = no_free_ptr(spills);
 	return 0;
 }
 
-int logger_queue_destroy(logger_queue_t *q)
+int logger_queue_destroy(struct logger_queue *q)
 {
 	if (!q)
 		return -EINVAL;
@@ -328,7 +330,7 @@ int logger_queue_destroy(logger_queue_t *q)
 	return 0;
 }
 
-int logger_queue_notify_if_waiting(logger_queue_t *q)
+int logger_queue_notify_if_waiting(struct logger_queue *q)
 {
 	/* 必须位于 slot.seq 的 release 发布之后。探测使用 acq_rel 读改写操作：
 	 * 若它先于工作线程后续布置等待状态，该布置会取得发布链；若读到 waiting=1，
@@ -367,7 +369,7 @@ int logger_queue_notify_if_waiting(logger_queue_t *q)
 	return rc;
 }
 
-int logger_queue_wake_force(logger_queue_t *q)
+int logger_queue_wake_force(struct logger_queue *q)
 {
 	/* 停止或关闭不依赖生产者的 waiting 提示。关闭 running 后发送强制唤醒；
 	 * 即使工作线程尚未真正睡眠，同一互斥锁和条件复查也能防止其随后睡死。
@@ -392,12 +394,12 @@ int logger_queue_wake_force(logger_queue_t *q)
 	return rc;
 }
 
-int logger_queue_wait_error(const logger_queue_t *q)
+int logger_queue_wait_error(const struct logger_queue *q)
 {
 	return atomic_load_explicit(&q->wait_mu_error, memory_order_acquire);
 }
 
-int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
+int logger_queue_push(struct logger_queue *q, const struct logger_message *m)
 {
 	size_t text_len = logger_record_text_length(m);
 	if (text_len == LOGGER_MESSAGE_MAX) {
@@ -413,7 +415,7 @@ int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 	size_t pos =
 		atomic_load_explicit(&q->enqueue_pos, memory_order_relaxed);
 	for (;;) {
-		logger_queue_slot_t *slot = &q->slots[pos & q->mask];
+		struct logger_queue_slot *slot = &q->slots[pos & q->mask];
 		size_t seq =
 			atomic_load_explicit(&slot->seq, memory_order_acquire);
 		size_t diff = seq - pos;
@@ -440,11 +442,11 @@ int logger_queue_push(logger_queue_t *q, const logger_message_t *m)
 	}
 }
 
-int logger_queue_try_pop(logger_queue_t *q, logger_message_t *m)
+int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m)
 {
 	size_t pos =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_relaxed);
-	logger_queue_slot_t *slot = &q->slots[pos & q->mask];
+	struct logger_queue_slot *slot = &q->slots[pos & q->mask];
 	if (atomic_load_explicit(&slot->seq, memory_order_acquire) != pos + 1)
 		return 0;
 
@@ -460,7 +462,8 @@ int logger_queue_try_pop(logger_queue_t *q, logger_message_t *m)
 	return 1;
 }
 
-size_t logger_queue_drain(logger_queue_t *q, logger_message_t *out, size_t max)
+size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
+			  size_t max)
 {
 	size_t n = 0;
 	while (n < max && logger_queue_try_pop(q, &out[n]))
@@ -468,16 +471,16 @@ size_t logger_queue_drain(logger_queue_t *q, logger_message_t *out, size_t max)
 	return n;
 }
 
-int logger_queue_empty(logger_queue_t *q)
+int logger_queue_empty(struct logger_queue *q)
 {
 	size_t pos =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_relaxed);
-	logger_queue_slot_t *slot = &q->slots[pos & q->mask];
+	struct logger_queue_slot *slot = &q->slots[pos & q->mask];
 	return atomic_load_explicit(&slot->seq, memory_order_acquire) !=
 	       pos + 1;
 }
 
-size_t logger_queue_depth(const logger_queue_t *q)
+size_t logger_queue_depth(const struct logger_queue *q)
 {
 	/* 这是无数据竞争的近似快照；预留位置可能尚未发布。
 	 * 先读取出队位置，再限制深度范围，因为两个计数器不是一个原子事务。
@@ -490,29 +493,29 @@ size_t logger_queue_depth(const logger_queue_t *q)
 	return depth < q->cap ? depth : q->cap;
 }
 
-size_t logger_queue_storage_bytes(const logger_queue_t *q)
+size_t logger_queue_storage_bytes(const struct logger_queue *q)
 {
 	return q ? q->storage_bytes : 0;
 }
 
-size_t logger_queue_spill_capacity(const logger_queue_t *q)
+size_t logger_queue_spill_capacity(const struct logger_queue *q)
 {
 	return q ? q->spill_cap : 0;
 }
 
-size_t logger_queue_spill_storage_bytes(const logger_queue_t *q)
+size_t logger_queue_spill_storage_bytes(const struct logger_queue *q)
 {
-	return q ? q->spill_cap * sizeof(logger_queue_spill_t) : 0;
+	return q ? q->spill_cap * sizeof(struct logger_queue_spill) : 0;
 }
 
-uint64_t logger_queue_spill_exhaustions(const logger_queue_t *q)
+uint64_t logger_queue_spill_exhaustions(const struct logger_queue *q)
 {
 	return q ? atomic_load_explicit(&q->spill_exhaustions,
 					memory_order_relaxed) :
 		   0;
 }
 
-size_t logger_queue_spill_in_use(const logger_queue_t *q)
+size_t logger_queue_spill_in_use(const struct logger_queue *q)
 {
 	if (!q)
 		return 0;
@@ -520,28 +523,28 @@ size_t logger_queue_spill_in_use(const logger_queue_t *q)
 		       LOGGER_QUEUE_SPILL_WORD_BITS;
 	size_t used = 0;
 	for (size_t word = 0; word < words; ++word) {
-		unsigned value = atomic_load_explicit(&q->spill_used[word],
-						      memory_order_relaxed);
+		unsigned int value = atomic_load_explicit(&q->spill_used[word],
+							  memory_order_relaxed);
 		value &= spill_valid_mask(q->spill_cap, word);
 		used += (size_t)__builtin_popcount(value);
 	}
 	return used <= q->spill_cap ? used : q->spill_cap;
 }
 
-uint64_t logger_queue_wait_count(const logger_queue_t *q)
+uint64_t logger_queue_wait_count(const struct logger_queue *q)
 {
 	return q ? atomic_load_explicit(&q->wait_count, memory_order_relaxed) :
 		   0;
 }
 
-uint64_t logger_queue_producer_wake_signals(const logger_queue_t *q)
+uint64_t logger_queue_producer_wake_signals(const struct logger_queue *q)
 {
 	return q ? atomic_load_explicit(&q->producer_wake_signals,
 					memory_order_relaxed) :
 		   0;
 }
 
-uint64_t logger_queue_force_wake_signals(const logger_queue_t *q)
+uint64_t logger_queue_force_wake_signals(const struct logger_queue *q)
 {
 	return q ? atomic_load_explicit(&q->force_wake_signals,
 					memory_order_relaxed) :

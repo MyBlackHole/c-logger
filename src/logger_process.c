@@ -165,7 +165,8 @@ int logger_process_require(void)
 
 int logger_process_object_acquire(void)
 {
-	unsigned n = atomic_load_explicit(&live_objects, memory_order_relaxed);
+	unsigned int n =
+		atomic_load_explicit(&live_objects, memory_order_relaxed);
 	do {
 		if (n == UINT_MAX)
 			return -EOVERFLOW;
@@ -177,7 +178,8 @@ int logger_process_object_acquire(void)
 
 int logger_process_object_release(void)
 {
-	unsigned n = atomic_load_explicit(&live_objects, memory_order_acquire);
+	unsigned int n =
+		atomic_load_explicit(&live_objects, memory_order_acquire);
 	for (;;) {
 		if (!n)
 			return -EUCLEAN;
@@ -188,7 +190,7 @@ int logger_process_object_release(void)
 	}
 }
 
-unsigned logger_process_object_count(void)
+unsigned int logger_process_object_count(void)
 {
 	/* 纯观测不能等待注册者；构造尚未发布时没有可借用的进程域。 */
 	if (logger_process_is_child() || !logger_process_ready())

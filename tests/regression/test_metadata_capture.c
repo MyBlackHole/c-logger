@@ -20,7 +20,7 @@ static logger_t *make_logger(logger_detail_t detail, int include_pid,
 }
 
 static void check_mask(logger_detail_t detail, int include_pid, int include_tid,
-		       int include_source, unsigned expected)
+		       int include_source, unsigned int expected)
 {
 	logger_t *l =
 		make_logger(detail, include_pid, include_tid, include_source);

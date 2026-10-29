@@ -15,9 +15,9 @@ static _Thread_local int unlock_failed;
 static _Thread_local int signal_failed;
 static _Thread_local int invalid_unlock;
 
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_pthread_cond_signal(pthread_cond_t *);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
+int __real_pthread_cond_signal(pthread_cond_t *cv);
 
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
@@ -309,7 +309,7 @@ static int test_force_wake_lock_failure(void)
 	int had_lock_failure = lock_failed;
 	int had_invalid_unlock = invalid_unlock;
 	fail_mutex = NULL;
-	unsigned objects = logger_process_object_count();
+	unsigned int objects = logger_process_object_count();
 	int state =
 		atomic_load_explicit(&retained->state, memory_order_acquire);
 	leave_temp(dir);

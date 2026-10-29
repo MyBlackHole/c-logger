@@ -9,7 +9,8 @@
  * 适配器明确丢弃单次结果。所有者侧指标/刷新仍用于观察输出错误，
  * 不能重建已丢弃的单次提交结果。
  */
-static inline void example_to_logger(void *user, const example_log_record_t *r)
+static inline void example_to_logger(void *user,
+				     const struct example_log_record *r)
 {
 	if (!user || !r || !r->message || r->message_len > INT_MAX)
 		return;

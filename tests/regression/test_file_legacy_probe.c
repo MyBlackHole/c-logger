@@ -21,7 +21,7 @@
 			return 1;                                        \
 		}                                                        \
 	} while (0)
-int __real_clock_gettime(clockid_t, struct timespec *);
+int __real_clock_gettime(clockid_t c, struct timespec *t);
 int __wrap_clock_gettime(clockid_t c, struct timespec *t)
 {
 	if (c == CLOCK_REALTIME) {

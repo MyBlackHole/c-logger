@@ -53,7 +53,7 @@
 		__cleanup_value;                                     \
 	})
 
-static CLEANUP_ALWAYS_INLINE CLEANUP_MUST_CHECK const volatile void *
+static CLEANUP_ALWAYS_INLINE const volatile void *CLEANUP_MUST_CHECK
 __cleanup_must_check_ptr(const volatile void *value)
 {
 	return value;
@@ -294,7 +294,8 @@ class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 }
 
 static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_mutex_lock(pthread_mutex_t *mu, logger_lock_class_t class_id)
+__cleanup_lockdep_mutex_lock(pthread_mutex_t *mu,
+			     enum logger_lock_class class_id)
 {
 	logger_lockdep_check_acquire(class_id, mu);
 	int rc = pthread_mutex_lock(mu);
@@ -306,7 +307,7 @@ __cleanup_lockdep_mutex_lock(pthread_mutex_t *mu, logger_lock_class_t class_id)
 
 static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_mutex_trylock(pthread_mutex_t *mu,
-				logger_lock_class_t class_id)
+				enum logger_lock_class class_id)
 {
 	int rc = pthread_mutex_trylock(mu);
 
@@ -317,7 +318,7 @@ __cleanup_lockdep_mutex_trylock(pthread_mutex_t *mu,
 
 static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
-			       logger_lock_class_t class_id)
+			       enum logger_lock_class class_id)
 {
 	logger_lockdep_check_release(class_id, mu);
 	int rc = pthread_mutex_unlock(mu);
@@ -331,7 +332,7 @@ __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
 
 static CLEANUP_ALWAYS_INLINE int
 __cleanup_lockdep_rwlock_lock(pthread_rwlock_t *rw,
-			      int (*lock_fn)(pthread_rwlock_t *))
+			      int (*lock_fn)(pthread_rwlock_t *lock))
 {
 	logger_lockdep_check_acquire(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	int rc = lock_fn(rw);

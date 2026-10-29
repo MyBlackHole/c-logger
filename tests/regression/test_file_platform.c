@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 static int injected;
-long __real_syscall(long, ...);
+long __real_syscall(long number, ...);
 long __wrap_syscall(long number, ...)
 {
 #ifdef SYS_renameat2
@@ -17,7 +17,7 @@ long __wrap_syscall(long number, ...)
 	const char *from = va_arg(ap, const char *);
 	int b = va_arg(ap, int);
 	const char *to = va_arg(ap, const char *);
-	unsigned flags = va_arg(ap, unsigned);
+	unsigned int flags = va_arg(ap, unsigned int);
 	va_end(ap);
 	CHECK(a == b && flags == 1u);
 	if (injected) {

@@ -24,24 +24,24 @@ struct descriptor {
 
 static enum fault selected;
 static int failed, retention_fd = -1;
-static unsigned directory_opens, lock_opens, retention_opens;
-static unsigned fdopendir_calls, closedir_calls, release_calls;
+static unsigned int directory_opens, lock_opens, retention_opens;
+static unsigned int fdopendir_calls, closedir_calls, release_calls;
 static struct descriptor descriptors[64];
-static unsigned acquired;
+static unsigned int acquired;
 
 static void got_fd(int fd)
 {
 	if (fd < 0)
 		return;
 	CHECK(acquired < sizeof(descriptors) / sizeof(descriptors[0]));
-	for (unsigned i = 0; i < acquired; ++i)
+	for (unsigned int i = 0; i < acquired; ++i)
 		CHECK(descriptors[i].released || descriptors[i].fd != fd);
 	descriptors[acquired++] = (struct descriptor){ .fd = fd };
 }
 
 static int tracked_live_fd(int fd)
 {
-	for (unsigned i = 0; i < acquired; ++i)
+	for (unsigned int i = 0; i < acquired; ++i)
 		if (descriptors[i].fd == fd && !descriptors[i].released)
 			return 1;
 	return 0;
@@ -49,7 +49,7 @@ static int tracked_live_fd(int fd)
 
 static void released_fd(int fd)
 {
-	for (unsigned i = acquired; i > 0; --i) {
+	for (unsigned int i = acquired; i > 0; --i) {
 		struct descriptor *entry = &descriptors[i - 1];
 		if (entry->fd == fd && !entry->released) {
 			entry->released = 1;
@@ -60,7 +60,7 @@ static void released_fd(int fd)
 	CHECK(!"closing an untracked or already released fd");
 }
 
-int __real_open(const char *, int, ...);
+int __real_open(const char *path, int flags, ...);
 int __wrap_open(const char *path, int flags, ...)
 {
 	CHECK(!(flags & O_CREAT)); /* 当前绑定目录仅使用 O_DIRECTORY。 */
@@ -77,7 +77,7 @@ int __wrap_open(const char *path, int flags, ...)
 	return fd;
 }
 
-int __real_openat(int, const char *, int, ...);
+int __real_openat(int dirfd, const char *name, int flags, ...);
 int __wrap_openat(int dirfd, const char *name, int flags, ...)
 {
 	mode_t mode = 0;
@@ -112,7 +112,7 @@ int __wrap_openat(int dirfd, const char *name, int flags, ...)
 	return fd;
 }
 
-DIR *__real_fdopendir(int);
+DIR *__real_fdopendir(int fd);
 DIR *__wrap_fdopendir(int fd)
 {
 	++fdopendir_calls;
@@ -126,14 +126,14 @@ DIR *__wrap_fdopendir(int fd)
 	return __real_fdopendir(fd);
 }
 
-int __real_close(int);
+int __real_close(int fd);
 int __wrap_close(int fd)
 {
 	released_fd(fd);
 	return __real_close(fd);
 }
 
-int __real_closedir(DIR *);
+int __real_closedir(DIR *directory);
 int __wrap_closedir(DIR *directory)
 {
 	int fd = dirfd(directory);
@@ -147,11 +147,11 @@ int __wrap_closedir(DIR *directory)
 	return rc;
 }
 
-static unsigned open_descriptor_count(void)
+static unsigned int open_descriptor_count(void)
 {
 	DIR *d = opendir("/proc/self/fd");
 	CHECK(d);
-	unsigned count = 0;
+	unsigned int count = 0;
 	struct dirent *entry;
 	while ((entry = readdir(d)))
 		if (entry->d_name[0] != '.')
@@ -160,15 +160,15 @@ static unsigned open_descriptor_count(void)
 	return count;
 }
 
-static void all_descriptors_released(unsigned baseline)
+static void all_descriptors_released(unsigned int baseline)
 {
-	for (unsigned i = 0; i < acquired; ++i)
+	for (unsigned int i = 0; i < acquired; ++i)
 		CHECK(descriptors[i].released);
 	CHECK(acquired == release_calls);
 	CHECK(open_descriptor_count() == baseline);
 }
 
-static void two_writes(logger_file_t *f, int second_error)
+static void two_writes(struct logger_file *f, int second_error)
 {
 	struct timespec stamp = { 1700000000, 0 };
 	CHECK(!logger_file_write(f, "a", 1, &stamp, 1));
@@ -201,12 +201,12 @@ int main(int argc, char **argv)
 	else
 		CHECK(!"unknown file resource acquisition scenario");
 
-	unsigned baseline = open_descriptor_count();
+	unsigned int baseline = open_descriptor_count();
 	logger_rotation_config_t rotation = { 0 };
 	rotation.mode = LOGGER_ROTATE_SIZE;
 	rotation.max_file_size = 1;
 	rotation.retention_days = 1;
-	logger_file_t file = LOGGER_FILE_EMPTY;
+	struct logger_file file = LOGGER_FILE_EMPTY;
 	if (selected == FAULT_BIND_DIRECTORY || selected == FAULT_LOCK_FILE) {
 		int expected = EMFILE;
 		if (selected == FAULT_BIND_DIRECTORY)

@@ -13,11 +13,11 @@ int main(void)
 	logger_t *l = NULL;
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
-	logger_message_t m = { .level = LOGGER_INFO,
-			       .ts = { 1700000000, 123456000 },
-			       .pid = 123,
-			       .tid = 456,
-			       .line = 77 };
+	struct logger_message m = { .level = LOGGER_INFO,
+				    .ts = { 1700000000, 123456000 },
+				    .pid = 123,
+				    .tid = 456,
+				    .line = 77 };
 	memset(m.text, 'X', sizeof(m.text) - 1);
 	memset(m.module_storage, 'M', sizeof(m.module_storage) - 1);
 	memset(m.file_storage, 'F', sizeof(m.file_storage) - 1);

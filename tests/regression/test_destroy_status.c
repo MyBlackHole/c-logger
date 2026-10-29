@@ -7,7 +7,7 @@ enum file_fd_slot { FILE_DATA, FILE_LOCK, FILE_DIRECTORY, FILE_FD_COUNT };
 struct close_probe {
 	int fd;
 	int error;
-	unsigned calls;
+	unsigned int calls;
 };
 static struct close_probe close_probes[FILE_FD_COUNT];
 static logger_t *subject;
@@ -16,7 +16,7 @@ static int subject_freed;
 /* 只在仍然有效的对象上注入 destroy 失败，不对活跃同步对象调用
  * 真正的 pthread_*_destroy。额外检查最终 logger_t 是否发生 free。
  */
-int __real_logger_runtime_free(void *);
+int __real_logger_runtime_free(void *p);
 int __wrap_logger_runtime_free(void *p)
 {
 	if (subject && p == subject) {
@@ -26,11 +26,11 @@ int __wrap_logger_runtime_free(void *p)
 	return __real_logger_runtime_free(p);
 }
 
-int __real_close(int);
+int __real_close(int fd);
 int __wrap_close(int fd)
 {
 	struct close_probe *selected = NULL;
-	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 		if (fd >= 0 && close_probes[i].fd == fd) {
 			selected = &close_probes[i];
 			++selected->calls;
@@ -50,7 +50,7 @@ int __wrap_close(int fd)
 	return rc;
 }
 
-int __real_pthread_join(pthread_t, void **);
+int __real_pthread_join(pthread_t thread, void **result);
 int __wrap_pthread_join(pthread_t thread, void **result)
 {
 	if (fail_join) {
@@ -65,7 +65,7 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 	return __real_pthread_join(thread, result);
 }
 
-int __real_pthread_cond_destroy(pthread_cond_t *);
+int __real_pthread_cond_destroy(pthread_cond_t *cv);
 int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 {
 	if (subject && cv == &subject->progress_cv && fail_cond_destroy) {
@@ -75,7 +75,7 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 	return __real_pthread_cond_destroy(cv);
 }
 
-int __real_pthread_mutex_destroy(pthread_mutex_t *);
+int __real_pthread_mutex_destroy(pthread_mutex_t *mu);
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 {
 	if (subject && mu == &subject->progress_mu && fail_mutex_destroy) {
@@ -86,7 +86,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 }
 int main(int argc, char **argv)
 {
-	for (unsigned i = 0; i < FILE_FD_COUNT; ++i)
+	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i)
 		close_probes[i].fd = -1;
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
@@ -121,13 +121,13 @@ int main(int argc, char **argv)
 	fds[FILE_DATA] = &l->file_backend.fd;
 	fds[FILE_LOCK] = &l->file_backend.lock_fd;
 	fds[FILE_DIRECTORY] = &l->file_backend.dir_fd;
-	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 		if (logger_fd_valid(fds[i]))
 			close_probes[i].fd =
 				logger_fd_number(logger_fd_borrow(fds[i]));
 	}
 	if (!io_error) {
-		for (unsigned i = 0; i < FILE_FD_COUNT; ++i)
+		for (unsigned int i = 0; i < FILE_FD_COUNT; ++i)
 			CHECK(close_probes[i].fd >= 0);
 	}
 	if (!strcmp(argv[1], "close-error"))
@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 	else if (fail_cond_destroy || fail_mutex_destroy)
 		expected = EBUSY;
 	else {
-		for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+		for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 			if (!expected)
 				expected = close_probes[i].error;
 		}
@@ -180,7 +180,7 @@ int main(int argc, char **argv)
 	/* 即使第一个 close 返回错误，三个 fd 都必须被内核消费一次。
 	 * 检查完成后撤销探针，避免下一实例重用 fd 数字造成假阳性。
 	 */
-	for (unsigned i = 0; i < FILE_FD_COUNT; ++i) {
+	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 		if (close_probes[i].fd >= 0) {
 			CHECK(close_probes[i].calls == 1);
 			CHECK(fcntl(close_probes[i].fd, F_GETFD) == -1 &&

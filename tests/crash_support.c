@@ -12,7 +12,7 @@
 #define TARGET_SEQUENCE BASELINE_RECORDS
 #define RECORD_CAPACITY 512u
 
-static void verify_records(const char *point, unsigned recovered,
+static void verify_records(const char *point, unsigned int recovered,
 			   int baseline_only);
 
 static const char *cut_point;
@@ -53,7 +53,7 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *value)
 	return __real_clock_gettime(clock, value);
 }
 
-static size_t payload(unsigned sequence, char *out, size_t capacity)
+static size_t payload(unsigned int sequence, char *out, size_t capacity)
 {
 	int n = snprintf(
 		out, capacity,
@@ -66,7 +66,7 @@ static size_t payload(unsigned sequence, char *out, size_t capacity)
 	return (size_t)n;
 }
 
-static size_t record_line(unsigned sequence, char *out, size_t capacity)
+static size_t record_line(unsigned int sequence, char *out, size_t capacity)
 {
 	char body[RECORD_CAPACITY];
 	payload(sequence, body, sizeof(body));
@@ -141,7 +141,7 @@ static void initialize(void)
 	CHECK(unsetenv("LOGGER_FAULT_SHORT_WRITE") == 0);
 }
 
-static void emit(logger_t *logger, unsigned sequence)
+static void emit(logger_t *logger, unsigned int sequence)
 {
 	char body[RECORD_CAPACITY];
 	payload(sequence, body, sizeof(body));
@@ -158,7 +158,7 @@ void crash_fixture_write(const char *point)
 	logger_t *logger = NULL;
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
-	for (unsigned i = 0; i < BASELINE_RECORDS; ++i)
+	for (unsigned int i = 0; i < BASELINE_RECORDS; ++i)
 		emit(logger, i);
 	CHECK(logger_flush(logger) == 0);
 	verify_records(point, 0, 1);
@@ -178,7 +178,7 @@ static int archive_name(const char *name)
 	    strcmp(name + 29, ".log"))
 		return 0;
 	const char *stamp = name + 6;
-	for (unsigned i = 0; i < 23; ++i) {
+	for (unsigned int i = 0; i < 23; ++i) {
 		char delimiter = i == 8	 ? 'T' :
 				 i == 15 ? '.' :
 				 i == 22 ? 'Z' :
@@ -215,7 +215,7 @@ static size_t read_segment(const char *name, char *out, size_t capacity)
 	return size;
 }
 
-static void verify_records(const char *point, unsigned recovered,
+static void verify_records(const char *point, unsigned int recovered,
 			   int baseline_only)
 {
 	CHECK(crash_fixture_point_valid(point) && recovered <= 2);
@@ -264,7 +264,7 @@ static void verify_records(const char *point, unsigned recovered,
 				     sizeof(bytes) - used);
 	CHECK(!recovered || active_present);
 	size_t offset = 0;
-	for (unsigned i = 0; i < BASELINE_RECORDS; ++i) {
+	for (unsigned int i = 0; i < BASELINE_RECORDS; ++i) {
 		length = record_line(i, line, sizeof(line));
 		CHECK(used - offset >= length &&
 		      !memcmp(bytes + offset, line, length));
@@ -291,7 +291,7 @@ static void verify_records(const char *point, unsigned recovered,
 		CHECK(target_bytes == 0);
 	}
 	offset += target_bytes;
-	for (unsigned i = 0; i < recovered; ++i) {
+	for (unsigned int i = 0; i < recovered; ++i) {
 		length = record_line(BASELINE_RECORDS + 1u + i, line,
 				     sizeof(line));
 		CHECK(!memcmp(bytes + offset, line, length));
@@ -302,7 +302,7 @@ static void verify_records(const char *point, unsigned recovered,
 	       point, recovered, count, target_bytes);
 }
 
-void crash_fixture_verify(const char *point, unsigned recovered)
+void crash_fixture_verify(const char *point, unsigned int recovered)
 {
 	verify_records(point, recovered, 0);
 }
@@ -315,7 +315,7 @@ void crash_fixture_recover(const char *point)
 	 */
 	crash_fixture_verify(point, 0);
 	logger_config_t c = config(0);
-	for (unsigned i = 0; i < 2; ++i) {
+	for (unsigned int i = 0; i < 2; ++i) {
 		logger_t *logger = NULL;
 		CHECK(logger_create(&c, &logger) == 0);
 		CHECK(logger != NULL); /* 被终止的所有者与先前恢复已释放租约 */

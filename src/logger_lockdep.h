@@ -7,7 +7,7 @@
 #define LOGGER_ENABLE_LOCKDEP 0
 #endif
 
-typedef enum {
+enum logger_lock_class {
 	LOGGER_LOCK_GLOBAL_CONTROL,
 	LOGGER_LOCK_GLOBAL_LIFETIME,
 	LOGGER_LOCK_INSTANCE_EMIT,
@@ -17,19 +17,23 @@ typedef enum {
 	LOGGER_LOCK_RUNTIME_FORMAT,
 	LOGGER_LOCK_RUNTIME_RESOURCE,
 	LOGGER_LOCK_CLASS_NR
-} logger_lock_class_t;
+};
 
 #if LOGGER_ENABLE_LOCKDEP
 
 void logger_lockdep_reset_child(void);
-void logger_lockdep_check_acquire(logger_lock_class_t, const void *);
-void logger_lockdep_check_release(logger_lock_class_t, const void *);
-void logger_lockdep_acquire(logger_lock_class_t, const void *);
-void logger_lockdep_release(logger_lock_class_t, const void *);
-void logger_lockdep_abandon(logger_lock_class_t, const void *);
-void logger_lockdep_assert_held(logger_lock_class_t, const void *);
-void logger_lockdep_assert_not_held(logger_lock_class_t, const void *);
-const char *logger_lockdep_class_name(logger_lock_class_t);
+void logger_lockdep_check_acquire(enum logger_lock_class class_id,
+				  const void *lock);
+void logger_lockdep_check_release(enum logger_lock_class class_id,
+				  const void *lock);
+void logger_lockdep_acquire(enum logger_lock_class class_id, const void *lock);
+void logger_lockdep_release(enum logger_lock_class class_id, const void *lock);
+void logger_lockdep_abandon(enum logger_lock_class class_id, const void *lock);
+void logger_lockdep_assert_held(enum logger_lock_class class_id,
+				const void *lock);
+void logger_lockdep_assert_not_held(enum logger_lock_class class_id,
+				    const void *lock);
+const char *logger_lockdep_class_name(enum logger_lock_class class_id);
 
 #else
 
@@ -37,57 +41,58 @@ static inline void logger_lockdep_reset_child(void)
 {
 }
 
-static inline void logger_lockdep_check_acquire(logger_lock_class_t class_id,
+static inline void logger_lockdep_check_acquire(enum logger_lock_class class_id,
 						const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_check_release(logger_lock_class_t class_id,
+static inline void logger_lockdep_check_release(enum logger_lock_class class_id,
 						const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_acquire(logger_lock_class_t class_id,
+static inline void logger_lockdep_acquire(enum logger_lock_class class_id,
 					  const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_release(logger_lock_class_t class_id,
+static inline void logger_lockdep_release(enum logger_lock_class class_id,
 					  const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_abandon(logger_lock_class_t class_id,
+static inline void logger_lockdep_abandon(enum logger_lock_class class_id,
 					  const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_assert_held(logger_lock_class_t class_id,
+static inline void logger_lockdep_assert_held(enum logger_lock_class class_id,
 					      const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
-static inline void logger_lockdep_assert_not_held(logger_lock_class_t class_id,
-						  const void *lock)
+static inline void
+logger_lockdep_assert_not_held(enum logger_lock_class class_id,
+			       const void *lock)
 {
 	(void)class_id;
 	(void)lock;
 }
 
 static inline const char *
-logger_lockdep_class_name(logger_lock_class_t class_id)
+logger_lockdep_class_name(enum logger_lock_class class_id)
 {
 	(void)class_id;
 	return "disabled";

@@ -34,7 +34,7 @@ int rc = logger_create(&c, &log);
 if (rc)
         return rc;
 /* 以下为示例 SDK 的真实类型，生产 SDK 使用自己的配置项。 */
-example_sdk_options_t opts = {"backup", example_to_logger, log};
+struct example_sdk_options opts = {"backup", example_to_logger, log};
 /* SDK 只使用 opts.log(opts.log_user, &record)，不创建/销毁 log。 */
 ```
 

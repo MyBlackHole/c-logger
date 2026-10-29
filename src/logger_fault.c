@@ -15,7 +15,7 @@ static const char *name(enum logger_fault_point p)
 }
 int logger_fault_should_fail(enum logger_fault_point p)
 {
-	if ((unsigned)p >= 3)
+	if ((unsigned int)p >= 3)
 		return 0;
 	const char *x = getenv("LOGGER_FAULT_POINT");
 	if (!x || strcmp(x, name(p)))

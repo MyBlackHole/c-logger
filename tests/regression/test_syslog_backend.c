@@ -57,9 +57,9 @@ static void read_one(int fd, char *buf, size_t cap)
 	CHECK(n > 0);
 	buf[n] = 0;
 }
-static unsigned drain(int fd)
+static unsigned int drain(int fd)
 {
-	unsigned n = 0;
+	unsigned int n = 0;
 	char b[10000];
 	for (;;) {
 		ssize_t rc = recv(fd, b, sizeof(b), MSG_DONTWAIT);
@@ -71,9 +71,9 @@ static unsigned drain(int fd)
 		return n;
 	}
 }
-static unsigned fill(logger_t *l)
+static unsigned int fill(logger_t *l)
 {
-	for (unsigned i = 0; i < 10000; ++i) {
+	for (unsigned int i = 0; i < 10000; ++i) {
 		int rc = write_one(l, "fill");
 		if (rc) {
 			CHECK(rc == -EAGAIN || rc == -EWOULDBLOCK);
@@ -83,11 +83,11 @@ static unsigned fill(logger_t *l)
 	CHECK(!"receiver did not fill");
 	return 0;
 }
-static unsigned fd_count(void)
+static unsigned int fd_count(void)
 {
 	DIR *d = opendir("/proc/self/fd");
 	CHECK(d);
-	unsigned n = 0;
+	unsigned int n = 0;
 	struct dirent *e;
 	while ((e = readdir(d)))
 		if (e->d_name[0] != '.')
@@ -95,19 +95,19 @@ static unsigned fd_count(void)
 	CHECK(!closedir(d));
 	return n;
 }
-static void check_file(unsigned total, int queued)
+static void check_file(unsigned int total, int queued)
 {
 	FILE *f = fopen("out.log", "r");
 	CHECK(f);
 	char *line = NULL;
 	size_t cap = 0;
-	unsigned count = 0, seen_count = 0;
+	unsigned int count = 0, seen_count = 0;
 	unsigned char seen[4000] = { 0 };
 	while (getline(&line, &cap, f) >= 0) {
 		++count;
 		char *mark = strstr(line, " queued-");
 		if (mark) {
-			unsigned i;
+			unsigned int i;
 			CHECK(sscanf(mark, " queued-%u", &i) == 1 && i < 4000 &&
 			      !seen[i]);
 			seen[i] = 1;
@@ -129,12 +129,12 @@ static void pause_reconnect(void)
 
 struct thread_arg {
 	logger_t *l;
-	unsigned n;
+	unsigned int n;
 };
 static void *writer(void *p)
 {
 	struct thread_arg *a = p;
-	for (unsigned i = 0; i < a->n; ++i)
+	for (unsigned int i = 0; i < a->n; ++i)
 		LOGGER_INFO(a->l, "threads", "message=%u", i);
 	return NULL;
 }
@@ -173,10 +173,10 @@ static void run(const char *mode)
 	}
 	if (!strcmp(mode, "required-missing") || !strcmp(mode, "fd-churn") ||
 	    !strcmp(mode, "init-cleanup")) {
-		unsigned before = fd_count();
+		unsigned int before = fd_count();
 		if (!strcmp(mode, "init-cleanup"))
 			c.outputs |= LOGGER_OUT_FILE;
-		for (unsigned i = 0; i < 64; ++i) {
+		for (unsigned int i = 0; i < 64; ++i) {
 			CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
 			      -ENOENT);
 		}
@@ -298,8 +298,8 @@ static void run(const char *mode)
 		CHECK(fcntl(logger_fd_number(view), F_GETFD) & FD_CLOEXEC);
 		CHECK(metrics(l).connect_attempts == 1);
 	} else if (!strcmp(mode, "wire")) {
-		const unsigned pri[] = { 7, 7, 6, 4, 3, 2 };
-		for (unsigned i = 0; i < 6; ++i) {
+		const unsigned int pri[] = { 7, 7, 6, 4, 3, 2 };
+		for (unsigned int i = 0; i < 6; ++i) {
 			CHECK(!logger_log_sync_status(l, (logger_level_t)i, "m",
 						      NULL, 0, NULL,
 						      "record-%u", i));
@@ -318,19 +318,19 @@ static void run(const char *mode)
 	} else if (!strcmp(mode, "pressure") ||
 		   !strcmp(mode, "multi-backend") ||
 		   !strcmp(mode, "async-pressure")) {
-		unsigned accepted = fill(l);
+		unsigned int accepted = fill(l);
 		CHECK(accepted > 0);
 		if (c.async_mode) {
-			for (unsigned i = 0; i < 4000; ++i)
+			for (unsigned int i = 0; i < 4000; ++i)
 				LOGGER_INFO(l, "async", "queued-%u", i);
 		} else {
-			for (unsigned i = 0; i < 32; ++i)
+			for (unsigned int i = 0; i < 32; ++i)
 				CHECK(write_one(l, "failed-no-replay") ==
 				      -EAGAIN);
 		}
 		CHECK(logger_flush(l) == -EAGAIN);
 		logger_syslog_metrics_t m = metrics(l);
-		unsigned extra = c.async_mode ? 4000 : 32;
+		unsigned int extra = c.async_mode ? 4000 : 32;
 		CHECK(m.submitted_records == accepted + 1 + extra);
 		CHECK(m.sent_records == accepted &&
 		      m.failed_records == 1 + extra &&
@@ -414,9 +414,9 @@ static void run(const char *mode)
 		pthread_t t[8], obs;
 		atomic_store(&observe, 1);
 		CHECK(!pthread_create(&obs, NULL, observer, l));
-		for (unsigned i = 0; i < 8; ++i)
+		for (unsigned int i = 0; i < 8; ++i)
 			CHECK(!pthread_create(&t[i], NULL, writer, &a));
-		for (unsigned i = 0; i < 8; ++i)
+		for (unsigned int i = 0; i < 8; ++i)
 			CHECK(!pthread_join(t[i], NULL));
 		atomic_store(&observe, 0);
 		CHECK(!pthread_join(obs, NULL));

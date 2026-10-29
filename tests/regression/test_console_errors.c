@@ -27,14 +27,15 @@ static int fail_unlock;
 static int tty_answer = -1;
 static int tty_error;
 static int query_output;
-static unsigned changes;
+static unsigned int changes;
 
-int __real_pthread_setcancelstate(int, int *);
-int __real_pthread_mutex_lock(pthread_mutex_t *);
-int __real_pthread_mutex_unlock(pthread_mutex_t *);
-int __real_isatty(int);
-int __real_vfprintf(FILE *, const char *, va_list);
-int __real___vfprintf_chk(FILE *, int, const char *, va_list);
+int __real_pthread_setcancelstate(int state, int *old);
+int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+int __real_pthread_mutex_unlock(pthread_mutex_t *mu);
+int __real_isatty(int fd);
+int __real_vfprintf(FILE *stream, const char *format, va_list args);
+int __real___vfprintf_chk(FILE *stream, int flag, const char *format,
+			  va_list args);
 
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
@@ -105,7 +106,7 @@ int __wrap___vfprintf_chk(FILE *stream, int flag, const char *format,
 	return __real___vfprintf_chk(stream, flag, format, args);
 }
 
-static int call(unsigned op)
+static int call(unsigned int op)
 {
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
 	cfg.color = CONSOLE_COLOR_NEVER;
@@ -174,7 +175,7 @@ static void cancel_matrix(FILE *sink, int setup)
 					      "DEBUG: source.c:7 f() text\n" };
 	off_t offset = 0;
 
-	for (unsigned i = 0; i < 12; ++i) {
+	for (unsigned int i = 0; i < 12; ++i) {
 		errno = EDOM;
 		if (!setup && i < 3) {
 			/* 三个配置入口均从不同旧值开始；先观察旧配置，避免

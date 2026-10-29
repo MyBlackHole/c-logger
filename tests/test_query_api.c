@@ -38,7 +38,7 @@ struct query_slot {
 	unsigned char after[16];
 };
 
-static unsigned checks;
+static unsigned int checks;
 
 static int query(enum query op, logger_t *owner, union query_value *out)
 {
@@ -118,7 +118,7 @@ static logger_config_t config(int async)
 }
 
 static void succeeded(enum query op, logger_t *owner, int async,
-		      unsigned records, unsigned outputs)
+		      unsigned int records, unsigned int outputs)
 {
 	struct query_slot slot;
 	union query_value *out = &slot.value;
@@ -209,7 +209,7 @@ static void ready(int async, int syslog)
 	int fd = syslog ? receiver() : -1;
 	logger_config_t cfg = config(async);
 	logger_t *owner = NULL;
-	unsigned records = syslog ? 1u : 4u;
+	unsigned int records = syslog ? 1u : 4u;
 
 	if (syslog) {
 		cfg.outputs |= LOGGER_OUT_SYSLOG;
@@ -217,7 +217,7 @@ static void ready(int async, int syslog)
 	}
 	CHECK(logger_create(&cfg, &owner) == 0);
 	CHECK(logger_default_set(NULL, owner) == 0);
-	for (unsigned i = 0; i < records; ++i)
+	for (unsigned int i = 0; i < records; ++i)
 		CHECK(LOGGER_INFO(owner, "query", "record=%u", i) == 0);
 	CHECK(logger_flush(owner) == 0);
 	for (enum query op = Q_STATE; op < Q_COUNT; ++op) {

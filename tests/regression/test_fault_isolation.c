@@ -8,11 +8,11 @@
 #include <sys/syscall.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #ifndef TEST_EXPECT_HOOKS
 #define TEST_EXPECT_HOOKS 0
 #endif
-extern char **environ;
 static int intercept_connect;
 static char connected_path[108];
 
@@ -20,8 +20,8 @@ static char connected_path[108];
  * 仅用 --wrap=connect 无法观察生产 DSO 内部的调用。
  * Linux 是受支持平台；不使用 libdl，转发无关调用。
  */
-int isolation_connect(int, const struct sockaddr *,
-		      socklen_t) __asm__("connect");
+int isolation_connect(int fd, const struct sockaddr *address,
+		      socklen_t n) __asm__("connect");
 int isolation_connect(int fd, const struct sockaddr *address, socklen_t n)
 {
 	if (!intercept_connect)

@@ -14,7 +14,7 @@ int main(int argc, char **argv)
 			argv[0]);
 		return 2;
 	}
-	example_plugin_t plugin;
+	struct example_plugin plugin;
 	if (example_plugin_open(&plugin, argv[1])) {
 		fprintf(stderr, "load SDK: %s\n", dlerror());
 		return 1;
@@ -35,7 +35,8 @@ int main(int argc, char **argv)
 		perror("logger_create");
 		goto cleanup;
 	}
-	example_sdk_options_t options = { "backup", example_to_logger, logger };
+	struct example_sdk_options options = { "backup", example_to_logger,
+					       logger };
 	if (plugin.create(&options, &first)) {
 		perror("create first SDK");
 		goto cleanup;

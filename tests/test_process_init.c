@@ -95,7 +95,7 @@ static void prefork(void)
 static void uninitialized(void)
 {
 	/* 多轮普通调用不能变成隐式初始化；显式调用仍是首次成功。 */
-	for (unsigned i = 0; i < 3; ++i)
+	for (unsigned int i = 0; i < 3; ++i)
 		check_process_rejection(ENODEV);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
