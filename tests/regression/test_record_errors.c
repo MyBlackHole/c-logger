@@ -225,7 +225,8 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 	atomic_store_explicit(&wait_entered, 1, memory_order_release);
 	int rc = __real_pthread_cond_wait(cond, mutex);
 	CHECK(rc == 0);
-	/* 真实等待返回后暂时让出锁，但不能让工作线程在本次发布完成前
+	/*
+	 * 真实等待返回后暂时让出锁，但不能让工作线程在本次发布完成前
 	 * disarm。这样伪唤醒也不能跳过待验证的通知链；回到生产代码时
 	 * 重新持有同一把锁，保留 cond_wait 的返回合同。
 	 */
@@ -391,7 +392,8 @@ static void notify_case(const char *mode)
 {
 	int error = !strcmp(mode, "notify-lock") ? EAGAIN : EIO;
 	wait_flag(&wait_entered);
-	/* 取得真实 wait_mu 才证明工作线程已越过发布 waiting 后的复查，
+	/*
+	 * 取得真实 wait_mu 才证明工作线程已越过发布 waiting 后的复查，
 	 * 并经 cond_wait 释放锁；仅轮询 waiting 无法证明这一交接。
 	 */
 	CHECK(__real_pthread_mutex_lock(&owner->q.wait_mu) == 0);
@@ -512,7 +514,9 @@ static int simple_case(const char *mode)
 	}
 	expect_records(body, records, NULL);
 	if (retain) {
-		/* 已报告的解锁证明失败按合同保留，不能强制重置后伪造健康清理。 */
+		/*
+		 * 已报告的解锁证明失败按合同保留，不能强制重置后伪造健康清理。
+		 */
 		if (!strcmp(mode, "emit-unlock"))
 			CHECK(atomic_load(&owner->synchronization_error) ==
 			      EPERM);
@@ -573,7 +577,8 @@ int main(int argc, char **argv)
 		notify_case(mode);
 	else
 		retained = simple_case(mode);
-	/* 保守保留的实例仍拥有文件和协调锁，夹具随进程退出保留，不能
+	/*
+	 * 保守保留的实例仍拥有文件和协调锁，夹具随进程退出保留，不能
 	 * 调用健康销毁后的清理辅助函数删除存活锁 inode。
 	 */
 	if (retained)

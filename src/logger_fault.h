@@ -7,7 +7,8 @@ enum logger_fault_point {
 	LOGGER_FAULT_FILE_FSYNC,
 	LOGGER_FAULT_FILE_RENAME
 };
-/* 只有特意分离的 logger_test_support 目标包含钩子。
+/*
+ * 只有特意分离的 logger_test_support 目标包含钩子。
  * 生产宏也会消除调用参数（包括崩溃点字符串）。
  * 不存在可启用生产故障钩子的运行时环境开关。
  */

@@ -78,7 +78,8 @@ static int initialize_process(void)
 	if (ticket == PROCESS_STARTING)
 		return -EAGAIN;
 
-	/* 在取得初始化所有权前禁止取消，避免票据永久停在 STARTING。
+	/*
+	 * 在取得初始化所有权前禁止取消，避免票据永久停在 STARTING。
 	 * 完成发布后恢复调用方策略；待定取消不会撤销已注册的进程能力。
 	 */
 	int old_cancel;
@@ -120,7 +121,8 @@ static int initialize_process(void)
 			atomic_store_explicit(&forked_child, 0,
 					      memory_order_release);
 		}
-		/* 只有注册成功才发布 READY；显式调用可以重试正数错误票据。
+		/*
+		 * 只有注册成功才发布 READY；显式调用可以重试正数错误票据。
 		 * 注册成功后再也不进入此分支，不会重复安装处理函数。
 		 */
 		atomic_store_explicit(&process_ticket,
@@ -145,7 +147,8 @@ int logger_process_init(void)
 
 int logger_process_require(void)
 {
-	/* 普通调用只观察已发布的进程域，不注册、不重试，也不等待初始化者。
+	/*
+	 * 普通调用只观察已发布的进程域，不注册、不重试，也不等待初始化者。
 	 * READY 是 release/acquire 发布边界；成功后在当前进程中不再撤销。
 	 * 子方必须先验证 atfork 快照并显式重建，不能等待已消失的线程。
 	 */

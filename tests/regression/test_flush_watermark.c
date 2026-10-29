@@ -63,7 +63,8 @@ int main(void)
 	for (int i = 0; i < 5000 && atomic_load(&waiting) != WAITERS; ++i)
 		nap_ms();
 	CHECK(atomic_load(&waiting) == WAITERS);
-	/* 每次刷新已经捕获 target=1。其进度条件不是“队列为空”，
+	/*
+	 * 每次刷新已经捕获 target=1。其进度条件不是“队列为空”，
 	 * 后续日志不得移动其目标。
 	 */
 	LOGGER_INFO(instance, "barrier", "after-watermark");

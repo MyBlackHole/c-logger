@@ -71,7 +71,9 @@ static void prefork(void)
 	pid_t pid = fork();
 	CHECK(pid >= 0);
 	if (!pid) {
-		/* 本用例在首次使用库前、单线程下 fork，不模拟已初始化子方恢复。 */
+		/*
+		 * 本用例在首次使用库前、单线程下 fork，不模拟已初始化子方恢复。
+		 */
 		if (logger_process_init())
 			_exit(20);
 		logger_config_t cfg = LOGGER_DEFAULT_CONFIG();

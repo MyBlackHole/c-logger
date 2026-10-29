@@ -9,7 +9,8 @@
 #error "invalid LOGGER_TEST_HANDOFF_VARIANT"
 #endif
 
-/* 健康目标直接包含未改写的生产实现。两个错误目标仅在选定移交时，
+/*
+ * 健康目标直接包含未改写的生产实现。两个错误目标仅在选定移交时，
  * 以同型复制模拟忘记消费来源；不会把错误实现写回生产源码或归档。
  */
 #if LOGGER_TEST_HANDOFF_VARIANT != 0

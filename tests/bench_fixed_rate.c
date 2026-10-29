@@ -10,8 +10,10 @@
 #include <time.h>
 #include <sys/stat.h>
 
-/* 此驱动仅依赖公开 API。每个输入槽位只尝试一次，不补偿丢弃；
- * 到达测量截止时间后停止发起调用，未发出的槽位归发生器缺失。 */
+/*
+ * 此驱动仅依赖公开 API。每个输入槽位只尝试一次，不补偿丢弃；
+ * 到达测量截止时间后停止发起调用，未发出的槽位归发生器缺失。
+ */
 struct phase {
 	logger_t *logger;
 	const char *payload;
@@ -78,8 +80,10 @@ static void *produce(void *opaque)
 					"FR phase=%u seq=%" PRIu64
 					" payload=%s",
 					p->number, i, p->payload);
-		/* 此耗时包含时钟读取的测量开销。
-		 * 调用包含格式化/入队/可能回退，不代表输出或落盘。 */
+		/*
+		 * 此耗时包含时钟读取的测量开销。
+		 * 调用包含格式化/入队/可能回退，不代表输出或落盘。
+		 */
 		p->calls[i] = now_ns() - before;
 		p->status[i] = status;
 		p->late[i] = late;
@@ -135,8 +139,10 @@ static uint64_t drops(const logger_metrics_t *m)
 	return n;
 }
 
-/* 停止生产后仅轮询公开完成计数，1ms 轮询会抬高观测上界。
- * 不把 consumer_records（出队数）冒充输出完成数。 */
+/*
+ * 停止生产后仅轮询公开完成计数，1ms 轮询会抬高观测上界。
+ * 不把 consumer_records（出队数）冒充输出完成数。
+ */
 static int wait_output(logger_t *logger, const logger_metrics_t *m)
 {
 	uint64_t deadline = now_ns() + 10000000000ull;
@@ -249,15 +255,19 @@ static int run_phase(logger_t *logger, unsigned int number,
 		else
 			api_other_errors++;
 	}
-	/* 本负载不进行级别过滤；负返回可能已输出，不能据此重试。
-	 * 其他错误使样本失败，仍保留原始返回值和计数供调查。 */
+	/*
+	 * 本负载不进行级别过滤；负返回可能已输出，不能据此重试。
+	 * 其他错误使样本失败，仍保留原始返回值和计数供调查。
+	 */
 	int accounting =
 		attempted == api_success + api_eagain + api_other_errors &&
 		api_success == enqueued + fallback && api_eagain == dropped &&
 		completed == enqueued && sync_completed == fallback &&
 		emitted + io_failed == completed + sync_completed;
-	/* 原始数组按计划槽位保留；calls==0 表示未发出。机器本地字节序，
-	 * 由 runner 连同平台信息存档，不能把缺失槽位作为零延迟。 */
+	/*
+	 * 原始数组按计划槽位保留；calls==0 表示未发出。机器本地字节序，
+	 * 由 runner 连同平台信息存档，不能把缺失槽位作为零延迟。
+	 */
 	uint64_t header[2] = { number, p.count };
 	int raw_ok = fwrite(header, sizeof(*header), 2, raw) == 2 &&
 		     fwrite(p.calls, sizeof(*p.calls), (size_t)p.count, raw) ==
@@ -419,8 +429,10 @@ int main(int argc, char **argv)
 		rc = run_phase(logger, 1, (unsigned int)threads, rate,
 			       (unsigned int)seconds, payload, file_backend,
 			       raw);
-	/* 销毁 /dev/null 时的 fsync EINVAL 不属于输出失败，单独记录状态。
-	 * 文件后端则必须成功关闭。 */
+	/*
+	 * 销毁 /dev/null 时的 fsync EINVAL 不属于输出失败，单独记录状态。
+	 * 文件后端则必须成功关闭。
+	 */
 	int close_rc = logger_destroy(&logger);
 	int close_errno = -close_rc;
 	printf("{\"close_rc\":%d,\"close_errno\":%d}\n", close_rc, close_errno);

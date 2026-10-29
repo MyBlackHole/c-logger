@@ -569,7 +569,8 @@ int main(int argc, char **argv)
 		CHECK(logger_destroy(&owner) == -EBUSY && errno == EDOM);
 		CHECK(owner == before &&
 		      atomic_load(&owner->default_borrowed) == 1);
-		/* 不伪造释放证明、重置毒化或删掉仍被持有的协调 inode。
+		/*
+		 * 不伪造释放证明、重置毒化或删掉仍被持有的协调 inode。
 		 * 这些失败用例由进程退出归还资源，不能记为健康销毁覆盖。
 		 */
 	} else {

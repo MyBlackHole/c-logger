@@ -7,7 +7,8 @@ static logger_t *default_owner;
 #include <fcntl.h>
 #include <sys/file.h>
 
-/* 链接包装函数注入一次释放证明失败。全部资源、工作线程 I/O、
+/*
+ * 链接包装函数注入一次释放证明失败。全部资源、工作线程 I/O、
  * 全局生命周期保护、取消与后续锁调用仍是真实的。
  */
 static _Atomic(logger_t *) subject;
@@ -37,7 +38,8 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	if (subject && mu == &subject->progress_mu && caller == 1 &&
 	    atomic_exchange(&pause_flush, 0)) {
-		/* API 已在 RUNNING 时接纳本次刷新，全局变体
+		/*
+		 * API 已在 RUNNING 时接纳本次刷新，全局变体
 		 * 也已持有其真实的生命周期读侧保护。
 		 */
 		atomic_store(&at_progress, 1);
@@ -48,7 +50,8 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 		return EAGAIN;
 	if (subject && mu == &subject->emit_mu && atomic_load(&emit_poisoned)) {
 		atomic_fetch_add(&poisoned_reacquires, 1);
-		/* 有意保留真实锁操作：未修复基线会在此挂起，
+		/*
+		 * 有意保留真实锁操作：未修复基线会在此挂起，
 		 * 必须由测试运行器超时拒绝。
 		 */
 		fputs("unexpected reacquire of unproven emit_mu\n", stderr);
@@ -86,7 +89,8 @@ int __wrap_fsync(int fd)
 static void cancelled_flush_cleanup(void *unused)
 {
 	(void)unused;
-	/* 显式作用域仍忙碌时，取消不得逃逸。
+	/*
+	 * 显式作用域仍忙碌时，取消不得逃逸。
 	 * 对于全局情形，下方等待关闭的完成也证明
 	 * 此清理运行前读侧生命周期保护已释放。
 	 */
@@ -156,7 +160,8 @@ static void release_failure(int global, int cancel)
 			   "record");
 	wait_flag(&subject->synchronization_error);
 	CHECK(atomic_load(&subject->synchronization_error) == EAGAIN);
-	/* 仅供测试的线程回收证明此精确工作线程已结束。
+	/*
+	 * 仅供测试的线程回收证明此精确工作线程已结束。
 	 * 生产库仍必须保留对象，因为其输出锁未能释放。
 	 */
 	CHECK(!pthread_join(subject->worker, NULL));
@@ -189,7 +194,8 @@ static void release_failure(int global, int cancel)
 	CHECK(flock(lease, LOCK_EX | LOCK_NB) == -1 &&
 	      (errno == EAGAIN || errno == EWOULDBLOCK));
 	CHECK(close(lease) == 0);
-	/* 保留退役分配的根引用直到退出。全部断言后只移除夹具名称；
+	/*
+	 * 保留退役分配的根引用直到退出。全部断言后只移除夹具名称；
 	 * 之后不尝试建立后继所有者。
 	 * 测试清理绝不重试拆除，也不重置已失效互斥锁。
 	 */

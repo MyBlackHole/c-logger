@@ -8,7 +8,8 @@
 #define LOGGER_MESSAGE_MAX 4096
 #define LOGGER_LINE_MAX 5120
 
-/* 普通日志保留长度受限的字节前缀，并添加可见标记。
+/*
+ * 普通日志保留长度受限的字节前缀，并添加可见标记。
  * 严格同步路径拒绝超长文本，不使用此机制；两种路径均返回状态。
  */
 static inline void logger_text_mark_truncated(char *text, size_t capacity)
@@ -50,7 +51,9 @@ struct logger_message {
 	char file_storage[256];
 	char function_storage[128];
 };
-/* 只有队列拥有这些固定大小的快照。同步记录无需保留来源的生命周期。
+/*
+ * 需要跨调用保留来源时，复制进记录自身的固定数组；同步记录只在当前调用
+ * 期间借用来源，调用方须保证其存活。
  * 这种有界复制不会为每条记录增加堆分配。
  */
 static inline void logger_source_copy(char *dst, size_t cap, const char *src)
@@ -66,7 +69,8 @@ static inline void logger_source_copy(char *dst, size_t cap, const char *src)
 static inline size_t logger_record_text_length(const struct logger_message *m)
 {
 	size_t n = m->text_len;
-	/* 生产路径由 vsnprintf() 精确填充 text_len。
+	/*
+	 * 生产路径由 vsnprintf() 精确填充 text_len。
 	 * 单元测试和内部手工构造的记录允许 text_len=0，此时兼容性扫描一次。
 	 */
 	if ((n != 0 || m->text[0] == '\0') && n < LOGGER_MESSAGE_MAX &&

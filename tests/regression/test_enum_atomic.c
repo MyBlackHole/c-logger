@@ -2,7 +2,8 @@
 #include "logger_internal.h"
 #include "support.h"
 
-/* 仅验证真实私有头的内联封装及独立原子对象，不链接生产库，
+/*
+ * 仅验证真实私有头的内联封装及独立原子对象，不链接生产库，
  * 不将单线程值/写回检查当作并发内存序或完整状态机证明。
  */
 static unsigned int object_calls;
@@ -62,7 +63,8 @@ int main(void)
 	CHECK(atomic_load_explicit(&state, memory_order_relaxed) ==
 	      LOGGER_STATE_CREATED);
 
-	/* 故意比较失败：对象不变，调用方的 expected 得到实际状态。
+	/*
+	 * 故意比较失败：对象不变，调用方的 expected 得到实际状态。
 	 * 下一次直接使用这个写回值，拒绝在封装内复制后丢失写回。
 	 */
 	result = logger_state_try_publish(state_argument(&state),

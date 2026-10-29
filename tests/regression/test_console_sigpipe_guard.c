@@ -5,7 +5,8 @@
 #include "logger_runtime.h"
 #include <signal.h>
 
-/* 罕见的守卫设置或解锁失败只注入白盒静态库。
+/*
+ * 罕见的守卫设置或解锁失败只注入白盒静态库。
  * 生产闭管道行为有自己的无包装测试。
  */
 static int armed;

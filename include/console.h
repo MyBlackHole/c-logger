@@ -43,7 +43,8 @@ static inline console_config_t console_defaults_cpp(void)
 			     .verbosity = CONSOLE_NORMAL,             \
 			     .color = CONSOLE_COLOR_AUTO })
 #endif
-/* 所有 Console 接口成功返回 0，失败返回负 errno；正常返回均保留调用方
+/*
+ * 所有 Console 接口成功返回 0，失败返回负 errno；正常返回均保留调用方
  * errno。输出成功也包括按 verbosity 过滤的诊断，但 fmt==NULL 始终 EINVAL。
  * 不再提供 void 配置接口或返回布尔值的无参 TTY 查询。
  *
@@ -67,7 +68,8 @@ static inline console_config_t console_defaults_cpp(void)
 LOGGER_API int console_init(const console_config_t *c);
 LOGGER_API int console_set_verbosity(console_verbosity_t value);
 LOGGER_API int console_set_color(console_color_mode_t value);
-/* 查询成功写入 0/1（非终端/终端），ENOTTY 是成功的非终端结果。
+/*
+ * 查询成功写入 0/1（非终端/终端），ENOTTY 是成功的非终端结果。
  * EBADF 等错误仍返回负错误码；包括收尾失败在内的任意失败不修改 *out。
  * out==NULL 为 EINVAL；调用方保证非空输出槽独占、存活且可写。
  */

@@ -7,7 +7,8 @@
 #include <stdatomic.h>
 #include <sys/wait.h>
 
-/* 不进入 TSan full-static 集合：GCC TSan 不支持多线程 fork 后建线程。
+/*
+ * 不进入 TSan full-static 集合：GCC TSan 不支持多线程 fork 后建线程。
  * 独立普通/ASan 验证真实生产静态和共享库，不修改生产故障开关。
  */
 enum {
@@ -73,7 +74,8 @@ static void *child_write(void *arg)
 	return NULL;
 }
 
-/* 不是仅检查线程已启动：每次 fork 前后都要求两个业务写者
+/*
+ * 不是仅检查线程已启动：每次 fork 前后都要求两个业务写者
  * 确实完成了新日志调用。计数由 release 发布、acquire 观测。
  */
 static unsigned int parent_written(const struct parent_writer *writer)
@@ -214,7 +216,8 @@ int main(int argc, char **argv)
 			before[j] = parent_written(&writers[j]);
 			CHECK(before[j] > 0 && before[j] < PARENT_LIMIT);
 		}
-		/* 此管道属于测试宿主，而非 Logger。子进程在重建域前
+		/*
+		 * 此管道属于测试宿主，而非 Logger。子进程在重建域前
 		 * 只做 close/read 等异步信号安全操作；父进程确认真实
 		 * 写入进度后才允许其调用 logger_process_init。
 		 */

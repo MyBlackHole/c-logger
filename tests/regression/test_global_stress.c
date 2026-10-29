@@ -4,7 +4,8 @@
 #include "default_fixture.h"
 static logger_t *owner;
 
-/* 真实 DSO 变体不能检查私有实现计数器。它改为检查可观察的
+/*
+ * 真实 DSO 变体不能检查私有实现计数器。它改为检查可观察的
  * 描述符清理与关闭状态；静态白盒测试继续断言原私有计数器。
  */
 #ifdef LOGGER_PUBLIC_ABI_TEST

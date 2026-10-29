@@ -4,7 +4,8 @@
 #include "regression/support.h"
 #include <sys/wait.h>
 
-/* 黑盒用例只使用公开头和生产库。父、子文件由精确标记验收，
+/*
+ * 黑盒用例只使用公开头和生产库。父、子文件由精确标记验收，
  * 不把初始化返回零或无崩溃当作日志内容正确。
  */
 static void child_check(int ok, int code)
@@ -122,7 +123,9 @@ static void normal(const char *mode)
 		pid_t pid = fork();
 		CHECK(pid >= 0);
 		if (!pid) {
-			/* 未初始化时仍先于旧指针解引用拒绝；初始化后旧指针失效，
+			/*
+			 * 未初始化时仍先于旧指针解引用拒绝；初始化后旧指针失
+			 * 效，
 			 * 绝不测试“再次使用被释放指针可以可靠诊断”。
 			 */
 			errno = EDOM;

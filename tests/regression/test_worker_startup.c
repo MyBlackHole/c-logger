@@ -5,7 +5,8 @@ static logger_t *default_owner;
 #include "logger_internal.h"
 #include "support.h"
 
-/* 仅供测试的链接包装函数。EIO 为合成错误；cond_wait 保持互斥锁被持有。
+/*
+ * 仅供测试的链接包装函数。EIO 为合成错误；cond_wait 保持互斥锁被持有。
  * 工作线程或外部借用者仍能访问对象时，不释放任何对象。
  */
 enum scenario {
@@ -229,7 +230,8 @@ static void test_early_failure(logger_t *l, int error)
 		CHECK(atomic_load_explicit(&candidate->lifecycle_error,
 					   memory_order_acquire) == EIO);
 		CHECK(file_size("out.log") == 0);
-		/* 回收测试线程，不回收被保留的库对象。静态根引用
+		/*
+		 * 回收测试线程，不回收被保留的库对象。静态根引用
 		 * 保留该墓碑；不要重试部分拆除的对象。
 		 */
 		if (selected == JOIN_ERROR)

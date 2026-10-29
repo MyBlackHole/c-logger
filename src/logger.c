@@ -353,7 +353,8 @@ static void logger_ctor_note_proof_error(logger_t *l, int rc)
 						      memory_order_relaxed);
 }
 
-/* 构造候选尚未对外发布，无合法外部借用者；只回滚已完成的资源。
+/*
+ * 构造候选尚未对外发布，无合法外部借用者；只回滚已完成的资源。
  * 若已启动工作线程，须先停止并 join，才能释放它可访问的存储。
  * 同步对象的 destroy 返回码不是“没有使用者”的证明：调用前就必须
  * 满足静默期前提。销毁/线程回收/计数错误作为额外不变量故障保守保留容器。
@@ -424,7 +425,8 @@ static int logger_ctor_rollback(logger_t *l,
 		}
 	}
 
-	/* 关闭错误次于构造错误，不会使已证明的内存生命周期变得不安全。
+	/*
+	 * 关闭错误次于构造错误，不会使已证明的内存生命周期变得不安全。
 	 * 绝不重试 Linux close。
 	 */
 	int cleanup_rc = logger_file_close_status(&l->file_backend);
@@ -461,7 +463,9 @@ static logger_t *create_logger(const logger_config_t *input)
 	logger_t *l = logger_runtime_calloc(1, sizeof(*l));
 	if (!l) {
 		int primary = errno ? errno : ENOMEM;
-		/* 没有可保留的容器。存活对象计数回滚失败仍会使进程守卫保持保守；
+		/*
+		 * 没有可保留的容器。存活对象计数回滚失败仍会使进程守卫保持保
+		 * 守；
 		 * 绝不替换主要错误 ENOMEM。
 		 */
 		(void)logger_ctor_rollback(NULL, &state);
@@ -540,7 +544,8 @@ static logger_t *create_logger(const logger_config_t *input)
 						     cfg.queue_capacity :
 						     8192) != 0) {
 			rc = errno ? errno : EIO;
-			/* 队列的部分构造可能留下未经证明的互斥锁。
+			/*
+			 * 队列的部分构造可能留下未经证明的互斥锁。
 			 * 保留其容器和存活对象计数，不替换主要 errno。
 			 */
 			int proof_error = logger_queue_wait_error(&l->q);
@@ -565,7 +570,9 @@ static logger_t *create_logger(const logger_config_t *input)
 		state.worker_started = 1;
 	}
 
-	/* 工作线程可能在 pthread_create() 返回前失败。只有 CREATED 可变为 RUNNING：
+	/*
+	 * 工作线程可能在 pthread_create() 返回前失败。只有 CREATED 可变为
+	 * RUNNING：
 	 * 绝不覆盖它以 release 发布的 STOPPING 状态。
 	 * 失败时的 acquire 会观察先前的 lifecycle_error 发布；
 	 * 回滚仍会停止并回收每个成功创建的工作线程。
@@ -582,7 +589,8 @@ static logger_t *create_logger(const logger_config_t *input)
 
 fail: {
 	int primary = rc ? rc : EIO;
-	/* 清理诊断绝不替换主要构造失败。
+	/*
+	 * 清理诊断绝不替换主要构造失败。
 	 * logger_ctor_rollback() 自身强制要求释放前先完成证明。
 	 */
 	int cleanup_rc = logger_ctor_rollback(l, &state);
@@ -595,13 +603,15 @@ fail: {
 static void cancel_unreturned_logger(void *arg)
 {
 	logger_t *l = arg;
-	/* scope_end 已在取消生效前清除 TLS 标记。
+	/*
+	 * scope_end 已在取消生效前清除 TLS 标记。
 	 * 销毁从未转交给调用者的对象。
 	 */
 	(void)logger_dispose_internal(l);
 }
 
-/* 将所有权交接与构造分开：清理宏可能实现 setjmp 作用域，
+/*
+ * 将所有权交接与构造分开：清理宏可能实现 setjmp 作用域，
  * 而构造涉及许多可变资源。
  */
 static logger_t *finish_create(struct logger_scope *scope, logger_t *l,
@@ -613,7 +623,8 @@ static logger_t *finish_create(struct logger_scope *scope, logger_t *l,
 	rc = logger_scope_end(scope, error);
 	if (scope->old_cancel == PTHREAD_CANCEL_ENABLE)
 		pthread_testcancel();
-	/* 恢复失败时候选仍由库拥有，沿用取消清理的销毁/保留协议。
+	/*
+	 * 恢复失败时候选仍由库拥有，沿用取消清理的销毁/保留协议。
 	 * 清理错误不能覆盖构造或恢复的主错误。
 	 */
 	pthread_cleanup_pop(rc != 0);
@@ -629,7 +640,8 @@ static logger_t *create_entry(const logger_config_t *input)
 	struct logger_scope scope;
 	if (logger_scope_begin(&scope))
 		return NULL;
-	/* 启用异步取消时，返回拥有所有权的指针无法成为原子交接。
+	/*
+	 * 启用异步取消时，返回拥有所有权的指针无法成为原子交接。
 	 * 在获取资源之前拒绝。全局调用者进入时已禁用取消。
 	 */
 	int old_type;
@@ -643,7 +655,8 @@ static logger_t *create_entry(const logger_config_t *input)
 	}
 	logger_t *l = create_logger(input);
 	int error = l ? 0 : -(errno ? errno : EIO);
-	/* 在所有权交接前处理待定的延迟取消。清理在禁用取消时注册；
+	/*
+	 * 在所有权交接前处理待定的延迟取消。清理在禁用取消时注册；
 	 * pop/return 后不再有 API 取消点。
 	 * 调用者仍必须为之后的取消安装自己的清理处理。
 	 */
@@ -655,7 +668,8 @@ int logger_create(const logger_config_t *input, logger_t **out)
 	int saved = errno;
 	int rc = 0;
 
-	/* out 是调用者独占的拥有者槽。禁止覆盖已有所有者，避免静默泄漏。
+	/*
+	 * out 是调用者独占的拥有者槽。禁止覆盖已有所有者，避免静默泄漏。
 	 * 子方准入先于任何运行态访问；失败不发布候选对象。
 	 */
 	if (reject_access()) {
@@ -683,7 +697,8 @@ static int dispose_body(logger_t *l, int *released)
 		return 0;
 	}
 
-	/* 前提：宿主已停止并等待全部外部借用者结束，禁止新的原始指针访问。
+	/*
+	 * 前提：宿主已停止并等待全部外部借用者结束，禁止新的原始指针访问。
 	 * 状态 STOPPING 不能自动排空外部借用者；成功 join 只证明内部工作线程
 	 * 已退出。满足这些先决条件后再销毁同步对象和依赖存储；
 	 * pthread_*_destroy 成功返回不能代替静默期证明。
@@ -755,7 +770,8 @@ static int dispose_body(logger_t *l, int *released)
 		}
 	}
 
-	/* 外部借用者已静止且工作线程已 join；以下销毁只做额外不变量
+	/*
+	 * 外部借用者已静止且工作线程已 join；以下销毁只做额外不变量
 	 * 检查，不是检测并发使用者的通用机制。失败时停止最终释放。
 	 */
 	int destroy_rc = pthread_cond_destroy(&l->progress_cv);
@@ -786,14 +802,16 @@ static int dispose_body(logger_t *l, int *released)
 
 	logger_state_store_release(&l->state, LOGGER_STATE_STOPPED);
 
-	/* 进程级存活对象计数是不变量门禁。不得通过释放对象并假装没有运行时
+	/*
+	 * 进程级存活对象计数是不变量门禁。不得通过释放对象并假装没有运行时
 	 * 来掩盖计数下溢。
 	 */
 	int release_rc = logger_process_object_release();
 	if (release_rc)
 		return release_rc;
 
-	/* 映射释放可能失败；只有真实归还成功才发布最终释放回执。
+	/*
+	 * 映射释放可能失败；只有真实归还成功才发布最终释放回执。
 	 * 失败映射仍在进程域登记中，不因对象计数归零就假称已释放。
 	 */
 	int free_rc = logger_runtime_free(l);
@@ -850,7 +868,8 @@ int logger_destroy(logger_t **owner)
 	struct logger_scope scope;
 
 	logger_destroy_receipt_reset();
-	/* 拒绝发生在读取拥有者槽和消费其内容之前。普通调用者必须提供
+	/*
+	 * 拒绝发生在读取拥有者槽和消费其内容之前。普通调用者必须提供
 	 * 存活、独占且可写的槽；其他别名不是独立拥有者。
 	 */
 	if (reject_access()) {
@@ -870,7 +889,8 @@ int logger_destroy(logger_t **owner)
 	if (rc)
 		goto out;
 
-	/* 准入成功后消费公开所有权，先清槽再做不可回滚的拆除。
+	/*
+	 * 准入成功后消费公开所有权，先清槽再做不可回滚的拆除。
 	 * I/O 或生命周期证明失败均不允许调用者重试该指针；证明失败时
 	 * 旧分配继续由进程域保守保留。清槽早于取消恢复，取消清理不会
 	 * 再次释放同一个对象。最终释放回执供内部 Global 单独判定。
@@ -1071,7 +1091,8 @@ int logger_wait_for_output(logger_t *l)
 	if (sync_error)
 		return -sync_error;
 	if (l->async_mode) {
-		/* 顺序由预留计数器定义，而不是 enqueued 统计。
+		/*
+		 * 顺序由预留计数器定义，而不是 enqueued 统计。
 		 * 快照前已预留但尚未发布的槽位也必须计入，
 		 * 慢生产者不能被后续记录的完成位置越过。
 		 */
@@ -1085,8 +1106,11 @@ int logger_wait_for_output(logger_t *l)
 			return rc;
 		int result = 0;
 		for (;;) {
-			/* 执行器失败后不能保证该水位。每次唤醒后都在通知互斥锁下
-			 * 检查不会自动清除的错误状态，不能伪造队列空洞的完成状态。
+			/*
+			 * 执行器失败后不能保证该水位。每次唤醒后都在通知互斥锁
+			 * 下
+			 * 检查不会自动清除的错误状态，不能伪造队列空洞的完成状
+			 * 态。
 			 */
 			int error = atomic_load_explicit(&l->lifecycle_error,
 							 memory_order_acquire);
@@ -1142,11 +1166,13 @@ int logger_flush(logger_t *l)
 			   LOGGER_STATE_RUNNING)
 		rc = -ESHUTDOWN;
 	if (!rc) {
-		/* 预留到通知、等待到同步的整段都处于禁用取消的作用域；
+		/*
+		 * 预留到通知、等待到同步的整段都处于禁用取消的作用域；
 		 * 等待工作线程进度时不能持有 emit_mu。
 		 */
 		rc = logger_wait_for_output(l);
-		/* 等待期间，运行中的工作线程可能已失去 emit_mu 释放证明。
+		/*
+		 * 等待期间，运行中的工作线程可能已失去 emit_mu 释放证明。
 		 * 绝不重新获取已知未经证明的锁。普通后端错误仍要求执行下方
 		 * 尽力而为的最终同步。
 		 */

@@ -62,7 +62,8 @@ static void check_reservation_gap(void)
 
 	CHECK(logger_queue_init(&q, 2) == 0);
 
-	/* 位置 1 在当前出队头部（位置 0）之前发布。
+	/*
+	 * 位置 1 在当前出队头部（位置 0）之前发布。
 	 * 它的探测可以先于工作线程布置等待状态，而不使 queue_empty 为假。
 	 */
 	atomic_store_explicit(&q.slots[1].seq, 2, memory_order_release);
@@ -71,7 +72,8 @@ static void check_reservation_gap(void)
 	logger_queue_wait_arm_recheck(&q);
 	CHECK(logger_queue_empty(&q));
 
-	/* 填补头部空洞的生产者随后发布，必须看到已布置的等待者，
+	/*
+	 * 填补头部空洞的生产者随后发布，必须看到已布置的等待者，
 	 * 因此由它负责通知。
 	 */
 	atomic_store_explicit(&q.slots[0].seq, 1, memory_order_release);
@@ -96,8 +98,11 @@ int main(void)
 	unsigned int worker_wins = 0;
 	unsigned int producer_wins = 0;
 	for (unsigned int i = 0; i < ROUNDS; ++i) {
-		/* 主线程重置下一次判别测试实例时，两个参与者都在 done_barrier 处静止。
-		 * 生产初始化后的写入只使用 QUEUE_WAKEUP_PROOF.md 说明的读改写辅助函数。
+		/*
+		 * 主线程重置下一次判别测试实例时，两个参与者都在 done_barrier
+		 * 处静止。
+		 * 生产初始化后的写入只使用 QUEUE_WAKEUP_PROOF.md 说明的读改写辅
+		 * 助函数。
 		 */
 		atomic_store_explicit(&queue.consumer_waiting, 0,
 				      memory_order_relaxed);
@@ -116,7 +121,8 @@ int main(void)
 		unsigned int saw_waiting = atomic_load_explicit(
 			&producer_saw_waiting, memory_order_relaxed);
 
-		/* 禁止结果：
+		/*
+		 * 禁止结果：
 		 *   工作线程未观察到以 release 发布的记录
 		 *   且生产者读改写操作未观察到工作线程布置等待状态。
 		 */

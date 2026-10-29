@@ -161,7 +161,8 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	/* 证明失败使未发布对象成为有意保留的墓碑：
+	/*
+	 * 证明失败使未发布对象成为有意保留的墓碑：
 	 * 不做最终 free，也不释放存活对象计数，避免 fork 状态失真。
 	 */
 	CHECK(candidate_freed == 0);

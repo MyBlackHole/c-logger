@@ -5,7 +5,8 @@
 #include <stdint.h>
 #include <string.h>
 
-/* 单生产者/单消费者的确定性顺序模型。已有 queue_mpsc_regression
+/*
+ * 单生产者/单消费者的确定性顺序模型。已有 queue_mpsc_regression
  * 负责八生产者并发交错，此处测试操作序列变化、背压和 spill 归还。
  */
 #define STEPS 2500u

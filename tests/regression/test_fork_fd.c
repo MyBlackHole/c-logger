@@ -291,7 +291,8 @@ static void child_probe(void)
 		_exit(33);
 	if (child_dir_count)
 		_exit(34);
-	/* 子方未初始化的普通入口仍拒绝；新初始化事务由独立用例验证，
+	/*
+	 * 子方未初始化的普通入口仍拒绝；新初始化事务由独立用例验证，
 	 * 这里继续严格禁止 child 回调内发生分配、同步或格式化。
 	 */
 	if (logger_process_require() != -ECHILD)
@@ -322,7 +323,8 @@ static void descriptor_case(int nested)
 	CHECK(a >= 0 && b >= 0 && d >= 0);
 	DIR *dir = logger_fork_fdopendir(d);
 	CHECK(dir);
-	/* 目录租约现在必须在 fork 前完整消费；跨线程持有场景另有
+	/*
+	 * 目录租约现在必须在 fork 前完整消费；跨线程持有场景另有
 	 * directory-held 正向验证，不能继承 libc DIR 缓冲。
 	 */
 	CHECK(logger_fork_closedir(dir) == 0);

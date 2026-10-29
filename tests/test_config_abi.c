@@ -62,7 +62,8 @@ int main(void)
 	if (!rejects_invalid(&l))
 		return 9;
 
-	/* 未来调用者可以追加零字段，但未知非零选项必须保守拒绝。
+	/*
+	 * 未来调用者可以追加零字段，但未知非零选项必须保守拒绝。
 	 * 通过生产 Logger API 测试此行为。
 	 */
 	struct future_logger_config {

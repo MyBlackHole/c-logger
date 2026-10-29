@@ -7,6 +7,12 @@
 #define LOGGER_ENABLE_LOCKDEP 0
 #endif
 
+/*
+ * 私有的线程局部锁诊断；class_id 与 lock 标识调用方实际操作的锁。
+ * 本接口不执行 pthread 同步，也不固定对象生命周期；实际加解锁及错误由调用方处
+ * 理。
+ * 启用诊断时违规会终止进程，禁用时同名桩不提供同步或校验保证。
+ */
 enum logger_lock_class {
 	LOGGER_LOCK_GLOBAL_CONTROL,
 	LOGGER_LOCK_GLOBAL_LIFETIME,

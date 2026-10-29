@@ -14,7 +14,8 @@
 #endif
 #ifdef LOGGER_RUNTIME_TSAN
 #include <sanitizer/tsan_interface.h>
-/* 仅检测器构建保存已被 MADV_DONTFORK 移除的两把协调锁地址。
+/*
+ * 仅检测器构建保存已被 MADV_DONTFORK 移除的两把协调锁地址。
  * 内核移除映射不会经过 TSan 的 munmap 拦截器，因此当前线程的持锁表
  * 仍含 prepare 取得的租约。不能真实 munmap/解锁旧地址：它可能已被复用。
  */
@@ -26,7 +27,8 @@ static void forget_discarded_leases(void)
 	if (!domain)
 		return;
 	discarded_domain = 0;
-	/* 按实际取得的逆序撤销旧进程租约；不解引用、重置任何真实锁，
+	/*
+	 * 按实际取得的逆序撤销旧进程租约；不解引用、重置任何真实锁，
 	 * 不关闭报告或清空全部锁图。仅在有效 fork 子方的新域创建前执行一次。
 	 * 新域的 pthread 初始化及全部锁操作仍由常规拦截器完整检查。
 	 */
@@ -234,7 +236,8 @@ int logger_runtime_free(void *ptr)
 			next->prev = prev;
 		--runtime->allocation_count;
 	}
-	/* 消费结果与协调锁错误分离：munmap 已成功时不能返回“未释放”，
+	/*
+	 * 消费结果与协调锁错误分离：munmap 已成功时不能返回“未释放”，
 	 * 否则上层会把已失效地址存成退役所有者。解锁失败仍毒化进程域，
 	 * 最终实例销毁根据域诊断报告它，同时给出真实释放回执。
 	 */
@@ -242,7 +245,8 @@ int logger_runtime_free(void *ptr)
 	return -error;
 }
 
-/* 宿主必须先停止全部调用者并销毁实例，再卸载库；这里不接管业务线程。
+/*
+ * 宿主必须先停止全部调用者并销毁实例，再卸载库；这里不接管业务线程。
  * 只归还空域，错误保留域绝不因卸载而尝试猜测其静默状态。
  */
 static void __attribute__((destructor)) logger_runtime_unload(void)

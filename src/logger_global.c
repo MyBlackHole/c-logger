@@ -13,7 +13,8 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-/* 只有生命周期控制操作获取 g_control_mu。
+/*
+ * 只有生命周期控制操作获取 g_control_mu。
  * 普通调用通过 g_lifetime_lock 的读侧生命周期保护保证对象存活。
  * 这个读写锁保护不是引用计数：读者只在持有读锁时借用 g_logger。
  * 锁顺序固定为控制锁 -> 生命周期锁 -> 实例锁。
@@ -24,7 +25,8 @@
 #define g_logger (logger_runtime_current()->global_logger)
 
 enum global_phase { G_IDLE, G_RUNNING, G_STOPPING, G_BROKEN };
-/* 票据含有阶段位，代次不含阶段；原子存储仍为 uint64_t。
+/*
+ * 票据含有阶段位，代次不含阶段；原子存储仍为 uint64_t。
  * 显式 .value 保留打包边界，CAS 失败直接写回完整票据的字段。
  */
 struct global_ticket {
@@ -37,7 +39,8 @@ struct global_generation {
 
 #define PHASE_BITS 3u
 #define PHASE_MASK UINT64_C(7)
-/* generation 与 phase 放在同一个原子票据中。
+/*
+ * generation 与 phase 放在同一个原子票据中。
  * 若分开读取，读者可能把某一代 RUNNING 与另一代 generation 错配。
  * 每次真正改变默认绑定都会消费一个 generation，不会创建或销毁实例。
  *
@@ -81,7 +84,8 @@ static int global_lock_error(void)
 	return atomic_load_explicit(&g_lock_error, memory_order_acquire);
 }
 
-/* 先发布不会自动清除的错误状态，再发布损坏阶段。
+/*
+ * 先发布不会自动清除的错误状态，再发布损坏阶段。
  * 若另一个控制方已在等待该锁，CAS 会保留更新的代次。
  */
 static void global_lock_poison(int error)
@@ -112,7 +116,8 @@ static void rollback_ticket(struct global_ticket ticket,
 		memory_order_release, memory_order_relaxed);
 }
 
-/* 取消恢复生效前，必须先释放全部资源和生命周期保护。
+/*
+ * 取消恢复生效前，必须先释放全部资源和生命周期保护。
  * 应用的取消清理处理函数随后仍可能调用 Logger。
  * 这里是取消延后，不是回滚，也不是 I/O 超时期限。
  * 显式实例 API 还会建立自己的内层作用域，并继承禁用状态。
@@ -136,7 +141,8 @@ static int finish_result(struct global_scope *scope, int rc)
 			return -error;
 		}
 	}
-	/* 清除标记是宿主可以销毁旧实例的最后一道凭证，早于取消恢复。
+	/*
+	 * 清除标记是宿主可以销毁旧实例的最后一道凭证，早于取消恢复。
 	 * 任何解锁证明失败都不清标记，不以指针已移出槽推导借用已归还。
 	 */
 	if (scope->release_borrow)
@@ -162,7 +168,8 @@ static int begin(struct global_scope *scope)
 		errno = ECHILD;
 		return -1;
 	}
-	/* 拒绝同线程直接重入，例如 printf 或符号插入回调再次调用 Logger。
+	/*
+	 * 拒绝同线程直接重入，例如 printf 或符号插入回调再次调用 Logger。
 	 * 这并不意味着信号处理函数或跨线程回调环是安全的，
 	 * 也不允许 pthread_exit/longjmp 穿过 Logger 调用。
 	 */
@@ -222,7 +229,8 @@ static int pin(struct global_scope *scope)
 	int error = phase_error(ticket);
 	if (error)
 		return -error;
-	/* 所有读侧 API 都必须经过准入门禁，不只是 LOG_* 和 flush。
+	/*
+	 * 所有读侧 API 都必须经过准入门禁，不只是 LOG_* 和 flush。
 	 * 准入关闭后，持续的指标、设置或重开调用不能继续加入读写锁读者流。
 	 * 已经延迟的调用最多进入一次，并在拿到生命周期保护后重新校验票据。
 	 */
@@ -251,7 +259,8 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 		rc = -errno;
 		goto out;
 	}
-	/* 控制请求也固定进入时的票据，排队后不能改变新一代绑定。
+	/*
+	 * 控制请求也固定进入时的票据，排队后不能改变新一代绑定。
 	 * 同一实例经历解绑、重绑形成的指针 ABA 不会绕过代次复核。
 	 */
 	struct global_ticket observed = { atomic_load_explicit(
@@ -318,7 +327,8 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 	if (!atomic_compare_exchange_strong_explicit(
 		    &g_ticket, &updating.value, next.value,
 		    memory_order_acq_rel, memory_order_acquire)) {
-		/* 发布前被延迟读者毒化。无人获准使用 replacement，恢复旧槽；
+		/*
+		 * 发布前被延迟读者毒化。无人获准使用 replacement，恢复旧槽；
 		 * 只有后续解锁全部确认才归还 replacement 的临时借用。
 		 */
 		g_logger = expected;
@@ -522,7 +532,9 @@ int logger_global_write(logger_level_t level, const char *module,
 	if (!rc) {
 		va_list ap;
 		va_start(ap, fmt);
-		/* 默认借用的成功锁操作也可能改变 errno；%m 使用最外层入口值。 */
+		/*
+		 * 默认借用的成功锁操作也可能改变 errno；%m 使用最外层入口值。
+		 */
 		errno = saved;
 		rc = logger_vlog_internal(g_logger, level, module, file, line,
 					  func, fmt, ap);

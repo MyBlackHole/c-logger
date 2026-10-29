@@ -7,7 +7,8 @@
 #include <sys/wait.h>
 #include <wchar.h>
 
-/* 不使用包装函数或私有入口：针对交付的静态库或 DSO 运行。
+/*
+ * 不使用包装函数或私有入口：针对交付的静态库或 DSO 运行。
  * 每个子进程都在父进程进入运行时前启动。
  */
 static int report_fd = STDERR_FILENO;
@@ -45,7 +46,8 @@ static int (*const outputs[])(const char *format,
 
 static int output(unsigned int api)
 {
-	/* 函数指针类型有意不带 printf 属性：%m 是被测的受支持 libc 扩展，
+	/*
+	 * 函数指针类型有意不带 printf 属性：%m 是被测的受支持 libc 扩展，
 	 * 不是 ISO 格式。
 	 */
 	if (api < sizeof(outputs) / sizeof(outputs[0]))
@@ -139,7 +141,8 @@ static void run_case(const char *scenario, unsigned int api, int buffered)
 		CHECK(setlocale(LC_CTYPE, "C") != NULL);
 		rc = outputs[api]("prefix %lc", (wint_t)0x100);
 	} else if (host_flush) {
-		/* 即使 Console 写入为空，也必须保护其 fflush，
+		/*
+		 * 即使 Console 写入为空，也必须保护其 fflush，
 		 * 因为宿主可能已将字节放入共享 FILE 缓冲区。
 		 */
 		rc = console_print("%s", "");
@@ -295,7 +298,10 @@ int main(int argc, char **argv)
 			pid_t pid = fork();
 			CHECK(pid >= 0);
 			if (!pid) {
-				/* 此组用例在首次使用库前派生，保持原来的隔离边界。 */
+				/*
+				 * 此组用例在首次使用库前派生，保持原来的隔离边
+				 * 界。
+				 */
 				CHECK(logger_process_init() == 0);
 				run_case(scenario, api, buffered);
 			}

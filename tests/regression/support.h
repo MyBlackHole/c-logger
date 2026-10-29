@@ -87,7 +87,8 @@ static inline int file_contains(const char *path, const char *needle)
 static inline void leave_temp(char *path)
 {
 	CHECK(unlink("out.log") == 0);
-	/* 后端绝不删除存活的协调 inode。测试所有者已销毁其 logger；
+	/*
+	 * 后端绝不删除存活的协调 inode。测试所有者已销毁其 logger；
 	 * 在此移除持久化测试夹具。
 	 */
 	CHECK(unlink("out.log.logger.lock") == 0);

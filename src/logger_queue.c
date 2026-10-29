@@ -15,7 +15,8 @@ static int queue_capacity(struct logger_queue_records requested,
 	size_t n = 2;
 	if (requested.value < 2)
 		requested.value = 2;
-	/* 位置差值使用 unsigned 模运算。队列不能占用一半及以上的位置
+	/*
+	 * 位置差值使用 unsigned 模运算。队列不能占用一半及以上的位置
 	 * 空间，同时必须避免分配大小溢出。
 	 */
 	while (n < requested.value) {
@@ -205,7 +206,8 @@ static int queue_spill_take(struct logger_queue *q, const char *text,
 				uint32_t found =
 					(uint32_t)(word * LOGGER_QUEUE_SPILL_WORD_BITS +
 						   bit);
-				/* 0->1 CAS 后当前生产者独占块。
+				/*
+				 * 0->1 CAS 后当前生产者独占块。
 				 * 正文 memcpy 不需要共享锁；slot.seq 的 release
 				 * 发布再把块内容交给消费者。
 				 */
@@ -228,7 +230,8 @@ static void queue_spill_put(struct logger_queue *q, uint32_t index)
 		return;
 	size_t word = index / LOGGER_QUEUE_SPILL_WORD_BITS;
 	unsigned int bit = index % LOGGER_QUEUE_SPILL_WORD_BITS;
-	/* 消费者已经完成溢出区正文读取后才清除位。
+	/*
+	 * 消费者已经完成溢出区正文读取后才清除位。
 	 * 下一位生产者通过 acquire CAS 重新取得该位后才允许覆盖块。
 	 */
 	(void)atomic_fetch_and_explicit(&q->spill_used[word], ~(1u << bit),
@@ -307,7 +310,8 @@ int logger_queue_destroy(struct logger_queue *q)
 	if (wait_error)
 		return -wait_error;
 
-	/* 调用方须先保证外部生产者静止、工作线程已 join，因而此处
+	/*
+	 * 调用方须先保证外部生产者静止、工作线程已 join，因而此处
 	 * 不再有对 wait_mu/wait_cv 及槽位的并发访问。pthread_*_destroy
 	 * 的返回码不是使用者检测器；仍被使用时调用 destroy 可能是未定义行为。
 	 * 将非零返回视作额外不变量失败，保守保留队列存储。
@@ -332,15 +336,19 @@ int logger_queue_destroy(struct logger_queue *q)
 
 int logger_queue_notify_if_waiting(struct logger_queue *q)
 {
-	/* 必须位于 slot.seq 的 release 发布之后。探测使用 acq_rel 读改写操作：
-	 * 若它先于工作线程后续布置等待状态，该布置会取得发布链；若读到 waiting=1，
+	/*
+	 * 必须位于 slot.seq 的 release 发布之后。探测使用 acq_rel 读改写操作：
+	 * 若它先于工作线程后续布置等待状态，该布置会取得发布链；若读到
+	 * waiting=1，
 	 * 生产者则进入与 wait_mu 配对的信号通知路径。
 	 */
 	if (!logger_queue_wait_probe_after_publish(q))
 		return 0;
 
-	/* 慢路径拿到 wait_mu 前 waiting 保持为 1。工作线程因此要么复查后清除
-	 * 状态并继续运行，要么先由 cond_wait 原子释放 wait_mu，再由生产者清除并唤醒。
+	/*
+	 * 慢路径拿到 wait_mu 前 waiting 保持为 1。工作线程因此要么复查后清除
+	 * 状态并继续运行，要么先由 cond_wait 原子释放 wait_mu，再由生产者清除并
+	 * 唤醒。
 	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
@@ -371,7 +379,8 @@ int logger_queue_notify_if_waiting(struct logger_queue *q)
 
 int logger_queue_wake_force(struct logger_queue *q)
 {
-	/* 停止或关闭不依赖生产者的 waiting 提示。关闭 running 后发送强制唤醒；
+	/*
+	 * 停止或关闭不依赖生产者的 waiting 提示。关闭 running 后发送强制唤醒；
 	 * 即使工作线程尚未真正睡眠，同一互斥锁和条件复查也能防止其随后睡死。
 	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
@@ -452,7 +461,8 @@ int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m)
 
 	uint32_t spill_index = slot->record.spill_index;
 	queue_record_unpack(q, &slot->record, m);
-	/* 消费者已把正文复制到工作线程批次，可先归还溢出块；
+	/*
+	 * 消费者已把正文复制到工作线程批次，可先归还溢出块；
 	 * 归还必须发生在槽位标记可复用之前，避免生产者覆盖 spill_index。
 	 */
 	queue_spill_put(q, spill_index);
@@ -482,7 +492,8 @@ int logger_queue_empty(struct logger_queue *q)
 
 size_t logger_queue_depth(const struct logger_queue *q)
 {
-	/* 这是无数据竞争的近似快照；预留位置可能尚未发布。
+	/*
+	 * 这是无数据竞争的近似快照；预留位置可能尚未发布。
 	 * 先读取出队位置，再限制深度范围，因为两个计数器不是一个原子事务。
 	 */
 	size_t deq =

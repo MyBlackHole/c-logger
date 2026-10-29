@@ -13,7 +13,8 @@ static struct close_probe close_probes[FILE_FD_COUNT];
 static logger_t *subject;
 static int subject_freed;
 
-/* 只在仍然有效的对象上注入 destroy 失败，不对活跃同步对象调用
+/*
+ * 只在仍然有效的对象上注入 destroy 失败，不对活跃同步对象调用
  * 真正的 pthread_*_destroy。额外检查最终 logger_t 是否发生 free。
  */
 int __real_logger_runtime_free(void *p);
@@ -37,7 +38,8 @@ int __wrap_close(int fd)
 			break;
 		}
 	}
-	/* 真实内核先消耗 fd，再模拟 close 的 EINTR/EIO/EBADF。
+	/*
+	 * 真实内核先消耗 fd，再模拟 close 的 EINTR/EIO/EBADF。
 	 * 第一处关闭失败也不允许重试或跳过其余拥有者。
 	 */
 	int rc = __real_close(fd);
@@ -55,7 +57,8 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 {
 	if (fail_join) {
 		fail_join = 0;
-		/* 让真实工作线程静止，使测试自身没有失控线程，
+		/*
+		 * 让真实工作线程静止，使测试自身没有失控线程，
 		 * 但向实现报告生命周期证明失败。实现必须保守地拒绝最终 free，
 		 * 因为它不能依赖失败的 pthread_join() 背后隐藏的事实。
 		 */
@@ -168,7 +171,8 @@ int main(int argc, char **argv)
 	CHECK(l == NULL); /* 消费发生在接口内部，不由调用者补写 NULL。 */
 	CHECK(rc == -expected && errno == EDOM);
 	if (lifecycle_error) {
-		/* 失败注入在对象已合法静止后直接返回 EBUSY；测试不依赖
+		/*
+		 * 失败注入在对象已合法静止后直接返回 EBUSY；测试不依赖
 		 * 对仍有使用者的 pthread 对象执行 destroy 的未定义行为。
 		 */
 		CHECK(subject_freed == 0);
@@ -177,7 +181,8 @@ int main(int argc, char **argv)
 	}
 	CHECK(subject_freed == 1);
 	CHECK(logger_process_object_count() == 0);
-	/* 即使第一个 close 返回错误，三个 fd 都必须被内核消费一次。
+	/*
+	 * 即使第一个 close 返回错误，三个 fd 都必须被内核消费一次。
 	 * 检查完成后撤销探针，避免下一实例重用 fd 数字造成假阳性。
 	 */
 	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {

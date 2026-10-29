@@ -44,7 +44,8 @@ int main(int argc, char **argv)
 		atomic_store(&fail_wait, 1);
 		atomic_store(&release_wait, 1);
 		logger_queue_wake_force(&l->q);
-		/* 错误先发布，STOPPING 随后发布；观察到前者不保证后者已完成。
+		/*
+		 * 错误先发布，STOPPING 随后发布；观察到前者不保证后者已完成。
 		 * 有界等待两个最终谓词，仍分别校验错误、状态和关闭释放结果。
 		 */
 		for (int i = 0; i < 5000; ++i) {
@@ -74,7 +75,8 @@ int main(int argc, char **argv)
 	CHECK(logger_queue_producer_wake_signals(&l->q) == 0);
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, producer, l) == 0);
-	/* 只等待发布，不等生产者返回：
+	/*
+	 * 只等待发布，不等生产者返回：
 	 * 生产者已看到 consumer_waiting=1，但此时工作线程仍持有 wait_mu，
 	 * 所以生产者的少数慢路径会阻塞到 cond_wait 原子释放互斥锁。
 	 */

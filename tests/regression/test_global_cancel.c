@@ -5,7 +5,8 @@
 static logger_t *owner;
 #include <stdarg.h>
 
-/* 取消探针仅用测试原子变量暂停，绝不用自身可能因取消而被遗留的测试互斥锁。
+/*
+ * 取消探针仅用测试原子变量暂停，绝不用自身可能因取消而被遗留的测试互斥锁。
  * 真实库锁与生命周期保护是被测资源。检查掩码以及取消后的复用。
  */
 enum point { P_NONE, P_WRITE, P_REOPEN, P_QUEUE, P_READER, P_CONTROL };

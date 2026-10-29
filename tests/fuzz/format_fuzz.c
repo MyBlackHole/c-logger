@@ -7,7 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 私有格式化入口来自生产静态库，不构造假的 logger_t。
+/*
+ * 私有格式化入口来自生产静态库，不构造假的 logger_t。
  * 预期文本不调用库内格式化、basename、level_name 或截断辅助函数。
  */
 #define LIMIT 8192u

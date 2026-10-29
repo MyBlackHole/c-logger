@@ -47,7 +47,8 @@ static int rotation_check(const char *path)
 	return 0;
 }
 
-/* 在每个客户机文件系统上执行已安装生产库的异步、排空与重开契约测试。
+/*
+ * 在每个客户机文件系统上执行已安装生产库的异步、排空与重开契约测试。
  * 这不声称具备物理断电认证。
  */
 static int persistence_check(const char *dir)

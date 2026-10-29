@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-/* 仅回放两个固定输入，不链接 Logger，也不进行随机模糊测试。
+/*
+ * 仅回放两个固定输入，不链接 Logger，也不进行随机模糊测试。
  * 必须保留与 public harness 相同的可恢复 UBSan 编译方式，
  * 由两者共同继承的运行时设置决定是否立即失败。
  */

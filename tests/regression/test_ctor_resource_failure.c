@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 真正的生产静态库经 GNU ld --wrap 注入；生产实现无新钩子。
+/*
+ * 真正的生产静态库经 GNU ld --wrap 注入；生产实现无新钩子。
  * 每个失败案例独立进程，一次只拒绝一种资源获取调用。
  */
 enum fault_kind {
@@ -151,7 +152,8 @@ static void choose_case(const char *kind, unsigned int index)
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2 || argc == 3);
-	/* 域构造的四个 mutex/rwlock 由独立运行域故障矩阵覆盖。
+	/*
+	 * 域构造的四个 mutex/rwlock 由独立运行域故障矩阵覆盖。
 	 * 本用例只统计实例构造原有的取得点，先完成一次真实进程初始化。
 	 */
 	CHECK(logger_process_init() == 0);
@@ -198,7 +200,8 @@ int main(int argc, char **argv)
 	assert_no_leaks();
 
 	if (argc == 2) {
-		/* 当前源码共有 9 次 calloc、1 次 malloc、3 次 mutex_init、
+		/*
+		 * 当前源码共有 9 次 calloc、1 次 malloc、3 次 mutex_init、
 		 * 2 次 cond_init；改变获取点需要同步修改审查清单和用例。
 		 */
 		CHECK(calloc_calls == 9);

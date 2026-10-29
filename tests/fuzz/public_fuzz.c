@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 同一入口可由 clang -fsanitize=fuzzer 或固定种子回放驱动。
+/*
+ * 同一入口可由 clang -fsanitize=fuzzer 或固定种子回放驱动。
  * 只调用已经安装的公开 Logger API，不包含私有故障钩子。
  */
 static void fuzz_fail(const char *condition, int line)
@@ -186,7 +187,8 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-	/* 模糊输入只选择受界配置与长度，永不转为悬空外部指针、
+	/*
+	 * 模糊输入只选择受界配置与长度，永不转为悬空外部指针、
 	 * 无界工作线程、任意文件路径或未经验证的 struct_size。
 	 */
 	if (!data || size < 3 || size > 512)

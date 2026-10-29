@@ -148,7 +148,8 @@ static void check(int rc, int error)
 	++changes;
 }
 
-/* 直接读取已交给文件描述符的字节，检查器不能替 Console 刷新 FILE 缓冲。
+/*
+ * 直接读取已交给文件描述符的字节，检查器不能替 Console 刷新 FILE 缓冲。
  * 每次核对完整增量，缺失、重复和额外输出都会失败。
  */
 static void expect_output(FILE *sink, off_t *offset, const char *expected)
@@ -178,7 +179,8 @@ static void cancel_matrix(FILE *sink, int setup)
 	for (unsigned int i = 0; i < 12; ++i) {
 		errno = EDOM;
 		if (!setup && i < 3) {
-			/* 三个配置入口均从不同旧值开始；先观察旧配置，避免
+			/*
+			 * 三个配置入口均从不同旧值开始；先观察旧配置，避免
 			 * 相同值重复提交掩盖恢复失败时未提交或回滚的缺陷。
 			 */
 			console_config_t before = CONSOLE_DEFAULT_CONFIG();
@@ -201,13 +203,15 @@ static void cancel_matrix(FILE *sink, int setup)
 		CHECK(!fail_setup && !fail_restore);
 		if (i == 3 || i == 4)
 			CHECK(query_output == 7);
-		/* 恢复失败已经写出的记录仍须恰好出现一次；设置取消失败
+		/*
+		 * 恢复失败已经写出的记录仍须恰好出现一次；设置取消失败
 		 * 则不得输出。这里在后继调用之前检查，不能由重试补足。
 		 */
 		expect_output(sink, &offset,
 			      !setup && i >= 5 ? output[i - 5] : "");
 		if (!setup && i < 3) {
-			/* 成功重试前观察新配置；若提交被推迟到 finish 成功
+			/*
+			 * 成功重试前观察新配置；若提交被推迟到 finish 成功
 			 * 之后，旧静默级别或旧颜色会使精确字节断言失败。
 			 */
 			check(console_debug("committed"), 0);

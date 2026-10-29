@@ -6,7 +6,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-/* 边界对象确实结束于 PROT_NONE 页面，
+/*
+ * 边界对象确实结束于 PROT_NONE 页面，
  * 不是在尺寸充裕的当前对象上仅设置较短 struct_size。
  */
 static void *boundary(const void *data, size_t n, size_t *allocated)

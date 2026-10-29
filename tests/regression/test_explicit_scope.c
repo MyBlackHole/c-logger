@@ -10,7 +10,8 @@ static logger_t *default_owner;
 #include <sys/socket.h>
 #include <sys/un.h>
 
-/* 所有暂停状态都属于此测试。会合点没有自身可能因取消而被遗留的测试互斥锁。
+/*
+ * 所有暂停状态都属于此测试。会合点没有自身可能因取消而被遗留的测试互斥锁。
  * 包装函数拦截真实库临界区，不是实现的仿制品。
  */
 enum point {
@@ -300,7 +301,8 @@ static void application_cleanup(void *unused)
 	int old;
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	actor = 0;
-	/* 构造清理必须先销毁尚未返回的候选对象。
+	/*
+	 * 构造清理必须先销毁尚未返回的候选对象。
 	 * 析构调用者在调用前已从其所有者中移除指针。
 	 */
 	if (cleanup_new) {

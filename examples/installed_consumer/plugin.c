@@ -1,5 +1,6 @@
 #include <logger.h>
-/* 两个入口属于 SDK 的 ABI；宿主先初始化此 DSO 的 Logger 副本。
+/*
+ * 两个入口属于 SDK 的 ABI；宿主先初始化此 DSO 的 Logger 副本。
  * 不由构造函数或首次 plugin_run 隐式接管宿主进程生命周期。
  */
 int plugin_process_init(void)
