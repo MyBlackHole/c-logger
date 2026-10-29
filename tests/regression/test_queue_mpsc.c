@@ -9,7 +9,8 @@
 #define PRODUCERS 8
 #define RECORDS 3000
 static struct logger_queue queue;
-static _Atomic int running = 1, producers_done;
+static _Atomic int running = 1;
+static _Atomic int producers_done;
 static int last[PRODUCERS];
 static unsigned int consumed;
 static void *produce(void *arg)
@@ -87,8 +88,8 @@ static void check_compact_storage(void)
 					     LOGGER_RECORD_META_SOURCE,
 				     .module = "compact",
 				     .file = "dir/compact.c",
-				     .func = "push" },
-			      out;
+				     .func = "push" };
+	struct logger_message out;
 	memset(in.text, 'L', 700);
 	in.text[700] = '\0';
 
@@ -144,7 +145,8 @@ static void check_wrap(void)
 		atomic_store(&q.slots[(start + i) & q.mask].seq, start + i);
 	atomic_store(&q.enqueue_pos, start);
 	atomic_store(&q.dequeue_pos, start);
-	struct logger_message in = { 0 }, out;
+	struct logger_message in = { 0 };
+	struct logger_message out;
 	for (int pass = 0; pass < 3; ++pass) {
 		for (int i = 0; i < 8; ++i) {
 			in.line = pass * 8 + i;
@@ -165,7 +167,9 @@ int main(void)
 	check_compact_storage();
 	check_wrap();
 	CHECK(logger_queue_init(&queue, 64) == 0);
-	pthread_t producers[PRODUCERS], consumer, observer;
+	pthread_t producers[PRODUCERS];
+	pthread_t consumer;
+	pthread_t observer;
 	int ids[PRODUCERS];
 	for (int i = 0; i < PRODUCERS; ++i)
 		last[i] = -1;

@@ -216,7 +216,9 @@ static void check_fault(const char *scenario)
 
 static void check_cancel_disabled(void)
 {
-	int old_state, old_type, observed;
+	int old_state;
+	int old_type;
+	int observed;
 	CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state) == 0);
 	CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_type) ==
 	      0);

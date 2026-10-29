@@ -10,10 +10,19 @@ static logger_t *owner;
  * 真实库锁与生命周期保护是被测资源。检查掩码以及取消后的复用。
  */
 enum point { P_NONE, P_WRITE, P_REOPEN, P_QUEUE, P_READER, P_CONTROL };
-static _Atomic int at_point, release_point, seen_disabled, stage;
-static _Atomic int hold_format, format_entered, release_format, flush_waiting;
-static _Atomic int cleanup_seen, operation_returned;
-static _Thread_local int delay_reader, delay_controller, watch_cond;
+static _Atomic int at_point;
+static _Atomic int release_point;
+static _Atomic int seen_disabled;
+static _Atomic int stage;
+static _Atomic int hold_format;
+static _Atomic int format_entered;
+static _Atomic int release_format;
+static _Atomic int flush_waiting;
+static _Atomic int cleanup_seen;
+static _Atomic int operation_returned;
+static _Thread_local int delay_reader;
+static _Thread_local int delay_controller;
+static _Thread_local int watch_cond;
 static int cleanup_phase_error;
 static const char *scenario;
 

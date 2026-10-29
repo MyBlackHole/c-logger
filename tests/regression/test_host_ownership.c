@@ -8,7 +8,9 @@ static logger_t *default_owner;
 #include "plugin_api.h"
 #include <fcntl.h>
 
-static _Atomic int pause_format, format_entered, allow_format;
+static _Atomic int pause_format;
+static _Atomic int format_entered;
+static _Atomic int allow_format;
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap);
@@ -112,8 +114,8 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "quiet")) {
 		FILE *capture = tmpfile();
 		CHECK(capture != NULL);
-		int stdout_copy = dup(STDOUT_FILENO),
-		    stderr_copy = dup(STDERR_FILENO);
+		int stdout_copy = dup(STDOUT_FILENO);
+		int stderr_copy = dup(STDERR_FILENO);
 		CHECK(stdout_copy >= 0 && stderr_copy >= 0);
 		CHECK(dup2(fileno(capture), STDOUT_FILENO) >= 0);
 		CHECK(dup2(fileno(capture), STDERR_FILENO) >= 0);
@@ -150,8 +152,8 @@ int main(int argc, char **argv)
 		      sdk == NULL);
 		CHECK(logger_process_object_count() == 0);
 	} else if (!strcmp(mode, "separate")) {
-		logger_t *a = make_logger("a.log", 1),
-			 *b = make_logger("b.log", 1);
+		logger_t *a = make_logger("a.log", 1);
+		logger_t *b = make_logger("b.log", 1);
 		example_sdk_t *sa = make_sdk(&p, "alpha", example_to_logger, a);
 		example_sdk_t *sb = make_sdk(&p, "beta", example_to_logger, b);
 		CHECK(p.run(sa, 1) == 0 && p.run(sb, 2) == 0);

@@ -43,7 +43,9 @@ int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
 		return 1;
-	uint64_t nt, nr, sz;
+	uint64_t nt;
+	uint64_t nr;
+	uint64_t sz;
 	if (argc != 4 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &sz) || nt < 1 || nt > 256 || nr < 1 || sz < 1 ||
 	    sz > 4000 || nr > UINT64_MAX / nt) {
@@ -76,7 +78,9 @@ int main(int argc, char **argv)
 		return 4;
 	}
 	struct matrix_argument a = { l, nr, msg };
-	struct timespec begin, producer_end, output_end;
+	struct timespec begin;
+	struct timespec producer_end;
+	struct timespec output_end;
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	uint64_t started = 0;
 	int error = 0;
@@ -108,8 +112,8 @@ int main(int argc, char **argv)
 		    io.sync_completed == m.sync_fallbacks &&
 		    io.emitted_records + io.failed_records ==
 			    io.async_completed + io.sync_completed;
-	double ps = elapsed(begin, producer_end),
-	       es = elapsed(begin, output_end);
+	double ps = elapsed(begin, producer_end);
+	double es = elapsed(begin, output_end);
 	printf("{\"threads\":%" PRIu64 ",\"message_bytes\":%" PRIu64
 	       ",\"attempted\":%" PRIu64
 	       ",\"producer_seconds\":%.9f,\"end_to_end_seconds\":%.9f"

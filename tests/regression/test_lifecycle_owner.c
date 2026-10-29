@@ -8,9 +8,15 @@
 static logger_t *owned;
 static logger_t *subject;
 static unsigned int freed;
-static int fail_join, fail_entry, fail_unmap;
-static int cancel_create, cancel_destroy, reentry;
-static int create_restore, fail_restore, fail_create;
+static int fail_join;
+static int fail_entry;
+static int fail_unmap;
+static int cancel_create;
+static int cancel_destroy;
+static int reentry;
+static int create_restore;
+static int fail_restore;
+static int fail_create;
 static _Thread_local int caller;
 static _Atomic int cleanup_ran;
 static logger_config_t config;

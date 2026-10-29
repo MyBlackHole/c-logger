@@ -156,7 +156,9 @@ int main(int argc, char **argv)
 		CHECK(cancel_calls == 2 && !restore_error);
 		check_context("original", "old-session", "old-trace");
 	} else if (!strcmp(scenario, "disabled")) {
-		int old_state, old_type, observed;
+		int old_state;
+		int old_type;
+		int observed;
 		CHECK(pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
 					     &old_state) == 0);
 		CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
@@ -179,7 +181,8 @@ int main(int argc, char **argv)
 		CHECK(pthread_setcancelstate(old_state, NULL) == 0);
 		check_context(NULL, NULL, NULL);
 	} else if (!strcmp(scenario, "threads")) {
-		pthread_t a, b;
+		pthread_t a;
+		pthread_t b;
 		CHECK(pthread_create(&a, NULL, thread_main, "worker-a") == 0);
 		CHECK(pthread_create(&b, NULL, thread_main, "worker-b") == 0);
 		CHECK(pthread_join(a, NULL) == 0);

@@ -21,7 +21,9 @@ enum fault_kind { NONE, LOCALTIME, DATE, ZONE, BAD_DATE, BAD_ZONE };
 static enum fault_kind fault;
 static time_t now = 1700000000;
 static unsigned int hits;
-static unsigned int localtime_calls, date_calls, zone_calls;
+static unsigned int localtime_calls;
+static unsigned int date_calls;
+static unsigned int zone_calls;
 
 int __real_clock_gettime(clockid_t id, struct timespec *ts);
 struct tm *__real_localtime_r(const time_t *sec, struct tm *out);
@@ -108,7 +110,10 @@ static void check_record(const char *path, const struct snapshot *before,
 			 const char *stamp, const char *body)
 {
 	struct snapshot after;
-	char expected[512], timestamp[96], date[32], zone[16];
+	char expected[512];
+	char timestamp[96];
+	char date[32];
+	char zone[16];
 	struct tm tm;
 
 	if (!stamp) {

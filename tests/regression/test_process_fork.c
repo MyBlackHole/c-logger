@@ -26,12 +26,16 @@ static logger_t *default_owner;
  * 该实验也有意绕过 Sanitizer 的 fork 拦截器。
  */
 static _Atomic int strict_child;
-static _Atomic int fail_registration, pause_registration, pause_reader,
-	pause_console;
-static _Atomic int entered, release_pause;
+static _Atomic int fail_registration;
+static _Atomic int pause_registration;
+static _Atomic int pause_reader;
+static _Atomic int pause_console;
+static _Atomic int entered;
+static _Atomic int release_pause;
 static _Atomic int release_console_at_prepare;
 static pthread_t console_thread;
-static _Atomic int console_completed, console_joined;
+static _Atomic int console_completed;
+static _Atomic int console_joined;
 static _Thread_local int pause_console_flush_lock;
 static _Atomic unsigned int registrations;
 static _Atomic unsigned int foreign_registrations;

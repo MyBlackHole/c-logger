@@ -249,7 +249,8 @@ int main(int argc, char **argv)
 		check(console_init(NULL), EINVAL);
 		CHECK(!fail_restore);
 	} else if (!strcmp(argv[1], "write-primary")) {
-		fail_write = fail_restore = 1;
+		fail_restore = 1;
+		fail_write = 1;
 		check(console_print("no-output"), ENOSPC);
 		CHECK(!fail_write && !fail_restore);
 	} else if (!strcmp(argv[1], "tty-primary")) {

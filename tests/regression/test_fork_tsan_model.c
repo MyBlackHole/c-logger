@@ -65,7 +65,8 @@ static void child_case(const char *mode)
 		CHECK(pthread_mutex_unlock(&r->format_mu) == 0);
 		CHECK(pthread_mutex_unlock(&r->resource_mu) == 0);
 	} else if (!strcmp(mode, "race-error")) {
-		pthread_t first, second;
+		pthread_t first;
+		pthread_t second;
 		CHECK(pthread_create(&first, NULL, race_writer, NULL) == 0);
 		CHECK(pthread_create(&second, NULL, race_writer, NULL) == 0);
 		while (atomic_load(&ready) != 2)

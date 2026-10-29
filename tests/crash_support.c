@@ -17,7 +17,8 @@ static void verify_records(const char *point, unsigned int recovered,
 			   int baseline_only);
 
 static const char *cut_point;
-static int armed, active_switched;
+static int armed;
+static int active_switched;
 static const char *const points[] = { "acknowledged",
 				      "before_file_fsync",
 				      "after_file_fsync",
@@ -98,7 +99,8 @@ int __wrap_fsync(int fd)
 		      !strcmp(cut_point, "after_file_fsync") ||
 		      (!strcmp(cut_point, "rotation_after_file_fsync") &&
 		       active_switched))) {
-		struct stat data, active;
+		struct stat data;
+		struct stat active;
 		CHECK(fstat(fd, &data) == 0);
 		CHECK(lstat(ACTIVE, &active) == 0);
 		char line[RECORD_CAPACITY];
@@ -206,7 +208,8 @@ static size_t read_segment(const char *name, char *out, size_t capacity)
 	struct stat st;
 	CHECK(fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1);
 	CHECK(st.st_size >= 0 && (uintmax_t)st.st_size < capacity);
-	size_t size = (size_t)st.st_size, offset = 0;
+	size_t size = (size_t)st.st_size;
+	size_t offset = 0;
 	while (offset < size) {
 		ssize_t n = read(fd, out + offset, size - offset);
 		if (n < 0 && errno == EINTR)
@@ -223,8 +226,10 @@ static void verify_records(const char *point, unsigned int recovered,
 			   int baseline_only)
 {
 	CHECK(crash_fixture_point_valid(point) && recovered <= 2);
-	char bytes[8192], line[RECORD_CAPACITY];
-	size_t used = 0, length = record_line(0, line, sizeof(line));
+	char bytes[8192];
+	char line[RECORD_CAPACITY];
+	size_t used = 0;
+	size_t length = record_line(0, line, sizeof(line));
 	DIR *directory = opendir(".");
 	CHECK(directory);
 	struct dirent *entry;

@@ -100,16 +100,16 @@ CASES = {
         "incompatible-pointer-types", "logger_level_t"),
 }
 
-# 只替换既有写点的值实参；构造 level 使用已有的 CREATED=0 状态变量。
+# 只替换既有写点的值实参；构造 level 使用同值的 CREATED=0 状态枚举。
 PRODUCTION_CASES = {
     "production_ctor_rollback_state": (
         "logger.c", "logger_ctor_rollback", "logger_state_store_release",
         "&l->state", "LOGGER_STATE_STOPPING", "LOGGER_INFO", "logger_state_t"),
     "production_create_level": (
-        "logger.c", "create_logger", "logger_level_init",
-        "&l->level", "cfg.level", "expected", "logger_level_t"),
+        "logger.c", "logger_ctor_init_fields", "logger_level_init",
+        "&l->level", "cfg->level", "LOGGER_STATE_CREATED", "logger_level_t"),
     "production_create_state": (
-        "logger.c", "create_logger", "logger_state_init",
+        "logger.c", "logger_ctor_init_fields", "logger_state_init",
         "&l->state", "LOGGER_STATE_CREATED", "LOGGER_TRACE", "logger_state_t"),
     "production_create_publish": (
         "logger.c", "create_logger", "logger_state_try_publish",

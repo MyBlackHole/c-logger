@@ -28,8 +28,16 @@ static int inject_child_eintr;
 static int expected_child_error;
 static size_t mapped_bytes;
 static size_t baseline_bytes;
-static _Atomic int fail_map, fail_remap, fail_unmap, fail_lock, fail_unlock;
-static _Atomic int high_open, pause_open, pause_close, entered, release_call;
+static _Atomic int fail_map;
+static _Atomic int fail_remap;
+static _Atomic int fail_unmap;
+static _Atomic int fail_lock;
+static _Atomic int fail_unlock;
+static _Atomic int high_open;
+static _Atomic int pause_open;
+static _Atomic int pause_close;
+static _Atomic int entered;
+static _Atomic int release_call;
 static _Atomic int fork_entered;
 static _Thread_local int forking;
 static _Thread_local int direct_gate;
@@ -384,7 +392,8 @@ static void *close_thread(void *unused)
 
 static void window(int closing)
 {
-	pthread_t worker, forker;
+	pthread_t worker;
+	pthread_t forker;
 	if (closing) {
 		watched_close = owned_null();
 		CHECK(watched_close >= 0);
@@ -429,7 +438,8 @@ static void file_lock_case(void)
 	CHECK(created && descriptor_count == 3);
 	int check = __real_open("out.log.logger.lock", O_RDWR | O_CLOEXEC);
 	CHECK(check >= 0);
-	int ready[2], leave[2];
+	int ready[2];
+	int leave[2];
 	CHECK(!pipe(ready) && !pipe(leave));
 	pid_t pid = fork();
 	CHECK(pid >= 0);

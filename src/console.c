@@ -85,9 +85,9 @@ static int set_config(unsigned int value, int color)
 		     -EINVAL :
 		     0;
 	if (!rc) {
-		unsigned int old = atomic_load_explicit(&g_config,
-							memory_order_relaxed),
-			     next;
+		unsigned int old =
+			atomic_load_explicit(&g_config, memory_order_relaxed);
+		unsigned int next;
 		do {
 			next = color ? (old & ~COLOR_MASK) | value :
 				       (old & COLOR_MASK) |

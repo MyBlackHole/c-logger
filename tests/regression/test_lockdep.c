@@ -18,7 +18,9 @@
 #include <string.h>
 #include <unistd.h>
 
-static int a, b, c;
+static int a;
+static int b;
+static int c;
 static pthread_mutex_t real_mutex;
 static pthread_mutex_t real_control_mutex;
 static pthread_mutex_t real_lifetime_mutex;
@@ -174,7 +176,8 @@ static void *real_abba_side(void *arg)
 
 static void bad_real_reverse_lock_order(void)
 {
-	pthread_t left, right;
+	pthread_t left;
+	pthread_t right;
 	CHECK(pthread_barrier_init(&real_abba_ready, NULL, 2) == 0);
 	CHECK(pthread_create(&left, NULL, real_abba_side, NULL) == 0);
 	CHECK(pthread_create(&right, NULL, real_abba_side, &real_abba_b) == 0);
@@ -345,7 +348,8 @@ static void *tls_lock_side(void *arg)
 
 static void test_thread_local_tracking(void)
 {
-	pthread_t left, right;
+	pthread_t left;
+	pthread_t right;
 	void *thread_result;
 	struct tls_lock_arg left_locks = { &tls_mutex_a, &tls_mutex_b };
 	struct tls_lock_arg right_locks = { &tls_mutex_b, &tls_mutex_a };

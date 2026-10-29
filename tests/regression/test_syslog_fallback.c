@@ -3,7 +3,8 @@
 #include "logger_internal.h"
 #include <sys/socket.h>
 #include <sys/un.h>
-static _Atomic int hold_worker, entered;
+static _Atomic int hold_worker;
+static _Atomic int entered;
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *buf,
 				 size_t n);
@@ -21,7 +22,8 @@ size_t __wrap_logger_format_line(const logger_t *l,
 int main(void)
 {
 	CHECK(logger_process_init() == 0);
-	char dir[] = "/tmp/lg-sys-fb-XXXXXX", path[108];
+	char dir[] = "/tmp/lg-sys-fb-XXXXXX";
+	char path[108];
 	CHECK(mkdtemp(dir));
 	snprintf(path, sizeof(path), "%s/sink", dir);
 	int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);

@@ -17,12 +17,17 @@
 struct phase {
 	logger_t *logger;
 	const char *payload;
-	uint64_t rate, count, start, end;
-	unsigned int threads, number;
+	uint64_t rate;
+	uint64_t count;
+	uint64_t start;
+	uint64_t end;
+	unsigned int threads;
+	unsigned int number;
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	int ready;
-	uint64_t *calls, *late;
+	uint64_t *calls;
+	uint64_t *late;
 	int64_t *status;
 };
 
@@ -107,7 +112,10 @@ static uint64_t percentile(const uint64_t *values, uint64_t n, unsigned int pct)
 }
 
 struct latency {
-	uint64_t p50, p95, p99, max;
+	uint64_t p50;
+	uint64_t p95;
+	uint64_t p99;
+	uint64_t max;
 };
 
 static struct latency summarize(uint64_t *values, uint64_t n)
@@ -174,8 +182,10 @@ static int run_phase(logger_t *logger, unsigned int number,
 			   .cond = PTHREAD_COND_INITIALIZER };
 	pthread_t ids[64];
 	struct producer producers[64] = { 0 };
-	logger_metrics_t before, after;
-	logger_io_metrics_t io_before, io_after;
+	logger_metrics_t before;
+	logger_metrics_t after;
+	logger_io_metrics_t io_before;
+	logger_io_metrics_t io_after;
 	uint64_t attempted = 0;
 	unsigned int started = 0;
 	int failed = 0;
@@ -244,7 +254,9 @@ static int run_phase(logger_t *logger, unsigned int number,
 		io_after.async_completed - io_before.async_completed;
 	uint64_t sync_completed =
 		io_after.sync_completed - io_before.sync_completed;
-	uint64_t api_success = 0, api_eagain = 0, api_other_errors = 0;
+	uint64_t api_success = 0;
+	uint64_t api_eagain = 0;
+	uint64_t api_other_errors = 0;
 	for (uint64_t i = 0; i < p.count; i++) {
 		if (!p.calls[i])
 			continue;
@@ -364,7 +376,11 @@ int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
 		return 1;
-	uint64_t threads, rate, seconds, warmup, size;
+	uint64_t threads;
+	uint64_t rate;
+	uint64_t seconds;
+	uint64_t warmup;
+	uint64_t size;
 	if (argc != 8 || number(argv[1], &threads) || number(argv[2], &rate) ||
 	    number(argv[3], &seconds) || number(argv[4], &warmup) ||
 	    number(argv[5], &size) || threads < 1 || threads > 64 || rate < 1 ||

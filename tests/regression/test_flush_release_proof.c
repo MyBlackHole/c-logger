@@ -13,12 +13,22 @@ static logger_t *default_owner;
  */
 static _Atomic(logger_t *) subject;
 static logger_t *owner; /* 唯一拥有者；subject 仅供并发观察。 */
-static _Atomic int pause_flush, at_progress, resume_flush;
-static _Atomic int fail_emit_unlock, emit_poisoned, poisoned_reacquires;
-static _Atomic int at_global_writer, stop_done, cancel_cleanup_ran;
-static _Atomic int fail_sync, sync_calls, fail_progress_lock;
+static _Atomic int pause_flush;
+static _Atomic int at_progress;
+static _Atomic int resume_flush;
+static _Atomic int fail_emit_unlock;
+static _Atomic int emit_poisoned;
+static _Atomic int poisoned_reacquires;
+static _Atomic int at_global_writer;
+static _Atomic int stop_done;
+static _Atomic int cancel_cleanup_ran;
+static _Atomic int fail_sync;
+static _Atomic int sync_calls;
+static _Atomic int fail_progress_lock;
 static _Thread_local int caller; /* 1：刷新；2：全局关闭 */
-static int use_global, stop_rc, stop_error;
+static int use_global;
+static int stop_rc;
+static int stop_error;
 
 int __real_logger_create(const logger_config_t *config, logger_t **out);
 int __real_pthread_mutex_lock(pthread_mutex_t *mu);
@@ -105,7 +115,8 @@ static void *flush_thread(void *unused)
 {
 	(void)unused;
 	caller = 1;
-	int rc, error;
+	int rc;
+	int error;
 	pthread_cleanup_push(cancelled_flush_cleanup, NULL);
 	errno = EDOM;
 	rc = use_global ? logger_default_flush() : logger_flush(subject);
@@ -148,7 +159,8 @@ static void release_failure(int global, int cancel)
 	CHECK(subject);
 
 	atomic_store(&pause_flush, 1);
-	pthread_t flusher, stopper;
+	pthread_t flusher;
+	pthread_t stopper;
 	CHECK(!pthread_create(&flusher, NULL, flush_thread, NULL));
 	wait_flag(&at_progress);
 	atomic_store(&fail_emit_unlock, 1);

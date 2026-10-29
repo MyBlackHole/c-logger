@@ -27,10 +27,18 @@ static int test_dir_fd(const struct logger_file *f)
 	return logger_fd_number(logger_fd_borrow(&f->dir_fd));
 }
 
-static int data_open_error, rename_error, fixed_time, sync_error,
-	close_error_fd = -1;
-static int old_fd = -1, renamed, rename_calls, vector_max, unlink_error,
-	   flock_eintr, new_synced;
+static int data_open_error;
+static int rename_error;
+static int fixed_time;
+static int sync_error;
+static int close_error_fd = -1;
+static int old_fd = -1;
+static int renamed;
+static int rename_calls;
+static int vector_max;
+static int unlink_error;
+static int flock_eintr;
+static int new_synced;
 static int candidate_rollback;
 static int candidate_close_error;
 static int candidate_fd = -1;
@@ -38,9 +46,11 @@ static int reused_candidate_fd = -1;
 static struct logger_file *closing_file;
 static int closing_fds[3];
 static unsigned int closing_calls;
-static int closing_primary_error, closing_secondary_error;
+static int closing_primary_error;
+static int closing_secondary_error;
 static int closing_reused_fd = -1;
-static _Atomic int failures, wins;
+static _Atomic int failures;
+static _Atomic int wins;
 static logger_t *winner;
 static struct timespec frozen = { 1700000000, 0 };
 
@@ -241,7 +251,8 @@ static int child_probe(int argc, char **argv)
 	logger_config_t c = config(argv[2], LOGGER_ROTATE_NONE);
 	logger_t *l = NULL;
 	int create_rc = logger_create(&c, &l);
-	int error = -create_rc, busy = !strcmp(argv[3], "busy");
+	int error = -create_rc;
+	int busy = !strcmp(argv[3], "busy");
 	CHECK(busy ? !l && error == EBUSY : l != NULL);
 	if (l)
 		emit(l, "child");

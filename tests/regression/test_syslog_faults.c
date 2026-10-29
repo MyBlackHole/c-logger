@@ -10,15 +10,25 @@
 #include <sys/un.h>
 
 /* 系统调用包装函数只存在于此测试可执行文件。不含生产钩子。 */
-static int inject_socket, inject_connect, inject_send, inject_clock,
-	inject_close;
-static unsigned int send_interrupts, sends, connects, sockets, closes;
-static int send_partial, watch, reuse_during_close;
+static int inject_socket;
+static int inject_connect;
+static int inject_send;
+static int inject_clock;
+static int inject_close;
+static unsigned int send_interrupts;
+static unsigned int sends;
+static unsigned int connects;
+static unsigned int sockets;
+static unsigned int closes;
+static int send_partial;
+static int watch;
+static int reuse_during_close;
 static int reused_fd = -1;
 static uint64_t now_ms = 10000;
 static int raw_clock;
 static struct timespec raw_now;
-static char endpoint[108], temp[] = "/tmp/lg-sys-fault-XXXXXX";
+static char endpoint[108];
+static char temp[] = "/tmp/lg-sys-fault-XXXXXX";
 
 int __real_socket(int domain, int type, int protocol);
 int __wrap_socket(int domain, int type, int protocol)
@@ -462,27 +472,26 @@ static void clock_boundaries(const char *mode)
 	CHECK(closes == 2);
 }
 
-static void run(const char *mode, int fd)
+static bool run_create_case(const char *mode)
 {
 	logger_config_t c = config();
-	watch = 1;
 	if (!strncmp(mode, "clock-", 6) && strcmp(mode, "clock-init") &&
 	    strcmp(mode, "clock-disconnect")) {
 		clock_boundaries(mode);
-		return;
+		return true;
 	}
 	if (!strcmp(mode, "candidate-fd-zero") ||
 	    !strcmp(mode, "candidate-eintr-reuse") ||
 	    !strcmp(mode, "candidate-eio-reuse")) {
 		candidate_ownership(mode);
-		return;
+		return true;
 	}
 	if (!strcmp(mode, "retire-status-eintr") ||
 	    !strcmp(mode, "retire-status-eio") ||
 	    !strcmp(mode, "retire-destroy-eintr") ||
 	    !strcmp(mode, "retire-destroy-eio")) {
 		retire_ownership(mode);
-		return;
+		return true;
 	}
 	if (!strncmp(mode, "socket-", 7)) {
 		inject_socket = parse_error(mode + 7);
@@ -490,27 +499,27 @@ static void run(const char *mode, int fd)
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
 		      -inject_socket);
 		CHECK(sockets == 1 && connects == 0);
-		return;
+		return true;
 	}
 	if (!strncmp(mode, "connect-", 8)) {
 		inject_connect = parse_error(mode + 8);
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) ==
 		      -inject_connect);
 		CHECK(sockets == 1 && connects == 1 && closes == 1);
-		return;
+		return true;
 	}
 	if (!strcmp(mode, "deferred-permission")) {
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		inject_connect = EACCES;
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EACCES);
 		CHECK(closes == 1);
-		return;
+		return true;
 	}
 	if (!strcmp(mode, "clock-init")) {
 		inject_clock = EIO;
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EIO);
 		CHECK(!sockets);
-		return;
+		return true;
 	}
 	if (!strcmp(mode, "deferred-cooldown") ||
 	    !strcmp(mode, "backwards-clock")) {
@@ -547,15 +556,25 @@ static void run(const char *mode, int fd)
 		      !m.last_error);
 		CHECK(logger_flush(l) == -ENOENT);
 		CHECK(logger_destroy(&l) == -ENOENT);
-		return;
+		return true;
 	}
+	return false;
+}
+
+static void run(const char *mode, int fd)
+{
+	watch = 1;
+	if (run_create_case(mode))
+		return;
+	logger_config_t c = config();
 	logger_t *l = NULL;
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	CHECK(connects == 1 && sockets == 1);
 	int error = 0;
 	if (!strncmp(mode, "send-", 5)) {
-		error = inject_send = parse_error(mode + 5);
+		inject_send = parse_error(mode + 5);
+		error = inject_send;
 		CHECK(output(l) == -error);
 		CHECK(sends == (error == EINTR ? 4u : 1u));
 		logger_syslog_metrics_t m = metrics(l);

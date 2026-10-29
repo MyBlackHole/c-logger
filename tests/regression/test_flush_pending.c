@@ -2,7 +2,10 @@
 #include "logger_internal.h"
 #include "support.h"
 
-static _Atomic int formatting, release_format, flush_waiting, premature_fsync;
+static _Atomic int formatting;
+static _Atomic int release_format;
+static _Atomic int flush_waiting;
+static _Atomic int premature_fsync;
 static _Thread_local int in_flush;
 static off_t size_after_flush;
 size_t __real_logger_format_line(const logger_t *l,

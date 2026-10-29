@@ -7,8 +7,13 @@
  * 这些测试使用应用提供的真实 FILE 回调。不使用 --wrap；
  * 共享构建链接并执行生产 DSO。
  */
-static _Atomic int entered, release_io, cleanup_seen, arm, config_run;
-static _Atomic unsigned int writes, escapes;
+static _Atomic int entered;
+static _Atomic int release_io;
+static _Atomic int cleanup_seen;
+static _Atomic int arm;
+static _Atomic int config_run;
+static _Atomic unsigned int writes;
+static _Atomic unsigned int escapes;
 static int reentry;
 static logger_t *log_instance;
 static ssize_t host_write(void *user, const char *text, size_t size)
@@ -114,7 +119,8 @@ int main(int argc, char **argv)
 	} else {
 		CHECK(!strcmp(argv[1], "config-snapshot"));
 		atomic_store(&config_run, 1);
-		pthread_t a, b;
+		pthread_t a;
+		pthread_t b;
 		CHECK(!pthread_create(&a, NULL, configure,
 				      (void *)(uintptr_t)1));
 		CHECK(!pthread_create(&b, NULL, configure,

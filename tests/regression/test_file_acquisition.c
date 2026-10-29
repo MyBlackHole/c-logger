@@ -26,9 +26,14 @@ struct descriptor {
 };
 
 static enum fault selected;
-static int failed, retention_fd = -1;
-static unsigned int directory_opens, lock_opens, retention_opens;
-static unsigned int fdopendir_calls, closedir_calls, release_calls;
+static int failed;
+static int retention_fd = -1;
+static unsigned int directory_opens;
+static unsigned int lock_opens;
+static unsigned int retention_opens;
+static unsigned int fdopendir_calls;
+static unsigned int closedir_calls;
+static unsigned int release_calls;
 static struct descriptor descriptors[64];
 static unsigned int acquired;
 

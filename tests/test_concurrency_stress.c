@@ -41,7 +41,9 @@ int main(void)
 	(void)logger_create(&c, &g);
 	if (!g)
 		return 1;
-	pthread_t p[12], c1, c2;
+	pthread_t p[12];
+	pthread_t c1;
+	pthread_t c2;
 	for (long i = 0; i < 12; i++)
 		if (pthread_create(&p[i], 0, prod, (void *)i))
 			return 2;
