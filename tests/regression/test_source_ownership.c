@@ -7,6 +7,7 @@ static _Atomic int proceed;
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap);
+
 size_t __wrap_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap)
@@ -15,17 +16,21 @@ size_t __wrap_logger_format_line(const logger_t *l,
 	wait_flag(&proceed);
 	return __real_logger_format_line(l, m, out, cap);
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	unlink("source.log");
 	const char *mode = argv[1];
+
 	if (!strcmp(mode, "queue-copy") || !strcmp(mode, "bounds") ||
 	    !strcmp(mode, "null-source")) {
 		struct logger_queue q;
+
 		CHECK(logger_queue_init(&q, 2) == 0);
 		char big[600];
+
 		memset(big, 'M', sizeof(big));
 		big[599] = 0;
 		struct logger_message in = { .level = LOGGER_INFO,
@@ -47,6 +52,7 @@ int main(int argc, char **argv)
 		}
 		CHECK(logger_queue_push(&q, &in) == 1);
 		struct logger_message out;
+
 		CHECK(logger_queue_try_pop(&q, &out) == 1);
 		CHECK(out.module != in.module && out.file != in.file &&
 		      out.func != in.func);
@@ -64,6 +70,7 @@ int main(int argc, char **argv)
 			in.func = "different";
 			for (int i = 0; i < 8; ++i) {
 				struct logger_message tmp;
+
 				CHECK(logger_queue_push(&q, &in) == 1);
 				CHECK(logger_queue_try_pop(&q, &tmp) == 1);
 			}
@@ -75,6 +82,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "source.log";
 	c.async_mode = 1;
@@ -82,6 +90,7 @@ int main(int argc, char **argv)
 	c.queue_capacity = 8;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	size_t page_size = (size_t)sysconf(_SC_PAGESIZE);
@@ -93,6 +102,7 @@ int main(int argc, char **argv)
 	strcpy(page + 256, "ephemeral_function");
 	if (!strcmp(mode, "log-source")) {
 		logger_source_t src = { page, page + 128, page + 256, 77 };
+
 		logger_log_source(l, LOGGER_INFO, src, "copied payload");
 	} else {
 		logger_log(l, LOGGER_INFO, page, page + 128, 77, page + 256,

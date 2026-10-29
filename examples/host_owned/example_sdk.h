@@ -9,11 +9,13 @@ extern "C" {
  * 对 liblogger 没有二进制依赖，也不拥有任何 logger、线程或 fd。
  */
 typedef struct example_sdk example_sdk_t;
+
 enum example_log_level {
 	EXAMPLE_LOG_DEBUG,
 	EXAMPLE_LOG_INFO,
 	EXAMPLE_LOG_ERROR
 };
+
 struct example_log_record {
 	enum example_log_level level;
 	const char *module;
@@ -23,12 +25,14 @@ struct example_log_record {
 	const char *message; /* 回调期间借用，UTF-8 文本，不含 NUL */
 	size_t message_len;
 };
+
 struct example_sdk_options {
 	const char *name; /* 由 example_sdk_create 复制 */
 	void (*log)(void *user, const struct example_log_record *
 					record); /* NULL 禁用诊断日志，无回退 */
 	void *log_user; /* 借用；example_sdk_destroy 绝不释放它 */
 };
+
 int example_sdk_create(const struct example_sdk_options *options,
 		       example_sdk_t **out);
 /*

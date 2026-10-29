@@ -44,6 +44,7 @@ static logger_t *instance;
 static logger_config_t cfg;
 
 int __real_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void));
+
 int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 {
 	/*
@@ -66,7 +67,9 @@ int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 	}
 	return __real_pthread_atfork(a, b, c);
 }
+
 int __real_pthread_mutex_lock(pthread_mutex_t *p);
+
 int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 {
 	if (atomic_load(&release_console_at_prepare) &&
@@ -93,43 +96,55 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 	}
 	return rc;
 }
+
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *p);
+
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_rwlock_rdlock(p);
 }
+
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *p);
+
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *p)
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_rwlock_wrlock(p);
 }
+
 int __real_pthread_once(pthread_once_t *p, void (*f)(void));
+
 int __wrap_pthread_once(pthread_once_t *p, void (*f)(void))
 {
 	if (strict_child)
 		_exit(90);
 	return __real_pthread_once(p, f);
 }
+
 void *__real_logger_runtime_calloc(size_t n, size_t z);
+
 void *__wrap_logger_runtime_calloc(size_t n, size_t z)
 {
 	if (strict_child)
 		_exit(91);
 	return __real_logger_runtime_calloc(n, z);
 }
+
 int __real_logger_runtime_free(void *p);
+
 int __wrap_logger_runtime_free(void *p)
 {
 	if (strict_child)
 		_exit(91);
 	return __real_logger_runtime_free(p);
 }
+
 int __real_pthread_create(pthread_t *t, const pthread_attr_t *a,
 			  void *(*f)(void *arg), void *p);
+
 int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
 			  void *(*f)(void *arg), void *p)
 {
@@ -137,40 +152,51 @@ int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
 		_exit(91);
 	return __real_pthread_create(t, a, f, p);
 }
+
 ssize_t __real_write(int fd, const void *p, size_t n);
+
 ssize_t __wrap_write(int fd, const void *p, size_t n)
 {
 	if (strict_child)
 		_exit(92);
 	return __real_write(fd, p, n);
 }
+
 int __real_close(int fd);
+
 int __wrap_close(int fd)
 {
 	if (strict_child)
 		_exit(92);
 	return __real_close(fd);
 }
+
 int __real_vsnprintf(char *p, size_t n, const char *fmt, va_list a);
+
 int __wrap_vsnprintf(char *p, size_t n, const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
 	return __real_vsnprintf(p, n, fmt, a);
 }
+
 int __real_vfprintf(FILE *f, const char *fmt, va_list a);
+
 int __wrap_vfprintf(FILE *f, const char *fmt, va_list a)
 {
 	if (strict_child)
 		_exit(93);
 	int result = __real_vfprintf(f, fmt, a);
+
 	if (atomic_exchange(&pause_console, 0))
 		pause_console_flush_lock = 1;
 	return result;
 }
+
 int __real_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 				const char *f, int line, const char *fn,
 				const char *fmt, va_list a);
+
 int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 				const char *f, int line, const char *fn,
 				const char *fmt, va_list a)
@@ -209,9 +235,11 @@ int __wrap_logger_vlog_internal(logger_t *l, logger_level_t v, const char *m,
 static bool child_query_unchanged(const void *out, size_t size)
 {
 	const unsigned char *bytes = out;
-	for (size_t i = 0; i < size; ++i)
+
+	for (size_t i = 0; i < size; ++i) {
 		if (bytes[i] != 0xa5)
 			return false;
+	}
 	return true;
 }
 
@@ -232,6 +260,7 @@ static void child_guard_matrix(void)
 		_exit(18);
 	logger_metrics_t m;
 	logger_io_metrics_t io;
+
 	memset(&m, 0xa5, sizeof(m));
 	memset(&io, 0xa5, sizeof(io));
 	CHILD_STATUS(logger_get_global_metrics(&m), 19);
@@ -240,6 +269,7 @@ static void child_guard_matrix(void)
 	    !child_query_unchanged(&io, sizeof(io)))
 		_exit(21);
 	uint64_t dropped = UINT64_C(777);
+
 	CHILD_STATUS(logger_global_dropped(&dropped), 22);
 	if (dropped != UINT64_C(777))
 		_exit(22);
@@ -249,6 +279,7 @@ static void child_guard_matrix(void)
 	 * 显式实例情形使用真实继承的已分配实例。
 	 */
 	logger_t *l = instance ? instance : (logger_t *)(uintptr_t)1;
+
 	CHILD_STATUS(LOGGER_INFO(l, "fork", "INHERITED_FORBIDDEN"), 23);
 	CHILD_STATUS(logger_log_source(l, LOGGER_INFO, (logger_source_t){ 0 },
 				       "forbidden"),
@@ -269,6 +300,7 @@ static void child_guard_matrix(void)
 	    !child_query_unchanged(&io, sizeof(io)))
 		_exit(34);
 	logger_state_t state = LOGGER_STATE_RUNNING;
+
 	CHILD_STATUS(logger_get_state(l, &state), 35);
 	if (state != LOGGER_STATE_RUNNING)
 		_exit(35);
@@ -276,6 +308,7 @@ static void child_guard_matrix(void)
 	if (dropped != UINT64_C(777))
 		_exit(36);
 	logger_t *old = l;
+
 	errno = EDOM;
 	if (logger_destroy(&l) != -ECHILD || l != old || errno != EDOM)
 		_exit(37);
@@ -284,12 +317,14 @@ static void child_guard_matrix(void)
 		38);
 	CHILD_STATUS(logger_context_clear(), 39);
 	logger_context_t ctx;
+
 	memset(&ctx, 0xa5, sizeof(ctx));
 	CHILD_STATUS(logger_context_get(&ctx), 40);
 	if (!child_query_unchanged(&ctx, sizeof(ctx)))
 		_exit(40);
 
 	console_config_t console_cfg = CONSOLE_DEFAULT_CONFIG();
+
 	CHILD_STATUS(console_init(&console_cfg), 41);
 	CHILD_STATUS(console_set_verbosity(CONSOLE_QUIET), 42);
 	CHILD_STATUS(console_set_color(CONSOLE_COLOR_NEVER), 43);
@@ -303,6 +338,7 @@ static void child_guard_matrix(void)
 					  "forbidden"),
 		     50);
 	int tty = 9;
+
 	CHILD_STATUS(console_stdout_is_tty(&tty), 51);
 	CHILD_STATUS(console_stderr_is_tty(&tty), 52);
 	if (tty != 9)
@@ -316,6 +352,7 @@ static void child_guard_matrix(void)
 static void wait_child(pid_t p)
 {
 	int status;
+
 	while (waitpid(p, &status, 0) < 0)
 		CHECK(errno == EINTR);
 	if (!WIFEXITED(status) || WEXITSTATUS(status))
@@ -323,9 +360,11 @@ static void wait_child(pid_t p)
 			WIFEXITED(status) ? WEXITSTATUS(status) : -1);
 	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
+
 static void early_child(void)
 {
 	int previous = strict_child;
+
 	strict_child = 1;
 	/*
 	 * 在库处理函数之前注册：必须由不可变 PID 所有权，
@@ -339,12 +378,14 @@ static void early_child(void)
 	 */
 	strict_child = previous;
 }
+
 static void *global_writer(void *p)
 {
 	(void)p;
 	LOG_INFO("PARENT_READER");
 	return NULL;
 }
+
 static void *console_writer(void *p)
 {
 	(void)p;
@@ -353,6 +394,7 @@ static void *console_writer(void *p)
 	atomic_store(&console_completed, 1);
 	return NULL;
 }
+
 /*
  * 先于 Logger 注册，因 prepare 逆序执行而后于 Logger prepare 运行。
  * 保留进入 prepare 时 Console 正在格式化的真实交错；只有 Logger
@@ -375,9 +417,11 @@ static void *initializer(void *p)
 	CHECK(fixture_default_create(&cfg, &default_owner) == 0);
 	return NULL;
 }
+
 static void *lock_holder(void *p)
 {
 	pthread_mutex_t *mu = p;
+
 	CHECK(!pthread_mutex_lock(mu));
 	atomic_store(&entered, 1);
 	wait_flag(&release_pause);
@@ -390,17 +434,19 @@ static void registration_failure(const char *mode)
 	atomic_store(&fail_registration, 1);
 	CHECK(logger_process_init() == -ENOMEM);
 	errno = 0;
-	if (!strcmp(mode, "register-global"))
+	if (!strcmp(mode, "register-global")) {
 		CHECK(logger_default_set(NULL, NULL) == -ENOMEM);
-	else if (!strcmp(mode, "register-explicit"))
+	} else if (!strcmp(mode, "register-explicit")) {
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
-	else if (!strcmp(mode, "register-console"))
+	} else if (!strcmp(mode, "register-console")) {
 		CHECK(console_print("forbidden") == -ENOMEM && errno == 0);
-	else if (!strcmp(mode, "register-context")) {
+	} else if (!strcmp(mode, "register-context")) {
 		logger_context_t empty = { 0 };
+
 		CHECK(logger_context_set(&empty) == -ENOMEM && errno == 0);
-	} else
+	} else {
 		CHECK(0);
+	}
 	CHECK(access("out.log", F_OK) != 0);
 	/* 注册失败不会自动清除，不允许静默地无保护重试。 */
 	atomic_store(&fail_registration, 0);
@@ -449,6 +495,7 @@ int main(int argc, char **argv)
 		"register-console", "register-context"
 	};
 	int known = 0;
+
 	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(modes); ++i)
 		known |= !strcmp(mode, modes[i]);
 	CHECK(known);
@@ -466,6 +513,7 @@ int main(int argc, char **argv)
 	if (!strcmp(mode, "prefork")) {
 		/* 单线程，且 fork 前没有使用库运行时。 */
 		pid_t p = fork();
+
 		CHECK(p >= 0);
 		if (!p) {
 			if (logger_process_init())
@@ -494,6 +542,7 @@ int main(int argc, char **argv)
 		CHECK(logger_process_init() == 0);
 	pthread_t thread;
 	int has_thread = 0;
+
 	if (!strcmp(mode, "registration-window")) {
 		atomic_store(&pause_registration, 1);
 		CHECK(!pthread_create(&thread, NULL, initializer, NULL));
@@ -502,6 +551,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "console-only") ||
 		   !strcmp(mode, "console-held")) {
 		console_config_t c = CONSOLE_DEFAULT_CONFIG();
+
 		console_init(&c);
 		if (!strcmp(mode, "console-held")) {
 			atomic_store(&pause_console, 1);
@@ -532,25 +582,28 @@ int main(int argc, char **argv)
 					      NULL));
 			has_thread = 1;
 			wait_flag(&entered);
-		} else if (!strcmp(mode, "after-shutdown"))
+		} else if (!strcmp(mode, "after-shutdown")) {
 			fixture_default_destroy(&default_owner);
+		}
 	}
 	if (!strcmp(mode, "console-held"))
 		atomic_store(&release_console_at_prepare, 1);
 	if (getenv("LOGGER_TEST_DUPLICATE_ATFORK")) {
 		/* 真正再次调用注册入口，不是直接把计数器加一。 */
 		void (*child)(void) = logger_process_invalidate_child;
+
 		CHECK(pthread_atfork(NULL, NULL, child) == 0);
 	}
 	pid_t p;
-	if (!strcmp(mode, "bypass-handler")) {
+
+	if (!strcmp(mode, "bypass-handler"))
 #ifdef SYS_fork
 		p = (pid_t)syscall(
 			SYS_fork); /* 仅测试 PID 防御，不是受支持 API */
 #else
 		return 77;
 #endif
-	} else
+	else
 		p = fork();
 	CHECK(p >= 0);
 	if (!p)

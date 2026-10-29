@@ -58,6 +58,7 @@ static void *worker_entry(void *unused)
 		/* 跳板函数有意保留借用，直到回滚回收线程。 */
 		wait_flag(&allow_exit);
 		logger_t *l = worker_arg;
+
 		CHECK(atomic_load_explicit(&l->state, memory_order_acquire) ==
 		      LOGGER_STATE_STOPPING);
 	}
@@ -140,9 +141,10 @@ static enum scenario scenario_from_name(const char *name)
 		"destroy-error", "creator-first", "global-worker-first"
 	};
 
-	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i) {
 		if (!strcmp(name, names[i]))
 			return (enum scenario)i;
+	}
 	CHECK(!"unknown scenario");
 	return NORMAL;
 }
@@ -159,6 +161,7 @@ static void assert_clean_failure(void)
 static void test_healthy(logger_t *l)
 {
 	logger_state_t state;
+
 	CHECK(l != NULL);
 	CHECK(logger_get_state(l, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
@@ -183,6 +186,7 @@ static void test_healthy(logger_t *l)
 static void test_late_failure(logger_t *l)
 {
 	logger_state_t state;
+
 	CHECK(l != NULL);
 	CHECK(logger_get_state(l, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);

@@ -24,6 +24,7 @@ static void fail(const char *condition, int line)
 	fprintf(stderr, "format:%d: %s errno=%d\n", line, condition, errno);
 	abort();
 }
+
 #define REQUIRE(c) ((c) ? (void)0 : fail(#c, __LINE__))
 
 struct sample {
@@ -57,6 +58,7 @@ static void text(char *out, size_t length, const uint8_t *data, size_t size)
 static void append(struct sample *s, const char *part)
 {
 	size_t length = strlen(part);
+
 	REQUIRE(length < sizeof(s->expected) - s->length);
 	memcpy(s->expected + s->length, part, length + 1);
 	s->length += length;
@@ -66,6 +68,7 @@ static void number(struct sample *s, long value)
 {
 	char part[32];
 	int n = snprintf(part, sizeof(part), "%ld", value);
+
 	REQUIRE(n > 0 && (size_t)n < sizeof(part));
 	append(s, part);
 }
@@ -123,6 +126,7 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	c->include_source = (options >> 4) & 1u;
 	m->level = level == 7 ? (logger_level_t)255 : (logger_level_t)level;
 	const char *date = reference_time(time_index, &m->ts.tv_sec);
+
 	m->ts.tv_nsec = (long)word(data, size, 5) * 15001L;
 	m->pid = (pid_t)word(data, size, 9);
 	m->tid = m->pid + 17;
@@ -136,6 +140,7 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	text(m->session_id, byte(data, size, 13) % 64u, data, size);
 	text(m->trace_id, byte(data, size, 14) % 64u, data, size);
 	unsigned int nulls = byte(data, size, 15);
+
 	m->module = (nulls & 1u) ? NULL : s->module;
 	m->file = (nulls & 2u) ? NULL : s->path;
 	m->func = (nulls & 4u) ? NULL : s->function;
@@ -147,6 +152,7 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 	REQUIRE(n > 0 && (size_t)n < sizeof(fractional));
 	append(s, fractional);
 	const char *level_name = reference_level(level);
+
 	append(s, level_name);
 	for (size_t i = strlen(level_name); i < 5; ++i)
 		append(s, " ");
@@ -196,9 +202,10 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 static bool matches(const unsigned char *buffer, size_t cap, int rc, size_t n,
 		    int wanted_rc, const char *wanted, size_t wanted_n)
 {
-	for (size_t i = 0; i < GUARD; ++i)
+	for (size_t i = 0; i < GUARD; ++i) {
 		if (buffer[i] != 0xa5 || buffer[GUARD + cap + i] != 0xa5)
 			return false;
+	}
 	if (rc != wanted_rc || n != wanted_n)
 		return false;
 	if (!cap)
@@ -235,12 +242,14 @@ static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
 {
 	REQUIRE(cap <= LIMIT);
 	unsigned char *buffer = malloc(cap + 2 * GUARD);
+
 	REQUIRE(buffer);
 	memset(buffer, 0xa5, cap + 2 * GUARD);
 	char *out = (char *)buffer + GUARD;
 	size_t n = SIZE_MAX;
 	int rc = logger_format_line_checked(logger, &s->message, out, cap, &n);
 	int expected_rc = 0;
+
 	if (cap < 2)
 		expected_rc = -EOVERFLOW;
 	else if (s->invalid_nsec)
@@ -250,10 +259,12 @@ static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
 	const char *want = expected_rc ? "" : s->expected;
 	size_t want_n = expected_rc ? 0 : s->length;
 	bool ok = matches(buffer, cap, rc, n, expected_rc, want, want_n);
+
 	REQUIRE(ok);
 	if (!s->invalid_nsec) {
 		char wanted[LIMIT];
 		size_t length = 0;
+
 		wanted[0] = 0;
 		if (cap > s->length) {
 			length = s->length;
@@ -263,6 +274,7 @@ static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
 			memcpy(wanted, s->expected, cap - 2);
 			const char *mark = " [truncated]";
 			size_t size = strlen(mark);
+
 			if (cap >= size + 2)
 				memcpy(wanted + cap - size - 2, mark, size);
 			else if (cap >= 3)
@@ -284,12 +296,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	if (size > 512)
 		return 0;
 	struct sample *s = calloc(1, sizeof(*s));
+
 	REQUIRE(s);
 	prepare(s, data, size);
 	logger_t *logger = NULL;
+
 	REQUIRE(logger_create(&s->config, &logger) == 0);
 	REQUIRE(logger != NULL);
 	long valid_nsec = s->message.ts.tv_nsec;
+
 	if (s->invalid_nsec) {
 		s->message.ts.tv_nsec = -1;
 		if (byte(data, size, 3) & 1u)
@@ -297,6 +312,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	}
 	size_t choice = byte(data, size, 4) % 8u;
 	size_t cap = LOGGER_LINE_MAX;
+
 	if (choice < 3)
 		cap = choice;
 	else if (choice < 6)
@@ -331,15 +347,19 @@ int main(int argc, char **argv)
 	REQUIRE(!LLVMFuzzerInitialize(&argc, &argv));
 	exercise_oracle = !strcmp(argv[1], "selftest");
 	char *end = NULL;
+
 	errno = 0;
 	unsigned long seed = exercise_oracle ? 107 : strtoul(argv[1], &end, 10);
+
 	if (!exercise_oracle) {
 		REQUIRE(end != argv[1] && *end == 0);
 		REQUIRE(!errno && seed <= UINT32_MAX);
 	}
 	uint32_t state = seed ? (uint32_t)seed : UINT32_C(0x9e3779b9);
+
 	for (unsigned int i = 0; i < 512; ++i) {
 		uint8_t input[64];
+
 		for (size_t j = 0; j < sizeof(input); ++j) {
 			state ^= state << 13;
 			state ^= state >> 17;

@@ -49,9 +49,10 @@ static void got_fd(int fd)
 
 static bool tracked_live_fd(int fd)
 {
-	for (unsigned int i = 0; i < acquired; ++i)
+	for (unsigned int i = 0; i < acquired; ++i) {
 		if (descriptors[i].fd == fd && !descriptors[i].released)
 			return true;
+	}
 	return false;
 }
 
@@ -59,6 +60,7 @@ static void released_fd(int fd)
 {
 	for (unsigned int i = acquired; i > 0; --i) {
 		struct descriptor *entry = &descriptors[i - 1];
+
 		if (entry->fd == fd && !entry->released) {
 			entry->released = 1;
 			++release_calls;
@@ -69,6 +71,7 @@ static void released_fd(int fd)
 }
 
 int __real_open(const char *path, int flags, ...);
+
 int __wrap_open(const char *path, int flags, ...)
 {
 	CHECK(!(flags & O_CREAT)); /* 当前绑定目录仅使用 O_DIRECTORY。 */
@@ -81,22 +84,27 @@ int __wrap_open(const char *path, int flags, ...)
 		}
 	}
 	int fd = __real_open(path, flags);
+
 	got_fd(fd);
 	return fd;
 }
 
 int __real_openat(int dirfd, const char *name, int flags, ...);
+
 int __wrap_openat(int dirfd, const char *name, int flags, ...)
 {
 	mode_t mode = 0;
+
 	if (flags & O_CREAT) {
 		va_list ap;
+
 		va_start(ap, flags);
 		mode = va_arg(ap, mode_t);
 		va_end(ap);
 	}
 	int is_lock = strstr(name, ".logger.lock") != NULL;
 	int is_retention = !strcmp(name, ".") && (flags & O_DIRECTORY);
+
 	if (is_lock) {
 		++lock_opens;
 		if (selected == FAULT_LOCK_FILE && !failed) {
@@ -114,6 +122,7 @@ int __wrap_openat(int dirfd, const char *name, int flags, ...)
 		}
 	}
 	int fd = __real_openat(dirfd, name, flags, mode);
+
 	got_fd(fd);
 	if (is_retention && fd >= 0)
 		retention_fd = fd;
@@ -121,6 +130,7 @@ int __wrap_openat(int dirfd, const char *name, int flags, ...)
 }
 
 DIR *__real_fdopendir(int fd);
+
 DIR *__wrap_fdopendir(int fd)
 {
 	++fdopendir_calls;
@@ -135,6 +145,7 @@ DIR *__wrap_fdopendir(int fd)
 }
 
 int __real_close(int fd);
+
 int __wrap_close(int fd)
 {
 	released_fd(fd);
@@ -142,11 +153,14 @@ int __wrap_close(int fd)
 }
 
 int __real_closedir(DIR *directory);
+
 int __wrap_closedir(DIR *directory)
 {
 	int fd = dirfd(directory);
+
 	CHECK(fd >= 0);
 	int rc = __real_closedir(directory);
+
 	if (!rc && tracked_live_fd(fd)) {
 		++closedir_calls;
 		/* libc closedir 内部 close 不一定会经过 --wrap。 */
@@ -158,12 +172,15 @@ int __wrap_closedir(DIR *directory)
 static unsigned int open_descriptor_count(void)
 {
 	DIR *d = opendir("/proc/self/fd");
+
 	CHECK(d);
 	unsigned int count = 0;
 	struct dirent *entry;
-	while ((entry = readdir(d)))
+
+	while ((entry = readdir(d))) {
 		if (entry->d_name[0] != '.')
 			++count;
+	}
 	CHECK(!closedir(d));
 	return count;
 }
@@ -179,17 +196,20 @@ static void all_descriptors_released(unsigned int baseline)
 static void two_writes(struct logger_file *f, int second_error)
 {
 	struct timespec stamp = { 1700000000, 0 };
+
 	CHECK(!logger_file_write(f, "a", 1, &stamp, 1));
 	CHECK(f->current_size == 1);
 	int rc = logger_file_write(f, "b", 1, &stamp, 1);
+
 	CHECK(rc == -second_error);
 	if (second_error) {
 		CHECK(f->metrics.rotation_failures == 1);
 		CHECK(f->metrics.last_rotation_error == second_error);
 		CHECK(!f->detached);
 		CHECK(logger_fd_valid(&f->fd));
-	} else
+	} else {
 		CHECK(f->metrics.rotation_successes == 1);
+	}
 }
 
 int main(int argc, char **argv)
@@ -211,12 +231,15 @@ int main(int argc, char **argv)
 
 	unsigned int baseline = open_descriptor_count();
 	logger_rotation_config_t rotation = { 0 };
+
 	rotation.mode = LOGGER_ROTATE_SIZE;
 	rotation.max_file_size = 1;
 	rotation.retention_days = 1;
 	struct logger_file file = LOGGER_FILE_EMPTY;
+
 	if (selected == FAULT_BIND_DIRECTORY || selected == FAULT_LOCK_FILE) {
 		int expected = EMFILE;
+
 		if (selected == FAULT_BIND_DIRECTORY)
 			expected = EACCES;
 		errno = 0;
@@ -235,6 +258,7 @@ int main(int argc, char **argv)
 	if (selected == FAULT_RETENTION_DIRECTORY ||
 	    selected == FAULT_FDOPENDIR) {
 		int expected = selected == FAULT_FDOPENDIR ? ENOMEM : EMFILE;
+
 		two_writes(&file, expected);
 		CHECK(failed == 1);
 		CHECK(retention_opens == 1);
@@ -245,14 +269,16 @@ int main(int argc, char **argv)
 			      errno == EBADF);
 		selected = FAULT_NONE;
 		struct timespec stamp = { 1700000000, 0 };
+
 		CHECK(!logger_file_write(&file, "c", 1, &stamp, 1));
 		/*
 		 * 失败的轮转已经装入新的空活动 fd。先写满，再触发
 		 * 一次正常轮转，验证 retention 及 DIR 所有权恢复。
 		 */
 		CHECK(!logger_file_write(&file, "d", 1, &stamp, 1));
-	} else
+	} else {
 		two_writes(&file, 0);
+	}
 	CHECK(!logger_file_close_status(&file));
 	all_descriptors_released(baseline);
 	CHECK(directory_opens >= 1);

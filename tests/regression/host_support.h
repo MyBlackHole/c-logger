@@ -2,6 +2,7 @@
 #define HOST_TEST_SUPPORT_H
 #include <stdbool.h>
 #include "support.h"
+
 /*
  * 运行时日志行受 LOGGER_LINE_MAX 限制（当前为 5120）。
  * 搜索所有行，而不是并发或排空测试输出文件的前 32 KiB。
@@ -9,9 +10,11 @@
 static inline bool log_contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "rb");
+
 	CHECK(f != NULL);
 	char line[16384];
 	bool found = false;
+
 	while (fgets(line, sizeof(line), f))
 		found |= strstr(line, needle) != NULL;
 	CHECK(!ferror(f));

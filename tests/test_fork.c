@@ -23,34 +23,44 @@ static bool check(bool condition, const char *expression, int line)
 }
 
 #define CHECK(x) check((x), #x, __LINE__)
+
 static bool contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "r");
+
 	if (!f)
 		return false;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
+
 	b[n] = 0;
 	bool ok = !ferror(f) && strstr(b, needle) != NULL;
+
 	fclose(f);
 	return ok;
 }
+
 static int exec_child(void)
 {
 	/* 新程序映像可以使用完整 API。父进程日志 fd 不得跨 exec 存活。 */
 	struct stat parent;
+
 	if (!CHECK(stat("fork-parent.log", &parent) == 0))
 		return 1;
 	DIR *d = opendir("/proc/self/fd");
+
 	if (!CHECK(d))
 		return 1;
 	struct dirent *e;
+
 	while ((e = readdir(d))) {
 		char *end;
 		long fd = strtol(e->d_name, &end, 10);
+
 		if (*end || fd < 0 || fd > INT_MAX)
 			continue;
 		struct stat st;
+
 		if (fstat((int)fd, &st) == 0 && st.st_dev == parent.st_dev &&
 		    st.st_ino == parent.st_ino) {
 			closedir(d);
@@ -62,6 +72,7 @@ static int exec_child(void)
 	if (!CHECK(closedir(d) == 0))
 		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "fork-child.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
@@ -74,6 +85,7 @@ static int exec_child(void)
 	fixture_default_destroy(&default_owner);
 	return 0;
 }
+
 int main(int argc, char **argv)
 {
 	if (!CHECK(logger_process_init() == 0))
@@ -85,6 +97,7 @@ int main(int argc, char **argv)
 	unlink("fork-parent.log");
 	unlink("fork-child.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "fork-parent.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
@@ -94,11 +107,13 @@ int main(int argc, char **argv)
 	LOG_INFO("before fork");
 	char exe[PATH_MAX];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+
 	if (!CHECK(n > 0 && (size_t)n < sizeof(exe) - 1))
 		return 1;
 	exe[n] = 0;
 	char *const args[] = { exe, "--child", NULL };
 	pid_t p = fork();
+
 	if (p < 0)
 		return 3;
 	if (!p) {
@@ -115,9 +130,11 @@ int main(int argc, char **argv)
 	}
 	LOG_INFO("parent continues");
 	int status;
-	while (waitpid(p, &status, 0) < 0)
+
+	while (waitpid(p, &status, 0) < 0) {
 		if (!CHECK(errno == EINTR))
 			return 1;
+	}
 	if (!CHECK(logger_default_flush() == 0))
 		return 1;
 	fixture_default_destroy(&default_owner);

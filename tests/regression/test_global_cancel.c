@@ -10,6 +10,7 @@ static logger_t *owner;
  * 真实库锁与生命周期保护是被测资源。检查掩码以及取消后的复用。
  */
 enum point { P_NONE, P_WRITE, P_REOPEN, P_QUEUE, P_READER, P_CONTROL };
+
 static _Atomic int at_point;
 static _Atomic int release_point;
 static _Atomic int seen_disabled;
@@ -41,36 +42,43 @@ int __real_pthread_rwlock_rdlock(pthread_rwlock_t *rw);
 static void inspect_mask(void)
 {
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	atomic_store(&seen_disabled, old == PTHREAD_CANCEL_DISABLE);
 	CHECK(!pthread_setcancelstate(old, NULL));
 }
+
 static void rendezvous(enum point p)
 {
 	int expected = p;
+
 	if (!atomic_compare_exchange_strong(&stage, &expected, P_NONE))
 		return;
 	inspect_mask();
 	atomic_store(&at_point, 1);
 	wait_flag(&release_point);
 }
+
 int __wrap_logger_file_write(struct logger_file *f, const char *text, size_t n,
 			     const struct timespec *ts, int sync)
 {
 	rendezvous(P_WRITE);
 	return __real_logger_file_write(f, text, n, ts, sync);
 }
+
 int __wrap_logger_file_reopen(struct logger_file *f)
 {
 	rendezvous(P_REOPEN);
 	return __real_logger_file_reopen(f);
 }
+
 int __wrap_logger_queue_push(struct logger_queue *q,
 			     const struct logger_message *m)
 {
 	rendezvous(P_QUEUE);
 	return __real_logger_queue_push(q, m);
 }
+
 size_t __wrap_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap)
@@ -81,6 +89,7 @@ size_t __wrap_logger_format_line(const logger_t *l,
 	}
 	return __real_logger_format_line(l, m, out, cap);
 }
+
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (watch_cond) {
@@ -90,6 +99,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 	}
 	return __real_pthread_cond_wait(cv, mu);
 }
+
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	if (delay_controller) {
@@ -98,6 +108,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 	}
 	return __real_pthread_mutex_lock(mu);
 }
+
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 {
 	if (delay_reader) {
@@ -106,12 +117,15 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *rw)
 	}
 	return __real_pthread_rwlock_rdlock(rw);
 }
+
 static void cleanup(void *unused)
 {
 	(void)unused;
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	logger_io_metrics_t io;
+
 	memset(&io, 0xa5, sizeof(io));
 	errno = EDOM;
 	CHECK(logger_get_global_io_metrics(&io) == -cleanup_phase_error);
@@ -125,6 +139,7 @@ static void cleanup(void *unused)
 	atomic_store(&cleanup_seen, 1);
 	/* 线程正在退出，应用清理中有意不重新启用。 */
 }
+
 static void *caller(void *unused)
 {
 	(void)unused;
@@ -155,16 +170,19 @@ static void *caller(void *unused)
 	pthread_cleanup_pop(0);
 	return NULL;
 }
+
 static void restore_policy(void)
 {
 	logger_config_t cfg = config_for("old.log", 0);
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	CHECK(!fixture_default_create(&cfg, &owner));
 	LOG_INFO("caller-disabled");
 	CHECK(!logger_default_flush());
 	CHECK(!fixture_default_destroy(&owner));
 	int previous;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous));
 	CHECK(previous == PTHREAD_CANCEL_DISABLE);
 	CHECK(!pthread_setcancelstate(old, NULL));
@@ -175,6 +193,7 @@ static void restore_policy(void)
 	CHECK(!pthread_setcancelstate(previous, NULL));
 	CHECK(!fixture_default_destroy(&owner));
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
@@ -190,20 +209,21 @@ int main(int argc, char **argv)
 	int async = !strcmp(scenario, "queue") || !strcmp(scenario, "flush") ||
 		    !strcmp(scenario, "flush-void");
 	logger_config_t cfg = config_for("old.log", async);
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	if (!no_initial)
 		CHECK(logger_default_set(NULL, owner) == 0);
 	cleanup_phase_error = !strcmp(scenario, "unbind") ? ENODEV : 0;
-	if (no_initial || !strcmp(scenario, "unbind"))
+	if (no_initial || !strcmp(scenario, "unbind")) {
 		atomic_store(&stage, P_CONTROL);
-	else if (!strcmp(scenario, "reopen"))
+	} else if (!strcmp(scenario, "reopen")) {
 		atomic_store(&stage, P_REOPEN);
-	else if (!strcmp(scenario, "queue"))
+	} else if (!strcmp(scenario, "queue")) {
 		atomic_store(&stage, P_QUEUE);
-	else if (!strcmp(scenario, "reader"))
+	} else if (!strcmp(scenario, "reader")) {
 		atomic_store(&stage, P_READER);
-	else if (!strcmp(scenario, "flush") ||
-		 !strcmp(scenario, "flush-void")) {
+	} else if (!strcmp(scenario, "flush") ||
+		   !strcmp(scenario, "flush-void")) {
 		atomic_store(&hold_format, 1);
 		LOG_INFO("worker-must-complete-before-cancel");
 		wait_flag(&format_entered);
@@ -212,6 +232,7 @@ int main(int argc, char **argv)
 		atomic_store(&stage, P_WRITE);
 	}
 	pthread_t thread;
+
 	CHECK(!pthread_create(&thread, NULL, caller, NULL));
 	if (!strcmp(scenario, "flush") || !strcmp(scenario, "flush-void"))
 		wait_flag(&flush_waiting);
@@ -225,6 +246,7 @@ int main(int argc, char **argv)
 	atomic_store(&release_point, 1);
 	atomic_store(&release_format, 1);
 	void *ret;
+
 	CHECK(!pthread_join(thread, &ret));
 	CHECK(ret == PTHREAD_CANCELED && atomic_load(&cleanup_seen));
 	if (!cleanup_phase_error) {
@@ -232,6 +254,7 @@ int main(int argc, char **argv)
 		CHECK(!logger_default_flush());
 		CHECK(!fixture_default_destroy(&owner));
 		const char *path = "old.log";
+
 		CHECK(file_contains(path, "cancel-cleanup-can-log"));
 		CHECK(file_contains(path, "main-after-cancel"));
 		if (!strcmp(scenario, "write") || !strcmp(scenario, "queue"))

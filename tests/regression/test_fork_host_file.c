@@ -31,6 +31,7 @@ static void child_expect(int valid, int code)
 static logger_config_t file_config(const char *path)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = path;
 	c.async_mode = 1;
@@ -44,20 +45,24 @@ static void child_run(logger_t *old, int foreign_fd)
 	child_expect(fcntl(foreign_fd, F_GETFD) >= 0, 20);
 	errno = EDOM;
 	int rc = LOGGER_INFO(old, "old", "FOREIGN_OLD_INVALID");
+
 	child_expect(rc == -ECHILD && errno == EDOM, 21);
 	child_expect(logger_process_init() == 0, 22);
 	child_expect(fcntl(foreign_fd, F_GETFD) >= 0, 23);
 
 	logger_config_t config = file_config("child.log");
 	logger_t *child = NULL;
+
 	child_expect(logger_create(&config, &child) == 0 && child, 24);
 	child_expect(LOGGER_INFO(child, "child", "CHILD_START") == 0, 25);
 	child_expect(LOGGER_INFO(child, "child", "CHILD_FINISH") == 0, 26);
 	child_expect(logger_flush(child) == 0, 27);
 	logger_io_metrics_t io;
+
 	child_expect(logger_get_io_metrics(child, &io) == 0, 28);
 	child_expect(io.emitted_records == 2 && io.failed_records == 0, 29);
 	logger_metrics_t metrics;
+
 	child_expect(logger_get_metrics(child, &metrics) == 0, 30);
 	child_expect(metrics.dropped[LOGGER_INFO] == 0, 31);
 	child_expect(logger_destroy(&child) == 0 && child == NULL, 32);
@@ -69,6 +74,7 @@ static void wait_child(pid_t pid)
 {
 	int status = 0;
 	pid_t got;
+
 	do {
 		got = waitpid(pid, &status, 0);
 	} while (got < 0 && errno == EINTR);
@@ -80,9 +86,11 @@ static void wait_child(pid_t pid)
 static unsigned int count_lines(const char *path, const char *marker)
 {
 	FILE *stream = fopen(path, "r");
+
 	CHECK(stream);
 	char line[8192];
 	unsigned int count = 0;
+
 	while (fgets(line, sizeof(line), stream)) {
 		CHECK(strstr(line, marker) != NULL);
 		++count;
@@ -96,6 +104,7 @@ static void remove_log(const char *path)
 {
 	CHECK(!unlink(path));
 	char lock[96];
+
 	CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", path) > 0);
 	CHECK(!unlink(lock));
 }
@@ -104,22 +113,27 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	int held = !strcmp(argv[1], "held");
+
 	CHECK(held || !strcmp(argv[1], "quiesced"));
 	alarm(40);
 	char directory[] = "/tmp/logger-host-file-XXXXXX";
+
 	enter_temp(directory);
 	CHECK(logger_process_init() == 0);
 
 	logger_config_t cfg = file_config("parent.log");
 	logger_t *parent = NULL;
+
 	CHECK(logger_create(&cfg, &parent) == 0 && parent);
 	CHECK(LOGGER_INFO(parent, "parent", "PARENT_START") == 0);
 
 	foreign = fopen("foreign.log", "w+");
 	CHECK(foreign != NULL);
 	int foreign_fd = fileno(foreign);
+
 	CHECK(foreign_fd >= 0);
 	pthread_t worker;
+
 	CHECK(!pthread_create(&worker, NULL, foreign_holder, NULL));
 	wait_flag(&foreign_locked);
 	if (!held) {
@@ -128,6 +142,7 @@ int main(int argc, char **argv)
 	}
 	CHECK(fcntl(foreign_fd, F_GETFD) >= 0);
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid)
 		child_run(parent, foreign_fd);
@@ -146,6 +161,7 @@ int main(int argc, char **argv)
 	CHECK(LOGGER_INFO(parent, "parent", "PARENT_FINISH") == 0);
 	CHECK(logger_flush(parent) == 0);
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(parent, &io) == 0);
 	CHECK(io.emitted_records == 2 && io.failed_records == 0);
 	CHECK(logger_destroy(&parent) == 0 && parent == NULL);

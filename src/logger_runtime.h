@@ -22,6 +22,7 @@ struct logger_runtime {
 	pthread_rwlock_t global_lifetime_lock;
 	pthread_mutex_t console_mu;
 	unsigned int initialized;
+
 	_Atomic int resource_error;
 	uint64_t *owned_fds;
 	size_t owned_bytes;

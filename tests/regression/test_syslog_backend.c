@@ -15,8 +15,10 @@ static char endpoint[108];
 static int receiver(const char *path, int type)
 {
 	int fd = socket(AF_UNIX, type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+
 	CHECK(fd >= 0);
 	struct sockaddr_un a = { .sun_family = AF_UNIX };
+
 	CHECK(strlen(path) < sizeof(a.sun_path));
 	strcpy(a.sun_path, path);
 	CHECK(bind(fd, (struct sockaddr *)&a, sizeof(a)) == 0);
@@ -24,9 +26,11 @@ static int receiver(const char *path, int type)
 		CHECK(listen(fd, 8) == 0);
 	return fd;
 }
+
 static logger_config_t config(void)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_SYSLOG;
 	c.async_mode = 0;
 	c.ident = "unit";
@@ -37,32 +41,41 @@ static logger_config_t config(void)
 	c.level = LOGGER_TRACE;
 	return c;
 }
+
 static int write_one(logger_t *l, const char *text)
 {
 	return logger_log_sync_status(l, LOGGER_INFO, "test", __FILE__,
 				      __LINE__, __func__, "%s", text);
 }
+
 static logger_syslog_metrics_t metrics(logger_t *l)
 {
 	logger_syslog_metrics_t m;
+
 	CHECK(logger_get_syslog_metrics(l, &m) == 0);
 	CHECK(m.submitted_records == m.sent_records + m.failed_records);
 	return m;
 }
+
 static void read_one(int fd, char *buf, size_t cap)
 {
 	struct pollfd p = { .fd = fd, .events = POLLIN };
+
 	CHECK(poll(&p, 1, 2000) == 1);
 	ssize_t n = recv(fd, buf, cap - 1, MSG_DONTWAIT);
+
 	CHECK(n > 0);
 	buf[n] = 0;
 }
+
 static unsigned int drain(int fd)
 {
 	unsigned int n = 0;
 	char b[10000];
+
 	for (;;) {
 		ssize_t rc = recv(fd, b, sizeof(b), MSG_DONTWAIT);
+
 		if (rc >= 0) {
 			++n;
 			continue;
@@ -71,10 +84,12 @@ static unsigned int drain(int fd)
 		return n;
 	}
 }
+
 static unsigned int fill(logger_t *l)
 {
 	for (unsigned int i = 0; i < 10000; ++i) {
 		int rc = write_one(l, "fill");
+
 		if (rc) {
 			CHECK(rc == -EAGAIN || rc == -EWOULDBLOCK);
 			return i;
@@ -83,32 +98,41 @@ static unsigned int fill(logger_t *l)
 	CHECK(!"receiver did not fill");
 	return 0;
 }
+
 static unsigned int fd_count(void)
 {
 	DIR *d = opendir("/proc/self/fd");
+
 	CHECK(d);
 	unsigned int n = 0;
 	struct dirent *e;
-	while ((e = readdir(d)))
+
+	while ((e = readdir(d))) {
 		if (e->d_name[0] != '.')
 			++n;
+	}
 	CHECK(!closedir(d));
 	return n;
 }
+
 static void check_file(unsigned int total, int queued)
 {
 	FILE *f = fopen("out.log", "r");
+
 	CHECK(f);
 	char *line = NULL;
 	size_t cap = 0;
 	unsigned int count = 0;
 	unsigned int seen_count = 0;
 	unsigned char seen[4000] = { 0 };
+
 	while (getline(&line, &cap, f) >= 0) {
 		++count;
 		char *mark = strstr(line, " queued-");
+
 		if (mark) {
 			unsigned int i;
+
 			CHECK(sscanf(mark, " queued-%u", &i) == 1 && i < 4000 &&
 			      !seen[i]);
 			seen[i] = 1;
@@ -121,9 +145,11 @@ static void check_file(unsigned int total, int queued)
 	CHECK(!fclose(f));
 	CHECK(count == total);
 }
+
 static void pause_reconnect(void)
 {
 	struct timespec ts = { 0, 5000000 };
+
 	while (nanosleep(&ts, &ts))
 		CHECK(errno == EINTR);
 }
@@ -132,17 +158,22 @@ struct thread_arg {
 	logger_t *l;
 	unsigned int n;
 };
+
 static void *writer(void *p)
 {
 	struct thread_arg *a = p;
+
 	for (unsigned int i = 0; i < a->n; ++i)
 		LOGGER_INFO(a->l, "threads", "message=%u", i);
 	return NULL;
 }
+
 static _Atomic int observe;
+
 static void *observer(void *p)
 {
 	logger_t *l = p;
+
 	while (atomic_load(&observe))
 		(void)metrics(l);
 	return NULL;
@@ -152,9 +183,11 @@ static bool run_create_case(const char *mode)
 {
 	logger_config_t c = config();
 	char packet[10000];
+
 	if (!strcmp(mode, "invalid-metrics")) {
 		logger_syslog_metrics_t before;
 		logger_syslog_metrics_t after;
+
 		memset(&before, 0xa5, sizeof(before));
 		memcpy(&after, &before, sizeof(after));
 		errno = EDOM;
@@ -163,6 +196,7 @@ static bool run_create_case(const char *mode)
 		CHECK(!memcmp(&before, &after, sizeof(after)));
 		c.outputs = LOGGER_OUT_FILE;
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		CHECK(logger_get_syslog_metrics(l, &after) == -ENOTSUP &&
@@ -176,6 +210,7 @@ static bool run_create_case(const char *mode)
 	if (!strcmp(mode, "required-missing") || !strcmp(mode, "fd-churn") ||
 	    !strcmp(mode, "init-cleanup")) {
 		unsigned int before = fd_count();
+
 		if (!strcmp(mode, "init-cleanup"))
 			c.outputs |= LOGGER_OUT_FILE;
 		for (unsigned int i = 0; i < 64; ++i) {
@@ -186,6 +221,7 @@ static bool run_create_case(const char *mode)
 		if (c.outputs & LOGGER_OUT_FILE) {
 			c.outputs = LOGGER_OUT_FILE;
 			logger_t *l = NULL;
+
 			CHECK(logger_create(&c, &l) == 0);
 			CHECK(l != NULL);
 			CHECK(!logger_destroy(&l));
@@ -195,13 +231,16 @@ static bool run_create_case(const char *mode)
 	if (!strcmp(mode, "deferred")) {
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		logger_t *l = NULL;
+
 		CHECK(logger_create(&c, &l) == 0);
 		CHECK(l != NULL);
 		logger_syslog_metrics_t m = metrics(l);
+
 		CHECK(!m.connected && m.connect_failures == 1 &&
 		      !m.submitted_records && m.last_error == ENOENT);
 		CHECK(logger_flush(l) == -ENOENT);
 		int fd = receiver(endpoint, SOCK_DGRAM);
+
 		pause_reconnect();
 		CHECK(!write_one(l, "first-deliverable"));
 		read_one(fd, packet, sizeof(packet));
@@ -216,6 +255,7 @@ static bool run_create_case(const char *mode)
 	}
 	if (!strcmp(mode, "endpoint-type")) {
 		int fd = receiver(endpoint, SOCK_STREAM);
+
 		c.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 		CHECK(logger_create(&c, &(logger_t *){ NULL }) == -EPROTOTYPE);
 		CHECK(!close(fd));
@@ -226,9 +266,11 @@ static bool run_create_case(const char *mode)
 	    !strcmp(mode, "long-path") || !strcmp(mode, "long-tag") ||
 	    !strcmp(mode, "tag-injection")) {
 		char long_s[300];
+
 		memset(long_s, 'a', sizeof(long_s) - 1);
 		long_s[sizeof(long_s) - 1] = 0;
 		int expected = EINVAL;
+
 		if (!strcmp(mode, "bad-facility"))
 			c.syslog.facility = 15;
 		if (!strcmp(mode, "bad-startup"))
@@ -261,8 +303,10 @@ static void run(const char *mode)
 	char packet[10000];
 	int fd = receiver(endpoint, SOCK_DGRAM);
 	char copied_path[108];
+
 	strcpy(copied_path, endpoint);
 	char copied_tag[128] = "snapshot";
+
 	if (!strcmp(mode, "copy-path")) {
 		c.syslog.path = copied_path;
 		c.ident = copied_tag;
@@ -285,6 +329,7 @@ static void run(const char *mode)
 		c.queue_capacity = 8192;
 	}
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	if (!strcmp(mode, "file-fails")) {
@@ -310,12 +355,14 @@ static void run(const char *mode)
 		CHECK(metrics(l).connect_attempts == 1);
 	} else if (!strcmp(mode, "wire")) {
 		const unsigned int pri[] = { 7, 7, 6, 4, 3, 2 };
+
 		for (unsigned int i = 0; i < 6; ++i) {
 			CHECK(!logger_log_sync_status(l, (logger_level_t)i, "m",
 						      NULL, 0, NULL,
 						      "record-%u", i));
 			read_one(fd, packet, sizeof(packet));
 			char head[30];
+
 			snprintf(head, sizeof(head), "<%u>unit[",
 				 21u * 8u + pri[i]);
 			CHECK(strstr(packet, head) == packet);
@@ -330,6 +377,7 @@ static void run(const char *mode)
 		   !strcmp(mode, "multi-backend") ||
 		   !strcmp(mode, "async-pressure")) {
 		unsigned int accepted = fill(l);
+
 		CHECK(accepted > 0);
 		if (c.async_mode) {
 			for (unsigned int i = 0; i < 4000; ++i)
@@ -342,16 +390,19 @@ static void run(const char *mode)
 		CHECK(logger_flush(l) == -EAGAIN);
 		logger_syslog_metrics_t m = metrics(l);
 		unsigned int extra = c.async_mode ? 4000 : 32;
+
 		CHECK(m.submitted_records == accepted + 1 + extra);
 		CHECK(m.sent_records == accepted &&
 		      m.failed_records == 1 + extra &&
 		      m.backpressure_records == m.failed_records);
 		CHECK(m.connected && m.connect_attempts == 1);
 		logger_io_metrics_t io;
+
 		CHECK(logger_get_io_metrics(l, &io) == 0);
 		CHECK(io.emitted_records == accepted &&
 		      io.failed_records == 1 + extra);
 		uint64_t dropped;
+
 		CHECK(logger_dropped(l, &dropped) == 0 && dropped == 0);
 		if (c.async_mode)
 			CHECK(io.async_completed == 4000);
@@ -399,12 +450,15 @@ static void run(const char *mode)
 		return;
 	} else if (!strcmp(mode, "isolation")) {
 		char other[108];
+
 		snprintf(other, sizeof(other), "%s/other", temp);
 		int f2 = receiver(other, SOCK_DGRAM);
 		logger_config_t c2 = config();
+
 		c2.syslog.path = other;
 		c2.ident = "second";
 		logger_t *l2 = NULL;
+
 		CHECK(logger_create(&c2, &l2) == 0);
 		CHECK(l2 != NULL);
 		CHECK(fill(l) > 0);
@@ -424,6 +478,7 @@ static void run(const char *mode)
 		struct thread_arg a = { l, 2000 };
 		pthread_t t[8];
 		pthread_t obs;
+
 		atomic_store(&observe, 1);
 		CHECK(!pthread_create(&obs, NULL, observer, l));
 		for (unsigned int i = 0; i < 8; ++i)
@@ -437,14 +492,17 @@ static void run(const char *mode)
 		l = NULL;
 	} else if (!strcmp(mode, "fork-guard")) {
 		pid_t child = fork();
+
 		CHECK(child >= 0);
 		if (!child) {
 			logger_syslog_metrics_t out;
 			logger_syslog_metrics_t before;
+
 			memset(&before, 0xa5, sizeof(before));
 			memcpy(&out, &before, sizeof(out));
 			errno = EDOM;
 			int rc = logger_get_syslog_metrics(l, &out);
+
 			_exit(rc == -ECHILD && errno == EDOM &&
 					      !memcmp(&out, &before,
 						      sizeof(out)) ?
@@ -452,6 +510,7 @@ static void run(const char *mode)
 				      2);
 		}
 		int st;
+
 		CHECK(waitpid(child, &st, 0) == child && WIFEXITED(st) &&
 		      WEXITSTATUS(st) == 0);
 		CHECK(!write_one(l, "parent-alive"));

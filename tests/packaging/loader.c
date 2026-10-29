@@ -2,20 +2,24 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
+
 /* argv：DSO、符号版本，随后为精确公开导出名称。 */
 int main(int argc, char **argv)
 {
 	if (argc < 4)
 		return 1;
 	void *h = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+
 	if (!h) {
 		fprintf(stderr, "%s\n", dlerror());
 		return 2;
 	}
 	const char *version = argv[2];
+
 	for (int i = 3; i < argc; ++i) {
 		void *a = dlsym(h, argv[i]);
 		void *b = dlvsym(h, argv[i], version);
+
 		if (!a || a != b) {
 			fprintf(stderr, "missing/version error: %s\n", argv[i]);
 			return 3;
@@ -28,10 +32,11 @@ int main(int argc, char **argv)
 		"logger_fault_should_fail"
 	};
 	for (unsigned int i = 0;
-	     i < sizeof(private_names) / sizeof(private_names[0]); ++i)
+	     i < sizeof(private_names) / sizeof(private_names[0]); ++i) {
 		if (dlsym(h, private_names[i])) {
 			fprintf(stderr, "private symbol exposed\n");
 			return 4;
 		}
+	}
 	return dlclose(h) ? 5 : 0;
 }

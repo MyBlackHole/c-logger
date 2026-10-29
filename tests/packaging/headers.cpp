@@ -1,5 +1,6 @@
 #include "logger.h"
 #include "console.h"
+
 int main()
 {
 	auto l = LOGGER_DEFAULT_CONFIG();

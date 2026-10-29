@@ -17,6 +17,7 @@ size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap);
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+
 size_t __wrap_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap)
@@ -30,6 +31,7 @@ size_t __wrap_logger_format_line(const logger_t *l,
 	}
 	return __real_logger_format_line(l, m, out, cap);
 }
+
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (flushing && !counted && cv == &instance->progress_cv) {
@@ -38,21 +40,26 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 	}
 	return __real_pthread_cond_wait(cv, mu);
 }
+
 static void *flush_thread(void *p)
 {
 	int *result = p;
+
 	flushing = 1;
 	*result = logger_flush(instance);
 	flushing = 0;
 	atomic_fetch_add(&flushed, 1);
 	return NULL;
 }
+
 int main(void)
 {
 	CHECK(logger_process_init() == 0);
 	char dir[] = "/tmp/logger-watermark-XXXXXX";
+
 	enter_temp(dir);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.queue_capacity = 8;
@@ -62,6 +69,7 @@ int main(void)
 	LOGGER_INFO(instance, "barrier", "before-watermark");
 	wait_flag(&first_entered);
 	pthread_t threads[WAITERS];
+
 	for (int i = 0; i < WAITERS; ++i)
 		CHECK(pthread_create(&threads[i], NULL, flush_thread,
 				     &results[i]) == 0);
@@ -83,6 +91,7 @@ int main(void)
 		CHECK(results[i] == 0);
 	}
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(instance, &io) == 0);
 	CHECK(io.async_completed == 1 && io.emitted_records == 1 &&
 	      io.failed_records == 0);

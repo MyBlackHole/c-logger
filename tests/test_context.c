@@ -6,16 +6,19 @@ static logger_t *default_owner;
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
 static void emit(void)
 {
 	LOG_INFO("request accepted");
 }
+
 int main(void)
 {
 	if (logger_process_init() != 0)
 		return 1;
 	unlink("./context.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "./context.log";
 	c.async_mode = 0;
@@ -33,10 +36,12 @@ int main(void)
 		return 8;
 	fixture_default_destroy(&default_owner);
 	FILE *f = fopen("./context.log", "r");
+
 	if (!f)
 		return 2;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
+
 	fclose(f);
 	b[n] = 0;
 	if (!strstr(b, "request=req-42"))

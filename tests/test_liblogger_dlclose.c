@@ -16,6 +16,7 @@ static bool check(bool condition, const char *expression, int line)
 }
 
 #define CHECK(x) check((x), #x, __LINE__)
+
 int main(int argc, char **argv)
 {
 	if (!CHECK(argc == 2))
@@ -23,6 +24,7 @@ int main(int argc, char **argv)
 	unlink("dlclose.log");
 	for (int n = 0; n < 20; ++n) {
 		void *handle = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+
 		if (!CHECK(handle != NULL))
 			return 1;
 		int (*initialize_fn)(void);
@@ -77,12 +79,14 @@ int main(int argc, char **argv)
 		if (!CHECK(dlsym(handle, "logger_reopen_instance") == NULL))
 			return 1;
 		logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 		c.outputs = LOGGER_OUT_FILE;
 		c.file_path = "dlclose.log";
 		c.async_mode = 1;
 		c.queue_capacity = 32;
 		c.rotation.mode = LOGGER_ROTATE_NONE;
 		logger_t *l = NULL;
+
 		if (!CHECK(create_fn(&c, &l) == 0))
 			return 1;
 		if (!CHECK(l != NULL))
@@ -104,10 +108,12 @@ int main(int argc, char **argv)
 			return 1;
 	}
 	FILE *f = fopen("dlclose.log", "rb");
+
 	if (!CHECK(f != NULL))
 		return 1;
 	int c;
 	unsigned int records = 0;
+
 	while ((c = fgetc(f)) != EOF)
 		records += c == '\n';
 	if (!CHECK(!ferror(f)))

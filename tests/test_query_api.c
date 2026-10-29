@@ -300,9 +300,9 @@ int main(int argc, char **argv)
 		CHECK(access("out.log", F_OK) == -1 && errno == ENOENT);
 		CHECK(chdir("/") == 0 && rmdir(path) == 0);
 	} else {
-		if (!strcmp(argv[1], "fork"))
+		if (!strcmp(argv[1], "fork")) {
 			fork_rejected();
-		else {
+		} else {
 			CHECK(!strcmp(argv[1], "sync") ||
 			      !strcmp(argv[1], "async") ||
 			      !strcmp(argv[1], "syslog"));

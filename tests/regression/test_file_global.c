@@ -9,6 +9,7 @@ static _Atomic int released;
 static logger_t *owner;
 static int destroy_result;
 int __real_logger_destroy(logger_t **slot);
+
 int __wrap_logger_destroy(logger_t **slot)
 {
 	if (atomic_exchange(&pause_close, 0)) {
@@ -17,6 +18,7 @@ int __wrap_logger_destroy(logger_t **slot)
 	}
 	return __real_logger_destroy(slot);
 }
+
 /* 析构由宿主承担，默认解绑既不销毁文件，也不替宿主序列化后继创建。 */
 static void *destroy_thread(void *unused)
 {
@@ -24,10 +26,12 @@ static void *destroy_thread(void *unused)
 	destroy_result = logger_destroy(&owner);
 	return NULL;
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0 && argc == 2);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "global.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -47,9 +51,11 @@ int main(int argc, char **argv)
 	CHECK(logger_default_set(owner, NULL) == 0);
 	atomic_store(&pause_close, 1);
 	pthread_t t;
+
 	CHECK(pthread_create(&t, NULL, destroy_thread, NULL) == 0);
 	wait_flag(&entered);
 	logger_t *next = NULL;
+
 	CHECK(logger_create(&cfg, &next) == -EBUSY && !next);
 	CHECK(logger_default_flush() == -ENODEV);
 	atomic_store(&released, 1);

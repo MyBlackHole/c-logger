@@ -23,11 +23,13 @@ int example_sdk_create(const struct example_sdk_options *options,
 		return -1;
 	}
 	size_t n = strlen(options->name);
+
 	if (!n || n >= sizeof(((example_sdk_t *)0)->name)) {
 		errno = EINVAL;
 		return -1;
 	}
 	example_sdk_t *sdk = calloc(1, sizeof(*sdk));
+
 	if (!sdk)
 		return -1;
 	memcpy(sdk->name, options->name, n + 1);

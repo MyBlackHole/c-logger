@@ -12,19 +12,24 @@ struct bench_argument {
 	long id;
 	long count;
 };
+
 static void *run(void *p)
 {
 	struct bench_argument *a = (struct bench_argument *)p;
+
 	for (long i = 0; i < a->count; i++)
 		LOG_INFO("worker=%ld seq=%ld value=%d", a->id, i, 42);
 	return NULL;
 }
+
 static double sec(void)
 {
 	struct timespec t;
+
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return t.tv_sec + t.tv_nsec / 1e9;
 }
+
 int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
@@ -32,6 +37,7 @@ int main(int argc, char **argv)
 	int n = argc > 1 ? atoi(argv[1]) : 8;
 	long each = argc > 2 ? atol(argv[2]) : 100000;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "./bench.log";
 	c.async_mode = 1;
@@ -47,6 +53,7 @@ int main(int argc, char **argv)
 	pthread_t *ts = calloc((size_t)n, sizeof(*ts));
 	struct bench_argument *as = calloc((size_t)n, sizeof(*as));
 	double a = sec();
+
 	for (int i = 0; i < n; i++) {
 		as[i] = (struct bench_argument){ i, each };
 		pthread_create(&ts[i], NULL, run, &as[i]);
@@ -56,6 +63,7 @@ int main(int argc, char **argv)
 	double b = sec();
 	logger_metrics_t m;
 	uint64_t dropped;
+
 	if (logger_get_global_metrics(&m) || logger_global_dropped(&dropped)) {
 		fixture_default_destroy(&default_owner);
 		free(ts);

@@ -116,6 +116,7 @@ int main(void)
 	unsigned int cases = mask_contract();
 	const char *secret = "super-secret-token-12345";
 	char b[64];
+
 	if (strcmp(logger_redact(), "[REDACTED]"))
 		return 1;
 	if (logger_mask_secret(secret, b, sizeof(b), 4, 4))
@@ -130,6 +131,7 @@ int main(void)
 		return 6; /* 辅助函数拒绝完整披露 */
 	errno = EDOM;
 	char tiny[3];
+
 	if (logger_mask_secret(secret, tiny, sizeof(tiny), 0, 0) != -ENOSPC ||
 	    errno != EDOM)
 		return 7;
@@ -139,6 +141,7 @@ int main(void)
 		return 13;
 	unlink("./redact.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "./redact.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
@@ -150,13 +153,16 @@ int main(void)
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "auth", NULL, 0,
 					NULL, "credential=%s", logger_redact());
 	int close_rc = logger_destroy(&logger);
+
 	if (rc || close_rc)
 		return 9;
 	FILE *f = fopen("./redact.log", "r");
+
 	if (!f)
 		return 10;
 	char data[32768];
 	size_t n = fread(data, 1, sizeof(data) - 1, f);
+
 	fclose(f);
 	data[n] = 0;
 	if (!strstr(data, "[REDACTED]"))

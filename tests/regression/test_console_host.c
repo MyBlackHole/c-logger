@@ -16,13 +16,15 @@ static _Atomic unsigned int writes;
 static _Atomic unsigned int escapes;
 static int reentry;
 static logger_t *log_instance;
+
 static ssize_t host_write(void *user, const char *text, size_t size)
 {
 	(void)user;
 	atomic_fetch_add(&writes, 1);
-	for (size_t i = 0; i < size; ++i)
+	for (size_t i = 0; i < size; ++i) {
 		if (text[i] == '\033')
 			atomic_fetch_add(&escapes, 1);
+	}
 	if (atomic_exchange(&arm, 0)) {
 		if (reentry) {
 			errno = 0;
@@ -40,16 +42,19 @@ static ssize_t host_write(void *user, const char *text, size_t size)
 	}
 	return (ssize_t)size;
 }
+
 static void cleanup(void *unused)
 {
 	(void)unused;
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	CHECK(!console_print("cleanup\n"));
 	LOGGER_INFO(log_instance, "cleanup", "after-cancel");
 	CHECK(!logger_flush(log_instance));
 	atomic_store(&cleanup_seen, 1);
 }
+
 static void *print_thread(void *unused)
 {
 	(void)unused;
@@ -59,9 +64,11 @@ static void *print_thread(void *unused)
 	pthread_cleanup_pop(0);
 	return NULL;
 }
+
 static void *configure(void *id)
 {
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
+
 	if ((uintptr_t)id == 1) {
 		cfg.verbosity = CONSOLE_QUIET;
 		cfg.color = CONSOLE_COLOR_ALWAYS;
@@ -73,6 +80,7 @@ static void *configure(void *id)
 		CHECK(console_init(&cfg) == 0);
 	return NULL;
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
@@ -80,6 +88,7 @@ int main(int argc, char **argv)
 	unlink("host.log");
 	unlink("host.log.logger.lock");
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "host.log";
 	cfg.async_mode = 1;
@@ -90,17 +99,20 @@ int main(int argc, char **argv)
 	FILE *old_stderr = stderr;
 	cookie_io_functions_t ops = { .write = host_write };
 	FILE *stream = fopencookie(NULL, "w", ops);
+
 	CHECK(stream);
 	CHECK(!setvbuf(stream, NULL, _IONBF, 0));
 	stdout = stream;
 	stderr = stream;
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
+
 	cc.verbosity = CONSOLE_DEBUG;
 	cc.color = CONSOLE_COLOR_NEVER;
 	CHECK(console_init(&cc) == 0);
 	if (!strcmp(argv[1], "cancel")) {
 		atomic_store(&arm, 1);
 		pthread_t t;
+
 		CHECK(!pthread_create(&t, NULL, print_thread, NULL));
 		wait_flag(&entered);
 		CHECK(!pthread_cancel(t));
@@ -109,6 +121,7 @@ int main(int argc, char **argv)
 		CHECK(!atomic_load(&cleanup_seen));
 		atomic_store(&release_io, 1);
 		void *value;
+
 		CHECK(!pthread_join(t, &value));
 		CHECK(value == PTHREAD_CANCELED);
 		CHECK(atomic_load(&cleanup_seen));
@@ -122,6 +135,7 @@ int main(int argc, char **argv)
 		atomic_store(&config_run, 1);
 		pthread_t a;
 		pthread_t b;
+
 		CHECK(!pthread_create(&a, NULL, configure,
 				      (void *)(uintptr_t)1));
 		CHECK(!pthread_create(&b, NULL, configure,

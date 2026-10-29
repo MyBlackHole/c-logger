@@ -20,6 +20,7 @@
  * 独立设置函数只对自己负责的位做 CAS。
  */
 enum { COLOR_BITS = 2, COLOR_MASK = 3 };
+
 #define g_config (logger_runtime_current()->console_config)
 #define g_console_lock_error (logger_runtime_current()->console_lock_error)
 #define g_console_mu (logger_runtime_current()->console_mu)
@@ -47,6 +48,7 @@ int console_init(const console_config_t *c)
 {
 	struct logger_scope scope;
 	int rc = begin(&scope);
+
 	if (rc)
 		return rc;
 	rc = c ? 0 : -EINVAL;
@@ -56,6 +58,7 @@ int console_init(const console_config_t *c)
 		console_config_t config;
 		uint32_t size;
 		uint32_t version;
+
 		memcpy(&size, (const unsigned char *)c, sizeof(size));
 		memcpy(&version, (const unsigned char *)c + sizeof(size),
 		       sizeof(version));
@@ -78,6 +81,7 @@ static int set_config(unsigned int value, int color)
 {
 	struct logger_scope scope;
 	int rc = begin(&scope);
+
 	if (rc)
 		return rc;
 	rc = value > (unsigned int)(color ? CONSOLE_COLOR_NEVER :
@@ -88,6 +92,7 @@ static int set_config(unsigned int value, int color)
 		unsigned int old =
 			atomic_load_explicit(&g_config, memory_order_relaxed);
 		unsigned int next;
+
 		do {
 			next = color ? (old & ~COLOR_MASK) | value :
 				       (old & COLOR_MASK) |
@@ -103,6 +108,7 @@ int console_set_verbosity(console_verbosity_t value)
 {
 	return set_config((unsigned int)value, 0);
 }
+
 int console_set_color(console_color_mode_t value)
 {
 	return set_config((unsigned int)value, 1);
@@ -112,6 +118,7 @@ static int tty(int fd, int *out)
 {
 	struct logger_scope scope;
 	int rc = begin(&scope);
+
 	if (rc)
 		return rc;
 	if (!out)
@@ -124,6 +131,7 @@ static int tty(int fd, int *out)
 	errno = 0;
 	int yes = isatty(fd);
 	int error = errno;
+
 	rc = yes || error == ENOTTY ? 0 : -(error ? error : EIO);
 	rc = finish(&scope, rc);
 	/* 取消策略恢复也可能失败；所有收尾成功后才发布输出，失败不改旧值。 */
@@ -131,10 +139,12 @@ static int tty(int fd, int *out)
 		*out = !!yes;
 	return rc;
 }
+
 int console_stdout_is_tty(int *out)
 {
 	return tty(STDOUT_FILENO, out);
 }
+
 int console_stderr_is_tty(int *out)
 {
 	return tty(STDERR_FILENO, out);
@@ -143,10 +153,12 @@ int console_stderr_is_tty(int *out)
 static bool color_enabled(unsigned int config, FILE *out)
 {
 	unsigned int color = config & COLOR_MASK;
+
 	if (color != CONSOLE_COLOR_AUTO)
 		return color == CONSOLE_COLOR_ALWAYS;
 	int saved = errno;
 	int enabled = isatty(fileno(out));
+
 	errno = saved; /* TTY 探测不能改变用户 printf %m 依赖的 errno。 */
 	return enabled;
 }
@@ -156,6 +168,7 @@ static void stdio_error(bool failed, int *first_error, bool *saw_epipe)
 	if (!failed)
 		return;
 	int error = errno ? errno : EIO;
+
 	if (error == EPIPE)
 		*saw_epipe = true;
 	if (!*first_error)
@@ -178,12 +191,15 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 		return -lock_error;
 	ACQUIRE(pthread_mutex_console_checked, console_guard)(&g_console_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_console_checked, &console_guard);
+
 	if (rc)
 		return rc;
 	struct logger_sigpipe_guard sigpipe_guard;
+
 	rc = logger_sigpipe_begin(&sigpipe_guard);
 	bool guarded = !rc;
 	bool saw_epipe = false;
+
 	if (guarded) {
 		if (label) {
 			int n = color_enabled(config, out) && ansi ?
@@ -202,6 +218,7 @@ static int write_v(FILE *out, const char *label, const char *ansi,
 		stdio_error(logger_libc_fflush(out) != 0, &rc, &saw_epipe);
 	}
 	int unlock_rc = RELEASE_ERR(pthread_mutex_console, &console_guard);
+
 	if (unlock_rc) {
 		atomic_store_explicit(&g_console_lock_error, -unlock_rc,
 				      memory_order_release);
@@ -215,11 +232,13 @@ int console_print(const char *fmt, ...)
 {
 	struct logger_scope scope;
 	int rc = begin(&scope);
+
 	if (rc)
 		return rc;
 	unsigned int config =
 		atomic_load_explicit(&g_config, memory_order_relaxed);
 	va_list ap;
+
 	va_start(ap, fmt);
 	rc = write_v(stdout, NULL, NULL, config, fmt, ap);
 	va_end(ap);
@@ -256,6 +275,7 @@ int console_debug_source(const char *file, int line, const char *func,
 {
 	struct logger_scope scope;
 	int rc = begin(&scope);
+
 	if (rc)
 		return rc;
 	unsigned int config =
@@ -263,19 +283,21 @@ int console_debug_source(const char *file, int line, const char *func,
 	rc = !fmt ? -EINVAL : 0;
 	if (!rc && (config >> COLOR_BITS) >= CONSOLE_DEBUG) {
 		const char *base = file ? strrchr(file, '/') : NULL;
+
 		base = base ? base + 1 : (file ? file : "?");
 		char message[3072];
 		char merged[4096];
 		va_list ap;
+
 		va_start(ap, fmt);
 		int n = logger_libc_vsnprintf(message, sizeof(message), fmt,
 					      ap);
 		va_end(ap);
-		if (n < 0)
+		if (n < 0) {
 			rc = -(errno ? errno : EILSEQ);
-		else if ((size_t)n >= sizeof(message))
+		} else if ((size_t)n >= sizeof(message)) {
 			rc = -EOVERFLOW;
-		else {
+		} else {
 			n = logger_libc_snprintf(merged, sizeof(merged),
 						 "%s:%d %s() %s", base, line,
 						 func ? func : "?", message);
@@ -297,9 +319,11 @@ int console_debug_source(const char *file, int line, const char *func,
 					 &console_guard);
 			if (!rc) {
 				struct logger_sigpipe_guard sigpipe_guard;
+
 				rc = logger_sigpipe_begin(&sigpipe_guard);
 				bool guarded = !rc;
 				bool saw_epipe = false;
+
 				if (guarded) {
 					stdio_error(logger_libc_fprintf(
 							    stderr,

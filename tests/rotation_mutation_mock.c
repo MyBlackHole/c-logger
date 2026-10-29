@@ -21,6 +21,7 @@ int logger_process_init(void)
 int logger_create(const logger_config_t *config, logger_t **out)
 {
 	int n = snprintf(active, sizeof(active), "%s", config->file_path);
+
 	if (n < 0 || (size_t)n >= sizeof(active))
 		return -EOVERFLOW;
 	*out = (logger_t *)&token;
@@ -54,17 +55,19 @@ int logger_destroy(logger_t **owner)
 		return -EBUSY;
 	*owner = NULL;
 	const char *mode = getenv("LOGGER_ROTATION_MUTATION");
+
 	if (!mode || !strcmp(mode, "no-output"))
 		return 0;
-	if (!strcmp(mode, "shutdown-error")) {
+	if (!strcmp(mode, "shutdown-error"))
 		return -EIO;
-	}
+
 	char archive[300];
 	int n = snprintf(archive, sizeof(archive), "%.*s.fixtureZ.log",
 			 (int)strlen(active) - 4, active);
 	if (n < 0 || (size_t)n >= sizeof(archive))
 		return -1;
 	FILE *files[2] = { fopen(active, "w"), NULL };
+
 	if (strcmp(mode, "active-only"))
 		files[1] = fopen(archive, "w");
 	if (!files[0] || (strcmp(mode, "active-only") && !files[1])) {
@@ -75,10 +78,12 @@ int logger_destroy(logger_t **owner)
 		return -1;
 	}
 	int rc = 0;
+
 	for (int i = 0; i < 100; i++) {
 		if (i == 50 && !strcmp(mode, "missing"))
 			continue;
 		int id = i == 50 && !strcmp(mode, "duplicate") ? 49 : i;
+
 		if (!strcmp(mode, "reordered"))
 			id = i == 50 ? 51 : (i == 51 ? 50 : i);
 		if (!strcmp(mode, "reversed-files"))

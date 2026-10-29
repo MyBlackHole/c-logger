@@ -22,6 +22,7 @@ enum failure {
 	FAIL_RWLOCK,
 	FAIL_UNMAP
 };
+
 static int fault;
 static int allocation_errno = ENOMEM;
 static _Atomic unsigned int mapping_calls;
@@ -88,6 +89,7 @@ int __wrap_munmap(void *p, size_t n)
 		return -1;
 	}
 	int rc = __real_munmap(p, n);
+
 	if (!rc && fail_final_unlock && (uintptr_t)p <= final_subject &&
 	    final_subject - (uintptr_t)p < n)
 		arm_unlock = 1;
@@ -118,6 +120,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *p)
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *p)
 {
 	int rc = __real_pthread_mutex_unlock(p);
+
 	if (!rc && fail_allocation_unlock &&
 	    p == &logger_runtime_current()->resource_mu) {
 		fail_allocation_unlock = 0;
@@ -150,6 +153,7 @@ static void wait_ok(pid_t pid)
 {
 	int status;
 	pid_t got;
+
 	do {
 		got = waitpid(pid, &status, 0);
 	} while (got < 0 && errno == EINTR);
@@ -162,6 +166,7 @@ static void wait_ok(pid_t pid)
 static logger_config_t cfg_for(const char *path)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = path;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -172,6 +177,7 @@ static logger_config_t cfg_for(const char *path)
 static void child_log(void)
 {
 	logger_config_t cfg = cfg_for("child.log");
+
 	cfg.async_mode = child_async;
 	logger_t *l = NULL;
 	(void)logger_create(&cfg, &l);
@@ -187,10 +193,12 @@ static void check_unmapped(void)
 {
 	/* 在创建任何新域前确认旧页不存在，避免地址复用造成伪阳性。 */
 	long page = sysconf(_SC_PAGESIZE);
+
 	child_check(page > 0, 45);
 	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(old_regions); ++i) {
 		unsigned char resident;
 		uintptr_t address = (uintptr_t)old_regions[i];
+
 		address -= address % (uintptr_t)page;
 		child_check(mincore((void *)address, (size_t)page, &resident) ==
 					    -1 &&
@@ -203,6 +211,7 @@ static void check_unmapped(void)
 static void mapped_and_retry(const char *mode)
 {
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		check_unmapped();
@@ -222,10 +231,12 @@ static void mapped_and_retry(const char *mode)
 					    1;
 			errno = EDOM;
 			int rc = logger_process_init();
+
 			child_check(rc < 0 && errno == EDOM && countdown == 0,
 				    48);
 			child_check(logger_runtime_current() == NULL, 49);
 			logger_config_t cfg = cfg_for("never-created.log");
+
 			child_check(logger_create(&cfg,
 						  &(logger_t *){ NULL }) ==
 					    -ECHILD,
@@ -247,8 +258,10 @@ static void *holder(void *unused)
 	(void)unused;
 	if (!strcmp(hold_mode, "directory-held")) {
 		int fd = logger_fork_open(".", O_RDONLY | O_DIRECTORY, 0);
+
 		CHECK(fd >= 0);
 		DIR *dir = logger_fork_fdopendir(fd);
+
 		CHECK(dir);
 		atomic_store(&entered, 1);
 		wait_flag(&release_holder);
@@ -256,6 +269,7 @@ static void *holder(void *unused)
 	} else if (!strcmp(hold_mode, "format-held")) {
 		time_t time = 0;
 		struct tm out;
+
 		CHECK(logger_libc_localtime_r(&time, &out) == &out);
 	} else {
 		CHECK(pthread_mutex_lock(&parent_logger->emit_mu) == 0);
@@ -271,6 +285,7 @@ static void *forker(void *unused)
 	(void)unused;
 	in_fork = 1;
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		hold_format = 0;
@@ -289,6 +304,7 @@ static void interleaving(const char *mode)
 	hold_format = !strcmp(mode, "format-held");
 	pthread_t holding;
 	pthread_t fork_thread;
+
 	CHECK(pthread_create(&holding, NULL, holder, NULL) == 0);
 	wait_flag(&entered);
 	CHECK(pthread_create(&fork_thread, NULL, forker, NULL) == 0);
@@ -362,11 +378,14 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	(void)alarm(20);
 	char path[PATH_MAX];
+
 	enter_temp_workspace(path, sizeof(path), "logger-runtime-test");
 	char normalized[64];
+
 	CHECK(strlen(argv[1]) < sizeof(normalized));
 	memcpy(normalized, argv[1], strlen(argv[1]) + 1);
 	size_t length = strlen(normalized);
+
 	if (length > 5 && !strcmp(normalized + length - 5, "-sync")) {
 		normalized[length - 5] = 0;
 		child_async = 0;
@@ -391,6 +410,7 @@ int main(int argc, char **argv)
 		CHECK(pthread_atfork(NULL, NULL, early_child) == 0);
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = cfg_for("out.log");
+
 	CHECK(logger_create(&cfg, &parent_logger) == 0);
 	CHECK(parent_logger != NULL);
 	LOGGER_INFO(parent_logger, "parent", "PARENT_ONLY");
@@ -417,6 +437,7 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "unmap-retain")) {
 		CHECK(logger_destroy(&parent_logger) == 0);
 		void *p = logger_runtime_malloc(32);
+
 		CHECK(p);
 		fault = FAIL_UNMAP;
 		countdown = 1;
@@ -430,10 +451,12 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "allocation-unlock-retain")) {
 		CHECK(logger_destroy(&parent_logger) == 0);
 		struct logger_runtime *runtime = logger_runtime_current();
+
 		CHECK(runtime->allocation_count == 0);
 		fail_allocation_unlock = 1;
 		errno = 0;
 		void *p = logger_runtime_malloc(32);
+
 		CHECK(p == NULL && errno == EIO);
 		CHECK(fail_allocation_unlock == 0);
 		CHECK(runtime->allocation_count == 1);
@@ -446,6 +469,7 @@ int main(int argc, char **argv)
 		return 0;
 	} else if (!strcmp(mode, "raw-bypass")) {
 		pid_t pid = (pid_t)syscall(SYS_fork);
+
 		CHECK(pid >= 0);
 		if (!pid)
 			_exit(logger_process_init() == -ECHILD ? 0 : 56);

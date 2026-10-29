@@ -11,6 +11,7 @@ static inline int fixture_default_create(const logger_config_t *config,
 					 logger_t **owner)
 {
 	int rc = logger_create(config, owner);
+
 	if (rc)
 		return rc;
 	rc = logger_default_set(NULL, *owner);
@@ -26,6 +27,7 @@ static inline int fixture_default_destroy(logger_t **owner)
 	if (!*owner)
 		return logger_default_set(NULL, NULL);
 	int rc = logger_default_set(*owner, NULL);
+
 	return rc ? rc : logger_destroy(owner);
 }
 #endif /* LOGGER_DEFAULT_FIXTURE_H */

@@ -13,6 +13,7 @@
 #define TYPE(T) printf(#T " %zu %zu\n", sizeof(T), (size_t)ALIGN(T))
 #define FIELD(T, F) printf(#T "." #F " %zu\n", offsetof(T, F))
 #define N(F) printf(#F " %llu\n", (unsigned long long)(F))
+
 int main(void)
 {
 	TYPE(logger_config_t);
@@ -31,6 +32,7 @@ int main(void)
 	FIELD(logger_config_t, syslog);
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
+
 	N(l.struct_size);
 	N(l.version);
 	N(l.level);

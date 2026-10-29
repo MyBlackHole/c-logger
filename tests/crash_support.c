@@ -30,9 +30,10 @@ static const char *const points[] = { "acknowledged",
 
 bool crash_fixture_point_valid(const char *point)
 {
-	for (size_t i = 0; i < sizeof(points) / sizeof(points[0]); ++i)
+	for (size_t i = 0; i < sizeof(points) / sizeof(points[0]); ++i) {
 		if (!strcmp(point, points[i]))
 			return true;
+	}
 	return false;
 }
 
@@ -47,6 +48,7 @@ static bool rotates(const char *point)
  * 真实单调时钟与超时保持不变。
  */
 int __real_clock_gettime(clockid_t clock, struct timespec *value);
+
 int __wrap_clock_gettime(clockid_t clock, struct timespec *value)
 {
 	if (clock == CLOCK_REALTIME) {
@@ -72,6 +74,7 @@ static size_t payload(unsigned int sequence, char *out, size_t capacity)
 static size_t record_line(unsigned int sequence, char *out, size_t capacity)
 {
 	char body[RECORD_CAPACITY];
+
 	payload(sequence, body, sizeof(body));
 	int n = snprintf(out, capacity,
 			 "2023-11-14T22:13:20.123456+0000 INFO  %s\n", body);
@@ -80,6 +83,7 @@ static size_t record_line(unsigned int sequence, char *out, size_t capacity)
 }
 
 void __real_logger_fault_crash_if_requested(const char *point);
+
 void __wrap_logger_fault_crash_if_requested(const char *point)
 {
 	if (armed) {
@@ -92,19 +96,23 @@ void __wrap_logger_fault_crash_if_requested(const char *point)
 }
 
 int __real_fsync(int fd);
+
 int __wrap_fsync(int fd)
 {
 	int match = 0;
+
 	if (armed && (!strcmp(cut_point, "before_file_fsync") ||
 		      !strcmp(cut_point, "after_file_fsync") ||
 		      (!strcmp(cut_point, "rotation_after_file_fsync") &&
 		       active_switched))) {
 		struct stat data;
 		struct stat active;
+
 		CHECK(fstat(fd, &data) == 0);
 		CHECK(lstat(ACTIVE, &active) == 0);
 		char line[RECORD_CAPACITY];
 		size_t size = record_line(TARGET_SEQUENCE, line, sizeof(line));
+
 		size *= rotates(cut_point) ? 1u : BASELINE_RECORDS + 1u;
 		/*
 		 * 绝不把目录 fsync、已退役归档或轮转中新空 inode 的 fsync
@@ -118,6 +126,7 @@ int __wrap_fsync(int fd)
 	if (match && !strcmp(cut_point, "before_file_fsync"))
 		crash_fixture_cut(cut_point);
 	int result = __real_fsync(fd);
+
 	if (!result && match && strcmp(cut_point, "before_file_fsync"))
 		crash_fixture_cut(cut_point);
 	return result;
@@ -126,6 +135,7 @@ int __wrap_fsync(int fd)
 static logger_config_t config(int rotation)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = ACTIVE;
 	c.async_mode = 0;
@@ -149,6 +159,7 @@ static void initialize(void)
 static void emit(logger_t *logger, unsigned int sequence)
 {
 	char body[RECORD_CAPACITY];
+
 	payload(sequence, body, sizeof(body));
 	CHECK(logger_log_sync_status(logger, LOGGER_INFO, "crash", __FILE__,
 				     __LINE__, __func__, "%s", body) == 0);
@@ -161,6 +172,7 @@ void crash_fixture_write(const char *point)
 	cut_point = point;
 	logger_config_t c = config(rotates(point));
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&c, &logger) == 0);
 	CHECK(logger != NULL);
 	for (unsigned int i = 0; i < BASELINE_RECORDS; ++i)
@@ -184,6 +196,7 @@ static bool archive_name(const char *name)
 	    strcmp(name + 29, ".log"))
 		return false;
 	const char *stamp = name + 6;
+
 	for (unsigned int i = 0; i < 23; ++i) {
 		char delimiter = i == 8	 ? 'T' :
 				 i == 15 ? '.' :
@@ -204,20 +217,25 @@ static int select_archive(const struct dirent *entry)
 static size_t read_segment(const char *name, char *out, size_t capacity)
 {
 	int fd = open(name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+
 	CHECK(fd >= 0);
 	struct stat st;
+
 	CHECK(fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1);
 	CHECK(st.st_size >= 0 && (uintmax_t)st.st_size < capacity);
 	size_t size = (size_t)st.st_size;
 	size_t offset = 0;
+
 	while (offset < size) {
 		ssize_t n = read(fd, out + offset, size - offset);
+
 		if (n < 0 && errno == EINTR)
 			continue;
 		CHECK(n > 0);
 		offset += (size_t)n;
 	}
 	char extra;
+
 	CHECK(read(fd, &extra, 1) == 0 && close(fd) == 0);
 	return size;
 }
@@ -231,9 +249,11 @@ static void verify_records(const char *point, unsigned int recovered,
 	size_t used = 0;
 	size_t length = record_line(0, line, sizeof(line));
 	DIR *directory = opendir(".");
+
 	CHECK(directory);
 	struct dirent *entry;
 	int active_present = 0;
+
 	for (;;) {
 		errno = 0;
 		entry = readdir(directory);
@@ -250,6 +270,7 @@ static void verify_records(const char *point, unsigned int recovered,
 	CHECK(closedir(directory) == 0);
 	struct dirent **archives;
 	int count = scandir(".", &archives, select_archive, alphasort);
+
 	CHECK(count >= 0);
 	CHECK(rotates(point) ? count >= 9 && count <= 10 : count == 0);
 	if (!baseline_only && rotates(point) &&
@@ -274,6 +295,7 @@ static void verify_records(const char *point, unsigned int recovered,
 				     sizeof(bytes) - used);
 	CHECK(!recovered || active_present);
 	size_t offset = 0;
+
 	for (unsigned int i = 0; i < BASELINE_RECORDS; ++i) {
 		length = record_line(i, line, sizeof(line));
 		CHECK(used - offset >= length &&
@@ -286,8 +308,10 @@ static void verify_records(const char *point, unsigned int recovered,
 	 * 读取原始字节而不是行：撕裂尾部不一定以换行符结束。
 	 */
 	size_t recovery_bytes = recovered * length;
+
 	CHECK(used - offset >= recovery_bytes);
 	size_t target_bytes = used - offset - recovery_bytes;
+
 	length = record_line(TARGET_SEQUENCE, line, sizeof(line));
 	if (baseline_only) {
 		CHECK(target_bytes == 0);
@@ -327,8 +351,10 @@ void crash_fixture_recover(const char *point)
 	 */
 	crash_fixture_verify(point, 0);
 	logger_config_t c = config(0);
+
 	for (unsigned int i = 0; i < 2; ++i) {
 		logger_t *logger = NULL;
+
 		CHECK(logger_create(&c, &logger) == 0);
 		CHECK(logger != NULL); /* 被终止的所有者与先前恢复已释放租约 */
 		errno = 0;
@@ -343,14 +369,17 @@ void crash_fixture_recover(const char *point)
 void crash_fixture_cleanup(const char *directory)
 {
 	DIR *dir = opendir(".");
+
 	CHECK(dir);
 	struct dirent *entry;
-	while ((entry = readdir(dir)))
+
+	while ((entry = readdir(dir))) {
 		if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
 			CHECK(!strcmp(entry->d_name, ACTIVE) ||
 			      !strcmp(entry->d_name, LOCK) ||
 			      archive_name(entry->d_name));
 			CHECK(unlink(entry->d_name) == 0);
 		}
+	}
 	CHECK(closedir(dir) == 0 && chdir("/") == 0 && rmdir(directory) == 0);
 }

@@ -18,19 +18,23 @@ static unsigned int unlocks;
 static pthread_mutex_t *console_mutex;
 
 int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_lock(mutex);
-	if (armed && !rc && mutex == console_mutex) {
+
+	if (armed && !rc && mutex == console_mutex)
 		++locks;
-	}
+
 	return rc;
 }
 
 int __real_pthread_mutex_unlock(pthread_mutex_t *mutex);
+
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_unlock(mutex);
+
 	if (armed && mutex == console_mutex) {
 		++unlocks;
 		if (fail_unlock) {
@@ -42,6 +46,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 }
 
 int __real_pthread_sigmask(int how, const sigset_t *set, sigset_t *old);
+
 int __wrap_pthread_sigmask(int how, const sigset_t *set, sigset_t *old)
 {
 	if (armed && how == SIG_BLOCK && fail_mask) {
@@ -52,6 +57,7 @@ int __wrap_pthread_sigmask(int how, const sigset_t *set, sigset_t *old)
 }
 
 int __real_sigpending(sigset_t *pending);
+
 int __wrap_sigpending(sigset_t *pending)
 {
 	if (armed && fail_pending) {
@@ -78,11 +84,13 @@ int main(int argc, char **argv)
 	CHECK(!strcmp(argv[3], "unlock") || !strcmp(argv[3], "recover"));
 	int source = !strcmp(argv[1], "source");
 	int poison = !strcmp(argv[3], "unlock");
+
 	fail_mask = !strcmp(argv[2], "mask");
 	fail_pending = !fail_mask;
 	fail_unlock = poison;
 	int first_error = fail_mask ? EAGAIN : EIO;
 	console_config_t config = CONSOLE_DEFAULT_CONFIG();
+
 	config.verbosity = CONSOLE_DEBUG;
 	config.color = CONSOLE_COLOR_NEVER;
 	CHECK(console_init(&config) == 0);
@@ -90,10 +98,13 @@ int main(int argc, char **argv)
 	console_mutex = &logger_runtime_current()->console_mu;
 	sigset_t before;
 	sigset_t after;
+
 	CHECK(!pthread_sigmask(SIG_SETMASK, NULL, &before));
 	FILE *stream = tmpfile();
+
 	CHECK(stream);
 	FILE *saved = source ? stderr : stdout;
+
 	if (source)
 		stderr = stream;
 	else
@@ -102,6 +113,7 @@ int main(int argc, char **argv)
 	errno = EDOM;
 	int rc = output(source);
 	int error = errno;
+
 	if (source)
 		stderr = saved;
 	else

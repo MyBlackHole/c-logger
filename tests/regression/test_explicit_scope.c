@@ -26,6 +26,7 @@ enum point {
 	P_FORMAT,
 	P_LOCK
 };
+
 static _Atomic int point;
 static _Atomic int entered;
 static _Atomic int release_call;
@@ -51,21 +52,27 @@ static char socket_path[108];
 static int reentry_mode;
 static int cleanup_new;
 static int use_console;
+
 static int count_fds(void)
 {
 	DIR *d = opendir("/proc/self/fd");
+
 	CHECK(d);
 	int n = 0;
 	struct dirent *e;
-	while ((e = readdir(d)))
+
+	while ((e = readdir(d))) {
 		if (strcmp(e->d_name, ".") && strcmp(e->d_name, ".."))
 			++n;
+	}
 	CHECK(!closedir(d));
 	return n;
 }
+
 static logger_config_t local_cfg(int async)
 {
 	logger_config_t c = config_for("scope.log", async);
+
 	c.queue_capacity = 2;
 	if (!strcmp(scenario, "syslog-metrics")) {
 		c.outputs |= LOGGER_OUT_SYSLOG;
@@ -73,6 +80,7 @@ static logger_config_t local_cfg(int async)
 	}
 	return c;
 }
+
 static void nested_call(void)
 {
 	logger_metrics_t metrics;
@@ -85,34 +93,35 @@ static void nested_call(void)
 	logger_config_t cfg = config_for("nested.log", 0);
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
 	logger_context_t ctx = { .request_id = "nested" };
+
 	errno = EDOM;
-	if (!strcmp(nested, "log"))
+	if (!strcmp(nested, "log")) {
 		CHECK(LOGGER_INFO(log_instance, "test", "nested") == -EDEADLK);
-	else if (!strcmp(nested, "source"))
+	} else if (!strcmp(nested, "source")) {
 		CHECK(logger_log_source(log_instance, LOGGER_INFO,
 					LOGGER_SOURCE(), "nested") == -EDEADLK);
-	else if (!strcmp(nested, "sync"))
+	} else if (!strcmp(nested, "sync")) {
 		CHECK(logger_log_sync_status(log_instance, LOGGER_INFO, "x",
 					     __FILE__, __LINE__, __func__,
 					     "nested") == -EDEADLK);
-	else if (!strcmp(nested, "flush"))
+	} else if (!strcmp(nested, "flush")) {
 		CHECK(logger_flush(log_instance) == -EDEADLK);
-	else if (!strcmp(nested, "flush-void"))
+	} else if (!strcmp(nested, "flush-void")) {
 		logger_flush(log_instance);
-	else if (!strcmp(nested, "reopen"))
+	} else if (!strcmp(nested, "reopen")) {
 		CHECK(logger_reopen(log_instance) == -EDEADLK);
-	else if (!strcmp(nested, "destroy"))
+	} else if (!strcmp(nested, "destroy")) {
 		CHECK(logger_destroy(&log_instance) == -EDEADLK);
-	else if (!strcmp(nested, "destroy-void"))
+	} else if (!strcmp(nested, "destroy-void")) {
 		CHECK(logger_destroy(NULL) == -EDEADLK);
-	else if (!strcmp(nested, "create"))
+	} else if (!strcmp(nested, "create")) {
 		CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -EDEADLK);
-	else if (!strcmp(nested, "level"))
+	} else if (!strcmp(nested, "level")) {
 		CHECK(logger_set_instance_level(log_instance, LOGGER_OFF) ==
 		      -EDEADLK);
-	else if (!strcmp(nested, "global-level"))
+	} else if (!strcmp(nested, "global-level")) {
 		CHECK(logger_set_level(LOGGER_OFF) == -EDEADLK);
-	else if (!strcmp(nested, "state")) {
+	} else if (!strcmp(nested, "state")) {
 		CHECK(logger_get_state(log_instance, &state) == -EDEADLK);
 		CHECK(state == LOGGER_STATE_RUNNING);
 	} else if (!strcmp(nested, "dropped")) {
@@ -141,43 +150,48 @@ static void nested_call(void)
 		CHECK(logger_get_syslog_metrics(log_instance, &sys) ==
 		      -EDEADLK);
 		expect_query_sentinel(&sys, sizeof(sys));
-	} else if (!strcmp(nested, "context-set"))
+	} else if (!strcmp(nested, "context-set")) {
 		CHECK(logger_context_set(&ctx) == -EDEADLK);
-	else if (!strcmp(nested, "context-clear"))
+	} else if (!strcmp(nested, "context-clear")) {
 		CHECK(logger_context_clear() == -EDEADLK);
-	else if (!strcmp(nested, "context-get")) {
+	} else if (!strcmp(nested, "context-get")) {
 		logger_context_t before = ctx;
+
 		CHECK(logger_context_get(&ctx) == -EDEADLK);
 		CHECK(memcmp(&ctx, &before, sizeof(ctx)) == 0);
-	} else if (!strcmp(nested, "console"))
+	} else if (!strcmp(nested, "console")) {
 		CHECK(console_print("nested") == -EDEADLK);
-	else if (!strcmp(nested, "console-debug"))
+	} else if (!strcmp(nested, "console-debug")) {
 		CHECK(console_debug_source(__FILE__, __LINE__, __func__,
 					   "nested") == -EDEADLK);
-	else if (!strcmp(nested, "console-init"))
+	} else if (!strcmp(nested, "console-init")) {
 		CHECK(console_init(&cc) == -EDEADLK);
-	else if (!strcmp(nested, "console-level"))
+	} else if (!strcmp(nested, "console-level")) {
 		CHECK(console_set_verbosity(CONSOLE_QUIET) == -EDEADLK);
-	else if (!strcmp(nested, "console-color"))
+	} else if (!strcmp(nested, "console-color")) {
 		CHECK(console_set_color(CONSOLE_COLOR_ALWAYS) == -EDEADLK);
-	else if (!strcmp(nested, "console-tty")) {
+	} else if (!strcmp(nested, "console-tty")) {
 		int tty = 9;
+
 		CHECK(console_stdout_is_tty(&tty) == -EDEADLK);
 		CHECK(tty == 9);
-	} else if (!strcmp(nested, "global"))
+	} else if (!strcmp(nested, "global")) {
 		CHECK(logger_default_set(NULL, NULL) == -EDEADLK);
-	else if (!strcmp(nested, "global-write"))
+	} else if (!strcmp(nested, "global-write")) {
 		CHECK(LOG_INFO("nested global") == -EDEADLK);
-	else
+	} else {
 		CHECK(!"unknown nested API");
+	}
 	CHECK(errno == EDOM);
 	CHECK(access("nested.log", F_OK) == -1 && errno == ENOENT);
 }
+
 static void probe(enum point p)
 {
 	if (!actor)
 		return;
 	int expected = p;
+
 	if (!atomic_compare_exchange_strong(&point, &expected, P_NONE))
 		return;
 	if (reentry_mode) {
@@ -186,43 +200,54 @@ static void probe(enum point p)
 		return;
 	}
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	atomic_store(&cancel_disabled, old == PTHREAD_CANCEL_DISABLE);
 	CHECK(!pthread_setcancelstate(old, NULL));
 	atomic_store(&entered, 1);
 	wait_flag(&release_call);
 }
+
 int __real_logger_file_write(struct logger_file *f, const char *p, size_t n,
 			     const struct timespec *t, int sync);
+
 int __wrap_logger_file_write(struct logger_file *f, const char *p, size_t n,
 			     const struct timespec *t, int sync)
 {
 	probe(P_WRITE);
 	return __real_logger_file_write(f, p, n, t, sync);
 }
+
 int __real_logger_file_reopen(struct logger_file *f);
+
 int __wrap_logger_file_reopen(struct logger_file *f)
 {
 	probe(P_REOPEN);
 	return __real_logger_file_reopen(f);
 }
+
 int __real_logger_queue_push(struct logger_queue *q,
 			     const struct logger_message *m);
+
 int __wrap_logger_queue_push(struct logger_queue *q,
 			     const struct logger_message *m)
 {
 	probe(P_QUEUE);
 	return __real_logger_queue_push(q, m);
 }
+
 int __real_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu);
+
 int __wrap_pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mu)
 {
 	if (actor && log_instance && mu == &log_instance->progress_mu)
 		probe(P_WAIT);
 	return __real_pthread_cond_wait(cv, mu);
 }
+
 int __real_pthread_create(pthread_t *t, const pthread_attr_t *a,
 			  void *(*fn)(void *arg), void *u);
+
 int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
 			  void *(*fn)(void *arg), void *u)
 {
@@ -231,13 +256,17 @@ int __wrap_pthread_create(pthread_t *t, const pthread_attr_t *a,
 		return EAGAIN;
 	return __real_pthread_create(t, a, fn, u);
 }
+
 int __real_close(int fd);
+
 int __wrap_close(int fd)
 {
 	probe(P_CLOSE);
 	return __real_close(fd);
 }
+
 int __real_fflush(FILE *f);
+
 int __wrap_fflush(FILE *f)
 {
 	probe(P_STDIO);
@@ -247,7 +276,9 @@ int __wrap_fflush(FILE *f)
 	}
 	return __real_fflush(f);
 }
+
 int __real_vfprintf(FILE *f, const char *fmt, va_list ap);
+
 int __wrap_vfprintf(FILE *f, const char *fmt, va_list ap)
 {
 	if (actor && atomic_exchange(&stdio_fail, 0)) {
@@ -256,25 +287,33 @@ int __wrap_vfprintf(FILE *f, const char *fmt, va_list ap)
 	}
 	return __real_vfprintf(f, fmt, ap);
 }
+
 int __real_vsnprintf(char *out, size_t n, const char *fmt, va_list ap);
+
 int __wrap_vsnprintf(char *out, size_t n, const char *fmt, va_list ap)
 {
 	probe(P_FORMAT);
 	return __real_vsnprintf(out, n, fmt, ap);
 }
+
 int __real_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out);
+
 int __wrap_logger_get_file_metrics(logger_t *l, logger_file_metrics_t *out)
 {
 	atomic_fetch_add(&file_metrics_calls, 1);
 	in_file_metrics = 1;
 	int rc = __real_logger_get_file_metrics(l, out);
+
 	in_file_metrics = 0;
 	return rc;
 }
+
 int __real_pthread_mutex_lock(pthread_mutex_t *mu);
+
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 {
 	int rc = __real_pthread_mutex_lock(mu);
+
 	if (!rc && actor && log_instance && mu == &log_instance->emit_mu) {
 		if (in_file_metrics)
 			atomic_fetch_add(&file_metrics_locks, 1);
@@ -282,7 +321,9 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 	}
 	return rc;
 }
+
 int __real_pthread_setcancelstate(int state, int *old);
+
 int __wrap_pthread_setcancelstate(int state, int *old)
 {
 	if (actor && state == PTHREAD_CANCEL_DISABLE &&
@@ -290,9 +331,11 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 		return EINVAL;
 	return __real_pthread_setcancelstate(state, old);
 }
+
 size_t __real_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap);
+
 size_t __wrap_logger_format_line(const logger_t *l,
 				 const struct logger_message *m, char *out,
 				 size_t cap)
@@ -307,10 +350,12 @@ size_t __wrap_logger_format_line(const logger_t *l,
 	}
 	return __real_logger_format_line(l, m, out, cap);
 }
+
 static void application_cleanup(void *unused)
 {
 	(void)unused;
 	int old;
+
 	CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 	actor = 0;
 	/*
@@ -321,6 +366,7 @@ static void application_cleanup(void *unused)
 		CHECK(logger_process_object_count() == 0);
 		logger_config_t cfg = local_cfg(0);
 		logger_t *again = NULL;
+
 		CHECK(logger_create(&cfg, &again) == 0);
 		CHECK(again != NULL);
 		LOGGER_INFO(again, "cleanup", "owner-reacquired");
@@ -333,6 +379,7 @@ static void application_cleanup(void *unused)
 	}
 	atomic_store(&cleanup_seen, 1);
 }
+
 static int console_call(const char *name)
 {
 	if (!strcmp(name, "print"))
@@ -350,15 +397,16 @@ static int console_call(const char *name)
 	CHECK(!strcmp(name, "source"));
 	return console_debug_source(__FILE__, __LINE__, __func__, "record");
 }
+
 static void *caller(void *unused)
 {
 	(void)unused;
 	actor = 1;
 	pthread_cleanup_push(application_cleanup, NULL);
-	if (use_console)
+	if (use_console) {
 		CHECK(!console_call(scenario));
-	else if (!strcmp(scenario, "create") ||
-		 !strcmp(scenario, "create-fail")) {
+	} else if (!strcmp(scenario, "create") ||
+		   !strcmp(scenario, "create-fail")) {
 		logger_config_t cfg = local_cfg(1);
 		logger_t *l = NULL;
 		(void)logger_create(&cfg, &l);
@@ -369,36 +417,41 @@ static void *caller(void *unused)
 		}
 	} else if (!strcmp(scenario, "destroy")) {
 		logger_t *owned = log_instance;
+
 		log_instance = NULL;
 		CHECK(!logger_destroy(&owned));
-	} else if (!strcmp(scenario, "flush"))
+	} else if (!strcmp(scenario, "flush")) {
 		CHECK(!logger_flush(log_instance));
-	else if (!strcmp(scenario, "flush-void"))
+	} else if (!strcmp(scenario, "flush-void")) {
 		logger_flush(log_instance);
-	else if (!strcmp(scenario, "reopen"))
+	} else if (!strcmp(scenario, "reopen")) {
 		CHECK(!logger_reopen(log_instance));
-	else if (!strcmp(scenario, "syslog-metrics")) {
+	} else if (!strcmp(scenario, "syslog-metrics")) {
 		logger_syslog_metrics_t metrics;
+
 		CHECK(!logger_get_syslog_metrics(log_instance, &metrics));
 	} else if (!strcmp(scenario, "file-metrics")) {
 		logger_file_metrics_t metrics;
+
 		CHECK(!logger_get_file_metrics(log_instance, &metrics));
-	} else if (!strcmp(scenario, "source"))
+	} else if (!strcmp(scenario, "source")) {
 		logger_log_source(log_instance, LOGGER_INFO, LOGGER_SOURCE(),
 				  "operation-record");
-	else if (!strcmp(scenario, "sync"))
+	} else if (!strcmp(scenario, "sync")) {
 		CHECK(!logger_log_sync_status(log_instance, LOGGER_INFO, "test",
 					      __FILE__, __LINE__, __func__,
 					      "operation-record"));
-	else if (!strcmp(scenario, "fallback"))
+	} else if (!strcmp(scenario, "fallback")) {
 		LOGGER_ERROR(log_instance, "test", "operation-record");
-	else
+	} else {
 		LOGGER_INFO(log_instance, "test", "operation-record");
+	}
 	atomic_store(&returned, 1);
 	pthread_testcancel();
 	pthread_cleanup_pop(0);
 	return NULL;
 }
+
 static void cleanup_fixtures(void)
 {
 	const char *names[] = { "scope.log", "scope.log.logger.lock",
@@ -407,9 +460,11 @@ static void cleanup_fixtures(void)
 	for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i)
 		unlink(names[i]);
 }
+
 static void cancel_case(void)
 {
 	int baseline = count_fds();
+
 	cleanup_new = !strcmp(scenario, "create") ||
 		      !strcmp(scenario, "create-fail") ||
 		      !strcmp(scenario, "destroy");
@@ -420,17 +475,18 @@ static void cancel_case(void)
 			    !strcmp(scenario, "fallback");
 		if (!use_console) {
 			logger_config_t cfg = local_cfg(async);
+
 			CHECK(logger_create(&cfg, &log_instance) == 0);
 			CHECK(log_instance != NULL);
 		}
 	}
-	if (use_console)
+	if (use_console) {
 		atomic_store(&point, P_STDIO);
-	else if (!strcmp(scenario, "queue"))
+	} else if (!strcmp(scenario, "queue")) {
 		atomic_store(&point, P_QUEUE);
-	else if (!strcmp(scenario, "flush") ||
-		 !strcmp(scenario, "flush-void") ||
-		 !strcmp(scenario, "fallback")) {
+	} else if (!strcmp(scenario, "flush") ||
+		   !strcmp(scenario, "flush-void") ||
+		   !strcmp(scenario, "fallback")) {
 		atomic_store(&hold_worker, 1);
 		LOGGER_INFO(log_instance, "test", "in-flight-worker");
 		wait_flag(&worker_entered);
@@ -438,29 +494,33 @@ static void cancel_case(void)
 			LOGGER_INFO(log_instance, "test", "fill1");
 			LOGGER_INFO(log_instance, "test", "fill2");
 			atomic_store(&point, P_WRITE);
-		} else
+		} else {
 			atomic_store(&point, P_WAIT);
-	} else if (!strcmp(scenario, "reopen"))
+		}
+	} else if (!strcmp(scenario, "reopen")) {
 		atomic_store(&point, P_REOPEN);
-	else if (!strcmp(scenario, "syslog-metrics") ||
-		 !strcmp(scenario, "file-metrics"))
+	} else if (!strcmp(scenario, "syslog-metrics") ||
+		   !strcmp(scenario, "file-metrics")) {
 		atomic_store(&point, P_LOCK);
-	else if (!strcmp(scenario, "format"))
+	} else if (!strcmp(scenario, "format")) {
 		atomic_store(&point, P_FORMAT);
-	else if (!strcmp(scenario, "destroy"))
+	} else if (!strcmp(scenario, "destroy")) {
 		atomic_store(&point, P_CLOSE);
-	else if (!strcmp(scenario, "create") ||
-		 !strcmp(scenario, "create-fail")) {
+	} else if (!strcmp(scenario, "create") ||
+		   !strcmp(scenario, "create-fail")) {
 		atomic_store(&point, P_CREATE);
 		atomic_store(&create_fail, !strcmp(scenario, "create-fail"));
-	} else
+	} else {
 		atomic_store(&point, P_WRITE);
+	}
 	pthread_t t;
+
 	CHECK(!pthread_create(&t, NULL, caller, NULL));
 	wait_flag(&entered);
 	if (!strcmp(scenario, "file-metrics")) {
 		/* 日志输出也获取 emit_mu；它不能满足此测试情形。 */
 		int calls = atomic_load(&file_metrics_calls);
+
 		if (calls != 1)
 			fprintf(stderr,
 				"file-metrics getter calls: %d (expected 1)\n",
@@ -478,6 +538,7 @@ static void cancel_case(void)
 	atomic_store(&release_call, 1);
 	atomic_store(&release_worker, 1);
 	void *result;
+
 	CHECK(!pthread_join(t, &result));
 	CHECK(result == PTHREAD_CANCELED && atomic_load(&cleanup_seen));
 	if (!strcmp(scenario, "file-metrics")) {
@@ -492,15 +553,18 @@ static void cancel_case(void)
 	CHECK(logger_process_object_count() == 0);
 	CHECK(count_fds() == baseline);
 }
+
 static void reentry_case(const char *origin)
 {
 	logger_config_t cfg = local_cfg(!strcmp(origin, "worker"));
+
 	CHECK(logger_create(&cfg, &log_instance) == 0);
 	CHECK(log_instance != NULL);
 	reentry_mode = 1;
 	if (!strcmp(origin, "global-worker")) {
 		unlink("global-scope.log");
 		logger_config_t gc = config_for("global-scope.log", 1);
+
 		CHECK(!fixture_default_create(&gc, &default_owner));
 		atomic_store(&hold_worker, 1);
 		atomic_store(&release_worker, 1);
@@ -518,9 +582,11 @@ static void reentry_case(const char *origin)
 		actor = 1;
 		if (!strcmp(origin, "create")) {
 			logger_config_t other = config_for("create.log", 1);
+
 			unlink("create.log");
 			atomic_store(&point, P_CREATE);
 			logger_t *l = NULL;
+
 			CHECK(logger_create(&other, &l) == 0);
 			CHECK(l != NULL);
 			CHECK(!logger_destroy(&l));
@@ -550,15 +616,18 @@ static void reentry_case(const char *origin)
 	CHECK(file_contains("scope.log", "still-usable"));
 	CHECK(!logger_process_object_count());
 }
+
 static void contract_case(void)
 {
 	logger_config_t cfg = local_cfg(0);
+
 	CHECK(logger_create(&cfg, &log_instance) == 0);
 	CHECK(log_instance != NULL);
 	if (!strcmp(scenario, "restore-policy")) {
 		int old;
 		int observed;
 		int type;
+
 		CHECK(!pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old));
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
 					     &type));
@@ -580,11 +649,13 @@ static void contract_case(void)
 		CHECK(!pthread_setcancelstate(observed, NULL));
 	} else if (!strcmp(scenario, "create-async-reject")) {
 		logger_config_t other = config_for("nested.log", 0);
+
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,
 					     NULL));
 		errno = 0;
 		logger_t *l = NULL;
 		int create_rc = logger_create(&other, &l);
+
 		CHECK(!pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL));
 		if (l)
 			logger_destroy(&l);
@@ -619,6 +690,7 @@ static void contract_case(void)
 		CHECK(logger_context_get(&c) == 0);
 		CHECK(!strcmp(c.request_id, "request"));
 		const char *swap = c.request_id;
+
 		c.request_id = c.session_id;
 		c.session_id = swap;
 		CHECK(logger_context_set(&c) == 0);
@@ -629,6 +701,7 @@ static void contract_case(void)
 		CHECK(logger_context_get(&c) == 0 && !c.request_id);
 	} else if (!strcmp(scenario, "debug-overflow")) {
 		char s[4000];
+
 		memset(s, 'x', sizeof(s) - 1);
 		s[sizeof(s) - 1] = 0;
 		errno = 0;
@@ -644,11 +717,13 @@ static void contract_case(void)
 		LOGGER_INFO(log_instance, "test", "level-unchanged");
 		CHECK(!logger_flush(log_instance));
 		CHECK(file_contains("scope.log", "level-unchanged"));
-	} else
+	} else {
 		CHECK(!"unknown contract scenario");
+	}
 	CHECK(!logger_destroy(&log_instance));
 	log_instance = NULL;
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
@@ -656,6 +731,7 @@ int main(int argc, char **argv)
 	scenario = argv[2];
 	cleanup_fixtures();
 	int receiver = -1;
+
 	if (!strcmp(scenario, "syslog-metrics")) {
 		CHECK(mkdtemp(socket_dir));
 		CHECK(snprintf(socket_path, sizeof(socket_path), "%s/log",
@@ -663,18 +739,22 @@ int main(int argc, char **argv)
 		receiver = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		CHECK(receiver >= 0);
 		struct sockaddr_un address = { .sun_family = AF_UNIX };
+
 		strcpy(address.sun_path, socket_path);
 		CHECK(!bind(receiver, (struct sockaddr *)&address,
 			    sizeof(address)));
 	}
 	/* 隔离 stdio 输出。保留 stderr，供测试后的 CHECK 诊断使用。 */
 	FILE *sink = fopen("console.out", "w+");
+
 	CHECK(sink);
 	FILE *saved_out = stdout;
 	FILE *saved_err = stderr;
+
 	stdout = sink;
 	stderr = sink;
 	console_config_t cc = CONSOLE_DEFAULT_CONFIG();
+
 	cc.verbosity = CONSOLE_DEBUG;
 	cc.color = CONSOLE_COLOR_NEVER;
 	console_init(&cc);

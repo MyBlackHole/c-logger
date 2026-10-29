@@ -23,6 +23,7 @@ int __real_pthread_rwlock_wrlock(pthread_rwlock_t *rw);
 int __wrap_pthread_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	int rc = __real_pthread_rwlock_unlock(rw);
+
 	if (!rc && poisoned_reader) {
 		poisoned_reader = 0;
 		atomic_store(&reader_released, 1);
@@ -45,6 +46,7 @@ int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *rw)
 #if LOGGER_ENABLE_LOCKDEP
 void __real_logger_lockdep_assert_held(enum logger_lock_class class_id,
 				       const void *lock);
+
 void __wrap_logger_lockdep_assert_held(enum logger_lock_class class_id,
 				       const void *lock)
 {
@@ -87,16 +89,19 @@ int main(int argc, char **argv)
 #endif
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	CHECK(logger_create(&cfg, &a) == 0);
 	CHECK(logger_create(&cfg, &b) == 0);
 	/* 初次绑定不应注入写锁错误。 */
 	int inject = fail_writer;
+
 	fail_writer = 0;
 	CHECK(logger_default_set(NULL, a) == 0);
 	fail_writer = inject;
 	pthread_t read_thread;
 	pthread_t write_thread;
+
 	CHECK(pthread_create(&read_thread, NULL, reader, NULL) == 0);
 	wait_flag(&reader_released);
 	CHECK(pthread_create(&write_thread, NULL, writer, NULL) == 0);

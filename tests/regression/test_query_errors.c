@@ -320,9 +320,9 @@ static void cancellation_matrix(int setup)
 		exercise(op, setup ? EAGAIN : EIO);
 		CHECK(!fail_setup && !fail_restore);
 		CHECK(cancel_calls == (setup ? 1u : 2u));
-		if (setup)
+		if (setup) {
 			CHECK(!mutex_calls && !read_calls);
-		else {
+		} else {
 			CHECK(mutex_calls ==
 			      ((op == Q_FILE || op == Q_DEFAULT_FILE) ? 1u :
 									0u));
@@ -535,9 +535,10 @@ int main(int argc, char **argv)
 						     "diagnostics", "file" };
 		unsigned int index;
 
-		for (index = 0; index < LOGGER_ARRAY_SIZE(names); ++index)
+		for (index = 0; index < LOGGER_ARRAY_SIZE(names); ++index) {
 			if (!strcmp(mode + 12, names[index]))
 				break;
+		}
 		CHECK(index < LOGGER_ARRAY_SIZE(names));
 		read_unlock(Q_DEFAULT_DROPPED + index, 0);
 		retained = 1;

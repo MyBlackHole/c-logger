@@ -30,6 +30,7 @@ enum scenario {
 struct answer {
 	int rc;
 	int error;
+
 	_Atomic int calls;
 	_Atomic int done;
 };
@@ -401,9 +402,10 @@ static enum scenario scenario_from_name(const char *name)
 		"cancel"
 	};
 
-	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i) {
 		if (!strcmp(names[i], name))
 			return (enum scenario)i;
+	}
 	CHECK(!"unknown scenario");
 	return WAIT_FIRST;
 }

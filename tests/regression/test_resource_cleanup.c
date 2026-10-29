@@ -11,6 +11,7 @@ static int class_release_total;
 static char *consumed_ptr;
 
 void __real_free(void *p);
+
 void __wrap_free(void *p)
 {
 	if (p)
@@ -31,6 +32,7 @@ static char *no_free_scope(void)
 	CHECK(buffer);
 	buffer[0] = 'y';
 	char *owned = no_free_ptr(buffer);
+
 	CHECK(!buffer && owned && owned[0] == 'y');
 	return owned;
 }
@@ -62,6 +64,7 @@ static void retain_scope(void)
 static int auto_fd_scope(void)
 {
 	int pipefd[2];
+
 	CHECK(pipe(pipefd) == 0);
 	int fd __free(close_fd) = pipefd[0];
 	CHECK(close(pipefd[1]) == 0);
@@ -72,10 +75,12 @@ static int auto_fd_scope(void)
 static int take_fd_scope(void)
 {
 	int pipefd[2];
+
 	CHECK(pipe(pipefd) == 0);
 	CLASS(fd, owned)(pipefd[0]);
 	CHECK(close(pipefd[1]) == 0);
 	int fd = take_fd(owned);
+
 	CHECK(owned == -1);
 	return fd;
 }
@@ -85,6 +90,7 @@ static int auto_file_scope(void)
 	CLASS(file, file)(tmpfile());
 	CHECK(file);
 	int fd = fileno(file);
+
 	CHECK(fd >= 0);
 	errno = ENOTTY;
 	return fd;
@@ -192,6 +198,7 @@ static void class_and_guard_scope(void)
 	CHECK(lock == 1);
 
 	int entered = 0;
+
 	scoped_guard(test_lock_try, &lock)
 	{
 		entered = 1;
@@ -199,6 +206,7 @@ static void class_and_guard_scope(void)
 	CHECK(!entered && lock == 1);
 
 	int failed = 0;
+
 	scoped_cond_guard(test_lock_try, failed = 1, &lock)
 	{
 		CHECK(!"busy conditional guard entered");
@@ -208,6 +216,7 @@ static void class_and_guard_scope(void)
 
 	/* 宏的内部存储不能遮蔽调用方传入的同名局部变量。 */
 	int *scope = &lock;
+
 	scoped_guard(test_lock, scope)
 	{
 		CHECK(lock == 1);
@@ -239,6 +248,7 @@ int main(void)
 
 	before = atomic_load_explicit(&free_calls, memory_order_relaxed);
 	char *owned = no_free_scope();
+
 	CHECK(atomic_load_explicit(&free_calls, memory_order_relaxed) ==
 	      before);
 	free(owned);
@@ -265,6 +275,7 @@ int main(void)
 
 	errno = 0;
 	int fd = auto_fd_scope();
+
 	CHECK(errno == E2BIG);
 	errno = 0;
 	CHECK(fcntl(fd, F_GETFD) == -1 && errno == EBADF);

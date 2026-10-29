@@ -7,6 +7,7 @@ static logger_t *make_logger(logger_detail_t detail, int include_pid,
 			     int include_tid, int include_source)
 {
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = 0;
 	c.detail = detail;
@@ -14,6 +15,7 @@ static logger_t *make_logger(logger_detail_t detail, int include_pid,
 	c.include_tid = include_tid;
 	c.include_source = include_source;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	return l;

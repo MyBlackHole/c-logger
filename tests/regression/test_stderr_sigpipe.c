@@ -11,10 +11,12 @@
 static void configure_sigpipe(int blocked)
 {
 	struct sigaction action = { 0 };
+
 	action.sa_handler = SIG_DFL;
 	CHECK(sigemptyset(&action.sa_mask) == 0);
 	CHECK(sigaction(SIGPIPE, &action, NULL) == 0);
 	sigset_t set;
+
 	CHECK(sigemptyset(&set) == 0);
 	CHECK(sigaddset(&set, SIGPIPE) == 0);
 	CHECK(pthread_sigmask(blocked ? SIG_BLOCK : SIG_UNBLOCK, &set, NULL) ==
@@ -24,10 +26,12 @@ static void configure_sigpipe(int blocked)
 static void check_sigpipe_state(int blocked, int was_pending)
 {
 	struct sigaction action;
+
 	CHECK(sigaction(SIGPIPE, NULL, &action) == 0);
 	CHECK(action.sa_handler == SIG_DFL);
 	sigset_t current;
 	sigset_t pending;
+
 	CHECK(pthread_sigmask(SIG_SETMASK, NULL, &current) == 0);
 	CHECK(sigismember(&current, SIGPIPE) == blocked);
 	CHECK(sigpending(&pending) == 0);
@@ -48,6 +52,7 @@ int main(int argc, char **argv)
 	      !strcmp(argv[1], "bootstrap") || healthy);
 
 	int pipefd[2];
+
 	CHECK(pipe(pipefd) == 0);
 	if (!healthy)
 		CHECK(close(pipefd[0]) == 0);
@@ -60,6 +65,7 @@ int main(int argc, char **argv)
 		CHECK(raise(SIGPIPE) == 0);
 	if (bootstrap) {
 		int touched = 7;
+
 		errno = EDOM;
 		CHECK(logger_global_write(LOGGER_INFO, "sigpipe", __FILE__,
 					  __LINE__, __func__, "unbound%n",
@@ -69,6 +75,7 @@ int main(int argc, char **argv)
 		if (healthy) {
 			CHECK(fcntl(pipefd[0], F_SETFL, O_NONBLOCK) == 0);
 			char byte;
+
 			CHECK(read(pipefd[0], &byte, 1) == -1 &&
 			      errno == EAGAIN);
 			CHECK(close(pipefd[0]) == 0);
@@ -78,10 +85,12 @@ int main(int argc, char **argv)
 	}
 
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = async_mode;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 
@@ -98,6 +107,7 @@ int main(int argc, char **argv)
 	check_sigpipe_state(preblocked, 0);
 
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(l, &io) == 0);
 	CHECK(io.emitted_records == 0);
 	CHECK(io.failed_records == 1);

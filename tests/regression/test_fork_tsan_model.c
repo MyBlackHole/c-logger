@@ -32,8 +32,10 @@ static void *race_writer(void *unused)
 static logger_t *bind(void)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	logger_t *owner = NULL;
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	CHECK(logger_default_set(NULL, owner) == 0);
 	LOG_INFO("TSAN_MODEL_REAL_DEFAULT");
@@ -50,6 +52,7 @@ static void child_case(const char *mode)
 {
 	CHECK(logger_process_init() == 0);
 	logger_t *owner = bind();
+
 	if (!strcmp(mode, "order-error")) {
 		struct logger_runtime *r = logger_runtime_current();
 		/*
@@ -67,6 +70,7 @@ static void child_case(const char *mode)
 	} else if (!strcmp(mode, "race-error")) {
 		pthread_t first;
 		pthread_t second;
+
 		CHECK(pthread_create(&first, NULL, race_writer, NULL) == 0);
 		CHECK(pthread_create(&second, NULL, race_writer, NULL) == 0);
 		while (atomic_load(&ready) != 2)
@@ -96,12 +100,14 @@ int main(int argc, char **argv)
 	logger_t *parent = bind();
 	/* 父方只有调用线程；不得利用多线程 fork 的原生报告忽略模式。 */
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		child_case(argv[1]);
 		_exit(0);
 	}
 	int status;
+
 	CHECK(waitpid(pid, &status, 0) == pid);
 	unbind(&parent);
 	if (!WIFEXITED(status))

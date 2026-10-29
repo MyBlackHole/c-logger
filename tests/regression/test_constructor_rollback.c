@@ -26,15 +26,18 @@ static int queue_init_failed;
 static unsigned int release_calls;
 
 void *__real_logger_runtime_calloc(size_t count, size_t size);
+
 void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
 	void *p = __real_logger_runtime_calloc(count, size);
+
 	if (p && count == 1 && size == sizeof(logger_t) && !candidate)
 		candidate = p;
 	return p;
 }
 
 int __real_logger_runtime_free(void *p);
+
 int __wrap_logger_runtime_free(void *p)
 {
 	if (p == candidate)
@@ -44,6 +47,7 @@ int __wrap_logger_runtime_free(void *p)
 
 int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			  void *(*start)(void *arg), void *arg);
+
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			  void *(*start)(void *arg), void *arg)
 {
@@ -57,6 +61,7 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 int __real_pthread_cond_destroy(pthread_cond_t *cv);
 int __real_pthread_cond_init(pthread_cond_t *cv,
 			     const pthread_condattr_t *attr);
+
 int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *attr)
 {
 	if (candidate && queue_init_failure && cv == &candidate->q.wait_cv) {
@@ -82,6 +87,7 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 }
 
 int __real_pthread_mutex_destroy(pthread_mutex_t *mu);
+
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 {
 	if (candidate && failure == PROOF_QUEUE_MUTEX &&
@@ -103,6 +109,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 }
 
 int __real_logger_process_object_release(void);
+
 int __wrap_logger_process_object_release(void)
 {
 	++release_calls;
@@ -141,6 +148,7 @@ int main(int argc, char **argv)
 	queue_init_failure = !strncmp(argv[1], "queue-init", 10);
 
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_STDERR;
 	c.async_mode = 1;
 	c.queue_capacity = 64;
@@ -148,6 +156,7 @@ int main(int argc, char **argv)
 	errno = 0;
 	logger_t *l = NULL;
 	int create_rc = logger_create(&c, &l);
+
 	CHECK(l == NULL);
 	CHECK(create_rc == -EAGAIN);
 	CHECK(create_failed == !queue_init_failure);

@@ -53,6 +53,7 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 		return EAGAIN;
 	}
 	int rc = __real_pthread_create(thread, attr, start, arg);
+
 	if (!rc && caller && cancel_create)
 		CHECK(pthread_cancel(pthread_self()) == 0);
 	return rc;
@@ -65,6 +66,7 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 	CHECK(owned == NULL); /* 不可回滚拆除开始之前已清空拥有者槽。 */
 	if (reentry) {
 		logger_t *alias = subject;
+
 		errno = EDOM;
 		CHECK(logger_destroy(&alias) == -EDEADLK);
 		CHECK(alias == subject && errno == EDOM);
@@ -72,6 +74,7 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 	if (cancel_destroy)
 		CHECK(pthread_cancel(pthread_self()) == 0);
 	int rc = __real_pthread_join(thread, result);
+
 	if (!rc && fail_join)
 		return EIO; /* 只向库报告失败；测试自己的线程必须真正回收。 */
 	return rc;
@@ -96,6 +99,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 int __wrap_munmap(void *base, size_t bytes)
 {
 	uintptr_t address = (uintptr_t)subject;
+
 	if (subject && (uintptr_t)base <= address &&
 	    address - (uintptr_t)base < bytes && fail_unmap) {
 		fail_unmap = 0;
@@ -108,9 +112,11 @@ int __wrap_munmap(void *base, size_t bytes)
 int __wrap_logger_runtime_free(void *ptr)
 {
 	int is_subject = subject && ptr == subject;
+
 	if (is_subject)
 		CHECK(owned == NULL);
 	int rc = __real_logger_runtime_free(ptr);
+
 	if (is_subject && !rc) {
 		++freed;
 		subject = NULL;
@@ -147,6 +153,7 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	char directory[PATH_MAX];
+
 	enter_temp_workspace(directory, sizeof(directory), "logger-owner");
 	CHECK(logger_process_init() == 0);
 	config = LOGGER_DEFAULT_CONFIG();
@@ -161,10 +168,12 @@ int main(int argc, char **argv)
 		config.async_mode = strcmp(argv[1], "create-restore-sync") != 0;
 		fail_create = !strcmp(argv[1], "create-primary-restore");
 		int expected = fail_create ? -EAGAIN : -EIO;
+
 		caller = 1;
 		fail_restore = 1;
 		errno = ERANGE;
 		int rc = logger_create(&config, &owned);
+
 		fprintf(stderr,
 			"CREATE_RESTORE_RESULT=%d EXPECTED=%d OWNER_PUBLISHED=%d\n",
 			rc, expected, owned != NULL);
@@ -192,6 +201,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	int io_error = !strcmp(argv[1], "io-error");
+
 	cancel_create = !strcmp(argv[1], "cancel-create");
 	cancel_destroy = !strcmp(argv[1], "cancel-destroy");
 	if (io_error) {
@@ -205,9 +215,11 @@ int main(int argc, char **argv)
 	}
 	if (cancel_create || cancel_destroy) {
 		pthread_t thread;
+
 		CHECK(pthread_create(&thread, NULL, cancelled_caller, NULL) ==
 		      0);
 		void *result;
+
 		CHECK(pthread_join(thread, &result) == 0);
 		CHECK(result == PTHREAD_CANCELED);
 		CHECK(atomic_load(&cleanup_ran) == 1);
@@ -226,6 +238,7 @@ int main(int argc, char **argv)
 		reentry = !strcmp(argv[1], "reentry");
 		int retained = fail_join || fail_unmap;
 		int expected = io_error ? -ENOSPC : (retained ? -EIO : 0);
+
 		errno = ERANGE;
 		CHECK(logger_destroy(&owned) == expected);
 		CHECK(owned == NULL && errno == ERANGE);

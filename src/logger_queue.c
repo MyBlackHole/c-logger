@@ -14,6 +14,7 @@ static int queue_capacity(struct logger_queue_records requested,
 			  struct logger_queue_records *capacity)
 {
 	size_t n = 2;
+
 	if (requested.value < 2)
 		requested.value = 2;
 	/*
@@ -66,6 +67,7 @@ static int queue_storage_size(struct logger_queue_records queue_cap,
 static uint8_t queue_source_copy(char *dst, size_t cap, const char *src)
 {
 	size_t n = 0;
+
 	while (n + 1 < cap && src[n])
 		++n;
 	memcpy(dst, src, n);
@@ -89,6 +91,7 @@ static void queue_copy_source(struct logger_queue_record *dst,
 
 	if (src->metadata_mask & LOGGER_RECORD_META_SOURCE) {
 		const char *file = src->file ? strrchr(src->file, '/') : NULL;
+
 		file = file ? file + 1 : (src->file ? src->file : "?");
 		dst->file_len = queue_source_copy(
 			dst->file_storage, sizeof(dst->file_storage), file);
@@ -172,6 +175,7 @@ static unsigned int spill_valid_mask(size_t spill_cap, size_t word)
 {
 	size_t first = word * LOGGER_QUEUE_SPILL_WORD_BITS;
 	size_t remaining = spill_cap - first;
+
 	if (remaining >= LOGGER_QUEUE_SPILL_WORD_BITS)
 		return UINT_MAX;
 	return (1u << remaining) - 1u;
@@ -183,6 +187,7 @@ static bool queue_spill_try_take(struct logger_queue *q, const char *text,
 	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
 		       LOGGER_QUEUE_SPILL_WORD_BITS;
 	uintptr_t seed = (uintptr_t)&spill_probe_cursor;
+
 	seed ^= seed >> 17;
 	seed ^= seed >> 9;
 	size_t start = (seed + spill_probe_cursor++) % words;
@@ -194,12 +199,14 @@ static bool queue_spill_try_take(struct logger_queue *q, const char *text,
 							 memory_order_relaxed);
 		for (;;) {
 			unsigned int available = ~used & valid;
+
 			if (!available)
 				break;
 			unsigned int bit =
 				(unsigned int)__builtin_ctz(available);
 			unsigned int bit_mask = 1u << bit;
 			unsigned int desired = used | bit_mask;
+
 			if (atomic_compare_exchange_weak_explicit(
 				    &q->spill_used[word], &used, desired,
 				    memory_order_acq_rel,
@@ -245,6 +252,7 @@ int logger_queue_init(struct logger_queue *q, size_t requested)
 	/* 即使提前失败，构造函数也可以检查回滚证明。 */
 	atomic_init(&q->wait_mu_error, 0);
 	struct logger_queue_records capacity;
+
 	if (queue_capacity((struct logger_queue_records){ requested },
 			   &capacity) != 0)
 		return -1;
@@ -254,6 +262,7 @@ int logger_queue_init(struct logger_queue *q, size_t requested)
 		queue_spill_capacity(capacity);
 	q->spill_cap = spill_capacity.value;
 	struct logger_queue_bytes storage_bytes;
+
 	if (queue_storage_size(capacity, spill_capacity, &storage_bytes) != 0) {
 		errno = EOVERFLOW;
 		return -1;
@@ -282,6 +291,7 @@ int logger_queue_init(struct logger_queue *q, size_t requested)
 	atomic_init(&q->force_wake_signals, 0);
 
 	int rc = pthread_mutex_init(&q->wait_mu, NULL);
+
 	if (rc != 0) {
 		errno = rc;
 		return -1;
@@ -289,6 +299,7 @@ int logger_queue_init(struct logger_queue *q, size_t requested)
 	rc = pthread_cond_init(&q->wait_cv, NULL);
 	if (rc != 0) {
 		int destroy_rc = pthread_mutex_destroy(&q->wait_mu);
+
 		if (destroy_rc)
 			atomic_store_explicit(&q->wait_mu_error, destroy_rc,
 					      memory_order_release);
@@ -318,6 +329,7 @@ int logger_queue_destroy(struct logger_queue *q)
 	 * 将非零返回视作额外不变量失败，保守保留队列存储。
 	 */
 	int rc = pthread_cond_destroy(&q->wait_cv);
+
 	if (rc)
 		return -rc;
 	rc = pthread_mutex_destroy(&q->wait_mu);
@@ -353,6 +365,7 @@ int logger_queue_notify_if_waiting(struct logger_queue *q)
 	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
+
 	if (rc)
 		return rc;
 	if (!logger_queue_wait_claim_signal(q)) {
@@ -370,6 +383,7 @@ int logger_queue_notify_if_waiting(struct logger_queue *q)
 	else
 		rc = -rc;
 	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait, &wait_guard);
+
 	if (!rc)
 		rc = unlock_rc;
 	if (unlock_rc)
@@ -386,6 +400,7 @@ int logger_queue_wake_force(struct logger_queue *q)
 	 */
 	ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)(&q->wait_mu);
 	int rc = ACQUIRE_ERR(pthread_mutex_queue_wait_checked, &wait_guard);
+
 	if (rc)
 		return rc;
 	logger_queue_wait_disarm(q);
@@ -396,6 +411,7 @@ int logger_queue_wake_force(struct logger_queue *q)
 	else
 		rc = -rc;
 	int unlock_rc = RELEASE_ERR(pthread_mutex_queue_wait, &wait_guard);
+
 	if (!rc)
 		rc = unlock_rc;
 	if (unlock_rc)
@@ -412,12 +428,14 @@ int logger_queue_wait_error(const struct logger_queue *q)
 int logger_queue_push(struct logger_queue *q, const struct logger_message *m)
 {
 	size_t text_len = logger_record_text_length(m);
+
 	if (text_len == LOGGER_MESSAGE_MAX) {
 		errno = EOVERFLOW;
 		return 0;
 	}
 
 	uint32_t spill_index = LOGGER_QUEUE_SPILL_NONE;
+
 	if (text_len > LOGGER_QUEUE_INLINE_TEXT &&
 	    !queue_spill_try_take(q, m->text, text_len, &spill_index))
 		return 0;
@@ -429,6 +447,7 @@ int logger_queue_push(struct logger_queue *q, const struct logger_message *m)
 		size_t seq =
 			atomic_load_explicit(&slot->seq, memory_order_acquire);
 		size_t diff = seq - pos;
+
 		if (diff == 0) {
 			if (atomic_compare_exchange_weak_explicit(
 				    &q->enqueue_pos, &pos, pos + 1,
@@ -457,10 +476,12 @@ int logger_queue_try_pop(struct logger_queue *q, struct logger_message *m)
 	size_t pos =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_relaxed);
 	struct logger_queue_slot *slot = &q->slots[pos & q->mask];
+
 	if (atomic_load_explicit(&slot->seq, memory_order_acquire) != pos + 1)
 		return 0;
 
 	uint32_t spill_index = slot->record.spill_index;
+
 	queue_record_unpack(q, &slot->record, m);
 	/*
 	 * 消费者已把正文复制到工作线程批次，可先归还溢出块；
@@ -477,6 +498,7 @@ size_t logger_queue_drain(struct logger_queue *q, struct logger_message *out,
 			  size_t max)
 {
 	size_t n = 0;
+
 	while (n < max && logger_queue_try_pop(q, &out[n]))
 		++n;
 	return n;
@@ -487,6 +509,7 @@ bool logger_queue_empty(struct logger_queue *q)
 	size_t pos =
 		atomic_load_explicit(&q->dequeue_pos, memory_order_relaxed);
 	struct logger_queue_slot *slot = &q->slots[pos & q->mask];
+
 	return atomic_load_explicit(&slot->seq, memory_order_acquire) !=
 	       pos + 1;
 }
@@ -502,6 +525,7 @@ size_t logger_queue_depth(const struct logger_queue *q)
 	size_t enq =
 		atomic_load_explicit(&q->enqueue_pos, memory_order_relaxed);
 	size_t depth = enq - deq;
+
 	return depth < q->cap ? depth : q->cap;
 }
 
@@ -534,6 +558,7 @@ size_t logger_queue_spill_in_use(const struct logger_queue *q)
 	size_t words = (q->spill_cap + LOGGER_QUEUE_SPILL_WORD_BITS - 1u) /
 		       LOGGER_QUEUE_SPILL_WORD_BITS;
 	size_t used = 0;
+
 	for (size_t word = 0; word < words; ++word) {
 		unsigned int value = atomic_load_explicit(&q->spill_used[word],
 							  memory_order_relaxed);

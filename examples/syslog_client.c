@@ -15,6 +15,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE | LOGGER_OUT_SYSLOG;
 	cfg.file_path = "./syslog_client.log";
 	cfg.ident = "example-client";
@@ -26,6 +27,7 @@ int main(int argc, char **argv)
 		cfg.syslog.startup = LOGGER_SYSLOG_START_DEFERRED;
 	logger_t *log = NULL;
 	int create_rc = logger_create(&cfg, &log);
+
 	if (create_rc) {
 		errno = -create_rc;
 		perror("logger_create");
@@ -35,20 +37,23 @@ int main(int argc, char **argv)
 	int rc = LOGGER_INFO(log, "example",
 			     "host-owned file and Syslog output");
 	int error = -rc;
+
 	rc = logger_flush(log);
 	if (rc && !error)
 		error = -rc;
 	logger_syslog_metrics_t metrics;
+
 	rc = logger_get_syslog_metrics(log, &metrics);
-	if (!rc) {
+	if (!rc)
 		printf("local_connected=%d sent=%" PRIu64 " failed=%" PRIu64
 		       " last_error=%d\n",
 		       metrics.connected, metrics.sent_records,
 		       metrics.failed_records, metrics.last_error);
-	} else if (!error)
+	else if (!error)
 		error = -rc;
 	/* 没有其他使用者。即使返回 I/O 错误也会释放实例。 */
 	int destroy_rc = logger_destroy(&log);
+
 	if (destroy_rc && !error)
 		error = -destroy_rc;
 	if (error) {

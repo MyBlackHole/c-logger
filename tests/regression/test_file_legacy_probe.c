@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+
 static bool check(bool condition, const char *expression, int line)
 {
 	if (!condition)
@@ -25,6 +26,7 @@ static bool check(bool condition, const char *expression, int line)
 
 #define REQUIRE(x) check((x), #x, __LINE__)
 int __real_clock_gettime(clockid_t c, struct timespec *t);
+
 int __wrap_clock_gettime(clockid_t c, struct timespec *t)
 {
 	if (c == CLOCK_REALTIME) {
@@ -33,32 +35,41 @@ int __wrap_clock_gettime(clockid_t c, struct timespec *t)
 	}
 	return __real_clock_gettime(c, t);
 }
+
 static void put(const char *p, const char *s)
 {
 	FILE *f = fopen(p, "w");
+
 	if (!f)
 		abort();
 	if (fputs(s, f) < 0 || fclose(f))
 		abort();
 }
+
 static bool has(const char *p, const char *s)
 {
 	FILE *f = fopen(p, "r");
+
 	if (!f)
 		return false;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
+
 	b[n] = 0;
 	fclose(f);
 	return strstr(b, s) != NULL;
 }
+
 static char fixture[] = "/tmp/logger-file-blackbox-XXXXXX";
+
 static void remove_tree(const char *path)
 {
 	DIR *d = opendir(path);
+
 	if (!d)
 		return;
 	struct dirent *e;
+
 	while ((e = readdir(d))) {
 		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
 			continue;
@@ -68,18 +79,21 @@ static void remove_tree(const char *path)
 		if (n < 0 || (size_t)n >= sizeof(child))
 			abort();
 		struct stat st;
+
 		if (lstat(child, &st))
 			abort();
 		if (S_ISDIR(st.st_mode)) {
 			remove_tree(child);
 			if (rmdir(child))
 				abort();
-		} else if (unlink(child))
+		} else if (unlink(child)) {
 			abort();
+		}
 	}
 	if (closedir(d))
 		abort();
 }
+
 static void cleanup_fixture(void)
 {
 	if (chdir("/"))
@@ -88,6 +102,7 @@ static void cleanup_fixture(void)
 	if (rmdir(fixture))
 		abort();
 }
+
 int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
@@ -99,16 +114,19 @@ int main(int argc, char **argv)
 	if (!REQUIRE(atexit(cleanup_fixture) == 0 && chdir(fixture) == 0))
 		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
 	c.async_mode = 0;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	const char *s = argv[1];
+
 	if (!strcmp(s, "symlink")) {
 		put("sentinel", "unchanged");
 		if (!REQUIRE(symlink("sentinel", "out.log") == 0))
 			return 1;
 		logger_t *l = NULL;
+
 		if (!REQUIRE(logger_create(&c, &l) == -ELOOP && !l))
 			return 1;
 		return 0;
@@ -118,12 +136,14 @@ int main(int argc, char **argv)
 		if (!REQUIRE(link("sentinel", "out.log") == 0))
 			return 1;
 		logger_t *l = NULL;
+
 		if (!REQUIRE(logger_create(&c, &l) == -EMLINK && !l))
 			return 1;
 		return 0;
 	}
 	if (!strcmp(s, "global-repeat")) {
 		logger_t *owner = NULL;
+
 		if (!REQUIRE(logger_create(&c, &owner) == 0))
 			return 1;
 		if (!REQUIRE(logger_default_set(NULL, owner) == 0))
@@ -146,6 +166,7 @@ int main(int argc, char **argv)
 		put("out.20231114T221320.000000Z.log", "sentinel");
 	}
 	logger_t *l = NULL;
+
 	if (!REQUIRE(logger_create(&c, &l) == 0))
 		return 1;
 	if (!REQUIRE(l != NULL))
@@ -155,6 +176,7 @@ int main(int argc, char **argv)
 		return 1;
 	if (!strcmp(s, "owner")) {
 		logger_t *other = NULL;
+
 		if (!REQUIRE(logger_create(&c, &other) == -EBUSY && !other))
 			return 1;
 	} else if (!strcmp(s, "reopen")) {
@@ -184,8 +206,9 @@ int main(int argc, char **argv)
 		if (!REQUIRE(
 			    has("out.20231114T221320.000000Z.log", "sentinel")))
 			return 1;
-	} else if (!REQUIRE(0))
+	} else if (!REQUIRE(0)) {
 		return 1;
+	}
 	logger_destroy(&l);
 	return 0;
 }

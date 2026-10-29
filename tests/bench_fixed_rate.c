@@ -41,6 +41,7 @@ struct producer {
 static uint64_t now_ns(void)
 {
 	struct timespec ts;
+
 	if (clock_gettime(CLOCK_MONOTONIC, &ts))
 		abort();
 	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
@@ -51,6 +52,7 @@ static int sleep_until(uint64_t ns)
 	struct timespec ts = { .tv_sec = (time_t)(ns / 1000000000ull),
 			       .tv_nsec = (long)(ns % 1000000000ull) };
 	int rc;
+
 	do {
 		rc = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
 	} while (rc == EINTR);
@@ -71,6 +73,7 @@ static void *produce(void *opaque)
 	for (uint64_t i = producer->index; i < p->count; i += p->threads) {
 		uint64_t due = p->start + i * 1000000000ull / p->rate;
 		uint64_t before = now_ns();
+
 		if (before < due) {
 			producer->error = sleep_until(due);
 			if (producer->error)
@@ -103,6 +106,7 @@ static int compare_u64(const void *left, const void *right)
 {
 	uint64_t a = *(const uint64_t *)left;
 	uint64_t b = *(const uint64_t *)right;
+
 	return (a > b) - (a < b);
 }
 
@@ -142,6 +146,7 @@ static void print_success_latency(struct latency values, uint64_t n)
 static uint64_t drops(const logger_metrics_t *m)
 {
 	uint64_t n = 0;
+
 	for (unsigned int i = 0; i < 6; i++)
 		n += m->dropped[i];
 	return n;
@@ -154,15 +159,18 @@ static uint64_t drops(const logger_metrics_t *m)
 static int wait_output(logger_t *logger, const logger_metrics_t *m)
 {
 	uint64_t deadline = now_ns() + 10000000000ull;
+
 	for (;;) {
 		logger_io_metrics_t io;
 		int rc = logger_get_io_metrics(logger, &io);
+
 		if (rc)
 			return rc;
 		if (io.async_completed == m->enqueued &&
 		    io.sync_completed == m->sync_fallbacks)
 			return 0;
 		uint64_t current = now_ns();
+
 		if (current >= deadline || sleep_until(current + 1000000ull))
 			return -1;
 	}
@@ -230,6 +238,7 @@ static int run_phase(logger_t *logger, unsigned int number,
 			generator_error = producers[i].error;
 	}
 	uint64_t producer_end = now_ns();
+
 	if (logger_get_metrics(logger, &after)) {
 		failed = 1;
 		goto cleanup;
@@ -241,6 +250,7 @@ static int run_phase(logger_t *logger, unsigned int number,
 	int flush_rc = file_backend ? logger_flush(logger) : 0;
 	int flush_error = -flush_rc;
 	uint64_t flush_ns = now_ns() - flush_start;
+
 	if (logger_get_io_metrics(logger, &io_after)) {
 		failed = 1;
 		goto cleanup;
@@ -257,6 +267,7 @@ static int run_phase(logger_t *logger, unsigned int number,
 	uint64_t api_success = 0;
 	uint64_t api_eagain = 0;
 	uint64_t api_other_errors = 0;
+
 	for (uint64_t i = 0; i < p.count; i++) {
 		if (!p.calls[i])
 			continue;
@@ -291,6 +302,7 @@ static int run_phase(logger_t *logger, unsigned int number,
 		     fflush(raw) == 0;
 	uint64_t n = 0;
 	uint64_t late_over_1ms = 0;
+
 	for (uint64_t i = 0; i < p.count; i++) {
 		if (!p.calls[i])
 			continue;
@@ -301,11 +313,13 @@ static int run_phase(logger_t *logger, unsigned int number,
 	struct latency late_values = summarize(p.late, n);
 	/* 原件已写出；复用迟到数组计算成功调用分位，不新增发压分配。 */
 	uint64_t success_n = 0;
+
 	for (uint64_t i = 0; i < p.count; i++) {
 		if (p.calls[i] && !p.status[i])
 			p.late[success_n++] = p.calls[i];
 	}
 	struct latency success_values = summarize(p.late, success_n);
+
 	n = 0;
 	for (uint64_t i = 0; i < p.count; i++) {
 		if (p.calls[i])
@@ -365,6 +379,7 @@ cleanup:
 static int number(const char *s, uint64_t *n)
 {
 	char *end;
+
 	if (!*s || *s == '-')
 		return -1;
 	errno = 0;
@@ -381,6 +396,7 @@ int main(int argc, char **argv)
 	uint64_t seconds;
 	uint64_t warmup;
 	uint64_t size;
+
 	if (argc != 8 || number(argv[1], &threads) || number(argv[2], &rate) ||
 	    number(argv[3], &seconds) || number(argv[4], &warmup) ||
 	    number(argv[5], &size) || threads < 1 || threads > 64 || rate < 1 ||
@@ -393,22 +409,27 @@ int main(int argc, char **argv)
 	}
 	/* 不接收已有普通文件，避免把旧日志误认为本次样本。 */
 	struct stat st;
+
 	if (strcmp(argv[6], "/dev/null") &&
 	    (lstat(argv[6], &st) == 0 || errno != ENOENT))
 		return 2;
 	FILE *raw = fopen(argv[7], "wbx");
+
 	if (!raw)
 		return 3;
 	/* 固定八字节版本头，拒绝把旧的双数组原件按三数组解释。 */
 	static const unsigned char magic[8] = { 'C', 'L', 'F', 'R', 2, 0, 0, 0 };
+
 	if (fwrite(magic, 1, sizeof(magic), raw) != sizeof(magic)) {
 		fclose(raw);
 		return 3;
 	}
 	/* 时钟对的控制样本仅描述测量下限，不从 API 分位中相减。 */
 	uint64_t clock_pairs[1000];
+
 	for (size_t i = 0; i < 1000; i++) {
 		uint64_t begin = now_ns();
+
 		clock_pairs[i] = now_ns() - begin;
 	}
 	qsort(clock_pairs, 1000, sizeof(*clock_pairs), compare_u64);
@@ -417,9 +438,11 @@ int main(int argc, char **argv)
 	       percentile(clock_pairs, 1000, 50),
 	       percentile(clock_pairs, 1000, 99));
 	char payload[3501];
+
 	memset(payload, 'x', (size_t)size);
 	payload[size] = '\0';
 	logger_config_t config = LOGGER_DEFAULT_CONFIG();
+
 	config.outputs = LOGGER_OUT_FILE;
 	config.level = LOGGER_INFO;
 	config.file_path = argv[6];
@@ -430,6 +453,7 @@ int main(int argc, char **argv)
 	config.overflow[LOGGER_INFO] = LOGGER_OVERFLOW_DROP;
 	logger_t *logger = NULL;
 	int create_rc = logger_create(&config, &logger);
+
 	if (create_rc) {
 		fprintf(stderr, "{\"error\":\"logger_create\",\"errno\":%d}\n",
 			-create_rc);
@@ -451,8 +475,10 @@ int main(int argc, char **argv)
 	 */
 	int close_rc = logger_destroy(&logger);
 	int close_errno = -close_rc;
+
 	printf("{\"close_rc\":%d,\"close_errno\":%d}\n", close_rc, close_errno);
 	int raw_close_rc = fclose(raw);
+
 	return rc || raw_close_rc ||
 			       (close_rc &&
 				(file_backend || close_errno != EINVAL)) ?

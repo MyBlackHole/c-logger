@@ -32,6 +32,7 @@ struct producer {
 static uint64_t clock_ns(void)
 {
 	struct timespec ts;
+
 	if (clock_gettime(CLOCK_MONOTONIC, &ts))
 		abort();
 	return (uint64_t)ts.tv_sec * UINT64_C(1000000000) +
@@ -71,15 +72,18 @@ static void *produce(void *opaque)
 		}
 	}
 	int go = p->gate->go;
+
 	pthread_mutex_unlock(&p->gate->mutex);
 	if (go < 0)
 		return NULL;
 
 	for (uint64_t i = 0; i < p->count; ++i) {
 		uint64_t start = clock_ns();
+
 		logger_log(p->logger, LOGGER_INFO, "bench", __FILE__, __LINE__,
 			   __func__, "%s", p->payload);
 		uint64_t diff = clock_ns() - start;
+
 		p->latency[i] = diff ? diff : 1;
 	}
 	return NULL;
@@ -113,6 +117,7 @@ int main(int argc, char **argv)
 	uint64_t nr;
 	uint64_t bytes;
 	uint64_t cap;
+
 	if (argc != 5 || number(argv[1], &nt) || number(argv[2], &nr) ||
 	    number(argv[3], &bytes) || number(argv[4], &cap)) {
 		fputs("usage: threads records bytes capacity\n", stderr);
@@ -133,6 +138,7 @@ int main(int argc, char **argv)
 	message[bytes] = '\0';
 
 	logger_config_t config = LOGGER_DEFAULT_CONFIG();
+
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "/dev/null";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
@@ -141,12 +147,14 @@ int main(int argc, char **argv)
 	config.flush_level = LOGGER_OFF;
 	config.overflow[LOGGER_INFO] = LOGGER_OVERFLOW_DROP;
 	logger_t *logger = logger_create(&config);
+
 	if (!logger) {
 		perror("logger_create");
 		return 4;
 	}
 
 	struct start_gate gate = { 0 };
+
 	if (pthread_mutex_init(&gate.mutex, NULL))
 		return 3;
 	if (pthread_cond_init(&gate.cond, NULL)) {
@@ -154,6 +162,7 @@ int main(int argc, char **argv)
 		return 3;
 	}
 	size_t started = 0;
+
 	for (; started < (size_t)nt; ++started) {
 		args[started].logger = logger;
 		args[started].payload = message;
@@ -166,11 +175,13 @@ int main(int argc, char **argv)
 	}
 	pthread_mutex_lock(&gate.mutex);
 	uint64_t begin = clock_ns();
+
 	gate.go = started == (size_t)nt ? 1 : -1;
 	pthread_cond_broadcast(&gate.cond);
 	pthread_mutex_unlock(&gate.mutex);
 
 	int producer_error = started != (size_t)nt;
+
 	for (size_t i = 0; i < started; ++i) {
 		if (pthread_join(threads[i], NULL))
 			producer_error = 1;
@@ -179,12 +190,14 @@ int main(int argc, char **argv)
 	}
 	uint64_t producer_end = clock_ns();
 	logger_metrics_t metrics;
+
 	logger_get_metrics(logger, &metrics);
 
 	/* 出队计数不等于后端已经完成；仅等待公开输出完成计数。 */
 	logger_io_metrics_t io = { 0 };
 	uint64_t deadline = clock_ns() + UINT64_C(10000000000);
 	int drained = 0;
+
 	while (clock_ns() < deadline) {
 		logger_get_io_metrics(logger, &io);
 		if (io.async_completed == metrics.enqueued &&
@@ -193,10 +206,12 @@ int main(int argc, char **argv)
 			break;
 		}
 		struct timespec sleep_time = { 0, 1000000L };
+
 		nanosleep(&sleep_time, NULL);
 	}
 	uint64_t output_end = clock_ns();
 	logger_diagnostics_t diag;
+
 	logger_get_diagnostics(logger, &diag);
 
 	size_t count = (size_t)(nt * nr);
@@ -216,6 +231,7 @@ int main(int argc, char **argv)
 	double producer_seconds = (double)(producer_end - begin) / 1e9;
 	double end_to_end_seconds = (double)(output_end - begin) / 1e9;
 	struct rusage usage = { 0 };
+
 	getrusage(RUSAGE_SELF, &usage);
 
 	printf("{\"threads\":%" PRIu64, nt);
@@ -237,6 +253,7 @@ int main(int argc, char **argv)
 	       producer_seconds, end_to_end_seconds);
 	double producer_rate = 0.0;
 	double output_rate = 0.0;
+
 	if (producer_seconds > 0)
 		producer_rate = count / producer_seconds;
 	if (end_to_end_seconds > 0)

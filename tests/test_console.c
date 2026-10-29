@@ -1,11 +1,13 @@
 #include "logger.h"
 #include "console.h"
 #include <stdio.h>
+
 int main(void)
 {
 	if (logger_process_init() != 0)
 		return 1;
 	console_config_t c = CONSOLE_DEFAULT_CONFIG();
+
 	c.color = CONSOLE_COLOR_NEVER;
 	c.verbosity = CONSOLE_NORMAL;
 	if (console_init(&c))

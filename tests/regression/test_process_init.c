@@ -36,6 +36,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 	    atomic_exchange(&disable_error, 0))
 		return EIO;
 	int rc = __real_pthread_setcancelstate(state, old);
+
 	if (!rc && state == PTHREAD_CANCEL_ENABLE &&
 	    atomic_exchange(&restore_error, 0))
 		return EIO;
@@ -71,9 +72,11 @@ int __wrap_pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void))
 	if (atomic_load(&pause_before))
 		pause_registration();
 	int error = atomic_load(&registration_error);
+
 	if (error)
 		return error;
 	int rc = __real_pthread_atfork(a, b, c);
+
 	if (atomic_load(&pause_after))
 		pause_registration();
 	return rc;
@@ -109,8 +112,10 @@ static void ready_works(void)
 	CHECK(logger_process_require() == 0);
 	CHECK(logger_process_object_count() == 0);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&cfg, &l) == 0);
 	CHECK(l != NULL);
 	LOGGER_INFO(l, "init", "READY_AFTER_TRANSITION");
@@ -126,6 +131,7 @@ static void failed_registration(void)
 	CHECK(logger_process_require() == -ENOMEM);
 	check_process_rejection(ENOMEM);
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	CHECK(logger_create(&cfg, &(logger_t *){ NULL }) == -ENOMEM);
 	CHECK(atomic_load(&registration_calls) == 1);
 	CHECK(logger_process_object_count() == 0);
@@ -150,6 +156,7 @@ static void wait_ok(pid_t pid)
 {
 	int status;
 	pid_t got;
+
 	do {
 		got = waitpid(pid, &status, 0);
 	} while (got < 0 && errno == EINTR);
@@ -176,6 +183,7 @@ static void early_child_reject(void)
 static void fork_reject(void)
 {
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		/*
@@ -200,12 +208,14 @@ static void in_progress(const char *mode)
 	int concurrent = retry || !strcmp(mode, "concurrent");
 	int cancel = !strcmp(mode, "cancel-init");
 	int after = !strcmp(mode, "fork-installed");
+
 	if (retry) {
 		failed_registration();
 		atomic_store(&registration_error, 0);
 	}
 	atomic_store(after ? &pause_after : &pause_before, 1);
 	pthread_t init_thread;
+
 	CHECK(pthread_create(&init_thread, NULL, initializer, NULL) == 0);
 	wait_flag(&entered);
 	errno = ERANGE;
@@ -213,6 +223,7 @@ static void in_progress(const char *mode)
 	CHECK(logger_process_object_count() == 0);
 
 	pthread_t waiter;
+
 	if (concurrent) {
 		CHECK(!pthread_create(&waiter, NULL, ordinary_waiter, NULL));
 		/* 注册者仍暂停时，普通调用必须完成拒绝，不能等 READY。 */
@@ -225,6 +236,7 @@ static void in_progress(const char *mode)
 	}
 	atomic_store(&release_registration, 1);
 	void *result;
+
 	CHECK(pthread_join(init_thread, &result) == 0);
 	if (cancel)
 		CHECK(result == PTHREAD_CANCELED && init_result == 0);
@@ -240,6 +252,7 @@ static void in_progress(const char *mode)
 
 void *__real_mmap(void *addr, size_t len, int prot, int flags, int fd,
 		  off_t offset);
+
 void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd,
 		  off_t offset)
 {
@@ -248,6 +261,7 @@ void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd,
 }
 
 int __real_pthread_mutex_lock(pthread_mutex_t *mutex);
+
 int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 {
 	CHECK(!atomic_load(&forbid_resources));
@@ -255,6 +269,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 }
 
 int __real_pthread_rwlock_rdlock(pthread_rwlock_t *lock);
+
 int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
 {
 	CHECK(!atomic_load(&forbid_resources));
@@ -262,6 +277,7 @@ int __wrap_pthread_rwlock_rdlock(pthread_rwlock_t *lock)
 }
 
 int __real_pthread_rwlock_wrlock(pthread_rwlock_t *lock);
+
 int __wrap_pthread_rwlock_wrlock(pthread_rwlock_t *lock)
 {
 	CHECK(!atomic_load(&forbid_resources));
@@ -289,6 +305,7 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	const char *mode = argv[1];
+
 	if (!strcmp(mode, "cold-rejected")) {
 		cold_rejected();
 	} else if (!strcmp(mode, "register-error")) {

@@ -40,6 +40,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 		}
 	}
 	int rc = __real_pthread_mutex_lock(mutex);
+
 	if (!rc && mutex == format_mutex &&
 	    atomic_exchange(&poison_after_lock, 0))
 		logger_fork_resource_poison(EIO);
@@ -49,6 +50,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mutex)
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
 	int rc = __real_pthread_mutex_unlock(mutex);
+
 	if (!rc && mutex == format_mutex) {
 		++format_unlocks;
 		if (reject_unlock) {
@@ -62,6 +64,7 @@ int __wrap_pthread_mutex_unlock(pthread_mutex_t *mutex)
 int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list args)
 {
 	int archive = strstr(fmt, "%06ldZ") != NULL;
+
 	if (archive && atomic_exchange(&reject_archive_format, 0)) {
 		errno = EILSEQ;
 		return -1;
@@ -87,6 +90,7 @@ struct tm *__wrap_localtime_r(const time_t *seconds, struct tm *out)
 size_t __real_logger_format_line(const logger_t *logger,
 				 const struct logger_message *message,
 				 char *out, size_t cap);
+
 size_t __wrap_logger_format_line(const logger_t *logger,
 				 const struct logger_message *message,
 				 char *out, size_t cap)
@@ -99,14 +103,17 @@ size_t __wrap_logger_format_line(const logger_t *logger,
 static void output_error(int asynchronous)
 {
 	char directory[] = "/tmp/logger-libc-output-XXXXXX";
+
 	enter_temp(directory);
 	logger_config_t config = LOGGER_DEFAULT_CONFIG();
+
 	config.async_mode = asynchronous;
 	config.queue_capacity = 8;
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "out.log";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&config, &logger) == 0);
 	CHECK(logger != NULL);
 	atomic_store(&fail_line_once, 1);
@@ -116,6 +123,7 @@ static void output_error(int asynchronous)
 	CHECK(errno == EDOM);
 	CHECK(logger_flush(logger) == -EIO);
 	logger_io_metrics_t metrics;
+
 	CHECK(logger_get_io_metrics(logger, &metrics) == 0);
 	CHECK(metrics.emitted_records == 0 && metrics.failed_records == 1);
 	CHECK(metrics.async_completed + metrics.sync_completed == 1);
@@ -130,12 +138,14 @@ static void exercise_failure(const char *mode)
 	char out[32] = "UNCHANGED";
 	int lock_error = !strcmp(mode, "lock");
 	int dual_error = !strcmp(mode, "dual");
+
 	reject_lock = lock_error;
 	reject_unlock = !lock_error;
 	reject_format = dual_error;
 	errno = EDOM;
 	int rc = logger_libc_snprintf(out, sizeof(out), "%s", "complete");
 	int expected = lock_error ? EAGAIN : dual_error ? EILSEQ : EIO;
+
 	CHECK(rc == -1 && errno == expected);
 	CHECK(format_locks == 1 && format_unlocks == (lock_error ? 0u : 1u));
 	CHECK(!reject_lock && !reject_unlock && !reject_format);
@@ -163,19 +173,25 @@ static void exercise_failure(const char *mode)
 static void syslog_prefix_failure(int lock_failure)
 {
 	char directory[] = "/tmp/logger-prefix-XXXXXX";
+
 	enter_temp(directory);
 	int type = SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
 	int sink = socket(AF_UNIX, type, 0);
+
 	CHECK(sink >= 0);
 	struct sockaddr_un address = { .sun_family = AF_UNIX };
 	const char name[] = "sink.sock";
+
 	memcpy(address.sun_path, name, sizeof(name));
 	size_t length = offsetof(struct sockaddr_un, sun_path) + sizeof(name);
+
 	CHECK(bind(sink, (struct sockaddr *)&address, (socklen_t)length) == 0);
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.syslog.path = name;
 	struct logger_syslog backend;
+
 	CHECK(logger_syslog_init(&backend, "unit", &cfg.syslog) == 0);
 
 	if (lock_failure)
@@ -183,6 +199,7 @@ static void syslog_prefix_failure(int lock_failure)
 	else
 		atomic_store(&reject_format, 1);
 	int expected = lock_failure ? EAGAIN : EILSEQ;
+
 	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "reject\n", 7) == -1);
 	CHECK(errno == expected);
 	CHECK(!atomic_load(&reject_lock) && !atomic_load(&reject_format));
@@ -194,12 +211,14 @@ static void syslog_prefix_failure(int lock_failure)
 	CHECK(backend.metrics.backpressure_records ==
 	      (unsigned int)lock_failure);
 	char packet[512];
+
 	CHECK(recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT) == -1);
 	CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
 
 	/* 失败没有提交半条报文；后续调用可以独立成功。 */
 	CHECK(logger_syslog_write(&backend, LOGGER_INFO, "recover\n", 8) == 0);
 	ssize_t n = recv(sink, packet, sizeof(packet) - 1, MSG_DONTWAIT);
+
 	CHECK(n > 0 && (size_t)n < sizeof(packet));
 	packet[n] = 0;
 	CHECK(strstr(packet, "recover") != NULL);
@@ -216,13 +235,17 @@ static void syslog_prefix_failure(int lock_failure)
 static void archive_format_failure(void)
 {
 	char directory[] = "/tmp/logger-archive-format-XXXXXX";
+
 	enter_temp(directory);
 	logger_rotation_config_t rotation = { 0 };
+
 	rotation.mode = LOGGER_ROTATE_SIZE;
 	rotation.max_file_size = 1;
 	struct logger_file backend = LOGGER_FILE_EMPTY;
+
 	CHECK(logger_file_init(&backend, "out.log", rotation, 0600) == 0);
 	struct timespec stamp = { 1700000000, 0 };
+
 	CHECK(logger_file_write(&backend, "a", 1, &stamp, 1) == 0);
 	atomic_store(&reject_archive_format, 1);
 	CHECK(logger_file_write(&backend, "b", 1, &stamp, 1) == -EILSEQ);
@@ -243,8 +266,10 @@ static void archive_format_failure(void)
 	CHECK(logger_file_close_status(&backend) == 0);
 
 	DIR *stream = opendir(".");
+
 	CHECK(stream);
 	struct dirent *entry;
+
 	while ((entry = readdir(stream))) {
 		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
 			continue;
@@ -262,8 +287,10 @@ static void archive_format_failure(void)
 static void calendar_error(int during_init, int lock_failure)
 {
 	char directory[] = "/tmp/logger-calendar-XXXXXX";
+
 	enter_temp(directory);
 	logger_rotation_config_t rotation = { 0 };
+
 	rotation.mode = LOGGER_ROTATE_DAILY;
 	struct logger_file backend = LOGGER_FILE_EMPTY;
 	int expected = lock_failure ? EAGAIN : EILSEQ;
@@ -309,13 +336,16 @@ static void calendar_error(int during_init, int lock_failure)
 static void checked_log(int unlock)
 {
 	char directory[] = "/tmp/logger-libc-check-XXXXXX";
+
 	enter_temp(directory);
 	logger_config_t config = LOGGER_DEFAULT_CONFIG();
+
 	config.async_mode = 0;
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "out.log";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&config, &logger) == 0);
 	CHECK(logger != NULL);
 	format_locks = 0;
@@ -323,6 +353,7 @@ static void checked_log(int unlock)
 	reject_lock = !unlock;
 	reject_unlock = unlock;
 	int error = unlock ? EIO : EAGAIN;
+
 	errno = EDOM;
 	int rc = logger_log_sync_status(logger, LOGGER_INFO, "coordination",
 					NULL, 0, NULL, "NOT_ACCEPTED");
@@ -352,6 +383,7 @@ static void lock_order(int reversed, int recursive)
 		return;
 	}
 	pid_t pid = fork();
+
 	CHECK(pid >= 0);
 	if (!pid) {
 		(void)alarm(5);
@@ -374,6 +406,7 @@ static void lock_order(int reversed, int recursive)
 	}
 	int status;
 	pid_t got;
+
 	do {
 		got = waitpid(pid, &status, 0);
 	} while (got < 0 && errno == EINTR);
@@ -395,6 +428,7 @@ int main(int argc, char **argv)
 		CHECK(errno == EDOM && !strcmp(out, strerror(EDOM)));
 	} else if (!strcmp(argv[1], "post-lock-poison")) {
 		char out[32] = "UNCHANGED";
+
 		atomic_store(&poison_after_lock, 1);
 		CHECK(logger_libc_snprintf(out, sizeof(out), "%s",
 					   "forbidden") == -1);
@@ -402,38 +436,39 @@ int main(int argc, char **argv)
 		CHECK(format_locks == 1 && format_unlocks == 1);
 		CHECK(!logger_libc_busy() && !atomic_load(&poison_after_lock));
 	} else if (!strcmp(argv[1], "lock") || !strcmp(argv[1], "unlock") ||
-		   !strcmp(argv[1], "dual"))
+		   !strcmp(argv[1], "dual")) {
 		exercise_failure(argv[1]);
-	else if (!strcmp(argv[1], "syslog-prefix-lock"))
+	} else if (!strcmp(argv[1], "syslog-prefix-lock")) {
 		syslog_prefix_failure(1);
-	else if (!strcmp(argv[1], "syslog-prefix-format"))
+	} else if (!strcmp(argv[1], "syslog-prefix-format")) {
 		syslog_prefix_failure(0);
-	else if (!strcmp(argv[1], "archive-format"))
+	} else if (!strcmp(argv[1], "archive-format")) {
 		archive_format_failure();
-	else if (!strcmp(argv[1], "calendar-init-lock"))
+	} else if (!strcmp(argv[1], "calendar-init-lock")) {
 		calendar_error(1, 1);
-	else if (!strcmp(argv[1], "calendar-init-libc"))
+	} else if (!strcmp(argv[1], "calendar-init-libc")) {
 		calendar_error(1, 0);
-	else if (!strcmp(argv[1], "calendar-write-lock"))
+	} else if (!strcmp(argv[1], "calendar-write-lock")) {
 		calendar_error(0, 1);
-	else if (!strcmp(argv[1], "calendar-write-libc"))
+	} else if (!strcmp(argv[1], "calendar-write-libc")) {
 		calendar_error(0, 0);
-	else if (!strcmp(argv[1], "checked-lock"))
+	} else if (!strcmp(argv[1], "checked-lock")) {
 		checked_log(0);
-	else if (!strcmp(argv[1], "checked-unlock"))
+	} else if (!strcmp(argv[1], "checked-unlock")) {
 		checked_log(1);
-	else if (!strcmp(argv[1], "output-sync"))
+	} else if (!strcmp(argv[1], "output-sync")) {
 		output_error(0);
-	else if (!strcmp(argv[1], "output-async"))
+	} else if (!strcmp(argv[1], "output-async")) {
 		output_error(1);
-	else if (!strcmp(argv[1], "order-ok"))
+	} else if (!strcmp(argv[1], "order-ok")) {
 		lock_order(0, 0);
-	else if (!strcmp(argv[1], "order-reversed"))
+	} else if (!strcmp(argv[1], "order-reversed")) {
 		lock_order(1, 0);
-	else if (!strcmp(argv[1], "order-recursive"))
+	} else if (!strcmp(argv[1], "order-recursive")) {
 		lock_order(0, 1);
-	else
+	} else {
 		CHECK(0);
+	}
 	printf("LIBC_COORDINATION_PASS=%s\n", argv[1]);
 	return 0;
 }

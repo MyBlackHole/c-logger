@@ -6,11 +6,13 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+
 enum {
 	LOGGER_PATH_MAX = 4096,
 	LOGGER_FILENAME_MAX = 255,
 	LOGGER_ARCHIVE_ATTEMPTS = 1024
 };
+
 /*
  * 私有、可移动的所有者。结构体内部没有指针指向自身存储，因此整体移动安全。
  * 发布后的可变后端操作由所属 logger 的 emit_mu 串行化；
@@ -44,6 +46,7 @@ struct logger_file {
 	int iov_max;
 	logger_file_metrics_t metrics;
 };
+
 #define LOGGER_FILE_EMPTY      \
 	((struct logger_file){ \
 		.fd = { -1 }, .dir_fd = { -1 }, .lock_fd = { -1 } })

@@ -45,40 +45,49 @@ static void note_allocation(void *p)
 }
 
 void *__real_logger_runtime_calloc(size_t n, size_t size);
+
 void *__wrap_logger_runtime_calloc(size_t n, size_t size)
 {
 	unsigned int call = ++calloc_calls;
+
 	if (fault == FAULT_CALLOC && call == target) {
 		++refused;
 		errno = ENOMEM;
 		return NULL;
 	}
 	void *p = __real_logger_runtime_calloc(n, size);
+
 	note_allocation(p);
 	return p;
 }
 
 void *__real_logger_runtime_malloc(size_t size);
+
 void *__wrap_logger_runtime_malloc(size_t size)
 {
 	unsigned int call = ++malloc_calls;
+
 	if (fault == FAULT_MALLOC && call == target) {
 		++refused;
 		errno = ENOMEM;
 		return NULL;
 	}
 	void *p = __real_logger_runtime_malloc(size);
+
 	note_allocation(p);
 	return p;
 }
 
 int __real_logger_runtime_free(void *p);
+
 int __wrap_logger_runtime_free(void *p)
 {
 	if (p) {
 		int found = 0;
+
 		for (unsigned int i = allocation_count; i > 0; --i) {
 			struct tracked_allocation *item = &allocations[i - 1];
+
 			if (item->ptr != p || item->released)
 				continue;
 			item->released = 1;
@@ -97,10 +106,12 @@ int __wrap_logger_runtime_free(void *p)
 
 int __real_pthread_mutex_init(pthread_mutex_t *mu,
 			      const pthread_mutexattr_t *attr);
+
 int __wrap_pthread_mutex_init(pthread_mutex_t *mu,
 			      const pthread_mutexattr_t *attr)
 {
 	unsigned int call = ++mutex_calls;
+
 	if (fault == FAULT_MUTEX && call == target) {
 		++refused;
 		return EAGAIN;
@@ -109,9 +120,11 @@ int __wrap_pthread_mutex_init(pthread_mutex_t *mu,
 }
 
 int __real_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *a);
+
 int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *a)
 {
 	unsigned int call = ++cond_calls;
+
 	if (fault == FAULT_COND && call == target) {
 		++refused;
 		return EAGAIN;
@@ -121,6 +134,7 @@ int __wrap_pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *a)
 
 int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			  void *(*start)(void *arg), void *arg);
+
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			  void *(*start)(void *arg), void *arg)
 {
@@ -150,8 +164,9 @@ static void choose_case(const char *kind, unsigned int index)
 	} else if (!strcmp(kind, "cond")) {
 		CHECK(index >= 1 && index <= 2);
 		fault = FAULT_COND;
-	} else
+	} else {
 		CHECK(!"unknown resource acquisition type");
+	}
 	target = index;
 }
 
@@ -168,12 +183,15 @@ int main(int argc, char **argv)
 	if (argc == 3) {
 		char *end = NULL;
 		unsigned long chosen = strtoul(argv[2], &end, 10);
+
 		CHECK(end && *end == 0 && chosen > 0 && chosen <= 9);
 		choose_case(argv[1], (unsigned int)chosen);
-	} else
+	} else {
 		CHECK(!strcmp(argv[1], "healthy"));
+	}
 
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.async_mode = 1;
 	cfg.queue_capacity = 64;
@@ -182,9 +200,11 @@ int main(int argc, char **argv)
 		errno = 0;
 		logger_t *candidate = NULL;
 		int create_rc = logger_create(&cfg, &candidate);
+
 		CHECK(candidate == NULL);
 		CHECK(refused == 1);
 		int expected_error = ENOMEM;
+
 		if (fault == FAULT_MUTEX || fault == FAULT_COND)
 			expected_error = EAGAIN;
 		CHECK(create_rc == -expected_error);
@@ -195,9 +215,11 @@ int main(int argc, char **argv)
 
 	unsigned int before_workers = created_workers;
 	logger_t *logger = NULL;
+
 	CHECK(logger_create(&cfg, &logger) == 0);
 	CHECK(logger != NULL);
 	logger_state_t state;
+
 	CHECK(logger_get_state(logger, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
 	CHECK(created_workers == before_workers + 1);

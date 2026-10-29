@@ -18,6 +18,7 @@ static void wait_ok(pid_t pid)
 {
 	int status;
 	pid_t got;
+
 	do {
 		got = waitpid(pid, &status, 0);
 	} while (got < 0 && errno == EINTR);
@@ -30,6 +31,7 @@ static void wait_ok(pid_t pid)
 static logger_config_t config(const char *path, int async)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = path;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -42,9 +44,11 @@ static logger_config_t config(const char *path, int async)
 static int lines_matching(const char *path, const char *marker)
 {
 	FILE *f = fopen(path, "r");
+
 	CHECK(f);
 	char line[8192];
 	int count = 0;
+
 	while (fgets(line, sizeof(line), f))
 		count += strstr(line, marker) != NULL;
 	CHECK(!ferror(f));
@@ -58,19 +62,23 @@ static void child_run(int async, int global, int index, int conflict)
 	child_check(logger_process_init() == 0 && errno == EDOM, 10);
 	child_check(logger_process_init() == -EALREADY, 11);
 	logger_context_t context = { 0 };
+
 	child_check(logger_context_get(&context) == 0, 12);
 	child_check(!context.request_id && !context.session_id &&
 			    !context.trace_id,
 		    12);
 	logger_config_t cfg = config("child.log", async);
+
 	if (conflict) {
 		logger_config_t taken = config("parent.log", async);
+
 		child_check(logger_create(&taken, &(logger_t *){ NULL }) ==
 				    -EBUSY,
 			    13);
 	}
 	if (global) {
 		logger_t *owner = NULL;
+
 		child_check(logger_create(&cfg, &owner) == 0, 14);
 		child_check(logger_default_set(NULL, owner) == 0, 14);
 		LOG_INFO("CHILD_ONLY=%d", index);
@@ -102,12 +110,15 @@ static void normal(const char *mode)
 	int global = !strcmp(mode, "global");
 	int shut = !strcmp(mode, "shutdown-first");
 	int count = !strcmp(mode, "repeated") ? 24 : 1;
+
 	CHECK(logger_process_init() == 0);
 	logger_context_t secret = { .request_id = "PARENT_SECRET_CONTEXT" };
+
 	CHECK(logger_context_set(&secret) == 0);
 	console_set_verbosity(CONSOLE_QUIET);
 	logger_config_t cfg = config("parent.log", async);
 	logger_t *parent = NULL;
+
 	CHECK(logger_create(&cfg, &parent) == 0 && parent != NULL);
 	if (global)
 		CHECK(logger_default_set(NULL, parent) == 0);
@@ -121,6 +132,7 @@ static void normal(const char *mode)
 	}
 	for (int i = 0; i < count; ++i) {
 		pid_t pid = fork();
+
 		CHECK(pid >= 0);
 		if (!pid) {
 			/*
@@ -138,6 +150,7 @@ static void normal(const char *mode)
 		wait_ok(pid);
 	}
 	logger_context_t parent_context;
+
 	CHECK(logger_context_get(&parent_context) == 0);
 	CHECK(parent_context.request_id != NULL);
 	CHECK(!strcmp(parent_context.request_id, "PARENT_SECRET_CONTEXT"));
@@ -162,6 +175,7 @@ static int nested_child(unsigned int depth)
 {
 	child_check(logger_process_init() == 0, 30);
 	char path[64];
+
 	child_check(snprintf(path, sizeof(path), "depth-%u.log", depth) > 0,
 		    31);
 	logger_config_t cfg = config(path, 1);
@@ -171,6 +185,7 @@ static int nested_child(unsigned int depth)
 	LOGGER_INFO(l, "nested", "DEPTH=%u", depth);
 	if (depth < 4) {
 		pid_t pid = fork();
+
 		child_check(pid >= 0, 33);
 		if (!pid)
 			_exit(nested_child(depth + 1));
@@ -194,16 +209,19 @@ int main(int argc, char **argv)
 	}
 #endif /* defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer) */
 	char path[PATH_MAX];
+
 	enter_temp_workspace(path, sizeof(path), "logger-fork-reinit");
 	if (!strcmp(argv[1], "nested")) {
 		CHECK(logger_process_init() == 0);
 		pid_t pid = fork();
+
 		CHECK(pid >= 0);
 		if (!pid)
 			_exit(nested_child(1));
 		wait_ok(pid);
 		for (unsigned int i = 1; i <= 4; ++i) {
 			char name[64];
+
 			CHECK(snprintf(name, sizeof(name), "depth-%u.log", i) >
 			      0);
 			CHECK(lines_matching(name, "DEPTH=") == 1);
@@ -221,6 +239,7 @@ int main(int argc, char **argv)
 	for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
 		CHECK(unlink(files[i]) == 0 || errno == ENOENT);
 		char lock[96];
+
 		CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", files[i]) >
 		      0);
 		CHECK(unlink(lock) == 0 || errno == ENOENT);

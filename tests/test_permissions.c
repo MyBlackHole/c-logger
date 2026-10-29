@@ -1,12 +1,14 @@
 #include "logger.h"
 #include <sys/stat.h>
 #include <unistd.h>
+
 int main(void)
 {
 	if (logger_process_init() != 0)
 		return 1;
 	unlink("./perm.log");
 	logger_config_t l = LOGGER_DEFAULT_CONFIG();
+
 	l.outputs = LOGGER_OUT_FILE;
 	l.file_path = "./perm.log";
 	l.async_mode = 0;
@@ -18,6 +20,7 @@ int main(void)
 		return 1;
 	logger_destroy(&x);
 	struct stat st;
+
 	if (stat("./perm.log", &st))
 		return 2;
 	if ((st.st_mode & 0777) != 0640)

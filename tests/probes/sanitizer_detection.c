@@ -13,6 +13,7 @@ int main(int argc, char **argv)
 		return 2;
 	if (!strcmp(argv[1], "healthy")) {
 		char *p = malloc(16);
+
 		if (!p)
 			return 3;
 		memset(p, 0, 16);
@@ -23,6 +24,7 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[1], "heap-overflow")) {
 		volatile size_t size = 16;
 		volatile char *p = malloc(size);
+
 		if (!p)
 			return 3;
 		/* 刻意越界；必须产生 heap-buffer-overflow，而非普通退出码。 */

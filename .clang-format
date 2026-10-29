@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-# clang-format configuration file. Intended for clang-format >= 11.
+# 项目格式配置，持续门禁固定使用 clang-format 18.1.8。
 #
 # For more information, see:
 #
@@ -721,6 +721,8 @@ PenaltyReturnTypeOnItsOwnLine: 60
 
 PointerAlignment: Right
 ReflowComments: false
+# 完整定义之间保留一行，持续检查函数/类型分隔。
+SeparateDefinitionBlocks: Always
 SortIncludes: false
 SortUsingDeclarations: false
 SpaceAfterCStyleCast: false

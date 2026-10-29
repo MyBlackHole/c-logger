@@ -30,6 +30,7 @@ static void remember_discarded_leases(void)
 static void forget_discarded_leases(void)
 {
 	uintptr_t domain = discarded_domain;
+
 	if (!domain)
 		return;
 	discarded_domain = 0;
@@ -90,6 +91,7 @@ void logger_runtime_invalidate_child(void)
 int logger_runtime_discard(struct logger_runtime *runtime)
 {
 	int rc = 0;
+
 	if (!runtime)
 		return 0;
 	if (runtime->initialized >= 5)
@@ -116,11 +118,13 @@ int logger_runtime_create(struct logger_runtime **out)
 	if (retained_bootstrap)
 		return -EUCLEAN;
 	struct logger_runtime *runtime;
+
 	runtime = mmap(NULL, sizeof(*runtime), PROT_READ | PROT_WRITE,
 		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (runtime == MAP_FAILED)
 		return -errno;
 	int rc = 0;
+
 	if (madvise(runtime, sizeof(*runtime), MADV_DONTFORK))
 		rc = errno;
 	if (!rc) {
@@ -182,6 +186,7 @@ void *logger_runtime_calloc(size_t count, size_t size)
 		return NULL;
 	}
 	int error = logger_fork_resource_enter();
+
 	if (error) {
 		errno = error;
 		return NULL;
@@ -189,6 +194,7 @@ void *logger_runtime_calloc(size_t count, size_t size)
 	struct logger_runtime *runtime = logger_runtime_current();
 	size_t bytes = sizeof(struct logger_allocation) + count * size;
 	struct logger_allocation *allocation;
+
 	allocation = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
 			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (allocation == MAP_FAILED) {
@@ -226,6 +232,7 @@ int logger_runtime_free(void *ptr)
 	if (!ptr)
 		return 0;
 	int error = logger_fork_resource_enter();
+
 	if (error)
 		return -error;
 	struct logger_runtime *runtime = logger_runtime_current();
@@ -233,6 +240,7 @@ int logger_runtime_free(void *ptr)
 		(struct logger_allocation *)ptr - 1;
 	struct logger_allocation *prev = allocation->prev;
 	struct logger_allocation *next = allocation->next;
+
 	if (munmap(allocation, allocation->bytes)) {
 		error = errno;
 		logger_fork_resource_poison(error);
@@ -263,6 +271,7 @@ static void __attribute__((destructor)) logger_runtime_unload(void)
 	if (logger_process_is_child() || !logger_process_ready())
 		return;
 	struct logger_runtime *runtime = logger_runtime_current();
+
 	if (!runtime ||
 	    atomic_load_explicit(&runtime->live_objects,
 				 memory_order_acquire) ||

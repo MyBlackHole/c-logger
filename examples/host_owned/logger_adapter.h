@@ -16,6 +16,7 @@ static inline void example_to_logger(void *user,
 	if (!user || !r || !r->message || r->message_len > INT_MAX)
 		return;
 	logger_level_t level;
+
 	switch (r->level) {
 	case EXAMPLE_LOG_DEBUG:
 		level = LOGGER_DEBUG;

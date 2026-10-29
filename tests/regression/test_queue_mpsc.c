@@ -13,10 +13,12 @@ static _Atomic int running = 1;
 static _Atomic int producers_done;
 static int last[PRODUCERS];
 static unsigned int consumed;
+
 static void *produce(void *arg)
 {
 	int id = *(int *)arg;
 	struct logger_message m = { 0 };
+
 	m.pid = id;
 	/* 让并发 MPSC 回归真实覆盖长消息位图分配器。 */
 	memset(m.text, 'P', 700);
@@ -29,6 +31,7 @@ static void *produce(void *arg)
 	}
 	return NULL;
 }
+
 static void *observe(void *arg)
 {
 	(void)arg;
@@ -38,10 +41,12 @@ static void *observe(void *arg)
 	}
 	return NULL;
 }
+
 static void *consume(void *arg)
 {
 	(void)arg;
 	struct logger_message m;
+
 	for (;;) {
 		if (logger_queue_try_pop(&queue, &m)) {
 			CHECK(m.pid >= 0 && m.pid < PRODUCERS);
@@ -64,16 +69,19 @@ static void *consume(void *arg)
 		}
 		logger_queue_wait_disarm(&queue);
 		int stop = logger_queue_empty(&queue) && !atomic_load(&running);
+
 		pthread_mutex_unlock(&queue.wait_mu);
 		if (stop)
 			return NULL;
 	}
 }
+
 static void check_compact_storage(void)
 {
 	CHECK(sizeof(struct logger_queue_slot) < sizeof(struct logger_message));
 
 	struct logger_queue q;
+
 	CHECK(logger_queue_init(&q, LOGGER_QUEUE_SPILL_LIMIT * 2u) == 0);
 	CHECK(q.spill_cap == LOGGER_QUEUE_SPILL_LIMIT);
 	CHECK(logger_queue_storage_bytes(&q) ==
@@ -90,6 +98,7 @@ static void check_compact_storage(void)
 				     .file = "dir/compact.c",
 				     .func = "push" };
 	struct logger_message out;
+
 	memset(in.text, 'L', 700);
 	in.text[700] = '\0';
 
@@ -115,6 +124,7 @@ static void check_compact_storage(void)
 
 	CHECK(logger_queue_push(&q, &in) == 1);
 	size_t drained = 0;
+
 	while (logger_queue_try_pop(&q, &out)) {
 		CHECK(strlen(out.text) == 700);
 		++drained;
@@ -139,14 +149,17 @@ static void check_compact_storage(void)
 static void check_wrap(void)
 {
 	struct logger_queue q;
+
 	CHECK(logger_queue_init(&q, 8) == 0);
 	size_t start = SIZE_MAX - 3;
+
 	for (size_t i = 0; i < q.cap; ++i)
 		atomic_store(&q.slots[(start + i) & q.mask].seq, start + i);
 	atomic_store(&q.enqueue_pos, start);
 	atomic_store(&q.dequeue_pos, start);
 	struct logger_message in = { 0 };
 	struct logger_message out;
+
 	for (int pass = 0; pass < 3; ++pass) {
 		for (int i = 0; i < 8; ++i) {
 			in.line = pass * 8 + i;
@@ -161,6 +174,7 @@ static void check_wrap(void)
 	}
 	logger_queue_destroy(&q);
 }
+
 int main(void)
 {
 	CHECK(logger_process_init() == 0);
@@ -171,6 +185,7 @@ int main(void)
 	pthread_t consumer;
 	pthread_t observer;
 	int ids[PRODUCERS];
+
 	for (int i = 0; i < PRODUCERS; ++i)
 		last[i] = -1;
 	CHECK(pthread_create(&consumer, NULL, consume, NULL) == 0);

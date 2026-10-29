@@ -87,6 +87,7 @@ logger_fd_close_status(struct logger_owned_fd *owner)
 static inline void logger_fd_cleanup(struct logger_owned_fd *owner)
 {
 	int saved = errno;
+
 	int rc LOGGER_MAYBE_UNUSED = logger_fd_close_status(owner);
 
 	errno = saved;

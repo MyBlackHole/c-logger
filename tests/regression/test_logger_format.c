@@ -218,6 +218,7 @@ static void check_truncation(const char *path)
 	CHECK(!strict_record(l, "after-truncation"));
 	check_record(path, &before, NULL, "after-truncation");
 	logger_state_t state;
+
 	CHECK(logger_get_state(l, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
 	CHECK(!logger_destroy(&l));
@@ -245,6 +246,7 @@ int main(int argc, char **argv)
 	}
 
 	logger_t *l = ordinary_logger(log_path);
+
 	CHECK(l);
 	snapshot(log_path, &before);
 	CHECK(!before.size);
@@ -256,6 +258,7 @@ int main(int argc, char **argv)
 	int cache_hit = !strcmp(scenario, "cache-hit");
 	int cached_bad = !strcmp(scenario, "cached-bad");
 	int normal = !strcmp(scenario, "normal");
+
 	if (!cache_hit)
 		++now;
 	if (normal)
@@ -293,10 +296,12 @@ int main(int argc, char **argv)
 	snapshot(log_path, &before);
 	int rc = strict_record(l, "strict-probe");
 	unsigned int observed_hits = hits;
+
 	if (normal || cache_hit) {
 		CHECK(!rc && !observed_hits);
 		check_record(log_path, &before, NULL, "strict-probe");
 		unsigned int expected_calls = cache_hit ? 1 : 2;
+
 		CHECK(localtime_calls == expected_calls);
 		CHECK(date_calls == expected_calls &&
 		      zone_calls == expected_calls);
@@ -342,6 +347,7 @@ int main(int argc, char **argv)
 			--now;
 			snapshot(log_path, &before);
 			unsigned int old_localtime = localtime_calls;
+
 			CHECK(!strict_record(l, "old-second-recovery"));
 			check_record(log_path, &before, NULL,
 				     "old-second-recovery");
@@ -356,6 +362,7 @@ int main(int argc, char **argv)
 		}
 	}
 	logger_state_t state;
+
 	CHECK(logger_get_state(l, &state) == 0 &&
 	      state == LOGGER_STATE_RUNNING);
 
@@ -364,6 +371,7 @@ int main(int argc, char **argv)
 	++now;
 	snapshot(log_path, &before);
 	unsigned int old_localtime = localtime_calls;
+
 	CHECK(!strict_record(l, "next-second-recovery"));
 	check_record(log_path, &before, NULL, "next-second-recovery");
 	CHECK(localtime_calls == old_localtime + 1);
@@ -376,6 +384,7 @@ int main(int argc, char **argv)
 	fault = LOCALTIME;
 	snapshot(log_path, &before);
 	unsigned int old_hits = hits;
+
 	CHECK(strict_record(l, "no-partial-fallback") == -EOVERFLOW);
 	unchanged(log_path, &before);
 	logger_log(l, LOGGER_INFO, "formatter", NULL, 0, NULL, "fallback");

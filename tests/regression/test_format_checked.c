@@ -18,6 +18,7 @@
 
 static int fail_format;
 int __real_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap);
+
 int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
 {
 	if (fail_format) {
@@ -34,6 +35,7 @@ int __wrap_vsnprintf(char *out, size_t cap, const char *fmt, va_list ap)
  */
 int __real___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
 			   const char *fmt, va_list ap);
+
 int __wrap___vsnprintf_chk(char *out, size_t cap, int flag, size_t object_size,
 			   const char *fmt, va_list ap)
 {
@@ -51,6 +53,7 @@ int main(void)
 	CHECK(!setenv("TZ", "UTC0", 1));
 	tzset();
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.async_mode = 0;
 	cfg.outputs = LOGGER_OUT_STDERR;
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -68,9 +71,11 @@ int main(void)
 	m->tid = getpid();
 	memcpy(m->text, "payload", sizeof("payload"));
 	size_t length = 0;
+
 	CHECK(!logger_format_line_checked(l, m, out, LOGGER_LINE_MAX, &length));
 	CHECK(length > 1 && out[length - 1] == '\n');
 	size_t valid = length;
+
 	memcpy(expected, out, valid + 1);
 	CHECK(logger_format_line(l, m, out, LOGGER_LINE_MAX) == valid);
 	CHECK(!memcmp(out, expected, valid + 1));

@@ -23,6 +23,7 @@ static int report_fd = STDERR_FILENO;
 	} while (0)
 
 static volatile sig_atomic_t signal_calls;
+
 static void sigpipe_handler(int signum)
 {
 	(void)signum;
@@ -53,6 +54,7 @@ static int output(unsigned int api)
 	if (api < sizeof(outputs) / sizeof(outputs[0]))
 		return outputs[api]("message %s %d errno=%m", "text", 42);
 	const char *fmt = "message %s %d errno=%m";
+
 	return console_debug_source("/tmp/console_source.c", 42, "caller", fmt,
 				    "text", 42);
 }
@@ -61,6 +63,7 @@ static void configure(const char *scenario, sigset_t *expected_mask,
 		      struct sigaction *expected_action)
 {
 	struct sigaction action = { 0 };
+
 	action.sa_handler = !strcmp(scenario, "handler") ? sigpipe_handler :
 			    !strcmp(scenario, "ignored") ? SIG_IGN :
 							   SIG_DFL;
@@ -70,6 +73,7 @@ static void configure(const char *scenario, sigset_t *expected_mask,
 	CHECK(!sigaction(SIGPIPE, &action, NULL));
 	CHECK(!sigaction(SIGPIPE, NULL, expected_action));
 	sigset_t mask;
+
 	CHECK(!sigemptyset(&mask));
 	CHECK(!sigaddset(&mask, SIGUSR1));
 	if (!strcmp(scenario, "preblocked") || !strcmp(scenario, "pending"))
@@ -94,6 +98,7 @@ static void check_signal_state(const sigset_t *expected_mask,
 	sigset_t mask;
 	sigset_t pending;
 	struct sigaction action;
+
 	CHECK(!pthread_sigmask(SIG_SETMASK, NULL, &mask));
 	check_set(&mask, expected_mask);
 	CHECK(!sigpending(&pending));
@@ -110,25 +115,31 @@ static void run_case(const char *scenario, unsigned int api, int buffered)
 	report_fd = dup(STDERR_FILENO);
 	CHECK(report_fd >= 0);
 	int pipefd[2];
+
 	CHECK(!pipe(pipefd));
 	int healthy = !strcmp(scenario, "healthy") ||
 		      !strcmp(scenario, "host-buffer");
 	int first_error = !strcmp(scenario, "first-error");
 	int host_flush = !strcmp(scenario, "host-flush");
+
 	if (!healthy)
 		CHECK(!close(pipefd[0]));
 	int fd = api == 0 ? STDOUT_FILENO : STDERR_FILENO;
 	FILE *stream = api == 0 ? stdout : stderr;
+
 	CHECK(dup2(pipefd[1], fd) == fd);
 	CHECK(!close(pipefd[1]));
 	char buffer[512];
+
 	CHECK(!setvbuf(stream, buffer, buffered ? _IOFBF : _IONBF,
 		       sizeof(buffer)));
 
 	sigset_t expected_mask;
 	struct sigaction expected_action;
+
 	configure(scenario, &expected_mask, &expected_action);
 	console_config_t config = CONSOLE_DEFAULT_CONFIG();
+
 	config.color = CONSOLE_COLOR_AUTO;
 	config.verbosity = CONSOLE_DEBUG;
 	CHECK(console_init(&config) == 0);
@@ -136,6 +147,7 @@ static void run_case(const char *scenario, unsigned int api, int buffered)
 		CHECK(fputs("host-prefix|", stream) >= 0);
 	errno = EDOM;
 	int rc;
+
 	if (first_error) {
 		CHECK(api < sizeof(outputs) / sizeof(outputs[0]));
 		CHECK(setlocale(LC_CTYPE, "C") != NULL);
@@ -158,6 +170,7 @@ static void run_case(const char *scenario, unsigned int api, int buffered)
 		CHECK(!close(fd));
 		char actual[1024];
 		ssize_t size = read(pipefd[0], actual, sizeof(actual) - 1);
+
 		CHECK(size >= 0);
 		actual[size] = '\0';
 		char expected[1024];
@@ -178,10 +191,12 @@ static _Atomic int callback_entered;
 static _Atomic int callback_release;
 static _Atomic int cleanup_seen;
 static int broken_fd;
+
 static ssize_t blocked_write(void *cookie, const char *text, size_t size)
 {
 	(void)cookie;
 	sigset_t mask;
+
 	CHECK(!pthread_sigmask(SIG_SETMASK, NULL, &mask));
 	CHECK(sigismember(&mask, SIGPIPE) == 1);
 	atomic_store(&callback_entered, 1);
@@ -193,6 +208,7 @@ static void check_thread_restored(void *expected)
 {
 	sigset_t mask;
 	sigset_t pending;
+
 	CHECK(!pthread_sigmask(SIG_SETMASK, NULL, &mask));
 	check_set(&mask, expected);
 	CHECK(!sigpending(&pending));
@@ -214,18 +230,23 @@ static void check_thread_local(int cancel)
 {
 	sigset_t expected_mask;
 	struct sigaction expected_action;
+
 	configure("handler", &expected_mask, &expected_action);
 	int pipefd[2];
+
 	CHECK(!pipe(pipefd));
 	CHECK(!close(pipefd[0]));
 	broken_fd = pipefd[1];
 	cookie_io_functions_t ops = { .write = blocked_write };
 	FILE *stream = fopencookie(NULL, "w", ops);
+
 	CHECK(stream);
 	CHECK(!setvbuf(stream, NULL, _IONBF, 0));
 	FILE *old_stdout = stdout;
+
 	stdout = stream;
 	pthread_t writer;
+
 	CHECK(!pthread_create(&writer, NULL, print_thread, &expected_mask));
 	wait_flag(&callback_entered);
 	check_signal_state(&expected_mask, &expected_action, 0);
@@ -235,6 +256,7 @@ static void check_thread_local(int cancel)
 		CHECK(!pthread_cancel(writer));
 	atomic_store(&callback_release, 1);
 	void *result;
+
 	CHECK(!pthread_join(writer, &result));
 	CHECK(result == (cancel ? PTHREAD_CANCELED : NULL));
 	CHECK(atomic_load(&cleanup_seen));
@@ -247,10 +269,13 @@ static void check_thread_local(int cancel)
 static void check_large_output(void)
 {
 	FILE *stream = tmpfile();
+
 	CHECK(stream);
 	FILE *old_stdout = stdout;
+
 	stdout = stream;
 	char text[32768];
+
 	memset(text, 'x', sizeof(text) - 1);
 	text[sizeof(text) - 1] = '\0';
 	errno = EDOM;
@@ -268,6 +293,7 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	const char *scenario = argv[1];
+
 	if (!strcmp(scenario, "thread-local") || !strcmp(scenario, "cancel")) {
 		CHECK(logger_process_init() == 0);
 		check_thread_local(!strcmp(scenario, "cancel"));
@@ -296,6 +322,7 @@ int main(int argc, char **argv)
 					  !strcmp(scenario, "host-flush")))
 				continue;
 			pid_t pid = fork();
+
 			CHECK(pid >= 0);
 			if (!pid) {
 				/*
@@ -306,6 +333,7 @@ int main(int argc, char **argv)
 				run_case(scenario, api, buffered);
 			}
 			int status;
+
 			CHECK(waitpid(pid, &status, 0) == pid);
 			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 				fprintf(stderr,

@@ -45,6 +45,7 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 		return EAGAIN;
 	}
 	int rc = __real_pthread_setcancelstate(state, old);
+
 	if (!rc && armed && state == PTHREAD_CANCEL_ENABLE && fail_restore) {
 		fail_restore = 0;
 		return EIO;
@@ -64,6 +65,7 @@ int __wrap_pthread_mutex_lock(pthread_mutex_t *mu)
 int __wrap_pthread_mutex_unlock(pthread_mutex_t *mu)
 {
 	int rc = __real_pthread_mutex_unlock(mu);
+
 	if (!rc && armed && mu == &logger_runtime_current()->console_mu &&
 	    fail_unlock) {
 		fail_unlock = 0;
@@ -110,6 +112,7 @@ int __wrap___vfprintf_chk(FILE *stream, int flag, const char *format,
 static int call(unsigned int op)
 {
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
+
 	cfg.color = CONSOLE_COLOR_NEVER;
 	cfg.verbosity = CONSOLE_DEBUG;
 	switch (op) {
@@ -158,8 +161,10 @@ static void expect_output(FILE *sink, off_t *offset, const char *expected)
 	int saved = errno;
 	char actual[128];
 	size_t length = strlen(expected);
+
 	CHECK(length < sizeof(actual));
 	ssize_t count = pread(fileno(sink), actual, sizeof(actual), *offset);
+
 	CHECK(count >= 0 && (size_t)count == length);
 	CHECK(!memcmp(actual, expected, length));
 	*offset += (off_t)length;
@@ -185,6 +190,7 @@ static void cancel_matrix(FILE *sink, int setup)
 			 * 相同值重复提交掩盖恢复失败时未提交或回滚的缺陷。
 			 */
 			console_config_t before = CONSOLE_DEFAULT_CONFIG();
+
 			before.verbosity = i == 1 ? CONSOLE_DEBUG :
 						    CONSOLE_QUIET;
 			before.color = i == 2 ? CONSOLE_COLOR_NEVER :
@@ -230,13 +236,16 @@ int main(int argc, char **argv)
 	CHECK(argc == 2);
 	CHECK(logger_process_init() == 0);
 	console_config_t cfg = CONSOLE_DEFAULT_CONFIG();
+
 	cfg.color = CONSOLE_COLOR_NEVER;
 	cfg.verbosity = CONSOLE_DEBUG;
 	CHECK(console_init(&cfg) == 0);
 	FILE *sink = tmpfile();
+
 	CHECK(sink);
 	FILE *saved_out = stdout;
 	FILE *saved_err = stderr;
+
 	stderr = sink;
 	stdout = stderr;
 	armed = 1;

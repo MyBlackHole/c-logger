@@ -13,6 +13,7 @@
 static void *boundary(const void *data, size_t n, size_t *allocated)
 {
 	size_t page = (size_t)sysconf(_SC_PAGESIZE);
+
 	CHECK(n <= page);
 	*allocated = page * 2;
 	void *p = mmap(NULL, *allocated, PROT_READ | PROT_WRITE,
@@ -22,29 +23,35 @@ static void *boundary(const void *data, size_t n, size_t *allocated)
 	memcpy((char *)p + page - n, data, n);
 	return p;
 }
+
 static int connects;
 int __real_connect(int fd, const struct sockaddr *addr, socklen_t size);
+
 int __wrap_connect(int fd, const struct sockaddr *addr, socklen_t size)
 {
 	(void)fd;
 	(void)size;
 	const struct sockaddr_un *a = (const struct sockaddr_un *)addr;
+
 	CHECK(a->sun_family == AF_UNIX && !strcmp(a->sun_path, "/dev/log"));
 	++connects;
 	errno = ENOENT;
 	return -1;
 }
+
 int main(int argc, char **argv)
 {
 	CHECK(logger_process_init() == 0);
 	CHECK(argc == 2);
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_SYSLOG;
 	c.async_mode = 0;
 
 	size_t n = sizeof(c);
 	int expected = ENOENT;
 	unsigned char bytes[sizeof(c) + 16];
+
 	memset(bytes, 0, sizeof(bytes));
 
 	if (!strcmp(argv[1], "exact")) {

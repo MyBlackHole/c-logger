@@ -35,9 +35,11 @@ static inline int logger_uapi_copy_struct(void *dst, size_t known_size,
 		const unsigned char *tail =
 			(const unsigned char *)src + known_size;
 		size_t extra = (size_t)struct_size - known_size;
-		for (size_t i = 0; i < extra; ++i)
+
+		for (size_t i = 0; i < extra; ++i) {
 			if (tail[i] != 0)
 				return -E2BIG;
+		}
 	}
 	return 0;
 }

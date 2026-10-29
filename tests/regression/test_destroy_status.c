@@ -5,12 +5,15 @@
 static int fail_join;
 static int fail_cond_destroy;
 static int fail_mutex_destroy;
+
 enum file_fd_slot { FILE_DATA, FILE_LOCK, FILE_DIRECTORY, FILE_FD_COUNT };
+
 struct close_probe {
 	int fd;
 	int error;
 	unsigned int calls;
 };
+
 static struct close_probe close_probes[FILE_FD_COUNT];
 static logger_t *subject;
 static int subject_freed;
@@ -20,6 +23,7 @@ static int subject_freed;
  * 真正的 pthread_*_destroy。额外检查最终 logger_t 是否发生 free。
  */
 int __real_logger_runtime_free(void *p);
+
 int __wrap_logger_runtime_free(void *p)
 {
 	if (subject && p == subject) {
@@ -30,9 +34,11 @@ int __wrap_logger_runtime_free(void *p)
 }
 
 int __real_close(int fd);
+
 int __wrap_close(int fd)
 {
 	struct close_probe *selected = NULL;
+
 	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 		if (fd >= 0 && close_probes[i].fd == fd) {
 			selected = &close_probes[i];
@@ -45,8 +51,10 @@ int __wrap_close(int fd)
 	 * 第一处关闭失败也不允许重试或跳过其余拥有者。
 	 */
 	int rc = __real_close(fd);
+
 	if (selected && selected->error) {
 		int error = selected->error;
+
 		selected->error = 0;
 		errno = error;
 		return -1;
@@ -55,6 +63,7 @@ int __wrap_close(int fd)
 }
 
 int __real_pthread_join(pthread_t thread, void **result);
+
 int __wrap_pthread_join(pthread_t thread, void **result)
 {
 	if (fail_join) {
@@ -65,12 +74,14 @@ int __wrap_pthread_join(pthread_t thread, void **result)
 		 * 因为它不能依赖失败的 pthread_join() 背后隐藏的事实。
 		 */
 		int rc = __real_pthread_join(thread, result);
+
 		return rc ? rc : EDEADLK;
 	}
 	return __real_pthread_join(thread, result);
 }
 
 int __real_pthread_cond_destroy(pthread_cond_t *cv);
+
 int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 {
 	if (subject && cv == &subject->progress_cv && fail_cond_destroy) {
@@ -81,6 +92,7 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *cv)
 }
 
 int __real_pthread_mutex_destroy(pthread_mutex_t *mu);
+
 int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 {
 	if (subject && mu == &subject->progress_mu && fail_mutex_destroy) {
@@ -89,6 +101,7 @@ int __wrap_pthread_mutex_destroy(pthread_mutex_t *mu)
 	}
 	return __real_pthread_mutex_destroy(mu);
 }
+
 int main(int argc, char **argv)
 {
 	for (unsigned int i = 0; i < FILE_FD_COUNT; ++i)
@@ -102,17 +115,20 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
+
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "dispose.log";
 	c.async_mode = 1;
 	c.queue_capacity = 2048;
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	int io_error = !strcmp(argv[1], "io-error");
+
 	if (io_error) {
 		c.file_path = "/dev/full";
 		c.async_mode = 0;
 	}
 	logger_t *l = NULL;
+
 	CHECK(logger_create(&c, &l) == 0);
 	CHECK(l != NULL);
 	subject = l;
@@ -123,6 +139,7 @@ int main(int argc, char **argv)
 	else if (!strcmp(argv[1], "mutex-destroy-error"))
 		fail_mutex_destroy = 1;
 	const struct logger_owned_fd *fds[FILE_FD_COUNT];
+
 	fds[FILE_DATA] = &l->file_backend.fd;
 	fds[FILE_LOCK] = &l->file_backend.lock_fd;
 	fds[FILE_DIRECTORY] = &l->file_backend.dir_fd;
@@ -135,15 +152,15 @@ int main(int argc, char **argv)
 		for (unsigned int i = 0; i < FILE_FD_COUNT; ++i)
 			CHECK(close_probes[i].fd >= 0);
 	}
-	if (!strcmp(argv[1], "close-error"))
+	if (!strcmp(argv[1], "close-error")) {
 		close_probes[FILE_DATA].error = EIO;
-	else if (!strcmp(argv[1], "close-eintr"))
+	} else if (!strcmp(argv[1], "close-eintr")) {
 		close_probes[FILE_DATA].error = EINTR;
-	else if (!strcmp(argv[1], "close-lock-eio"))
+	} else if (!strcmp(argv[1], "close-lock-eio")) {
 		close_probes[FILE_LOCK].error = EIO;
-	else if (!strcmp(argv[1], "close-dir-eintr"))
+	} else if (!strcmp(argv[1], "close-dir-eintr")) {
 		close_probes[FILE_DIRECTORY].error = EINTR;
-	else if (!strcmp(argv[1], "close-lock-dir-errors")) {
+	} else if (!strcmp(argv[1], "close-lock-dir-errors")) {
 		close_probes[FILE_LOCK].error = EIO;
 		close_probes[FILE_DIRECTORY].error = EINTR;
 	} else if (!strcmp(argv[1], "close-all-errors")) {
@@ -154,13 +171,14 @@ int main(int argc, char **argv)
 	int lifecycle_error = fail_join || fail_cond_destroy ||
 			      fail_mutex_destroy;
 	int expected = 0;
-	if (io_error)
+
+	if (io_error) {
 		expected = ENOSPC;
-	else if (fail_join)
+	} else if (fail_join) {
 		expected = EDEADLK;
-	else if (fail_cond_destroy || fail_mutex_destroy)
+	} else if (fail_cond_destroy || fail_mutex_destroy) {
 		expected = EBUSY;
-	else {
+	} else {
 		for (unsigned int i = 0; i < FILE_FD_COUNT; ++i) {
 			if (!expected)
 				expected = close_probes[i].error;
@@ -170,6 +188,7 @@ int main(int argc, char **argv)
 		LOGGER_INFO(l, "test", "record=%d", i);
 	errno = EDOM;
 	int rc = logger_destroy(&l);
+
 	CHECK(l == NULL); /* 消费发生在接口内部，不由调用者补写 NULL。 */
 	CHECK(rc == -expected && errno == EDOM);
 	if (lifecycle_error) {

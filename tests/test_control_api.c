@@ -11,6 +11,7 @@ static void result(int rc, int expected)
 static logger_config_t config(int async)
 {
 	logger_config_t cfg = LOGGER_DEFAULT_CONFIG();
+
 	cfg.outputs = LOGGER_OUT_FILE;
 	cfg.file_path = "out.log";
 	cfg.rotation.mode = LOGGER_ROTATE_NONE;
@@ -29,6 +30,7 @@ static void ready(int async)
 	result(logger_default_reopen(), ENODEV);
 	logger_config_t cfg = config(async);
 	logger_t *owner = NULL;
+
 	result(logger_create(&cfg, &owner), 0);
 	result(logger_default_set(NULL, owner), 0);
 	for (int i = 0; i < 32; ++i)
@@ -37,6 +39,7 @@ static void ready(int async)
 	result(logger_flush(owner), 0);
 	result(logger_default_flush(), 0);
 	logger_io_metrics_t io;
+
 	CHECK(logger_get_io_metrics(owner, &io) == 0);
 	CHECK(io.emitted_records == 32 && io.failed_records == 0);
 	result(logger_reopen(owner), 0);
@@ -55,6 +58,7 @@ static void reopened_error(void)
 	CHECK(logger_process_init() == 0);
 	logger_config_t cfg = config(0);
 	logger_t *owner = NULL;
+
 	CHECK(logger_create(&cfg, &owner) == 0);
 	CHECK(logger_default_set(NULL, owner) == 0);
 	CHECK(rename("out.log", "original.log") == 0);
@@ -79,10 +83,12 @@ int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
 	char path[] = "/tmp/logger-control-api-XXXXXX";
+
 	enter_temp(path);
 	if (!strcmp(argv[1], "cold")) {
 		/* 未就绪时必须先拒绝准入，不能读取实例地址。 */
 		logger_t *poison = (logger_t *)(uintptr_t)1;
+
 		errno = EDOM;
 		result(logger_flush(poison), ENODEV);
 		result(logger_reopen(poison), ENODEV);
