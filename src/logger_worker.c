@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger_runtime.h"
 #include "logger_internal.h"
 #include "logger_cleanup.h"
@@ -255,11 +256,11 @@ static void emit_batch(logger_t *l, struct logger_worker_workspace *workspace,
 		}
 		if (l->outputs & LOGGER_OUT_FILE) {
 			size_t total = 0;
-			int need_sync = 0;
+			bool need_sync = false;
 			for (size_t i = 0; i < count; ++i) {
 				total += workspace->lens[i];
 				if (workspace->batch[i].level >= l->flush_level)
-					need_sync = 1;
+					need_sync = true;
 			}
 			memcpy(workspace->copy, workspace->vec,
 			       count * sizeof(*workspace->vec));
@@ -355,7 +356,7 @@ void *logger_worker_main(void *p)
 			}
 			continue;
 		}
-		int stop;
+		bool stop;
 		{
 			ACQUIRE(pthread_mutex_queue_wait_checked, wait_guard)
 			(&l->q.wait_mu);

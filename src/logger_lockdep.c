@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger_lockdep.h"
 
 #if LOGGER_ENABLE_LOCKDEP
@@ -51,15 +52,15 @@ static void violation(const char *what, enum logger_lock_class class_id,
 	abort();
 }
 
-static int is_instance(enum logger_lock_class class_id)
+static bool is_instance(enum logger_lock_class class_id)
 {
 	return class_id == LOGGER_LOCK_INSTANCE_EMIT ||
 	       class_id == LOGGER_LOCK_INSTANCE_PROGRESS ||
 	       class_id == LOGGER_LOCK_QUEUE_WAIT;
 }
 
-static int allowed_after(enum logger_lock_class held,
-			 enum logger_lock_class next)
+static bool allowed_after(enum logger_lock_class held,
+			  enum logger_lock_class next)
 {
 	/* fork 取得格式锁后再固定资源；禁止资源锁反向等待格式锁。 */
 	if (next == LOGGER_LOCK_RUNTIME_RESOURCE)
@@ -76,7 +77,7 @@ static int allowed_after(enum logger_lock_class held,
 		return next == LOGGER_LOCK_GLOBAL_LIFETIME || is_instance(next);
 	if (held == LOGGER_LOCK_GLOBAL_LIFETIME)
 		return is_instance(next);
-	return 0;
+	return false;
 }
 
 void logger_lockdep_check_acquire(enum logger_lock_class class_id,
@@ -158,4 +159,4 @@ void logger_lockdep_assert_not_held(enum logger_lock_class class_id,
 	}
 }
 
-#endif
+#endif /* LOGGER_ENABLE_LOCKDEP */

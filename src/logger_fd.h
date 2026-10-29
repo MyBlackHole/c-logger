@@ -1,6 +1,7 @@
 #ifndef LOGGER_FD_H
 #define LOGGER_FD_H
 
+#include <stdbool.h>
 #include "logger_compiler.h"
 #include "logger_fork_fd.h"
 #include <dirent.h>
@@ -41,7 +42,7 @@ static inline int logger_fd_number(struct logger_borrowed_fd borrowed)
 	return borrowed.value;
 }
 
-static inline int logger_fd_valid(const struct logger_owned_fd *owner)
+static inline bool logger_fd_valid(const struct logger_owned_fd *owner)
 {
 	return owner->value >= 0;
 }
@@ -110,4 +111,4 @@ logger_fd_fdopendir(struct logger_owned_fd *owner)
 	return directory;
 }
 
-#endif
+#endif /* LOGGER_FD_H */

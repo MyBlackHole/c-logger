@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger.h"
 #include "console.h"
 #include "logger_runtime.h"
@@ -80,14 +81,14 @@ int __wrap_isatty(int fd)
 	return __real_isatty(fd);
 }
 
-static int inject_write_failure(void)
+static bool inject_write_failure(void)
 {
 	if (armed && fail_write) {
 		fail_write = 0;
 		errno = ENOSPC;
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 int __wrap_vfprintf(FILE *stream, const char *format, va_list args)

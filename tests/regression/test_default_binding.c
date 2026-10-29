@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
 #include "support.h"
 #include "logger.h"
 #include "logger_internal.h"
@@ -473,7 +474,7 @@ int main(int argc, char **argv)
 	CHECK(logger_runtime_current()->allocation_count == 0);
 	const char *files[] = { "a.log", "b.log", "a.log.logger.lock",
 				"b.log.logger.lock" };
-	for (unsigned int i = 0; i < sizeof(files) / sizeof(files[0]); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(files); ++i)
 		CHECK(unlink(files[i]) == 0);
 	CHECK(chdir("/") == 0 && rmdir(path) == 0);
 	printf("DEFAULT_BORROW_PASS=%s\n", mode);

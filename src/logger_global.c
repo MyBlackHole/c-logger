@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "logger_internal.h"
 #include "logger_runtime.h"
@@ -52,13 +53,13 @@ struct global_generation {
 #define g_ticket (logger_runtime_current()->global_ticket)
 /* 借用锁释放证明失败会使默认绑定失效，不能据此释放任何宿主对象。 */
 #define g_lock_error (logger_runtime_current()->global_lock_error)
-static _Thread_local int g_in_global;
+static _Thread_local bool g_in_global;
 
 struct global_scope {
 	int old_cancel;
 	int saved_errno;
-	int control_locked;
-	int lifetime_locked;
+	bool control_locked;
+	bool lifetime_locked;
 	logger_t *release_borrow; /* 所有解锁已确认后，才撤销旧实例的借用标记 */
 };
 
@@ -148,7 +149,7 @@ static int finish_result(struct global_scope *scope, int rc)
 	if (scope->release_borrow)
 		atomic_store_explicit(&scope->release_borrow->default_borrowed,
 				      0, memory_order_release);
-	g_in_global = 0;
+	g_in_global = false;
 	error = pthread_setcancelstate(scope->old_cancel, NULL);
 	return rc ? rc : -error;
 }
@@ -188,7 +189,7 @@ static int begin(struct global_scope *scope)
 		errno = rc;
 		return -1;
 	}
-	g_in_global = 1;
+	g_in_global = true;
 	rc = -global_lock_error();
 	return rc ? finish(scope, rc) : 0;
 }
@@ -198,7 +199,7 @@ static int lock_control(struct global_scope *scope)
 	int rc = __cleanup_lockdep_mutex_lock(&g_control_mu,
 					      LOGGER_LOCK_GLOBAL_CONTROL);
 	if (!rc) {
-		scope->control_locked = 1;
+		scope->control_locked = true;
 		int poison = global_lock_error();
 		if (poison)
 			return -poison;
@@ -237,7 +238,7 @@ static int pin(struct global_scope *scope)
 	int rc = __cleanup_lockdep_rwlock_rdlock(&g_lifetime_lock);
 	if (rc)
 		return -rc;
-	scope->lifetime_locked = 1;
+	scope->lifetime_locked = true;
 	int poison = global_lock_error();
 	if (poison)
 		return -poison;
@@ -312,7 +313,7 @@ int logger_default_set(logger_t *expected, logger_t *replacement)
 		rc = -rc;
 		goto done;
 	}
-	scope.lifetime_locked = 1;
+	scope.lifetime_locked = true;
 	rc = -global_lock_error();
 	if (rc)
 		goto done;
@@ -546,12 +547,12 @@ out:
 	return rc;
 }
 
-int logger_global_scope_busy(void)
+bool logger_global_scope_busy(void)
 {
 	return g_in_global;
 }
 
 void logger_global_reset_child(void)
 {
-	g_in_global = 0;
+	g_in_global = false;
 }

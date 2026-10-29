@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "logger.h"
 #include <errno.h>
 
@@ -5,7 +6,7 @@
  * 生命周期新接口使用 0/-errno 并保留 errno。尚未迁移的其他状态入口
  * 保持自己的既定约定；不能用创建/销毁改动默默替换全局接口。
  */
-static int rejected(int rc, int error)
+static bool rejected(int rc, int error)
 {
 	return rc == -error && errno == 0;
 }

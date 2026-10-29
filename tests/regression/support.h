@@ -1,5 +1,6 @@
 #ifndef LOGGER_REGRESSION_SUPPORT_H
 #define LOGGER_REGRESSION_SUPPORT_H
+#include <stdbool.h>
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
@@ -72,7 +73,7 @@ static inline off_t file_size(const char *path)
 	return st.st_size;
 }
 
-static inline int file_contains(const char *path, const char *needle)
+static inline bool file_contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "rb");
 	CHECK(f != NULL);
@@ -95,4 +96,4 @@ static inline void leave_temp(char *path)
 	CHECK(chdir("/") == 0);
 	CHECK(rmdir(path) == 0);
 }
-#endif
+#endif /* LOGGER_REGRESSION_SUPPORT_H */

@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "logger_syslog.h"
 #include "logger_fd.h"
@@ -19,8 +20,7 @@
  * 交付结果不确定，且后缀会成为新记录。
  * 此后端不等待、轮询或休眠，也不进行无界 EINTR 循环。
  */
-#define SYSLOG_SEND_ATTEMPTS 4u
-#define SYSLOG_PACKET_MAX 8192u
+enum { SYSLOG_SEND_ATTEMPTS = 4, SYSLOG_PACKET_MAX = 8192 };
 
 static unsigned int priority(logger_level_t level)
 {
@@ -48,20 +48,20 @@ static int monotonic_ms(struct logger_monotonic_ms *out)
 	return 0;
 }
 
-static int backpressure(int error)
+static bool backpressure(int error)
 {
 	return error == EAGAIN || error == EWOULDBLOCK || error == ENOBUFS ||
 	       error == ENOMEM;
 }
 
-static int endpoint_unavailable(int error)
+static bool endpoint_unavailable(int error)
 {
 	return error == ENOENT || error == ECONNREFUSED ||
 	       error == ECONNRESET || error == ENOTCONN || error == EINTR ||
 	       error == EAGAIN || error == EWOULDBLOCK;
 }
 
-static int broken_association(int error)
+static bool broken_association(int error)
 {
 	return error == ECONNREFUSED || error == ECONNRESET ||
 	       error == ENOTCONN || error == EPIPE || error == ENOENT ||
@@ -132,9 +132,9 @@ static int copy_path(struct logger_syslog *s, const char *path)
  * 恰好新建一个套接字并调用一次 connect。任何连接失败都丢弃候选对象；
  * 不假定出现 EINTR/EAGAIN 的套接字可用。
  */
-static int connect_once(struct logger_syslog *s, int *deferable)
+static int connect_once(struct logger_syslog *s, bool *deferable)
 {
-	*deferable = 0;
+	*deferable = false;
 	++s->metrics.connect_attempts;
 	struct logger_owned_fd candidate = logger_fd_own(logger_fork_socket(
 		AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
@@ -220,10 +220,10 @@ int logger_syslog_init(struct logger_syslog *s, const char *ident,
 			return fail(ENAMETOOLONG);
 		memcpy(s->path, override, n + 1);
 	}
-#endif
+#endif /* LOGGER_ENABLE_FAULT_INJECTION */
 	if (monotonic_ms(&s->retry_from_ms) != 0)
 		return -1;
-	int deferable;
+	bool deferable;
 	if (connect_once(s, &deferable) == 0)
 		return 0;
 	/*
@@ -300,7 +300,7 @@ int logger_syslog_write(struct logger_syslog *s, logger_level_t level,
 							 ENOTCONN);
 		}
 		s->retry_from_ms = now;
-		int deferable;
+		bool deferable;
 		if (connect_once(s, &deferable) != 0)
 			return record_failure(s, errno);
 	}

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <console.h>
 #include <logger.h>
 
@@ -25,7 +26,7 @@
 	_Static_assert(__builtin_types_compatible_p(__typeof__(&name),     \
 						    ret (*)(__VA_ARGS__)), \
 		       "function type drift: " #name)
-#endif
+#endif /* __cplusplus */
 
 #define ABI_TYPE(type, size_, align_)        \
 	ABI_ASSERT(sizeof(type) == (size_)); \
@@ -277,13 +278,13 @@ ABI_FN(logger_reopen, int, logger_t *);
 ABI_FN(logger_set_instance_level, int, logger_t *, logger_level_t);
 ABI_FN(logger_set_level, int, logger_level_t);
 
-static int query_sentinel(const void *out, size_t size)
+static bool query_sentinel(const void *out, size_t size)
 {
 	const unsigned char *bytes = (const unsigned char *)out;
 	for (size_t i = 0; i < size; ++i)
 		if (bytes[i] != 0xa5)
-			return 0;
-	return 1;
+			return false;
+	return true;
 }
 
 /* C 与 C++11 都实际调用全部记录/查询类型，不以导出名称代替函数类型。 */

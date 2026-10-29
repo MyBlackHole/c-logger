@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <stdbool.h>
 #include "logger_internal.h"
 #include <errno.h>
 #include <locale.h>
@@ -190,18 +191,18 @@ static void prepare(struct sample *s, const uint8_t *data, size_t size)
 }
 
 /* 校验器对结果码、长度、有效字节及两侧边界都独立判定。 */
-static int matches(const unsigned char *buffer, size_t cap, int rc, size_t n,
-		   int wanted_rc, const char *wanted, size_t wanted_n)
+static bool matches(const unsigned char *buffer, size_t cap, int rc, size_t n,
+		    int wanted_rc, const char *wanted, size_t wanted_n)
 {
 	for (size_t i = 0; i < GUARD; ++i)
 		if (buffer[i] != 0xa5 || buffer[GUARD + cap + i] != 0xa5)
-			return 0;
+			return false;
 	if (rc != wanted_rc || n != wanted_n)
-		return 0;
+		return false;
 	if (!cap)
 		return n == 0;
 	if (n >= cap)
-		return 0;
+		return false;
 	return !memcmp(buffer + GUARD, wanted, n + 1);
 }
 
@@ -246,7 +247,7 @@ static void check_capacity(logger_t *logger, struct sample *s, size_t cap,
 		expected_rc = -EOVERFLOW;
 	const char *want = expected_rc ? "" : s->expected;
 	size_t want_n = expected_rc ? 0 : s->length;
-	int ok = matches(buffer, cap, rc, n, expected_rc, want, want_n);
+	bool ok = matches(buffer, cap, rc, n, expected_rc, want, want_n);
 	REQUIRE(ok);
 	if (!s->invalid_nsec) {
 		char wanted[LIMIT];
@@ -352,4 +353,4 @@ int main(int argc, char **argv)
 	       negative_checks);
 	return 0;
 }
-#endif
+#endif /* LOGGER_FUZZ_STANDALONE */

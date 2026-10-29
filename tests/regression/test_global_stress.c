@@ -23,7 +23,7 @@ static unsigned int open_fds(void)
 	CHECK(!closedir(d));
 	return n;
 }
-#endif
+#endif /* LOGGER_PUBLIC_ABI_TEST */
 static void expect_clean(void)
 {
 #ifdef LOGGER_PUBLIC_ABI_TEST

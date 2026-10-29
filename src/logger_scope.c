@@ -1,12 +1,13 @@
+#include <stdbool.h>
 #include "logger_scope.h"
 #include "logger_process.h"
 #include "logger_fork_fd.h"
 #include <errno.h>
 #include <pthread.h>
 
-static _Thread_local int in_runtime;
+static _Thread_local bool in_runtime;
 
-int logger_scope_busy(void)
+bool logger_scope_busy(void)
 {
 	return in_runtime || logger_fork_fd_preparing();
 }
@@ -33,7 +34,7 @@ int logger_scope_begin(struct logger_scope *scope)
 		errno = rc;
 		return -rc;
 	}
-	in_runtime = 1;
+	in_runtime = true;
 	return 0;
 }
 
@@ -44,7 +45,7 @@ int logger_scope_end(struct logger_scope *scope, int rc)
 	 * 此函数之后不得再解引用 logger：取消恢复后，调用者的取消清理
 	 * 可以立即释放其拥有的实例。
 	 */
-	in_runtime = 0;
+	in_runtime = false;
 	errno = rc < 0 ? -rc : scope->saved_errno;
 	int restore = pthread_setcancelstate(scope->old_cancel, NULL);
 
@@ -57,14 +58,14 @@ int logger_scope_end(struct logger_scope *scope, int rc)
 
 void logger_scope_worker_enter(void)
 {
-	in_runtime = 1;
+	in_runtime = true;
 }
 void logger_scope_worker_leave(void)
 {
-	in_runtime = 0;
+	in_runtime = false;
 }
 
 void logger_scope_reset_child(void)
 {
-	in_runtime = 0;
+	in_runtime = false;
 }

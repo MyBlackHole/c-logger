@@ -1,6 +1,7 @@
 #ifndef GLOBAL_REGRESSION_SUPPORT_H
 #define GLOBAL_REGRESSION_SUPPORT_H
 #ifdef LOGGER_PUBLIC_ABI_TEST
+#include "logger_compiler.h"
 #include "logger.h"
 #else
 #include "logger_internal.h"
@@ -130,7 +131,7 @@ static inline void fixture_reset(void)
 {
 	const char *names[] = { "old.log", "new.log", "side.log",
 				"stderr.log" };
-	for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(names); ++i) {
 		(void)unlink(names[i]);
 		char lock[64];
 		CHECK(snprintf(lock, sizeof(lock), "%s.logger.lock", names[i]) >
@@ -151,4 +152,4 @@ static inline unsigned int file_lines(const char *path)
 	CHECK(!ferror(f) && !fclose(f));
 	return n;
 }
-#endif
+#endif /* GLOBAL_REGRESSION_SUPPORT_H */

@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
 #include "logger_internal.h"
 #include "support.h"
 #include <errno.h>
@@ -34,7 +35,7 @@ static void note_allocation(void *p)
 {
 	if (!p)
 		return;
-	CHECK(allocation_count < sizeof(allocations) / sizeof(allocations[0]));
+	CHECK(allocation_count < LOGGER_ARRAY_SIZE(allocations));
 	allocations[allocation_count++].ptr = p;
 }
 

@@ -27,22 +27,17 @@
 #define CLEANUP_ATTR(function) LOGGER_CLEANUP(function)
 #define CLEANUP_MUST_CHECK LOGGER_MUST_CHECK
 #define CLEANUP_MAYBE_UNUSED LOGGER_MAYBE_UNUSED
-/*
- * cleanup/class 辅助机制依靠内联，使生成的所有权辅助代码保持局部且不触发警告。
- * 新增普通辅助函数应优先使用一般的 static inline。
- */
-#define CLEANUP_ALWAYS_INLINE LOGGER_ALWAYS_INLINE
+/* 清理类别在头文件中生成有类型的辅助函数；无需强制编译器内联。 */
 
 #define __cleanup_concat_1(a, b) a##b
 #define __cleanup_concat(a, b) __cleanup_concat_1(a, b)
 #define __cleanup_unique(prefix) __cleanup_concat(prefix, __COUNTER__)
 
-#define DEFINE_FREE(_name, _type, _release)                                    \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void __free_##_name( \
-		void *__slot)                                                  \
-	{                                                                      \
-		_type _T = *(_type *)__slot;                                   \
-		_release;                                                      \
+#define DEFINE_FREE(_name, _type, _release)                                  \
+	static inline CLEANUP_MAYBE_UNUSED void __free_##_name(void *__slot) \
+	{                                                                    \
+		_type _T = *(_type *)__slot;                                 \
+		_release;                                                    \
 	}
 
 #define __free(_name) CLEANUP_ATTR(__free_##_name)
@@ -55,7 +50,7 @@
 		__cleanup_value;                                     \
 	})
 
-static CLEANUP_ALWAYS_INLINE const volatile void *CLEANUP_MUST_CHECK
+static inline const volatile void *CLEANUP_MUST_CHECK
 __cleanup_must_check_ptr(const volatile void *value)
 {
 	return value;
@@ -75,23 +70,23 @@ __cleanup_must_check_ptr(const volatile void *value)
  */
 #define take_fd(_fd) __get_and_null((_fd), -1)
 
-#define DEFINE_CLASS(_name, _type, _exit, _init, ...)           \
-	typedef _type class_##_name##_t;                        \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void  \
-		class_##_name##_destructor(_type *__slot)       \
-	{                                                       \
-		_type _T = *__slot;                             \
-		_exit;                                          \
-	}                                                       \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED _type \
-		class_##_name##_constructor(__VA_ARGS__)        \
-	{                                                       \
-		return (_init);                                 \
+#define DEFINE_CLASS(_name, _type, _exit, _init, ...)                         \
+	typedef _type class_##_name##_t;                                      \
+	static inline CLEANUP_MAYBE_UNUSED void class_##_name##_destructor(   \
+		_type *__slot)                                                \
+	{                                                                     \
+		_type _T = *__slot;                                           \
+		_exit;                                                        \
+	}                                                                     \
+	static inline CLEANUP_MAYBE_UNUSED _type class_##_name##_constructor( \
+		__VA_ARGS__)                                                  \
+	{                                                                     \
+		return (_init);                                               \
 	}
 
 #define EXTEND_CLASS_COND(_name, _ext, _cond, _init, ...)                   \
 	typedef class_##_name##_t class_##_name##_ext##_t;                  \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void              \
+	static inline CLEANUP_MAYBE_UNUSED void                             \
 		class_##_name##_ext##_destructor(class_##_name##_t *__slot) \
 	{                                                                   \
 		class_##_name##_t _T = *__slot;                             \
@@ -99,9 +94,8 @@ __cleanup_must_check_ptr(const volatile void *value)
 			return;                                             \
 		class_##_name##_destructor(__slot);                         \
 	}                                                                   \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED                   \
-		class_##_name##_t class_##_name##_ext##_constructor(        \
-			__VA_ARGS__)                                        \
+	static inline CLEANUP_MAYBE_UNUSED class_##_name##_t                \
+		class_##_name##_ext##_constructor(__VA_ARGS__)              \
 	{                                                                   \
 		return (_init);                                             \
 	}
@@ -121,9 +115,9 @@ __cleanup_must_check_ptr(const volatile void *value)
 	class_##_name##_t _var LOGGER_MAYBE_UNUSED CLEANUP_ATTR( \
 		class_##_name##_destructor) = (_init_expr)
 
-#define __scoped_class(_name, _var, _once, ...) \
-	for (int _once = 1; _once; _once = 0)   \
-		for (CLASS(_name, _var)(__VA_ARGS__); _once; _once = 0)
+#define __scoped_class(_name, _var, _once, ...)       \
+	for (bool _once = true; _once; _once = false) \
+		for (CLASS(_name, _var)(__VA_ARGS__); _once; _once = false)
 
 #define scoped_class(_name, _var, ...)                                 \
 	__scoped_class(_name, _var, __cleanup_unique(__cleanup_once_), \
@@ -134,38 +128,38 @@ __cleanup_must_check_ptr(const volatile void *value)
  * 这样保留 Linux 的源码级所有权语义，同时避免把内核 ERR_PTR 约定带入用户态。
  */
 /* DEFINE_GUARD 不检查获取表达式；仅可用于满足不可失败契约的资源。 */
-#define DEFINE_GUARD(_name, _type, _lock, _unlock)                        \
-	typedef _type lock_##_name##_t;                                   \
-	typedef struct {                                                  \
-		_type resource;                                           \
-		int err;                                                  \
-	} class_##_name##_t;                                              \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED                 \
-		class_##_name##_t class_##_name##_constructor(_type _T)   \
-	{                                                                 \
-		_lock;                                                    \
-		return (class_##_name##_t){ .resource = _T, .err = 0 };   \
-	}                                                                 \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void            \
-		class_##_name##_destructor(class_##_name##_t *__guard)    \
-	{                                                                 \
-		if (__guard->err)                                         \
-			return;                                           \
-		_type _T = __guard->resource;                             \
-		_unlock;                                                  \
-	}                                                                 \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int             \
-		class_##_name##_lock_err(class_##_name##_t *__guard)      \
-	{                                                                 \
-		return __guard->err;                                      \
-	}                                                                 \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED bool            \
-		class_##_name##_lock_acquired(class_##_name##_t *__guard) \
-	{                                                                 \
-		return __guard->err == 0;                                 \
+#define DEFINE_GUARD(_name, _type, _lock, _unlock)                             \
+	typedef _type lock_##_name##_t;                                        \
+	typedef struct {                                                       \
+		_type resource;                                                \
+		int err;                                                       \
+	} class_##_name##_t;                                                   \
+	static inline CLEANUP_MAYBE_UNUSED class_##_name##_t                   \
+		class_##_name##_constructor(_type _T)                          \
+	{                                                                      \
+		_lock;                                                         \
+		return (class_##_name##_t){ .resource = _T, .err = 0 };        \
+	}                                                                      \
+	static inline CLEANUP_MAYBE_UNUSED void class_##_name##_destructor(    \
+		class_##_name##_t *__guard)                                    \
+	{                                                                      \
+		if (__guard->err)                                              \
+			return;                                                \
+		_type _T = __guard->resource;                                  \
+		_unlock;                                                       \
+	}                                                                      \
+	static inline CLEANUP_MAYBE_UNUSED int class_##_name##_lock_err(       \
+		class_##_name##_t *__guard)                                    \
+	{                                                                      \
+		return __guard->err;                                           \
+	}                                                                      \
+	static inline CLEANUP_MAYBE_UNUSED bool class_##_name##_lock_acquired( \
+		class_##_name##_t *__guard)                                    \
+	{                                                                      \
+		return __guard->err == 0;                                      \
 	}
 
-static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
+static inline int __cleanup_normalize_lock_error(int rc)
 {
 	if (rc > 0)
 		return -rc;
@@ -176,27 +170,26 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 
 #define DEFINE_GUARD_COND_4(_name, _ext, _lock, _success)                      \
 	typedef class_##_name##_t class_##_name##_ext##_t;                     \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED                      \
-		class_##_name##_t class_##_name##_ext##_constructor(           \
-			lock_##_name##_t _T)                                   \
+	static inline CLEANUP_MAYBE_UNUSED class_##_name##_t                   \
+		class_##_name##_ext##_constructor(lock_##_name##_t _T)         \
 	{                                                                      \
 		int _RET = (_lock);                                            \
 		int __err = (_success) ? 0 :                                   \
 					 __cleanup_normalize_lock_error(_RET); \
 		return (class_##_name##_t){ .resource = _T, .err = __err };    \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void                 \
+	static inline CLEANUP_MAYBE_UNUSED void                                \
 		class_##_name##_ext##_destructor(class_##_name##_t *__guard)   \
 	{                                                                      \
 		if (!__guard->err)                                             \
 			class_##_name##_destructor(__guard);                   \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                  \
-		class_##_name##_ext##_lock_err(class_##_name##_t *__guard)     \
+	static inline CLEANUP_MAYBE_UNUSED int class_##_name##_ext##_lock_err( \
+		class_##_name##_t *__guard)                                    \
 	{                                                                      \
 		return __guard->err;                                           \
 	}                                                                      \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED bool                 \
+	static inline CLEANUP_MAYBE_UNUSED bool                                \
 		class_##_name##_ext##_lock_acquired(                           \
 			class_##_name##_t *__guard)                            \
 	{                                                                      \
@@ -216,44 +209,44 @@ static CLEANUP_ALWAYS_INLINE int __cleanup_normalize_lock_error(int rc)
 #define ACQUIRE_ERR(_name, _var) class_##_name##_lock_err((_var))
 #define RELEASE_ERR(_name, _var) class_##_name##_release((_var))
 
-#define __scoped_guard(_name, _once, ...)                            \
-	for (int _once = 1; _once; _once = 0)                        \
-		for (CLASS(_name, scope)(__VA_ARGS__);               \
-		     _once && class_##_name##_lock_acquired(&scope); \
-		     _once = 0)
+#define __scoped_guard(_name, _var, _once, ...)                     \
+	for (bool _once = true; _once; _once = false)               \
+		for (CLASS(_name, _var)(__VA_ARGS__);               \
+		     _once && class_##_name##_lock_acquired(&_var); \
+		     _once = false)
 
-#define scoped_guard(_name, ...)                                       \
-	__scoped_guard(_name, __cleanup_unique(__cleanup_guard_once_), \
-		       __VA_ARGS__)
+#define scoped_guard(_name, ...)                                         \
+	__scoped_guard(_name, __cleanup_unique(__cleanup_scoped_guard_), \
+		       __cleanup_unique(__cleanup_guard_once_), __VA_ARGS__)
 
-#define __scoped_cond_guard(_name, _fail, _once, ...)                    \
-	for (int _once = 1; _once; _once = 0)                            \
-		for (CLASS(_name, scope)(__VA_ARGS__); _once; _once = 0) \
-			if (!class_##_name##_lock_acquired(&scope)) {    \
-				_fail;                                   \
+#define __scoped_cond_guard(_name, _var, _fail, _once, ...)                 \
+	for (bool _once = true; _once; _once = false)                       \
+		for (CLASS(_name, _var)(__VA_ARGS__); _once; _once = false) \
+			if (!class_##_name##_lock_acquired(&_var)) {        \
+				_fail;                                      \
 			} else
 
-#define scoped_cond_guard(_name, _fail, ...)                         \
-	__scoped_cond_guard(_name, _fail,                            \
-			    __cleanup_unique(__cleanup_guard_once_), \
+#define scoped_cond_guard(_name, _fail, ...)                                  \
+	__scoped_cond_guard(_name, __cleanup_unique(__cleanup_scoped_guard_), \
+			    _fail, __cleanup_unique(__cleanup_guard_once_),   \
 			    __VA_ARGS__)
 
 /* 常用用户态资源的 cleanup 定义。 */
-static CLEANUP_ALWAYS_INLINE void __cleanup_release_free(void *ptr)
+static inline void __cleanup_release_free(void *ptr)
 {
 	int saved = errno;
 	free(ptr);
 	errno = saved;
 }
 
-static CLEANUP_ALWAYS_INLINE void __cleanup_release_fd(int fd)
+static inline void __cleanup_release_fd(int fd)
 {
 	int saved = errno;
 	(void)close(fd);
 	errno = saved;
 }
 
-static CLEANUP_ALWAYS_INLINE void __cleanup_release_file(FILE *file)
+static inline void __cleanup_release_file(FILE *file)
 {
 	int saved = errno;
 	(void)fclose(file);
@@ -280,7 +273,7 @@ typedef struct {
 	pthread_mutex_t *resource;
 	int err;
 } class_pthread_mutex_t;
-static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void
+static inline CLEANUP_MAYBE_UNUSED void
 class_pthread_mutex_destructor(class_pthread_mutex_t *__guard)
 {
 	if (!__guard->err)
@@ -288,7 +281,7 @@ class_pthread_mutex_destructor(class_pthread_mutex_t *__guard)
 }
 DEFINE_GUARD_COND(pthread_mutex, _checked, pthread_mutex_lock(_T))
 DEFINE_GUARD_COND(pthread_mutex, _try, pthread_mutex_trylock(_T))
-static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int
+static inline CLEANUP_MAYBE_UNUSED int
 class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 {
 	if (__guard->err)
@@ -298,9 +291,8 @@ class_pthread_mutex_release(class_pthread_mutex_t *__guard)
 	return rc ? -rc : 0;
 }
 
-static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_mutex_lock(pthread_mutex_t *mu,
-			     enum logger_lock_class class_id)
+static inline int __cleanup_lockdep_mutex_lock(pthread_mutex_t *mu,
+					       enum logger_lock_class class_id)
 {
 	logger_lockdep_check_acquire(class_id, mu);
 	int rc = pthread_mutex_lock(mu);
@@ -310,7 +302,7 @@ __cleanup_lockdep_mutex_lock(pthread_mutex_t *mu,
 	return rc;
 }
 
-static CLEANUP_ALWAYS_INLINE int
+static inline int
 __cleanup_lockdep_mutex_trylock(pthread_mutex_t *mu,
 				enum logger_lock_class class_id)
 {
@@ -321,7 +313,7 @@ __cleanup_lockdep_mutex_trylock(pthread_mutex_t *mu,
 	return rc;
 }
 
-static CLEANUP_ALWAYS_INLINE int
+static inline int
 __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
 			       enum logger_lock_class class_id)
 {
@@ -335,7 +327,7 @@ __cleanup_lockdep_mutex_unlock(pthread_mutex_t *mu,
 	return rc;
 }
 
-static CLEANUP_ALWAYS_INLINE int
+static inline int
 __cleanup_lockdep_rwlock_lock(pthread_rwlock_t *rw,
 			      int (*lock_fn)(pthread_rwlock_t *lock))
 {
@@ -346,20 +338,17 @@ __cleanup_lockdep_rwlock_lock(pthread_rwlock_t *rw,
 	return rc;
 }
 
-static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_rwlock_rdlock(pthread_rwlock_t *rw)
+static inline int __cleanup_lockdep_rwlock_rdlock(pthread_rwlock_t *rw)
 {
 	return __cleanup_lockdep_rwlock_lock(rw, pthread_rwlock_rdlock);
 }
 
-static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_rwlock_wrlock(pthread_rwlock_t *rw)
+static inline int __cleanup_lockdep_rwlock_wrlock(pthread_rwlock_t *rw)
 {
 	return __cleanup_lockdep_rwlock_lock(rw, pthread_rwlock_wrlock);
 }
 
-static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_rwlock_trywrlock(pthread_rwlock_t *rw)
+static inline int __cleanup_lockdep_rwlock_trywrlock(pthread_rwlock_t *rw)
 {
 	int rc = pthread_rwlock_trywrlock(rw);
 
@@ -368,8 +357,7 @@ __cleanup_lockdep_rwlock_trywrlock(pthread_rwlock_t *rw)
 	return rc;
 }
 
-static CLEANUP_ALWAYS_INLINE int
-__cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
+static inline int __cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
 {
 	logger_lockdep_check_release(LOGGER_LOCK_GLOBAL_LIFETIME, rw);
 	int rc = pthread_rwlock_unlock(rw);
@@ -390,8 +378,8 @@ __cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
 		pthread_mutex_t *resource;                                   \
 		int err;                                                     \
 	} class_##_name##_t;                                                 \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED void               \
-		class_##_name##_destructor(class_##_name##_t *__guard)       \
+	static inline CLEANUP_MAYBE_UNUSED void class_##_name##_destructor(  \
+		class_##_name##_t *__guard)                                  \
 	{                                                                    \
 		if (__guard->err)                                            \
 			return;                                              \
@@ -400,8 +388,8 @@ __cleanup_lockdep_rwlock_unlock(pthread_rwlock_t *rw)
 	}                                                                    \
 	DEFINE_GUARD_COND(_name, _checked,                                   \
 			  __cleanup_lockdep_mutex_lock(_T, _class_id))       \
-	static CLEANUP_ALWAYS_INLINE CLEANUP_MAYBE_UNUSED int                \
-		class_##_name##_release(class_##_name##_t *__guard)          \
+	static inline CLEANUP_MAYBE_UNUSED int class_##_name##_release(      \
+		class_##_name##_t *__guard)                                  \
 	{                                                                    \
 		if (__guard->err)                                            \
 			return __guard->err;                                 \
@@ -419,4 +407,4 @@ DEFINE_LOCKDEP_MUTEX_GUARD(pthread_mutex_console, LOGGER_LOCK_CONSOLE)
 
 #undef DEFINE_LOCKDEP_MUTEX_GUARD
 
-#endif
+#endif /* LOGGER_CLEANUP_H */

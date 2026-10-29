@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include "logger_compiler.h"
+#include <stdbool.h>
 #include "logger_libc.h"
 #include "logger_file.h"
 #include "logger_fault.h"
@@ -31,7 +33,7 @@ static inline int file_lock_fd(const struct logger_file *f)
 	return logger_fd_number(logger_fd_borrow(&f->lock_fd));
 }
 
-static int internal_rotation(const struct logger_file *f)
+static bool internal_rotation(const struct logger_file *f)
 {
 	return f->rotation.mode == LOGGER_ROTATE_SIZE ||
 	       f->rotation.mode == LOGGER_ROTATE_DAILY ||
@@ -95,7 +97,7 @@ int logger_file_close_status(struct logger_file *f)
 	 * 保持所有权直到数据 fd 关闭。不显式 LOCK_UN：fork/dup 引用共享 flock；
 	 * 只关闭此所有者的引用。
 	 */
-	for (unsigned int i = 0; i < sizeof(fds) / sizeof(*fds); ++i) {
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(fds); ++i) {
 		/* 长期字段自身先失效，再关闭；保留首错并释放剩余 fd。 */
 		int rc = logger_fd_close_status(fds[i]);
 
@@ -112,7 +114,7 @@ void logger_file_close(struct logger_file *f)
 	errno = saved;
 }
 
-static int same_file(const struct stat *a, const struct stat *b)
+static bool same_file(const struct stat *a, const struct stat *b)
 {
 	return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
 }
@@ -128,7 +130,7 @@ static int regular_single_link(const struct stat *st)
 	return 0;
 }
 
-static int reserved_basename(const char *name, size_t length)
+static bool reserved_basename(const char *name, size_t length)
 {
 	static const char suffix[] = ".logger.lock";
 	size_t n = sizeof(suffix) - 1u;
@@ -454,7 +456,7 @@ static int check_active(struct logger_file *f)
 	return rc;
 }
 
-static int timestamp_valid(struct timespec t)
+static bool timestamp_valid(struct timespec t)
 {
 	struct tm tm;
 	return t.tv_nsec >= 0 && t.tv_nsec < 1000000000 &&
@@ -494,27 +496,27 @@ static int archive_name(struct logger_file *f, const struct timespec *t,
 	return (size_t)n >= cap ? -ENAMETOOLONG : 0;
 }
 
-static int archive_matches(struct logger_file *f, const char *name)
+static bool archive_matches(struct logger_file *f, const char *name)
 {
 	size_t stem = strlen(f->stem);
 	size_t ext = strlen(f->ext);
 	size_t length = strlen(name);
 	if (length != stem + 24u + ext || memcmp(name, f->stem, stem) ||
 	    name[stem] != '.')
-		return 0;
+		return false;
 	const char *p = name + stem + 1;
 	for (size_t i = 0; i < 23; ++i) {
 		if (i == 8) {
 			if (p[i] != 'T')
-				return 0;
+				return false;
 		} else if (i == 15) {
 			if (p[i] != '.')
-				return 0;
+				return false;
 		} else if (i == 22) {
 			if (p[i] != 'Z')
-				return 0;
+				return false;
 		} else if (p[i] < '0' || p[i] > '9')
-			return 0;
+			return false;
 	}
 	return !memcmp(p + 23, f->ext, ext);
 }
@@ -538,7 +540,7 @@ static int retention(struct logger_file *f, time_t now)
 	 * logger_fork_closedir() 消费租约，不能直接调用 libc closedir。
 	 */
 	int rc = 0;
-	int changed = 0;
+	bool changed = false;
 	uintmax_t seconds = (uintmax_t)f->rotation.retention_days * 86400u;
 	for (;;) {
 		errno = 0;
@@ -567,7 +569,7 @@ static int retention(struct logger_file *f, time_t now)
 			break;
 		}
 		++f->metrics.retention_deletions;
-		changed = 1;
+		changed = true;
 	}
 	if (logger_fork_closedir(d) && !rc)
 		rc = -errno;
@@ -702,8 +704,8 @@ static int prepare_write(struct logger_file *f, size_t n,
 		return -(f->switch_error ? f->switch_error : EIO);
 	if (!internal_rotation(f) || !n)
 		return 0;
-	int size = 0;
-	int day = 0;
+	bool size = false;
+	bool day = false;
 	if ((f->rotation.mode == LOGGER_ROTATE_SIZE ||
 	     f->rotation.mode == LOGGER_ROTATE_SIZE_DAILY) &&
 	    f->rotation.max_file_size && f->current_size) {

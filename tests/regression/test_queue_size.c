@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "logger_compiler.h"
 #include "logger_queue.h"
 #include "logger_runtime.h"
 #include "support.h"
@@ -32,7 +33,7 @@ void *__wrap_logger_runtime_calloc(size_t count, size_t size)
 {
 	if (!watch)
 		return __real_logger_runtime_calloc(count, size);
-	CHECK(allocation_calls < sizeof(attempts) / sizeof(attempts[0]));
+	CHECK(allocation_calls < LOGGER_ARRAY_SIZE(attempts));
 	struct allocation_attempt *attempt = &attempts[allocation_calls++];
 	attempt->count = count;
 	attempt->size = size;
@@ -230,7 +231,7 @@ static void capacity_overflow(void)
 		SIZE_MAX / 2u + 1u,
 		SIZE_MAX,
 	};
-	for (size_t i = 0; i < sizeof(requests) / sizeof(requests[0]); ++i) {
+	for (size_t i = 0; i < LOGGER_ARRAY_SIZE(requests); ++i) {
 		begin_tracking(0);
 		struct logger_queue q;
 		errno = EDOM;

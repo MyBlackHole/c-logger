@@ -1,6 +1,7 @@
 #ifndef LOGGER_FORK_FD_H
 #define LOGGER_FORK_FD_H
 
+#include <stdbool.h>
 #include <dirent.h>
 #include <sys/types.h>
 
@@ -24,10 +25,10 @@ void logger_fork_fd_child(void);
 /* 保留子方快照/关闭错误供下一阶段初始化判定，不清除既有进程拒绝。 */
 int logger_fork_fd_child_error(void);
 /* 同线程处于 prepare/parent 协调区间时，其他 handler 不得重入普通 API。 */
-int logger_fork_fd_preparing(void);
+bool logger_fork_fd_preparing(void);
 int logger_fork_resource_enter(void);
 int logger_fork_resource_leave(int error);
 void logger_fork_resource_poison(int error);
 int logger_fork_fd_child_reinit(void);
-int logger_fork_fd_child_valid(void);
-#endif
+bool logger_fork_fd_child_valid(void);
+#endif /* LOGGER_FORK_FD_H */

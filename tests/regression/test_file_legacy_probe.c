@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 /*
  * 仅使用既有公开 API 的黑盒回归断言。
  * 将此相同源码分别针对输入与输出静态库编译并链接。
@@ -14,14 +15,15 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#define REQUIRE(x)                                                       \
-	do {                                                             \
-		if (!(x)) {                                              \
-			fprintf(stderr, "%s:%d %s errno=%d\n", __FILE__, \
-				__LINE__, #x, errno);                    \
-			return 1;                                        \
-		}                                                        \
-	} while (0)
+static bool check(bool condition, const char *expression, int line)
+{
+	if (!condition)
+		fprintf(stderr, "%s:%d %s errno=%d\n", __FILE__, line,
+			expression, errno);
+	return condition;
+}
+
+#define REQUIRE(x) check((x), #x, __LINE__)
 int __real_clock_gettime(clockid_t c, struct timespec *t);
 int __wrap_clock_gettime(clockid_t c, struct timespec *t)
 {
@@ -39,11 +41,11 @@ static void put(const char *p, const char *s)
 	if (fputs(s, f) < 0 || fclose(f))
 		abort();
 }
-static int has(const char *p, const char *s)
+static bool has(const char *p, const char *s)
 {
 	FILE *f = fopen(p, "r");
 	if (!f)
-		return 0;
+		return false;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
 	b[n] = 0;
@@ -90,9 +92,12 @@ int main(int argc, char **argv)
 {
 	if (logger_process_init() != 0)
 		return 1;
-	REQUIRE(argc == 2);
-	REQUIRE(mkdtemp(fixture) != NULL);
-	REQUIRE(atexit(cleanup_fixture) == 0 && chdir(fixture) == 0);
+	if (!REQUIRE(argc == 2))
+		return 1;
+	if (!REQUIRE(mkdtemp(fixture) != NULL))
+		return 1;
+	if (!REQUIRE(atexit(cleanup_fixture) == 0 && chdir(fixture) == 0))
+		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "out.log";
@@ -101,27 +106,37 @@ int main(int argc, char **argv)
 	const char *s = argv[1];
 	if (!strcmp(s, "symlink")) {
 		put("sentinel", "unchanged");
-		REQUIRE(symlink("sentinel", "out.log") == 0);
+		if (!REQUIRE(symlink("sentinel", "out.log") == 0))
+			return 1;
 		logger_t *l = NULL;
-		REQUIRE(logger_create(&c, &l) == -ELOOP && !l);
+		if (!REQUIRE(logger_create(&c, &l) == -ELOOP && !l))
+			return 1;
 		return 0;
 	}
 	if (!strcmp(s, "hardlink")) {
 		put("sentinel", "unchanged");
-		REQUIRE(link("sentinel", "out.log") == 0);
+		if (!REQUIRE(link("sentinel", "out.log") == 0))
+			return 1;
 		logger_t *l = NULL;
-		REQUIRE(logger_create(&c, &l) == -EMLINK && !l);
+		if (!REQUIRE(logger_create(&c, &l) == -EMLINK && !l))
+			return 1;
 		return 0;
 	}
 	if (!strcmp(s, "global-repeat")) {
 		logger_t *owner = NULL;
-		REQUIRE(logger_create(&c, &owner) == 0);
-		REQUIRE(logger_default_set(NULL, owner) == 0);
+		if (!REQUIRE(logger_create(&c, &owner) == 0))
+			return 1;
+		if (!REQUIRE(logger_default_set(NULL, owner) == 0))
+			return 1;
 		c.file_path = "unwanted.log";
-		REQUIRE(logger_default_set(NULL, owner) == -ESTALE);
-		REQUIRE(logger_default_set(owner, NULL) == 0);
-		REQUIRE(logger_destroy(&owner) == 0);
-		REQUIRE(access("unwanted.log", F_OK) != 0);
+		if (!REQUIRE(logger_default_set(NULL, owner) == -ESTALE))
+			return 1;
+		if (!REQUIRE(logger_default_set(owner, NULL) == 0))
+			return 1;
+		if (!REQUIRE(logger_destroy(&owner) == 0))
+			return 1;
+		if (!REQUIRE(access("unwanted.log", F_OK) != 0))
+			return 1;
 		return 0;
 	}
 	if (!strcmp(s, "collision")) {
@@ -131,32 +146,46 @@ int main(int argc, char **argv)
 		put("out.20231114T221320.000000Z.log", "sentinel");
 	}
 	logger_t *l = NULL;
-	REQUIRE(logger_create(&c, &l) == 0);
-	REQUIRE(l != NULL);
-	REQUIRE(logger_log_sync_status(l, LOGGER_INFO, "probe", __FILE__,
-				       __LINE__, __func__, "first") == 0);
+	if (!REQUIRE(logger_create(&c, &l) == 0))
+		return 1;
+	if (!REQUIRE(l != NULL))
+		return 1;
+	if (!REQUIRE(logger_log_sync_status(l, LOGGER_INFO, "probe", __FILE__,
+					    __LINE__, __func__, "first") == 0))
+		return 1;
 	if (!strcmp(s, "owner")) {
 		logger_t *other = NULL;
-		REQUIRE(logger_create(&c, &other) == -EBUSY && !other);
+		if (!REQUIRE(logger_create(&c, &other) == -EBUSY && !other))
+			return 1;
 	} else if (!strcmp(s, "reopen")) {
-		REQUIRE(rename("out.log", "old.log") == 0 &&
-			mkdir("out.log", 0700) == 0);
-		REQUIRE(logger_reopen(l) == -EISDIR);
+		if (!REQUIRE(rename("out.log", "old.log") == 0 &&
+			     mkdir("out.log", 0700) == 0))
+			return 1;
+		if (!REQUIRE(logger_reopen(l) == -EISDIR))
+			return 1;
 		LOGGER_INFO(l, "probe", "after-failed-reopen");
-		REQUIRE(has("old.log", "after-failed-reopen"));
+		if (!REQUIRE(has("old.log", "after-failed-reopen")))
+			return 1;
 	} else if (!strcmp(s, "cwd")) {
-		REQUIRE(mkdir("newdir", 0700) == 0 && chdir("newdir") == 0);
-		REQUIRE(logger_reopen(l) == 0);
+		if (!REQUIRE(mkdir("newdir", 0700) == 0 &&
+			     chdir("newdir") == 0))
+			return 1;
+		if (!REQUIRE(logger_reopen(l) == 0))
+			return 1;
 		LOGGER_INFO(l, "probe", "same-target");
-		REQUIRE(access("out.log", F_OK) != 0 &&
-			has("../out.log", "same-target"));
+		if (!REQUIRE(access("out.log", F_OK) != 0 &&
+			     has("../out.log", "same-target")))
+			return 1;
 	} else if (!strcmp(s, "collision")) {
-		REQUIRE(logger_log_sync_status(l, LOGGER_INFO, "probe",
-					       __FILE__, __LINE__, __func__,
-					       "second") == 0);
-		REQUIRE(has("out.20231114T221320.000000Z.log", "sentinel"));
-	} else
-		REQUIRE(0);
+		if (!REQUIRE(logger_log_sync_status(l, LOGGER_INFO, "probe",
+						    __FILE__, __LINE__,
+						    __func__, "second") == 0))
+			return 1;
+		if (!REQUIRE(
+			    has("out.20231114T221320.000000Z.log", "sentinel")))
+			return 1;
+	} else if (!REQUIRE(0))
+		return 1;
 	logger_destroy(&l);
 	return 0;
 }

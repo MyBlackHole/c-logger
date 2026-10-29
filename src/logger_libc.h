@@ -1,5 +1,6 @@
 #ifndef LOGGER_LIBC_H
 #define LOGGER_LIBC_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -25,5 +26,5 @@ int logger_libc_fputc(int c, FILE *out);
 int logger_libc_fork_prepare(void);
 void logger_libc_fork_parent(void);
 void logger_libc_fork_child(void);
-int logger_libc_busy(void);
-#endif
+bool logger_libc_busy(void);
+#endif /* LOGGER_LIBC_H */

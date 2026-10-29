@@ -1,5 +1,6 @@
 #ifndef LOGGER_FAULT_H
 #define LOGGER_FAULT_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
 enum logger_fault_point {
@@ -13,12 +14,12 @@ enum logger_fault_point {
  * 不存在可启用生产故障钩子的运行时环境开关。
  */
 #if defined(LOGGER_ENABLE_FAULT_INJECTION) && LOGGER_ENABLE_FAULT_INJECTION
-int logger_fault_should_fail(enum logger_fault_point p);
+bool logger_fault_should_fail(enum logger_fault_point p);
 ssize_t logger_fault_short_write(size_t requested);
 void logger_fault_crash_if_requested(const char *point);
 #else
-#define logger_fault_should_fail(point) (0)
+#define logger_fault_should_fail(point) (false)
 #define logger_fault_short_write(requested) ((ssize_t)(requested))
 #define logger_fault_crash_if_requested(point) ((void)0)
-#endif
-#endif
+#endif /* LOGGER_ENABLE_FAULT_INJECTION */
+#endif /* LOGGER_FAULT_H */

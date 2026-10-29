@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger.h" /* 仅有声明；此可执行文件不链接 logger */
 #include <dlfcn.h>
 #include <errno.h>
@@ -7,49 +8,74 @@
 #include <string.h>
 #include <unistd.h>
 
-#define CHECK(x)                                                           \
-	do {                                                               \
-		if (!(x)) {                                                \
-			fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, \
-				#x);                                       \
-			return 1;                                          \
-		}                                                          \
-	} while (0)
+static bool check(bool condition, const char *expression, int line)
+{
+	if (!condition)
+		fprintf(stderr, "%s:%d: %s\n", __FILE__, line, expression);
+	return condition;
+}
+
+#define CHECK(x) check((x), #x, __LINE__)
 int main(int argc, char **argv)
 {
-	CHECK(argc == 2);
+	if (!CHECK(argc == 2))
+		return 1;
 	unlink("dlclose.log");
 	for (int n = 0; n < 20; ++n) {
 		void *handle = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-		CHECK(handle != NULL);
+		if (!CHECK(handle != NULL))
+			return 1;
 		int (*initialize_fn)(void);
 		int (*create_fn)(const logger_config_t *config, logger_t **out);
 		int (*log_fn)(logger_t *logger, logger_level_t level,
 			      const char *module, const char *file, int line,
 			      const char *function, const char *format, ...);
 		int (*destroy_fn)(logger_t **owner);
-#define GET(function, symbol)                                   \
-	do {                                                    \
-		void *p = dlsym(handle, symbol);                \
-		_Static_assert(sizeof(p) == sizeof(function),   \
-			       "Linux pointer representation"); \
-		CHECK(p != NULL);                               \
-		memcpy(&function, &p, sizeof(p));               \
-	} while (0)
-		GET(initialize_fn, "logger_process_init");
-		CHECK(initialize_fn() == 0);
-		GET(create_fn, "logger_create");
-		GET(log_fn, "logger_log");
-		GET(destroy_fn, "logger_destroy");
-		CHECK(dlsym(handle, "logger_destroy_status") == NULL);
-		CHECK(dlsym(handle, "logger_init") == NULL);
-		CHECK(dlsym(handle, "logger_shutdown") == NULL);
-		CHECK(dlsym(handle, "logger_shutdown_status") == NULL);
-		CHECK(dlsym(handle, "logger_flush_status") == NULL);
-		CHECK(dlsym(handle, "logger_flush_instance") == NULL);
-		CHECK(dlsym(handle, "logger_flush_instance_status") == NULL);
-		CHECK(dlsym(handle, "logger_reopen_instance") == NULL);
-#undef GET
+		void *p;
+
+		_Static_assert(sizeof(p) == sizeof(initialize_fn),
+			       "Linux pointer representation");
+		_Static_assert(sizeof(p) == sizeof(create_fn),
+			       "Linux pointer representation");
+		_Static_assert(sizeof(p) == sizeof(log_fn),
+			       "Linux pointer representation");
+		_Static_assert(sizeof(p) == sizeof(destroy_fn),
+			       "Linux pointer representation");
+		p = dlsym(handle, "logger_process_init");
+		if (!CHECK(p != NULL))
+			return 1;
+		memcpy(&initialize_fn, &p, sizeof(p));
+		if (!CHECK(initialize_fn() == 0))
+			return 1;
+		p = dlsym(handle, "logger_create");
+		if (!CHECK(p != NULL))
+			return 1;
+		memcpy(&create_fn, &p, sizeof(p));
+		p = dlsym(handle, "logger_log");
+		if (!CHECK(p != NULL))
+			return 1;
+		memcpy(&log_fn, &p, sizeof(p));
+		p = dlsym(handle, "logger_destroy");
+		if (!CHECK(p != NULL))
+			return 1;
+		memcpy(&destroy_fn, &p, sizeof(p));
+		if (!CHECK(dlsym(handle, "logger_destroy_status") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_init") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_shutdown") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_shutdown_status") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_flush_status") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_flush_instance") == NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_flush_instance_status") ==
+			   NULL))
+			return 1;
+		if (!CHECK(dlsym(handle, "logger_reopen_instance") == NULL))
+			return 1;
 		logger_config_t c = LOGGER_DEFAULT_CONFIG();
 		c.outputs = LOGGER_OUT_FILE;
 		c.file_path = "dlclose.log";
@@ -57,27 +83,38 @@ int main(int argc, char **argv)
 		c.queue_capacity = 32;
 		c.rotation.mode = LOGGER_ROTATE_NONE;
 		logger_t *l = NULL;
-		CHECK(create_fn(&c, &l) == 0);
-		CHECK(l != NULL);
+		if (!CHECK(create_fn(&c, &l) == 0))
+			return 1;
+		if (!CHECK(l != NULL))
+			return 1;
 		for (int j = 0; j < 10; ++j) {
 			errno = EDOM;
-			CHECK(log_fn(l, LOGGER_INFO, "dlclose", __FILE__,
-				     __LINE__, __func__, "n=%d j=%d", n,
-				     j) == 0);
-			CHECK(errno == EDOM);
+			if (!CHECK(log_fn(l, LOGGER_INFO, "dlclose", __FILE__,
+					  __LINE__, __func__, "n=%d j=%d", n,
+					  j) == 0))
+				return 1;
+			if (!CHECK(errno == EDOM))
+				return 1;
 		}
-		CHECK(destroy_fn(&l) == 0); /* dlclose 前不再有调用或工作线程 */
-		CHECK(l == NULL);
-		CHECK(dlclose(handle) == 0);
+		if (!CHECK(destroy_fn(&l) == 0))
+			return 1; /* dlclose 前不再有调用或工作线程 */
+		if (!CHECK(l == NULL))
+			return 1;
+		if (!CHECK(dlclose(handle) == 0))
+			return 1;
 	}
 	FILE *f = fopen("dlclose.log", "rb");
-	CHECK(f != NULL);
+	if (!CHECK(f != NULL))
+		return 1;
 	int c;
 	unsigned int records = 0;
 	while ((c = fgetc(f)) != EOF)
 		records += c == '\n';
-	CHECK(!ferror(f));
-	CHECK(fclose(f) == 0);
-	CHECK(records == 200);
+	if (!CHECK(!ferror(f)))
+		return 1;
+	if (!CHECK(fclose(f) == 0))
+		return 1;
+	if (!CHECK(records == 200))
+		return 1;
 	return 0;
 }

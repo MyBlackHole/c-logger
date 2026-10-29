@@ -42,4 +42,4 @@ static inline int logger_uapi_copy_struct(void *dst, size_t known_size,
 	return 0;
 }
 
-#endif
+#endif /* LOGGER_UAPI_H */

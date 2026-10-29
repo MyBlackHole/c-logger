@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
+#include "logger_compiler.h"
 #include <errno.h>
 #include "default_fixture.h"
 static logger_t *default_owner;
@@ -72,13 +74,13 @@ int __real_logger_file_writev(struct logger_file *f, struct iovec *vec,
 			      const struct timespec *ts, int sync);
 int __real_logger_runtime_free(void *ptr);
 
-static int healthy_worker(void)
+static bool healthy_worker(void)
 {
 	return selected == NORMAL_GAP || selected == NORMAL_DRAIN ||
 	       selected == BACKEND_ERROR;
 }
 
-static int defer_waiter(void)
+static bool defer_waiter(void)
 {
 	return selected == ERROR_FIRST || selected == EMPTY_TARGET;
 }
@@ -399,7 +401,7 @@ static enum scenario scenario_from_name(const char *name)
 		"cancel"
 	};
 
-	for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+	for (unsigned int i = 0; i < LOGGER_ARRAY_SIZE(names); ++i)
 		if (!strcmp(names[i], name))
 			return (enum scenario)i;
 	CHECK(!"unknown scenario");

@@ -11,7 +11,7 @@
 #if __has_feature(thread_sanitizer)
 #define LOGGER_RUNTIME_TSAN 1
 #endif
-#endif
+#endif /* defined(__SANITIZE_THREAD__) */
 #ifdef LOGGER_RUNTIME_TSAN
 #include <sanitizer/tsan_interface.h>
 /*
@@ -20,6 +20,12 @@
  * 仍含 prepare 取得的租约。不能真实 munmap/解锁旧地址：它可能已被复用。
  */
 static _Thread_local uintptr_t discarded_domain;
+
+static void remember_discarded_leases(void)
+{
+	if (logger_fork_fd_child_valid())
+		discarded_domain = (uintptr_t)logger_runtime_current();
+}
 
 static void forget_discarded_leases(void)
 {
@@ -41,7 +47,15 @@ static void forget_discarded_leases(void)
 	__tsan_mutex_pre_unlock(format, 0);
 	__tsan_mutex_post_unlock(format, 0);
 }
-#endif
+#else
+static void remember_discarded_leases(void)
+{
+}
+
+static void forget_discarded_leases(void)
+{
+}
+#endif /* LOGGER_RUNTIME_TSAN */
 
 _Static_assert(ATOMIC_POINTER_LOCK_FREE == 2,
 	       "fork root requires a lock-free pointer");
@@ -69,10 +83,7 @@ void logger_runtime_publish(struct logger_runtime *runtime)
 void logger_runtime_invalidate_child(void)
 {
 	/* 不解引用旧地址；对应映射已由内核在 fork 时排除。 */
-#ifdef LOGGER_RUNTIME_TSAN
-	if (logger_fork_fd_child_valid())
-		discarded_domain = (uintptr_t)logger_runtime_current();
-#endif
+	remember_discarded_leases();
 	atomic_store_explicit(&current, NULL, memory_order_relaxed);
 }
 
@@ -100,9 +111,7 @@ int logger_runtime_discard(struct logger_runtime *runtime)
 
 int logger_runtime_create(struct logger_runtime **out)
 {
-#ifdef LOGGER_RUNTIME_TSAN
 	forget_discarded_leases();
-#endif
 	*out = NULL;
 	if (retained_bootstrap)
 		return -EUCLEAN;

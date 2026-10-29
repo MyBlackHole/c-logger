@@ -1,5 +1,6 @@
 #ifndef LOGGER_INTERNAL_H
 #define LOGGER_INTERNAL_H
+#include <stdbool.h>
 #include "logger.h"
 #include "logger_process.h"
 #include "logger_scope.h"
@@ -132,9 +133,9 @@ static inline void logger_state_store_release(_Atomic logger_state_t *state,
 	atomic_store_explicit(state, value, memory_order_release);
 }
 
-static inline int logger_state_try_publish(_Atomic logger_state_t *state,
-					   logger_state_t *expected,
-					   logger_state_t desired)
+static inline bool logger_state_try_publish(_Atomic logger_state_t *state,
+					    logger_state_t *expected,
+					    logger_state_t desired)
 {
 	/* 直接转传期望值指针，失败时必须写回调用方观察到的实际状态。 */
 	return atomic_compare_exchange_strong_explicit(state, expected, desired,
@@ -204,4 +205,4 @@ int logger_wait_for_output(logger_t *l);
 /* 调用时必须已经持有 emit_mu。 */
 int logger_sync_outputs_locked(logger_t *l);
 
-#endif
+#endif /* LOGGER_INTERNAL_H */

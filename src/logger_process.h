@@ -1,6 +1,8 @@
 #ifndef LOGGER_PROCESS_H
 #define LOGGER_PROCESS_H
 
+#include <stdbool.h>
+
 /*
  * Logger、Console 共享的进程准入检查。
  * 仅检查显式初始化的发布状态：未初始化 -ENODEV，进行中 -EAGAIN。
@@ -9,7 +11,7 @@
  * 初始化新的进程域。过程不复活继承实例，不宣称宿主全部 libc 状态已修复。
  */
 int logger_process_require(void);
-int logger_process_is_child(void);
+bool logger_process_is_child(void);
 void logger_process_invalidate_child(void);
 
 /*
@@ -21,5 +23,5 @@ void logger_process_invalidate_child(void);
 int logger_process_object_acquire(void);
 int logger_process_object_release(void);
 unsigned int logger_process_object_count(void);
-int logger_process_ready(void);
-#endif
+bool logger_process_ready(void);
+#endif /* LOGGER_PROCESS_H */

@@ -233,4 +233,4 @@ int main(int argc, char **argv)
 	printf("public fuzz properties PASS seed=%lu iterations=2048\n", seed);
 	return 0;
 }
-#endif
+#endif /* LOGGER_FUZZ_STANDALONE */

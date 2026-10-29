@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include <errno.h>
 #include "regression/default_fixture.h"
 static logger_t *default_owner;
@@ -13,22 +14,24 @@ static logger_t *default_owner;
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define CHECK(x)                    \
-	do {                        \
-		if (!(x)) {         \
-			perror(#x); \
-			return 1;   \
-		}                   \
-	} while (0)
-static int contains(const char *path, const char *needle)
+static bool check(bool condition, const char *expression, int line)
+{
+	(void)line;
+	if (!condition)
+		perror(expression);
+	return condition;
+}
+
+#define CHECK(x) check((x), #x, __LINE__)
+static bool contains(const char *path, const char *needle)
 {
 	FILE *f = fopen(path, "r");
 	if (!f)
-		return 0;
+		return false;
 	char b[8192];
 	size_t n = fread(b, 1, sizeof(b) - 1, f);
 	b[n] = 0;
-	int ok = !ferror(f) && strstr(b, needle) != NULL;
+	bool ok = !ferror(f) && strstr(b, needle) != NULL;
 	fclose(f);
 	return ok;
 }
@@ -36,9 +39,11 @@ static int exec_child(void)
 {
 	/* 新程序映像可以使用完整 API。父进程日志 fd 不得跨 exec 存活。 */
 	struct stat parent;
-	CHECK(stat("fork-parent.log", &parent) == 0);
+	if (!CHECK(stat("fork-parent.log", &parent) == 0))
+		return 1;
 	DIR *d = opendir("/proc/self/fd");
-	CHECK(d);
+	if (!CHECK(d))
+		return 1;
 	struct dirent *e;
 	while ((e = readdir(d))) {
 		char *end;
@@ -54,24 +59,29 @@ static int exec_child(void)
 			return 2;
 		}
 	}
-	CHECK(closedir(d) == 0);
+	if (!CHECK(closedir(d) == 0))
+		return 1;
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
 	c.outputs = LOGGER_OUT_FILE;
 	c.file_path = "fork-child.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
-	CHECK(fixture_default_create(&c, &default_owner) == 0);
+	if (!CHECK(fixture_default_create(&c, &default_owner) == 0))
+		return 1;
 	LOG_INFO("child initialized after exec");
-	CHECK(logger_default_flush() == 0);
+	if (!CHECK(logger_default_flush() == 0))
+		return 1;
 	fixture_default_destroy(&default_owner);
 	return 0;
 }
 int main(int argc, char **argv)
 {
-	CHECK(logger_process_init() == 0);
+	if (!CHECK(logger_process_init() == 0))
+		return 1;
 	if (argc == 2 && !strcmp(argv[1], "--child"))
 		return exec_child();
-	CHECK(argc == 1);
+	if (!CHECK(argc == 1))
+		return 1;
 	unlink("fork-parent.log");
 	unlink("fork-child.log");
 	logger_config_t c = LOGGER_DEFAULT_CONFIG();
@@ -79,11 +89,13 @@ int main(int argc, char **argv)
 	c.file_path = "fork-parent.log";
 	c.rotation.mode = LOGGER_ROTATE_NONE;
 	c.queue_capacity = 128;
-	CHECK(fixture_default_create(&c, &default_owner) == 0);
+	if (!CHECK(fixture_default_create(&c, &default_owner) == 0))
+		return 1;
 	LOG_INFO("before fork");
 	char exe[PATH_MAX];
 	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-	CHECK(n > 0 && (size_t)n < sizeof(exe) - 1);
+	if (!CHECK(n > 0 && (size_t)n < sizeof(exe) - 1))
+		return 1;
 	exe[n] = 0;
 	char *const args[] = { exe, "--child", NULL };
 	pid_t p = fork();
@@ -104,14 +116,21 @@ int main(int argc, char **argv)
 	LOG_INFO("parent continues");
 	int status;
 	while (waitpid(p, &status, 0) < 0)
-		CHECK(errno == EINTR);
-	CHECK(logger_default_flush() == 0);
+		if (!CHECK(errno == EINTR))
+			return 1;
+	if (!CHECK(logger_default_flush() == 0))
+		return 1;
 	fixture_default_destroy(&default_owner);
-	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-	CHECK(contains("fork-parent.log", "before fork"));
-	CHECK(contains("fork-parent.log", "parent continues"));
-	CHECK(!contains("fork-parent.log", "child initialized"));
-	CHECK(contains("fork-child.log", "child initialized after exec"));
+	if (!CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0))
+		return 1;
+	if (!CHECK(contains("fork-parent.log", "before fork")))
+		return 1;
+	if (!CHECK(contains("fork-parent.log", "parent continues")))
+		return 1;
+	if (!CHECK(!contains("fork-parent.log", "child initialized")))
+		return 1;
+	if (!CHECK(contains("fork-child.log", "child initialized after exec")))
+		return 1;
 	puts("fork+exec: child fresh runtime, parent output and CLOEXEC verified");
 	return 0;
 }

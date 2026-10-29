@@ -205,6 +205,27 @@ static void class_and_guard_scope(void)
 	}
 	CHECK(failed == 1 && lock == 1);
 	lock = 0;
+
+	/* 宏的内部存储不能遮蔽调用方传入的同名局部变量。 */
+	int *scope = &lock;
+	scoped_guard(test_lock, scope)
+	{
+		CHECK(lock == 1);
+	}
+	CHECK(lock == 0);
+	scoped_cond_guard(test_lock_try, CHECK(0), scope)
+	{
+		CHECK(lock == 1);
+	}
+	CHECK(lock == 0);
+	lock = 1;
+	failed = 0;
+	scoped_cond_guard(test_lock_try, failed = 1, scope)
+	{
+		CHECK(0);
+	}
+	CHECK(failed == 1 && lock == 1);
+	lock = 0;
 }
 
 int main(void)

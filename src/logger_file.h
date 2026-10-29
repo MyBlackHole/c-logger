@@ -6,9 +6,11 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-#define LOGGER_PATH_MAX 4096
-#define LOGGER_FILENAME_MAX 255
-#define LOGGER_ARCHIVE_ATTEMPTS 1024u
+enum {
+	LOGGER_PATH_MAX = 4096,
+	LOGGER_FILENAME_MAX = 255,
+	LOGGER_ARCHIVE_ATTEMPTS = 1024
+};
 /*
  * 私有、可移动的所有者。结构体内部没有指针指向自身存储，因此整体移动安全。
  * 发布后的可变后端操作由所属 logger 的 emit_mu 串行化；
@@ -66,4 +68,4 @@ int logger_file_writev(struct logger_file *f, struct iovec *v, int count,
  * 不提供会覆盖目标的重命名回退；平台不支持时返回 ENOTSUP。
  */
 int logger_file_rename_noreplace(int dirfd, const char *from, const char *to);
-#endif
+#endif /* LOGGER_FILE_H */

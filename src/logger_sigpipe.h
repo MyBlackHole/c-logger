@@ -79,4 +79,4 @@ static inline int logger_sigpipe_end(struct logger_sigpipe_guard *guard,
 	return !result && restore ? -restore : result;
 }
 
-#endif
+#endif /* LOGGER_SIGPIPE_H */

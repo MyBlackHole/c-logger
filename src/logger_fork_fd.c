@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include "logger_fork_fd.h"
 #include "logger_process.h"
 #include "logger_runtime.h"
@@ -30,7 +31,7 @@ static _Thread_local int in_gate;
 static _Thread_local int prepared;
 static _Thread_local int prepare_error;
 static int child_error;
-static int child_valid;
+static bool child_valid;
 static _Thread_local uint64_t *snapshot_fds;
 static _Thread_local size_t snapshot_bytes;
 static _Thread_local unsigned int fork_depth;
@@ -108,7 +109,7 @@ static int grow_for(int fd)
 	return 0;
 }
 
-static int is_owned(int fd)
+static bool is_owned(int fd)
 {
 	return fd >= 0 && (size_t)fd / 64u < owned_bytes / sizeof(*owned) &&
 	       (owned[(size_t)fd / 64u] &
@@ -284,8 +285,8 @@ int logger_fork_closedir(DIR *dir)
 void logger_fork_fd_prepare(void)
 {
 	int saved = errno;
-	int busy = logger_scope_busy() || logger_global_scope_busy() ||
-		   logger_libc_busy();
+	bool busy = logger_scope_busy() || logger_global_scope_busy() ||
+		    logger_libc_busy();
 	if (fork_depth++) {
 		errno = saved;
 		return;
@@ -395,12 +396,12 @@ int logger_fork_fd_child_error(void)
 	return child_error;
 }
 
-int logger_fork_fd_child_valid(void)
+bool logger_fork_fd_child_valid(void)
 {
 	return child_valid;
 }
 
-int logger_fork_fd_preparing(void)
+bool logger_fork_fd_preparing(void)
 {
 	return fork_depth != 0;
 }
