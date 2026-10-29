@@ -156,7 +156,8 @@ int main(int argc, char **argv)
 		fail_restore = 1;
 		errno = ERANGE;
 		int rc = logger_create(&config, &owned);
-		fprintf(stderr, "CREATE_RESTORE_RESULT=%d EXPECTED=%d OWNER_PUBLISHED=%d\n",
+		fprintf(stderr,
+			"CREATE_RESTORE_RESULT=%d EXPECTED=%d OWNER_PUBLISHED=%d\n",
 			rc, expected, owned != NULL);
 		CHECK(rc == expected);
 		CHECK(owned == NULL && errno == ERANGE);
@@ -165,7 +166,8 @@ int main(int argc, char **argv)
 		CHECK(logger_runtime_current()->allocation_count == 0);
 		CHECK(logger_process_object_count() == 0);
 		/* 注入拒绝未恢复取消状态；测试自行恢复后再检查同进程可重新创建。 */
-		CHECK(__real_pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL) == 0);
+		CHECK(__real_pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,
+						    NULL) == 0);
 		create_restore = 0;
 		CHECK(logger_create(&config, &owned) == 0);
 		subject = owned;
