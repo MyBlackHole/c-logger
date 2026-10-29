@@ -927,11 +927,12 @@ if has_config("build_regression_tests") then
             add_includedirs("src")
             add_cflags("-std=gnu11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", {force = true})
             for _, symbol in ipairs({"pthread_create", "pthread_join", "pthread_setcancelstate",
-                                     "logger_runtime_free", "munmap"}) do
+                                     "logger_runtime_calloc", "logger_runtime_free", "munmap"}) do
                 add_ldflags("-Wl,--wrap=" .. symbol, {force = true})
             end
             for _, mode in ipairs({"normal", "io-error", "entry-error", "join-error",
-                                   "unmap-error", "cancel-create", "cancel-destroy", "reentry"}) do
+                                   "unmap-error", "cancel-create", "cancel-destroy", "reentry",
+                                   "create-restore", "create-restore-sync", "create-primary-restore"}) do
                 add_tests(mode, {runargs = mode, group = "lifecycle-owner", timeout = 20})
             end
         target_end()

@@ -605,11 +605,20 @@ static void cancel_unreturned_logger(void *arg)
  */
 static logger_t *finish_create(logger_scope_t *scope, logger_t *l, int error)
 {
+	int rc;
+
 	pthread_cleanup_push(cancel_unreturned_logger, l);
-	(void)logger_scope_end(scope, error);
+	rc = logger_scope_end(scope, error);
 	if (scope->old_cancel == PTHREAD_CANCEL_ENABLE)
 		pthread_testcancel();
-	pthread_cleanup_pop(0);
+	/* 恢复失败时候选仍由库拥有，沿用取消清理的销毁/保留协议。
+	 * 清理错误不能覆盖构造或恢复的主错误。
+	 */
+	pthread_cleanup_pop(rc != 0);
+	if (rc) {
+		errno = -rc;
+		return NULL;
+	}
 	return l;
 }
 

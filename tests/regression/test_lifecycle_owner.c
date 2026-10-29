@@ -10,6 +10,7 @@ static logger_t *subject;
 static unsigned freed;
 static int fail_join, fail_entry, fail_unmap;
 static int cancel_create, cancel_destroy, reentry;
+static int create_restore, fail_restore, fail_create;
 static _Thread_local int caller;
 static _Atomic int cleanup_ran;
 static logger_config_t config;
@@ -19,7 +20,17 @@ int __real_pthread_create(pthread_t *, const pthread_attr_t *,
 int __real_pthread_join(pthread_t, void **);
 int __real_pthread_setcancelstate(int, int *);
 int __real_logger_runtime_free(void *);
+void *__real_logger_runtime_calloc(size_t, size_t);
 int __real_munmap(void *, size_t);
+
+void *__wrap_logger_runtime_calloc(size_t count, size_t size)
+{
+	void *allocation = __real_logger_runtime_calloc(count, size);
+	/* 恢复失败场景的第一次真实映射是未发布的实例；同步实例没有 worker 可观察。 */
+	if (caller && create_restore && !subject)
+		subject = allocation;
+	return allocation;
+}
 
 int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			  void *(*start)(void *), void *arg)
@@ -28,6 +39,10 @@ int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 		return __real_pthread_create(thread, attr, start, arg);
 	CHECK(owned == NULL); /* 构造尚未发布调用方所有权。 */
 	subject = arg;
+	if (caller && fail_create) {
+		fail_create = 0;
+		return EAGAIN;
+	}
 	int rc = __real_pthread_create(thread, attr, start, arg);
 	if (!rc && caller && cancel_create)
 		CHECK(pthread_cancel(pthread_self()) == 0);
@@ -61,6 +76,11 @@ int __wrap_pthread_setcancelstate(int state, int *old)
 	}
 	if (caller && state == PTHREAD_CANCEL_ENABLE && cancel_destroy)
 		CHECK(owned == NULL);
+	if (caller && state == PTHREAD_CANCEL_ENABLE && fail_restore) {
+		fail_restore = 0;
+		/* 在真实恢复之前拒绝；库不能假设失败后已经恢复了调用方状态。 */
+		return EIO;
+	}
 	return __real_pthread_setcancelstate(state, old);
 }
 
@@ -117,14 +137,48 @@ static void *cancelled_caller(void *unused)
 int main(int argc, char **argv)
 {
 	CHECK(argc == 2);
-	char directory[] = "/tmp/logger-owner-XXXXXX";
-	enter_temp(directory);
+	char directory[PATH_MAX];
+	enter_temp_workspace(directory, sizeof(directory), "logger-owner");
 	CHECK(logger_process_init() == 0);
 	config = LOGGER_DEFAULT_CONFIG();
 	config.outputs = LOGGER_OUT_FILE;
 	config.file_path = "out.log";
 	config.rotation.mode = LOGGER_ROTATE_NONE;
 	config.queue_capacity = 8;
+	create_restore = !strcmp(argv[1], "create-restore") ||
+			 !strcmp(argv[1], "create-restore-sync") ||
+			 !strcmp(argv[1], "create-primary-restore");
+	if (create_restore) {
+		config.async_mode = strcmp(argv[1], "create-restore-sync") != 0;
+		fail_create = !strcmp(argv[1], "create-primary-restore");
+		int expected = fail_create ? -EAGAIN : -EIO;
+		caller = 1;
+		fail_restore = 1;
+		errno = ERANGE;
+		int rc = logger_create(&config, &owned);
+		fprintf(stderr,
+			"CREATE_RESTORE_RESULT=%d EXPECTED=%d OWNER_PUBLISHED=%d\n",
+			rc, expected, owned != NULL);
+		CHECK(rc == expected);
+		CHECK(owned == NULL && errno == ERANGE);
+		CHECK(!fail_restore && !fail_create);
+		CHECK(subject == NULL && freed == 1);
+		CHECK(logger_runtime_current()->allocation_count == 0);
+		CHECK(logger_process_object_count() == 0);
+		/* 注入拒绝未恢复取消状态；测试自行恢复后再检查同进程可重新创建。 */
+		CHECK(__real_pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,
+						    NULL) == 0);
+		create_restore = 0;
+		CHECK(logger_create(&config, &owned) == 0);
+		subject = owned;
+		CHECK(logger_destroy(&owned) == 0);
+		CHECK(owned == NULL && freed == 2);
+		CHECK(logger_runtime_current()->allocation_count == 0);
+		CHECK(logger_process_object_count() == 0);
+		leave_temp(directory);
+		printf("LIFECYCLE_OWNER_PASS=%s\n", argv[1]);
+		return 0;
+	}
 	int io_error = !strcmp(argv[1], "io-error");
 	cancel_create = !strcmp(argv[1], "cancel-create");
 	cancel_destroy = !strcmp(argv[1], "cancel-destroy");
