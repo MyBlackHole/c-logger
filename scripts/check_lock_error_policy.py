@@ -31,7 +31,13 @@ def check_guard_definitions(errors: list[str]) -> None:
         fail("实例锁 guard 宏重新引入了不检查获取结果的构造器", errors)
     if "DEFINE_GUARD_COND(_name, _checked" not in header:
         fail("实例锁 guard 未通过 checked 构造器保存获取错误", errors)
-    if "class_##_name##_release(class_##_name##_t *__guard)" not in header:
+    # 预处理续行与声明换行不改变生成接口，不能要求固定格式器输出单行。
+    release_signature = re.sub(r"\\\r?\n", "", macro)
+    if not re.search(
+        r"\bclass_##_name##_release\s*\(\s*"
+        r"class_##_name##_t\s*\*\s*__guard\s*\)",
+        release_signature,
+    ):
         fail("实例锁 guard 缺少显式、可返回错误的释放入口", errors)
 
 
