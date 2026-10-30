@@ -52,7 +52,7 @@
 - [WORKER_STARTUP.md](WORKER_STARTUP.md) / [WORKER_FAILURE.md](WORKER_FAILURE.md)：工作线程启动与失败退出合同。
 - [架构不变量](../ARCHITECTURE_INVARIANTS.md)：普通 Logger 的重构/扩展门禁。
 
-本目录其余 `AUDIT_*.md`（除迁移说明 [AUDIT_REMOVAL.md](AUDIT_REMOVAL.md)）仅为已退役实现的历史记录，不安装、不构成现行设计权威。
+已退役 Audit 的历史设计材料集中保留在源码树 `docs/v2/AUDIT_HISTORY.md`，不随安装包发布，也不构成现行设计或验证权威；[移除说明](AUDIT_REMOVAL.md) 记录当前项目的功能退役边界。
 
 ## 当前状态
 

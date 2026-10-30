@@ -46,8 +46,8 @@ class InstalledDocsTest(unittest.TestCase):
             self.check()
 
     def test_retired_audit_document_is_not_allowed(self):
-        (self.root / 'docs/v2/AUDIT_TRANSACTION_SEMANTICS.md').write_text('已退役\n')
-        with self.assertRaisesRegex(ValueError, '清单以外.*AUDIT_TRANSACTION_SEMANTICS'):
+        (self.root / 'docs/v2/AUDIT_HISTORY.md').write_text('已退役\n')
+        with self.assertRaisesRegex(ValueError, '清单以外.*AUDIT_HISTORY'):
             self.check()
 
     def test_link_cannot_escape_to_source(self):
