@@ -4,10 +4,12 @@
 GNU C11/POSIX/C11 内存模型。说明文字遵循[项目语言约定](../PROJECT_LANGUAGE.md)。
 
 维护者已要求持续收敛到 Linux 编码规范。固定上游版本、完整文件范围、22 节逐条要求、
-起始差异及串行验收见[源码树中的符合性收敛计划](https://github.com/MyBlackHole/c-logger/blob/main/docs/superpowers/plans/2026-10-29-kernel-style-conformance.md)。
-最终逐节对照和具体保留边界见该计划的“最终源码验收对照”。验收状态及准确主线
-由 [#100 唯一总账](https://github.com/MyBlackHole/c-logger/issues/100)所链接的
-#106 完成回执确定；基线报告、格式器通过或 PR 创建本身不构成全部符合的证明。
+起始差异、范围与逐节验收结果见 [#106 KS-008 完成回执](https://github.com/MyBlackHole/c-logger/issues/106#issuecomment-6508042971)
+和 [PR #316](https://github.com/MyBlackHole/c-logger/pull/316)。最终逐节对照和具体保留
+边界见[符合性收敛计划的固定历史版本](https://github.com/MyBlackHole/c-logger/blob/2f3b5bdb4b376fa3d4e0b53255df8e9b2ce1663f/docs/superpowers/plans/2026-10-29-kernel-style-conformance.md#最终源码验收对照)；
+该链接用于追溯，不代表此计划仍在当前树中。验收状态及准确主线由
+[#100 唯一总账](https://github.com/MyBlackHole/c-logger/issues/100)所链接的 #106 完成回执确定；
+基线报告、格式器通过或 PR 创建本身不构成全部符合的证明。
 
 ## 基本格式
 

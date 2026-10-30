@@ -13,7 +13,7 @@
 - 旧入口快照：`docs/HISTORY_README.md`、`docs/HISTORY_API.md`、`docs/HISTORY_CONTROLLED_FORK_REINIT.md`。其中提到的旧接口或受控 fork helper 不能据此视为当前公开能力。
 - 旧版本发布说明已从当前树退役；需要核查时，从对应历史提交读取原始文件。旧版验证范围不能套用于主分支的 ABI 2。
 - 阶段修订：`docs/ROUND1_QUEUE_FLUSH.md` 至 `docs/ROUND5_FORK_ISOLATION.md`，以及 `docs/GLOBAL_LIFECYCLE.md` 中的演进背景。按文中输入、基线和阶段范围理解，现行约束以对应当前入口为准。
-- 已退役 Audit 的设计记录：`docs/v2/AUDIT_FORMAT_FAILURE.md`、`AUDIT_RETIRE_OWNERSHIP.md`、`AUDIT_SEQUENCE_CONTINUITY.md`、`AUDIT_TRANSACTION_SEMANTICS.md`、`AUDIT_TRANSACTION_SUBMISSION.md`。保留其当时语义以供追溯，不恢复已退役功能。
+- 已退役 Audit 的设计记录集中收录于源码树 `docs/v2/AUDIT_HISTORY.md`，各来源正文和原始文件名均保留，供追溯而不恢复已退役功能；该档案不随安装包发布。
 - 实施计划：`docs/superpowers/plans/`。计划、待办及勾选状态是过程材料，不是完成验证的独立证明。
 - 历史验证记录：`validation/` 中的 `AUDIT_TEST_RETIREMENT.md` 及各专项验证 Markdown，按各自基线保留原始通过、失败、环境限制、样本和命令；一项测试通过不能外推为全套发布或真实硬件验收。
 - 当前验证清单：`validation/cas_orders.tsv` 是仍由 CAS 机械门禁使用的活跃清单，应随相关代码变更评审并更新，不能当作冻结的历史原始结果。
